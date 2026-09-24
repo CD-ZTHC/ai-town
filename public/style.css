@@ -312,3 +312,60 @@ canvas#world.pointer { cursor: pointer; }
 .fi.gift { border-left: 3px solid var(--sakura); }
 /* 检查器头部内容变多后不被压缩，由下方的 .ipane 滚动 */
 .ihead, .inow, .itabs { flex-shrink: 0; }
+
+/* P2 / P3：故事面板 */
+.chip.story { cursor: pointer; background: linear-gradient(90deg, rgba(167, 139, 250, 0.25), rgba(90, 209, 195, 0.18)); border: 1px solid rgba(167, 139, 250, 0.4); color: var(--text); }
+.chip.story.live { animation: glow 1.2s ease-in-out infinite; }
+.stabs { margin: 8px 0 12px; }
+.story-body { max-height: 62vh; overflow-y: auto; padding-right: 4px; }
+.story-body h3 { margin: 14px 0 6px; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+.srow { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+.srow b { color: var(--text); }
+.spark { width: 100%; height: 90px; background: rgba(255, 255, 255, 0.04); border-radius: 10px; }
+.arc { padding: 10px 12px; border-radius: 12px; background: rgba(167, 139, 250, 0.1); margin-bottom: 8px; }
+.arc small { color: var(--muted); }
+.arc .phases { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 6px; font-size: 12px; }
+.arc .phases span { padding: 1px 8px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); color: var(--muted); }
+.arc .phases span.past { color: var(--text); }
+.arc .phases span.now { background: var(--violet); color: #1d1838; font-weight: 700; }
+.arc .phases i { color: var(--muted); font-style: normal; }
+.dec { font-size: 12.5px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+button.mini { font-size: 11.5px; padding: 2px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.1); }
+button.mini:hover { background: rgba(255, 255, 255, 0.2); }
+button.mini.adm { background: rgba(255, 184, 107, 0.2); color: var(--accent); }
+.vote { padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); margin-bottom: 10px; }
+.vote h3 { margin-top: 0; }
+.vmeta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.vopt { display: grid; grid-template-columns: 1fr 140px auto auto auto; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px dashed var(--line); font-size: 12.5px; }
+.vopt small { display: block; color: var(--muted); }
+.vopt.win .vlab b { color: var(--good); }
+.vopt.mine .vlab b::after { content: ' ✓'; color: var(--teal); }
+.vbar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.vbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--violet), var(--teal)); }
+.vnum { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.thread { padding: 8px 10px; border-left: 3px solid var(--muted); border-radius: 8px; background: rgba(255, 255, 255, 0.04); margin-bottom: 6px; font-size: 12.5px; }
+.thread small { color: var(--muted); }
+.thread.adv { border-left-color: var(--accent); }
+.thread.done { border-left-color: var(--good); }
+.thread .badge { margin-left: 8px; font-size: 11px; padding: 0 7px; border-radius: 8px; background: rgba(255, 255, 255, 0.08); }
+.tnotes { margin-top: 4px; color: #ffe2bf; font-size: 12px; }
+.cmeter { display: grid; grid-template-columns: 40px 1fr 30px; gap: 8px; align-items: center; margin: 6px 0; font-size: 12.5px; }
+.cmeter i { height: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.cmeter b { display: block; height: 100%; }
+.cmeter.mo b { background: linear-gradient(90deg, #ffb86b, #ffd76a); }
+.cmeter.su b { background: linear-gradient(90deg, #7ddc8a, #5ad1c3); }
+.cmeter em { font-style: normal; text-align: right; }
+.beasts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.beast { display: flex; gap: 10px; padding: 10px; border-radius: 12px; background: rgba(110, 80, 220, 0.12); font-size: 12px; }
+.beast img { width: 60px; height: 81px; image-rendering: pixelated; }
+.beast small { display: block; color: var(--muted); }
+.beast p { margin: 4px 0; }
+.beast .weak { color: var(--accent); }
+.beast.unknown { opacity: 0.6; align-items: center; }
+.beast .q { width: 60px; height: 60px; display: grid; place-items: center; font-size: 30px; border-radius: 50%; background: rgba(255, 255, 255, 0.06); }
+.fi.scene { border-left-color: var(--violet); }
+.fi.omen, .fi.arc, .fi.portal, .fi.thread { border-left: 3px solid var(--violet); background: rgba(167, 139, 250, 0.08); }
+.fi.encounter, .fi.creature, .fi.mischief { border-left: 3px solid #6b5bd6; }
+.fi.vote { border-left: 3px solid var(--teal); background: rgba(90, 209, 195, 0.08); }
+.fi.arrival, .fi.depart { border-left: 3px solid var(--sakura); }
+@media (max-width: 640px) { .vopt { grid-template-columns: 1fr auto; } .vbar, .vnum { grid-column: 1 / -1; } }

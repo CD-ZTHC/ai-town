@@ -70,6 +70,12 @@ export class Renderer {
     this.hits = [];
     this.bubbleSeen = new Map();
     this.vfx = [];
+    this.creatureSprites = {};
+  }
+
+  /** 世界规格里的异界生物图鉴 → 预生成像素精灵 */
+  setCreatureTypes(types = {}) {
+    for (const [id, c] of Object.entries(types)) if (!this.creatureSprites[id] && c.look?.bodyPlan) this.creatureSprites[id] = buildSprites(c.look);
   }
 
   /** 能力等产生的一次性特效（世界坐标，单位：格） */
@@ -647,10 +653,11 @@ export class Renderer {
     }
     for (const e of S.entities || []) {
       if (e.inside) continue;
-      items.push({ y: e.y * TS + TS * 0.8, e });
+      items.push({ y: e.kind === 'portal' ? -1e6 : e.y * TS + TS * 0.8, e });
     }
+    for (const c of S.creatures || []) items.push({ y: c.dy * TS + TS * 0.9, c });
     items.sort((p, q) => p.y - q.y);
-    for (const it of items) it.o ? this.drawObject(ctx, it.o, S) : it.e ? this.drawEntity(ctx, it.e) : this.drawAgent(ctx, it.a, S);
+    for (const it of items) it.o ? this.drawObject(ctx, it.o, S) : it.e ? (it.e.kind === 'portal' ? this.drawPortal(ctx, it.e) : this.drawEntity(ctx, it.e)) : it.c ? this.drawCreature(ctx, it.c) : this.drawAgent(ctx, it.a, S);
     this.drawVfx(ctx);
 
     this.updateParticles(dt, S, sky);
@@ -836,6 +843,48 @@ export class Renderer {
       ctx.fillText(e.emoji || '✨', px, py - 4 + Math.sin(t * 3 + i) * 2);
     }
     ctx.restore();
+  }
+
+  /** 镜湖裂隙：旋转的紫色涡流，大小随阶段变化 */
+  drawPortal(ctx, e) {
+    const X = e.x * TS + TS / 2, Y = e.y * TS + TS / 2, t = this.time;
+    const size = { crack: 0.5, open: 1.3, wide: 2.2, stable: 1.4 }[e.stage] ?? 1;
+    const stable = e.stage === 'stable';
+    const R = TS * 1.6 * size;
+    const g = ctx.createRadialGradient(X, Y, 2, X, Y, R * 1.6);
+    g.addColorStop(0, stable ? 'rgba(255,230,160,.55)' : 'rgba(190,150,255,.65)');
+    g.addColorStop(0.5, stable ? 'rgba(180,160,255,.25)' : 'rgba(110,70,200,.35)');
+    g.addColorStop(1, 'rgba(60,30,120,0)');
+    ctx.fillStyle = g; ctx.fillRect(X - R * 1.6, Y - R * 1.6, R * 3.2, R * 3.2);
+    ctx.save();
+    ctx.translate(X, Y); ctx.scale(1, 0.45);
+    for (let i = 0; i < 4; i++) {
+      ctx.strokeStyle = stable ? `rgba(255,${220 - i * 20},150,${0.7 - i * 0.12})` : `rgba(${180 - i * 20},${120 - i * 15},255,${0.8 - i * 0.15})`;
+      ctx.lineWidth = 3 - i * 0.5;
+      ctx.beginPath(); ctx.arc(0, 0, R * (1 - i * 0.2), t * (1.2 + i * 0.4), t * (1.2 + i * 0.4) + Math.PI * 1.3); ctx.stroke();
+    }
+    if (e.stage === 'crack') { ctx.strokeStyle = 'rgba(200,170,255,.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-R, 0); ctx.lineTo(-R * 0.3, -4); ctx.lineTo(R * 0.2, 3); ctx.lineTo(R, -1); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  /** 异界生物：沿用角色精灵管线，漂浮 + 底部微光 */
+  drawCreature(ctx, c) {
+    const spr = this.creatureSprites[c.type];
+    if (!spr) return;
+    const cx = c.dx * TS + TS / 2, fy = c.dy * TS + TS - 2;
+    const fi = c.moving ? [1, 0, 2, 0][Math.floor(this.time * 6) % 4] : Math.floor(this.time * 2) % 2;
+    const float = Math.sin(this.time * 3 + c.dx) * 2;
+    ctx.fillStyle = c.friendly ? 'rgba(255,170,220,.35)' : 'rgba(110,80,220,.35)';
+    ctx.beginPath(); ctx.ellipse(cx, fy, 10, 4, 0, 0, 7); ctx.fill();
+    const img = spr[c.dir]?.[fi] || spr.down[0];
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+    ctx.drawImage(img, Math.round(cx - (SPR_W * SCALE) / 2), Math.round(fy - SPR_H * SCALE + 4 + float), SPR_W * SCALE, SPR_H * SCALE);
+    ctx.restore();
+    if (c.friendly && c.name) {
+      ctx.save(); ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd6ee';
+      ctx.fillText(`💜${c.name}`, cx, fy - SPR_H * SCALE - 2); ctx.restore();
+    }
   }
 
   drawVfx(ctx) {
@@ -1182,6 +1231,7 @@ export class Renderer {
       if (a.inside || !on) continue;
       out.push({ x: a.dx * TS + 16, y: a.dy * TS + 10, r: 56, i: 0.7, c: '255,200,120' });
     }
+    if (on) for (const c of S.creatures || []) out.push({ x: c.dx * TS + 16, y: c.dy * TS + 8, r: 34, i: 0.6, c: c.friendly ? '255,170,220' : '150,120,255' });
     if (on) for (const e of S.entities || []) {
       if (e.light && !e.inside) out.push({ x: e.x * TS + 16, y: e.y * TS + 16, r: e.light.r * 1.6, i: 0.95, c: e.light.color });
     }

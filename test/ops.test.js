@@ -31,8 +31,8 @@ test('addCalendarEvent 新增节日，并出现在提示词里', () => {
 });
 
 test('addWeather 新增天气，默认不参与随机', () => {
-  const next = applyOp(base(), { op: 'addWeather', args: { id: 'bloodmoon', name: '血月', emoji: '🌕', render: { base: 'cloudy', tint: '#8a1c2c', tintAlpha: 0.3 } } });
-  assert.deepEqual(next.weather.bloodmoon, { name: '血月', emoji: '🌕', weight: 0, render: { base: 'cloudy', tint: '#8a1c2c', tintAlpha: 0.3 } });
+  const next = applyOp(base(), { op: 'addWeather', args: { id: 'redmoon', name: '赤月', emoji: '🌕', render: { base: 'cloudy', tint: '#8a1c2c', tintAlpha: 0.3 } } });
+  assert.deepEqual(next.weather.redmoon, { name: '赤月', emoji: '🌕', weight: 0, render: { base: 'cloudy', tint: '#8a1c2c', tintAlpha: 0.3 } });
   assert.throws(() => applyOp(base(), { op: 'addWeather', args: { id: 'x2', name: 'x', emoji: '?', render: { base: 'lava' } } }), /render.base/);
   assert.throws(() => applyOp(base(), { op: 'addWeather', args: { id: 'x3', name: 'x', emoji: '?', weight: 80 } }), /weight/);
 });

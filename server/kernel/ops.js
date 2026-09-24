@@ -145,6 +145,40 @@ export const OPS = {
     },
     describe: (a) => `世界上出现了一种新能力：${str(a.emoji, 4)}「${str(a.name, 8)}」`,
   },
+  addPersona: {
+    level: 'major',
+    check(spec, a) {
+      if (!validId(a.id)) return 'id 不合法';
+      if (spec.personas.some((p) => p.id === a.id)) return `角色已存在：${a.id}`;
+      if (!str(a.name, 12) || !str(a.persona, 400) || !str(a.role, 30)) return 'name / persona / role 不能为空';
+      if (a.kind === 'resident') return '新角色只能是 traveller 或 creature';
+      return null;
+    },
+    apply(spec, a) {
+      const p = structuredClone(a);
+      spec.personas.push({
+        id: p.id, name: str(p.name, 12), age: Math.max(1, Math.min(999, Number(p.age) || 20)), role: str(p.role, 30), kind: p.kind || 'traveller',
+        home: p.home, work: p.work, persona: str(p.persona, 400), goal: str(p.goal, 120), look: p.look, relations: {},
+        memories: (Array.isArray(p.memories) ? p.memories : []).map((m) => str(m, 80)).slice(0, 5),
+        ...(p.idle ? { idle: str(p.idle, 24) } : {}), ...(p.creature ? { creature: p.creature } : {}),
+        ...(p.traveller ? { traveller: { origin: str(p.traveller.origin, 30), knowledgeGap: (p.traveller.knowledgeGap || []).map((k) => str(k, 8)).slice(0, 8) } } : {}),
+        start: { abilities: p.start?.abilities || [], inventory: p.start?.inventory || {} },
+        status: 'active',
+      });
+    },
+    describe: (a) => `新角色登场：${str(a.name, 12)}（${str(a.role, 30)}）`,
+  },
+  setPersonaStatus: {
+    level: 'major',
+    check(spec, a) {
+      const p = spec.personas.find((x) => x.id === a.id);
+      if (!p) return `未知角色：${a.id}`;
+      if (!['active', 'departed'].includes(a.status)) return 'status 只能是 active / departed';
+      return null;
+    },
+    apply(spec, a) { spec.personas.find((x) => x.id === a.id).status = a.status; },
+    describe: (a) => (a.status === 'departed' ? `${a.id} 离开了小镇` : `${a.id} 回到了小镇`),
+  },
   addRule: {
     level: 'major',
     check(spec, a) {

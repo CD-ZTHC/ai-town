@@ -5,10 +5,14 @@ import { BUILDINGS, LOCATION_INFO } from '../world.js';
 import { parseHM } from '../memory.js';
 import { validateAbility } from './abilities.js';
 import { validateRule } from './rules.js';
+import { DEFAULT_THREADS, DEFAULT_CREATURES, STORY_ITEMS, STORY_STRUCTURES, RIFT_ARC } from '../story/content.js';
 
 export const SPEC_VERSION = 2;
 export const RATINGS = ['cozy', 'adventure', 'epic'];
 export const STORYTELLERS = ['gentle', 'voyage', 'chaos'];
+export const PERSONA_KINDS = ['resident', 'traveller', 'creature'];
+export const BODY_PLANS = ['wisp', 'hound', 'warden'];
+export const MAX_PERSONAS = 16;
 
 // 内核参数：AI 只能在上下限之内调节（见设计文档 4.6）
 export const PARAM_BOUNDS = {
@@ -71,6 +75,7 @@ const DEFAULT_ABILITIES = () => [
     effects: [
       { op: 'condition', remove: '疲惫', target: 'target' },
       { op: 'condition', remove: '受惊', target: 'target' },
+      { op: 'condition', remove: '晕倒', target: 'target' },
       { op: 'stat', stat: 'stamina', add: 10, target: 'target' },
       { op: 'memory', text: '{self}给我做了检查，叮嘱我注意身体', target: 'target', importance: 4 },
       { op: 'vfx', preset: 'heal', color: '#7fd6a0', radius: 1 },
@@ -134,6 +139,7 @@ const DEFAULT_RULES = () => [
 
 export function defaultSpec(env = process.env) {
   const rating = RATINGS.includes(env.STORY_RATING) ? env.STORY_RATING : 'cozy';
+  const storyteller = STORYTELLERS.includes(env.STORYTELLER) ? env.STORYTELLER : 'voyage';
   const locations = {};
   for (const [id, info] of Object.entries(LOCATION_INFO)) {
     if (id === 'home') continue;
@@ -142,7 +148,7 @@ export function defaultSpec(env = process.env) {
   return {
     id: 'yunxi',
     specVersion: SPEC_VERSION,
-    meta: { name: '云溪镇', rating, storyteller: 'gentle' },
+    meta: { name: '云溪镇', rating, storyteller },
     lore: {
       summary: TOWN_LORE,
       pillars: ['云溪镇的温馨底色不可改变', '居民不会死亡，离开小镇也总是可以回来'],
@@ -162,18 +168,20 @@ export function defaultSpec(env = process.env) {
       storm: { name: '雷阵雨', emoji: '⛈️', weight: 5 },
       fog: { name: '起雾', emoji: '🌫️', weight: 7, avoid: { from: '10:00', to: '19:00', fallback: 'cloudy' } },
       snow: { name: '下雪', emoji: '❄️', weight: 0 },
+      bloodmoon: { name: '血月', emoji: '🌕', weight: 0, render: { base: 'cloudy', tint: '#8a1c3c', tintAlpha: 0.22 } },
     },
     regions: [{ id: 'town', generator: 'yunxi-v1', seed: 20260924, size: [64, 44] }],
     locations,
     buildings: clone(BUILDINGS),
     personas: clone(PERSONAS),
-    creatures: [],
-    items: DEFAULT_ITEMS(),
-    structures: DEFAULT_STRUCTURES(),
+    creatures: DEFAULT_CREATURES(),
+    threads: DEFAULT_THREADS(),
+    items: { ...DEFAULT_ITEMS(), ...STORY_ITEMS() },
+    structures: { ...DEFAULT_STRUCTURES(), ...STORY_STRUCTURES() },
     abilities: DEFAULT_ABILITIES(),
     rules: DEFAULT_RULES(),
     factions: [],
-    arcs: [],
+    arcs: [RIFT_ARC()],
     params: { walkSpeed: 3.2, maxConvos: 3, convoBaseProb: 0.22, reflectThreshold: 40, dayEnd: 22 * 60 + 30 },
   };
 }
@@ -254,6 +262,26 @@ export function validateSpec(s) {
     if (e) err(`rules.${r.id}`, e);
   }
 
+  for (const [id, c] of Object.entries(s.creatures || {})) {
+    const p = `creatures.${id}`;
+    if (!/^[a-z][a-z0-9_]{1,23}$/.test(id)) err(p, 'id 不合法');
+    if (!isStr(c.name, 8) || !isStr(c.emoji, 8)) err(p, 'name/emoji 缺失');
+    if (!BODY_PLANS.includes(c.look?.bodyPlan)) err(p, `look.bodyPlan 只能是 ${BODY_PLANS.join('/')}`);
+    if (!(c.stats?.hp > 0 && c.stats.hp <= 300 && c.stats.speed > 0 && c.stats.speed <= 6 && c.stats.courage >= 0 && c.stats.courage <= 100)) err(p, 'stats 不合法');
+    if (!['wander', 'thief', 'chaser', 'guard'].includes(c.behavior?.archetype)) err(p, 'behavior.archetype 不合法');
+    if (c.minRating && !RATINGS.includes(c.minRating)) err(p, 'minRating 不合法');
+  }
+  const threadIds = new Set();
+  for (const t of s.threads || []) {
+    if (!/^[a-z][a-z0-9_]{1,23}$/.test(t.id || '') || threadIds.has(t.id)) err(`threads.${t.id}`, 'id 不合法或重复');
+    threadIds.add(t.id);
+    if (!isStr(t.title, 20) || !isStr(t.hook, 80)) err(`threads.${t.id}`, 'title/hook 缺失或过长');
+  }
+  for (const a of s.arcs || []) {
+    if (!/^[a-z][a-z0-9_]{1,23}$/.test(a.id || '') || !isStr(a.title, 20)) err(`arcs.${a.id}`, 'id/title 不合法');
+    if (!Array.isArray(a.phases) || !a.phases.length) err(`arcs.${a.id}`, '缺少 phases');
+  }
+
   const pIds = new Set();
   for (const p of s.personas || []) {
     const path = `personas.${p.id}`;
@@ -261,12 +289,18 @@ export function validateSpec(s) {
     if (pIds.has(p.id)) err(path, 'id 重复');
     pIds.add(p.id);
     if (!isStr(p.name, 12) || !isStr(p.persona, 400) || !isStr(p.role, 30)) err(path, 'name/persona/role 缺失或过长');
-    if (!bIds.has(p.home)) err(path, `home 不是建筑：${p.home}`);
+    if (p.kind != null && !PERSONA_KINDS.includes(p.kind)) err(path, `kind 只能是 ${PERSONA_KINDS.join('/')}`);
+    if (p.status != null && !['active', 'departed'].includes(p.status)) err(path, 'status 只能是 active / departed');
+    if (p.kind === 'creature') {
+      if (!Object.hasOwn(locs, p.home)) err(path, `异界角色的 home 应为地点：${p.home}`);
+      if (!BODY_PLANS.includes(p.look?.bodyPlan)) err(path, 'look.bodyPlan 不合法');
+    } else if (!bIds.has(p.home)) err(path, `home 不是建筑：${p.home}`);
     if (!locs[p.work] && !bIds.has(p.work)) err(path, `work 不存在：${p.work}`);
     if (!p.look || typeof p.look !== 'object') err(path, '缺少 look');
     for (const id of p.start?.abilities || []) if (!abIds.has(id)) err(path, `初始能力不存在：${id}`);
     for (const id of Object.keys(p.start?.inventory || {})) if (!Object.hasOwn(items, id)) err(path, `初始物品不存在：${id}`);
   }
+  if ((s.personas || []).length > MAX_PERSONAS) err('personas', `角色最多 ${MAX_PERSONAS} 位`);
   for (const p of s.personas || []) {
     for (const rid of Object.keys(p.relations || {})) if (!pIds.has(rid)) err(`personas.${p.id}.relations`, `未知居民：${rid}`);
   }
@@ -322,6 +356,8 @@ export function publicSpec(spec) {
   return {
     meta: spec.meta, calendar: spec.calendar, weather: spec.weather, canon: spec.lore.canon,
     items: spec.items, structures: spec.structures,
+    creatures: Object.fromEntries(Object.entries(spec.creatures).map(([id, c]) => [id, { name: c.name, emoji: c.emoji, look: c.look, lore: c.lore, weakness: c.weakness, origin: c.origin, temperament: c.temperament, leader: Boolean(c.leader) }])),
+    threads: spec.threads,
     abilities: spec.abilities.map(({ id, name, emoji, desc, target }) => ({ id, name, emoji, desc, target })),
     rules: spec.rules.map(({ id, name }) => ({ id, name })),
   };
