@@ -1,6 +1,9 @@
 // 前端入口：实时数据流、相机与输入、渲染循环
 import { Renderer, TS } from './render.js';
 import * as UI from './ui.js';
+import * as Modes from './modes.js';
+import * as Immerse from './immerse.js';
+import * as Play from './play.js';
 
 export const storage = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -120,8 +123,9 @@ function connect() {
     renderer.setCreatureTypes(d.spec?.creatures);
     for (const a of d.agents) a.portrait = renderer.portraits[a.id];
     UI.init(app, first);
-    app.refreshPerms();
+    const perms = app.refreshPerms();
     if (first) {
+      perms.then(() => Modes.start());
       resize();
       app.cam.zoom = Math.max(0.8, Math.min(1.7, window.innerWidth / (34 * TS)));
       app.ready = true;
@@ -131,7 +135,7 @@ function connect() {
   es.addEventListener('tick', (e) => { app.snap = JSON.parse(e.data); });
   es.addEventListener('log', (e) => UI.onLog(JSON.parse(e.data)));
   es.addEventListener('agent', (e) => UI.onAgentChanged(JSON.parse(e.data).id));
-  es.addEventListener('newspaper', (e) => UI.onNewspaper(JSON.parse(e.data)));
+  es.addEventListener('newspaper', (e) => { const p = JSON.parse(e.data); UI.onNewspaper(p); Immerse.onNewspaper(p); });
   es.addEventListener('vfx', (e) => { const v = JSON.parse(e.data); if ((v.region || 'town') === app.view) renderer.addVfx(v); });
   es.addEventListener('regions', (e) => {
     app.regionsOpen = JSON.parse(e.data);
@@ -141,6 +145,7 @@ function connect() {
   // 角色登场 / 离场：重建精灵与名册
   es.addEventListener('agents', (e) => {
     const list = JSON.parse(e.data);
+    Play.onAgents?.();
     renderer.setAgents(list);
     for (const a of list) a.portrait = renderer.portraits[a.id];
     app.meta = Object.fromEntries(list.map((a) => [a.id, a]));
@@ -194,10 +199,14 @@ function zoomAt(sx, sy, factor) {
   clampCam();
 }
 
+app.zoomBy = (f) => zoomAt(innerWidth / 2, innerHeight / 2, f);
+app.clampCam = clampCam;
+
 // ---------- 输入 ----------
 const pointers = new Map();
 let drag = null, pinch = null;
 canvas.addEventListener('pointerdown', (e) => {
+  if (app.mode === 'immerse') { Immerse.poke(); return; }
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 2) {
@@ -219,7 +228,7 @@ canvas.addEventListener('pointermove', (e) => {
   }
   if (drag) {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if (!drag.moved && Math.hypot(dx, dy) > 5) { drag.moved = true; canvas.classList.add('dragging'); app.follow = null; }
+    if (!drag.moved && Math.hypot(dx, dy) > 5) { drag.moved = true; canvas.classList.add('dragging'); app.follow = null; if (app.mode === 'play') Play.free(); }
     if (drag.moved) {
       app.cam.x = drag.cx - dx / app.cam.zoom;
       app.cam.y = drag.cy - dy / app.cam.zoom;
@@ -227,6 +236,7 @@ canvas.addEventListener('pointermove', (e) => {
     }
     return;
   }
+  if (app.mode === 'immerse') { Immerse.poke(); return; }
   const id = renderer.hitTest(e.clientX, e.clientY);
   app.hover = id;
   canvas.classList.toggle('pointer', !!id);
@@ -237,7 +247,8 @@ const endPointer = (e) => {
   if (pointers.size < 2) pinch = null;
   if (drag && !drag.moved && e.type === 'pointerup') {
     const id = renderer.hitTest(e.clientX, e.clientY);
-    if (id) app.select(id);
+    if (app.mode === 'play') Play.tap(e.clientX, e.clientY, id);
+    else if (id) app.select(id);
   }
   drag = null;
   canvas.classList.remove('dragging');
@@ -247,6 +258,7 @@ canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('pointerleave', () => { app.hover = null; UI.tooltip(null); });
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
+  if (app.mode === 'immerse') return;
   zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015));
 }, { passive: false });
 
@@ -262,25 +274,35 @@ minimap.addEventListener('pointerdown', (e) => { miniDrag = true; minimap.setPoi
 minimap.addEventListener('pointermove', (e) => miniDrag && miniGo(e));
 minimap.addEventListener('pointerup', () => { miniDrag = false; });
 
+// 按键映射见 modes.js；这里只记录按住的方向键，用于观察模式下平移镜头
 const keys = new Set();
-window.addEventListener('keydown', (e) => {
-  if (e.target.closest('input, textarea, select')) return;
-  keys.add(e.key.toLowerCase());
-  if (e.key === ' ') { e.preventDefault(); UI.togglePause(); }
-  if (e.key === 'Escape') UI.escape();
-  if (e.key === 'f' && app.selected) app.follow = app.selected;
-  if (e.key === '=' || e.key === '+') zoomAt(innerWidth / 2, innerHeight / 2, 1.15);
-  if (e.key === '-') zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.15);
-  const sp = { 1: 1, 2: 3, 3: 8, 4: 20 }[e.key];
-  if (sp) UI.setSpeed(sp);
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const ids = Object.keys(app.meta);
-    const i = ids.indexOf(app.selected);
-    app.select(ids[(i + (e.shiftKey ? ids.length - 1 : 1)) % ids.length]);
-  }
-});
+window.addEventListener('keydown', (e) => { if (!e.target.closest('input, textarea, select')) keys.add(e.key.toLowerCase()); });
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+window.addEventListener('blur', () => keys.clear());
+
+// 画布上的气泡等叠加层要避开的界面区域（顶栏、名册、检查器）
+const visible = (el) => el && !el.hidden && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+function safeInsets() {
+  const s = { l: 8, t: 8, r: 8, b: 8 };
+  for (const el of document.querySelectorAll('[data-safe]')) {
+    if (!visible(el)) continue;
+    const r = el.getBoundingClientRect(), gap = 8;
+    if (r.width === 0 || r.height === 0) continue;
+    const side = el.dataset.safe;
+    if (side === 't') s.t = Math.max(s.t, r.bottom + gap);
+    if (side === 'b') s.b = Math.max(s.b, innerHeight - r.top + gap);
+    if (side === 'l') s.l = Math.max(s.l, r.right + gap);
+    if (side === 'r') s.r = Math.max(s.r, innerWidth - r.left + gap);
+  }
+  return s;
+}
+
+// 界面色温随时辰变化：清晨偏粉、白天偏暖、黄昏偏橙、夜晚偏蓝紫；暗月界固定为紫色
+function uiTint(minute) {
+  if (app.view !== 'town') return '#b58cff';
+  const h = minute / 60;
+  return h < 5 || h >= 20 ? '#8f9bff' : h < 8 ? '#ff9fb5' : h < 17 ? '#ffd28a' : '#ff9a5a';
+}
 
 // ---------- 主循环 ----------
 let last = performance.now();
@@ -289,8 +311,9 @@ function loop(now) {
   last = now;
   if (app.ready && app.snap) {
     const s = app.snap;
-    // 键盘平移
-    const pan = 600 * dt / app.cam.zoom;
+    // 键盘平移（仅观察模式；游戏模式下方向键用来走路）
+    const pan = app.mode === 'observe' ? 600 * dt / app.cam.zoom : 0;
+    if (!pan) keys.clear();
     if (keys.has('a') || keys.has('arrowleft')) { app.cam.x -= pan; app.follow = null; }
     if (keys.has('d') || keys.has('arrowright')) { app.cam.x += pan; app.follow = null; }
     if (keys.has('w') || keys.has('arrowup')) { app.cam.y -= pan; app.follow = null; }
@@ -336,7 +359,9 @@ function loop(now) {
     const occupancy = {};
     for (const a of agents) if (a.inside) (occupancy[a.inside] ||= []).push(a.id);
 
-    if (app.follow) {
+    if (app.mode === 'immerse') Immerse.camera(dt, agentMap);
+    else if (app.mode === 'play') Play.camera(dt, avatars);
+    else if (app.follow) {
       const p = app.agentWorldPos(app.follow);
       if (p) {
         const k = 1 - Math.exp(-dt * 4);
@@ -358,9 +383,15 @@ function loop(now) {
       agents, agentMap, occupancy, convos: s.convos, entities: (s.entities || []).filter((e) => e.kind === 'portal' ? app.view === 'town' : here(e)), creatures, avatars,
       selected: app.selected, hover: app.hover, boardCount: app.board.length,
       festival: app.view === 'town' && (app.forceFestival || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns')),
+      mode: app.mode, subtitles: app.mode === 'immerse' && Immerse.subsOn(),
+      play: app.mode === 'play' ? Play.state() : null,
     };
+    if (now - (app.safeT || 0) > 300) { app.safeT = now; renderer.safe = safeInsets(); }
+    if (now - (app.tintT || 0) > 1000) { app.tintT = now; document.body.style.setProperty('--tint', uiTint(minute)); }
     renderer.frame(S, dt);
     UI.frame(S, dt);
+    if (app.mode === 'immerse') Immerse.frame(S, dt);
+    if (app.mode === 'play') Play.frame(S, dt);
     Sound.update(S);
   }
   requestAnimationFrame(loop);
@@ -431,3 +462,5 @@ export const Sound = {
 };
 app.sound = Sound;
 app.storage = storage;
+// 模式、界面外壳与按键（依赖上面的 app.sound / app.storage）
+Modes.init(app);

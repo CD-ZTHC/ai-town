@@ -276,7 +276,6 @@ export class Town extends EventEmitter {
       this.expire();
       this.rules.tick();
       this.creatures.tick(dtGame);
-      this.avatars.tick(dtGame);
       this.scenes.tick();
       this.votes.tick();
       this.arcs.tick();
@@ -289,6 +288,8 @@ export class Town extends EventEmitter {
       acc.convo += dtReal;
       if (acc.convo > 0.8) { acc.convo = 0; this.checkConversations(); }
     }
+    // 访客化身按真实时间行走（暂停、调速都不影响玩家操作）
+    this.avatars.tick(dtReal);
     acc.snapshot += dtReal;
     if (acc.snapshot >= 0.1) { acc.snapshot = 0; this.emit('tick', this.snapshot()); }
     acc.save += dtReal;

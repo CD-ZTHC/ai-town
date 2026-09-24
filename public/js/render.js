@@ -1490,7 +1490,7 @@ export class Renderer {
           ctx.fillStyle = '#a78bfa'; ctx.beginPath(); ctx.arc(x + 4, y + 4, 7, 0, 7); ctx.fill();
           ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif'; ctx.fillText('✦', x + 4, y + 4.5);
         }
-        if (a.bubble) bubbles.push({ a, x: x + size / 2, y: y - 6 });
+        if (a.bubble) bubbles.push({ a, x: x + size / 2, y: y - 6, below: y + size + 8 });
         x += size + gap;
       }
     }
@@ -1523,7 +1523,7 @@ export class Renderer {
         ctx.textAlign = 'center';
         ctx.fillText(a.emoji || '🙂', x, by + 1);
       }
-      if (a.bubble) bubbles.push({ a, x, y: headY - (a.thinking ? 34 : 4) });
+      if (a.bubble) bubbles.push({ a, x, y: headY - (a.thinking ? 34 : 4), below: fy + 24 });
     }
 
     // 对话连线
@@ -1537,10 +1537,62 @@ export class Renderer {
       ctx.setLineDash([]);
     }
 
+    if (S.play) this.drawPlay(ctx, S, toS, z);
+
     // 气泡（避免重叠）
     const placed = [];
     bubbles.sort((p, q) => q.y - p.y);
     for (const b of bubbles) this.drawBubble(ctx, b, placed, now, S);
+  }
+
+  // 游戏模式：路线、落点、身边可以聊天的人
+  drawPlay(ctx, S, toS, z) {
+    const P = S.play;
+    const v = (S.avatars || []).find((x) => x.id === P.me);
+    ctx.save();
+    if (v && P.to) {
+      const pts = [[v.dx, v.dy], ...(P.next || []).map((n) => [n.x, n.y]), [P.to.x, P.to.y]].map(([x, y]) => toS(x * TS + TS / 2, y * TS + TS - 4));
+      ctx.strokeStyle = 'rgba(255,224,138,.55)'; ctx.lineWidth = 2; ctx.setLineDash([3, 6]); ctx.lineDashOffset = -this.time * 18;
+      ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
+      ctx.setLineDash([]);
+      const [x, y] = pts[pts.length - 1];
+      const p = (Math.sin(this.time * 5) + 1) / 2;
+      ctx.strokeStyle = 'rgba(255,224,138,.9)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(x, y, (9 + p * 3) * z, (4 + p) * z, 0, 0, 7); ctx.stroke();
+    }
+    // 点击落点的涟漪
+    if (P.click) {
+      const age = (performance.now() - P.click.t) / 1000;
+      if (age < 0.6) {
+        const [x, y] = toS(P.click.x * TS + TS / 2, P.click.y * TS + TS - 4);
+        ctx.strokeStyle = `rgba(255,255,255,${0.8 * (1 - age / 0.6)})`; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(x, y, (6 + age * 30) * z, (2.5 + age * 12) * z, 0, 0, 7); ctx.stroke();
+      }
+    }
+    // 身边的人：头顶 💬，最近的一位显示操作提示
+    ctx.textAlign = 'center';
+    for (const id of P.near) {
+      const a = S.agentMap[id];
+      if (!a || a.inside) continue;
+      const [x, fy] = toS(a.dx * TS + TS / 2, a.dy * TS + TS - 2);
+      const top = fy - (SPR_H * SCALE + 18) * z;
+      if (id === P.focus) {
+        const label = P.touch ? `💬 点一下和${this.meta[id]?.name}聊天` : `E  和${this.meta[id]?.name}聊天`;
+        ctx.font = '600 12px "PingFang SC","Microsoft YaHei",sans-serif';
+        const w = ctx.measureText(label).width + 20;
+        const bob = Math.sin(this.time * 3) * 2;
+        ctx.fillStyle = 'rgba(20,22,35,.85)'; roundRect(ctx, x - w / 2, top - 30 + bob, w, 22, 11); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,214,102,.8)'; ctx.lineWidth = 1.5; ctx.stroke();
+        if (!P.touch) { ctx.fillStyle = '#ffd666'; roundRect(ctx, x - w / 2 + 5, top - 26 + bob, 16, 14, 4); ctx.fill(); }
+        ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle';
+        if (!P.touch) { ctx.fillStyle = '#2a1a00'; ctx.fillText('E', x - w / 2 + 13, top - 18.5 + bob); ctx.fillStyle = '#fff'; ctx.fillText(label.slice(1).trim(), x + 8, top - 18.5 + bob); }
+        else ctx.fillText(label, x, top - 18.5 + bob);
+      } else if (id !== P.talk) {
+        ctx.font = '14px "Apple Color Emoji","Segoe UI Emoji",sans-serif';
+        ctx.fillText('💬', x + 14 * z, top - 6);
+      }
+    }
+    ctx.restore();
   }
 
   drawThinking(ctx, x, y, label) {
@@ -1563,13 +1615,14 @@ export class Renderer {
     }
   }
 
-  drawBubble(ctx, { a, x, y }, placed, now, S) {
+  drawBubble(ctx, { a, x, y, below }, placed, now, S) {
     const b = a.bubble;
     if (!this.bubbleSeen.has(b.id)) this.bubbleSeen.set(b.id, now);
     const age = (now - this.bubbleSeen.get(b.id)) / 1000;
     const think = b.kind === 'think';
     let text = b.text;
-    const dots = text === '…';
+    // 沉浸模式下对白改由字幕呈现，气泡只留省略号
+    const dots = text === '…' || !!S.subtitles;
     if (!dots) text = text.slice(0, Math.floor(age * (think ? 28 : 22)) + 1);
     ctx.font = `${think ? 'italic ' : ''}13px "PingFang SC","Microsoft YaHei",sans-serif`;
     const maxW = 210;
@@ -1584,12 +1637,19 @@ export class Renderer {
     const w = Math.max(dots ? 44 : 30, Math.min(maxW, Math.max(...full.map((l) => ctx.measureText(l).width)))) + 20;
     const lh = 18;
     const h = full.length * lh + 12;
-    let bx = x - w / 2, by = y - h - 12;
+    // 放在头顶；贴近屏幕边缘或被界面挡住时，水平方向夹紧到安全区，头顶放不下就翻到脚下
+    const sf = this.safe || { l: 8, t: 8, r: 8, b: 8 };
+    const minX = sf.l, maxX = Math.max(minX, this.vw - sf.r - w);
+    let bx = Math.max(minX, Math.min(maxX, x - w / 2));
+    let flip = y - h - 12 < sf.t && below != null;
+    let by = flip ? below + 12 : y - h - 12;
     for (let i = 0; i < 8; i++) {
       const hit = placed.find((p) => bx < p.x + p.w && bx + w > p.x && by < p.y + p.h && by + h > p.y);
       if (!hit) break;
-      by = hit.y - h - 4;
+      by = flip ? hit.y + hit.h + 4 : hit.y - h - 4;
+      if (!flip && by < sf.t && below != null) { flip = true; by = below + 12; }
     }
+    by = Math.max(sf.t, Math.min(this.vh - sf.b - h, by));
     placed.push({ x: bx, y: by, w, h });
     const pop = Math.min(1, age * 6);
     ctx.save();
@@ -1603,14 +1663,17 @@ export class Renderer {
     ctx.shadowColor = 'transparent';
     ctx.stroke();
     // 尾巴
+    const tx = Math.max(bx + 12, Math.min(bx + w - 12, x));
     if (think) {
-      ctx.beginPath(); ctx.arc(x - 2, by + h + 5, 4, 0, 7); ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.arc(x + 1, y - 4, 2.5, 0, 7); ctx.fill(); ctx.stroke();
+      const ey = flip ? by - 5 : by + h + 5;
+      ctx.beginPath(); ctx.arc(tx - 2, ey, 4, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc((tx + x) / 2 + 1, flip ? ey - 7 : ey + 7, 2.5, 0, 7); ctx.fill(); ctx.stroke();
     } else {
-      const tx = Math.max(bx + 12, Math.min(bx + w - 12, x));
-      ctx.beginPath(); ctx.moveTo(tx - 6, by + h - 1); ctx.lineTo(x, y - 4); ctx.lineTo(tx + 6, by + h - 1); ctx.closePath();
+      // 尾巴指向说话的人（翻到脚下时朝上）
+      const ey = flip ? by + 1 : by + h - 1, ty = flip ? below - 6 : y - 4;
+      ctx.beginPath(); ctx.moveTo(tx - 6, ey); ctx.lineTo(x, ty); ctx.lineTo(tx + 6, ey); ctx.closePath();
       ctx.fillStyle = '#fffdf7'; ctx.fill();
-      ctx.beginPath(); ctx.moveTo(tx - 6, by + h); ctx.lineTo(x, y - 4); ctx.lineTo(tx + 6, by + h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(tx - 6, flip ? by : by + h); ctx.lineTo(x, ty); ctx.lineTo(tx + 6, flip ? by : by + h); ctx.stroke();
     }
     ctx.fillStyle = think ? '#5b4a8a' : '#2d2418';
     ctx.textAlign = 'left';
