@@ -9,6 +9,7 @@ const face = (id) => app.meta[id]?.portrait || '';
 const name = (id) => app.meta[id]?.name || id;
 
 const ui = { tab: 'sched', memFilter: 'all', chatMode: 'visitor', feedFilter: 'all', detail: null, rosterT: 0, refreshT: 0, pending: false };
+export { esc, fmtTime, face, name, weekday };
 
 export function init(a, first) {
   app = a;
@@ -25,21 +26,22 @@ export function init(a, first) {
   $('#btn-event').addEventListener('click', eventModal);
   $('#btn-news').addEventListener('click', () => newsModal());
   $('#btn-graph').addEventListener('click', graphModal);
-  $('#btn-help').addEventListener('click', helpModal);
   $('#story-chip').addEventListener('click', () => storyModal());
   $('#btn-build').addEventListener('click', () => buildModal());
-  $('#btn-avatar').addEventListener('click', () => avatarModal());
   $('#region-chip').addEventListener('click', () => app.setView(app.view === 'town' ? nextRegion() : 'town'));
-  $('#btn-sound').addEventListener('click', (e) => { e.currentTarget.textContent = app.sound.toggle() ? '🔊' : '🔇'; });
   $('#festival-chip').addEventListener('click', () => {
     app.forceFestival = !app.forceFestival;
     toast(app.forceFestival ? '🏮 萤火节灯会预览：夜晚时镜湖上会升起河灯与天灯' : '🏮 已关闭灯会预览');
   });
   $('#insp-close').addEventListener('click', closeInspector);
-  $('#feed-toggle').addEventListener('click', () => {
-    const f = $('#feed'); f.classList.toggle('collapsed');
-    $('#feed-toggle').textContent = f.classList.contains('collapsed') ? '▴' : '▾';
-  });
+  const feedOpen = (open) => {
+    const f = $('#feed'); f.classList.toggle('collapsed', !open);
+    $('#feed-toggle').textContent = open ? '▾' : '▴';
+    app.storage.set('town-feed-open', open ? '1' : null);
+  };
+  feedOpen(app.storage.get('town-feed-open') === '1' && innerWidth > 900);
+  $('#feed-toggle').addEventListener('click', () => feedOpen($('#feed').classList.contains('collapsed')));
+  $('#feed-latest').addEventListener('click', () => feedOpen(true));
   $$('#feed-tabs button').forEach((b) => b.addEventListener('click', () => {
     ui.feedFilter = b.dataset.f;
     $$('#feed-tabs button').forEach((x) => x.classList.toggle('on', x === b));
@@ -51,7 +53,6 @@ export function init(a, first) {
     if (w && !e.target.closest('#modal-card canvas')) { app.select(w.dataset.agent); }
     if (!e.target.closest('#weather-menu, #btn-weather')) $('#weather-menu').hidden = true;
   });
-  if (!app.storage.get('town-help-seen')) { app.storage.set('town-help-seen', '1'); setTimeout(helpModal, 1200); }
 }
 
 // ---------- 每帧 ----------
@@ -111,6 +112,7 @@ export function refreshRoster() {
     c.classList.toggle('thinking', !!a.thinking);
     c.classList.toggle('chatting', a.status === 'chatting');
     c.classList.toggle('sleeping', a.status === 'sleeping');
+    c.classList.toggle('watched', app.watch.has(a.id));
     c.querySelector('.rmood').textContent = a.mood || '';
     c.querySelector('.ract').textContent = a.thinking ? `✦ ${a.thinking}…` : a.status === 'chatting' ? `💬 与${name(app.snap.convos.find((x) => x.id === a.convo)?.[app.snap.convos.find((x) => x.id === a.convo)?.a === a.id ? 'b' : 'a'])}聊天` : `${a.emoji} ${a.action}`;
   }
@@ -143,7 +145,8 @@ export function applyPerms() {
   $('#mode-chip').hidden = p.admin;
   $('#mode-chip').textContent = p.interaction ? '🌿 访客模式' : '👀 观赏模式';
   $('#btn-event').hidden = !p.interaction;
-  $('#btn-avatar').hidden = !p.interaction;
+  $('#dock-play').hidden = !p.interaction;
+  $('#more-admin').hidden = !p.needToken && !p.admin;
   $('#btn-weather').hidden = !p.interaction;
   if (!p.interaction && ui.tab === 'chat') ui.tab = 'sched';
 }
@@ -161,10 +164,12 @@ export const togglePause = guarded(async () => {
   await app.api('/api/control', { paused: !app.snap.paused });
 });
 export function escape() {
-  if (!$('#modal').hidden) return closeModal();
-  if (!$('#inspector').hidden) return closeInspector();
+  if (!$('#modal').hidden) { closeModal(); return true; }
+  for (const id of ['#more-menu', '#weather-menu', '#brain']) if (!$(id).hidden) { $(id).hidden = true; return true; }
+  if (!$('#inspector').hidden) { closeInspector(); return true; }
+  return false;
 }
-function weatherMenu(btn) {
+export function weatherMenu(btn) {
   const m = $('#weather-menu');
   if (!m.hidden) { m.hidden = true; return; }
   const r = btn.getBoundingClientRect();
@@ -209,9 +214,21 @@ function feedItemHTML(l) {
     <div class="ft">${faces ? `<span class="faces">${faces}</span>&nbsp;` : ''} ${t}</div>
     <div>${icon} ${who}${text}</div></div>`;
 }
+const feedMatch = (l, f = ui.feedFilter) => f === 'all' || (f === 'watch' ? (l.agents || []).some((id) => app.watch.has(id)) : FEED_GROUPS[f]?.includes(l.type));
+// 折叠时只显示最新一条；剧情、约定、抉择等重要条目会短暂高亮
+const LATEST_SKIP = new Set(['system', 'weather', 'plan']);
+const LATEST_HOT = new Set(['commit', 'event', 'vote', 'arc', 'portal', 'arrival', 'news', 'encounter']);
+function setLatest(l) {
+  const el = $('#feed-latest');
+  if (!el || !l || LATEST_SKIP.has(l.type)) return;
+  const faces = (l.agents || []).slice(0, 2).map((id) => `<img src="${face(id)}" alt="">`).join('');
+  const icon = { convo: '💬', scene: '🎭', thought: '💭', reflect: '✨', event: '📢', news: '📰', commit: '📌' }[l.type] || '•';
+  el.innerHTML = `<span class="faces">${faces}</span><span class="lt">${fmtTime(l.t)}</span><span class="lx">${icon} ${esc(l.text)}</span>`;
+  if (LATEST_HOT.has(l.type) || STORY_TYPES.includes(l.type)) { el.classList.remove('hot'); void el.offsetWidth; el.classList.add('hot'); }
+}
 function renderFeed() {
-  const f = ui.feedFilter;
-  const items = app.logs.filter((l) => f === 'all' || FEED_GROUPS[f]?.includes(l.type)).slice(-120).reverse();
+  const items = app.logs.filter((l) => feedMatch(l)).slice(-120).reverse();
+  setLatest([...app.logs].reverse().find((l) => !LATEST_SKIP.has(l.type)));
   $('#feed-list').innerHTML = items.map(feedItemHTML).join('') || '<div class="empty">小镇刚刚苏醒，故事即将开始……</div>';
   bindFeed($('#feed-list'));
 }
@@ -222,8 +239,8 @@ function bindFeed(root) {
 export function onLog(l) {
   app.logs.push(l);
   if (app.logs.length > 400) app.logs.shift();
-  const f = ui.feedFilter;
-  if (f === 'all' || FEED_GROUPS[f]?.includes(l.type)) {
+  setLatest(l);
+  if (feedMatch(l)) {
     const list = $('#feed-list');
     $('.empty', list)?.remove();
     const tmp = document.createElement('div');
@@ -243,6 +260,10 @@ export function onLog(l) {
   if (['arc', 'vote', 'arrival', 'depart', 'portal'].includes(l.type)) toast(esc(l.text), 6500);
   if (l.type === 'proposal' && /落地|开工|征求意见/.test(l.text)) toast(esc(l.text), 5500);
   if (l.agents?.includes(app.selected)) scheduleDetail();
+  // 关注的居民有新动向时提醒
+  const w = (l.agents || []).filter((id) => app.watch.has(id));
+  if (w.length && ['convo', 'scene', 'reflect', 'reaction', 'gift', 'learn'].includes(l.type)) toast(`🔔 <b>${esc(name(w[0]))}</b>：${esc(String(l.text).slice(0, 60))}`, 4500);
+  app.onLogHooks?.forEach((fn) => fn(l));
 }
 export function onAgents() {
   buildRoster();
@@ -276,7 +297,7 @@ export function onRegions() {
 
 // ---------- 访客化身（P6） ----------
 const AV_COLORS = ['#e57373', '#64b5f6', '#81c784', '#ffb74d', '#ba68c8', '#4db6ac', '#f06292', '#a1887f'];
-function avatarModal() {
+export function avatarModal() {
   const mine = app.avatars.find((v) => v.id === app.perms.avatar);
   if (!mine) {
     const saved = app.storage.get('town-avatar-name') || '';
@@ -331,7 +352,9 @@ export function onNewspaper(p) {
 export function updateBrain() {
   const s = app.llm;
   if (!s) return;
-  $('#brain-dot').className = `brain-dot ${s.inflight ? 'on' : ''} ${!s.enabled ? 'err' : ''}`;
+  $('#brain-dot').className = `brain-dot ${s.inflight ? 'on' : ''} ${!s.enabled || s.errors ? 'err' : ''}`;
+  $('#brain-q').textContent = s.queued ? s.queued : s.inflight ? s.inflight : '';
+  $('#brain-btn').title = s.enabled ? `AI 大脑：${s.model}${s.inflight ? ` · 思考中 ${s.inflight}` : ' · 空闲'}${s.queued ? ` · 排队 ${s.queued}` : ''}` : 'AI 大脑：未配置 LLM';
   $('#brain-model').textContent = s.enabled ? s.model : '未配置 LLM';
   const tk = s.tokens > 1e6 ? `${(s.tokens / 1e6).toFixed(2)}M` : `${(s.tokens / 1000).toFixed(1)}k`;
   const fmtK = (n) => (n > 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`);
@@ -353,7 +376,7 @@ export function openInspector(id) {
   }
   loadDetail();
 }
-function closeInspector() {
+export function closeInspector() {
   $('#inspector').hidden = true;
   app.selected = null;
   app.follow = null;
@@ -414,10 +437,12 @@ function renderInspector(fresh) {
       </div>
       <div class="ibtns">
         <button id="b-follow" class="${app.follow === d.id ? 'on' : ''}">🎥 跟随</button>
+        <button id="b-watch" class="${app.watch.has(d.id) ? 'on' : ''}" title="关注后，TA 有新动向时会提醒你；沉浸模式也会更常拍到 TA">🔔 ${app.watch.has(d.id) ? '已关注' : '关注'}</button>
         ${app.perms.interaction ? '<button id="b-chat">💬 搭话</button><button id="b-whisper">💭 心声</button>' : ''}
       </div>
     </div>`;
   $('#b-follow').onclick = () => { app.follow = app.follow === d.id ? null : d.id; renderInspector(false); };
+  $('#b-watch').onclick = () => { app.toggleWatch(d.id); renderInspector(false); refreshRoster(); };
   if ($('#b-chat')) $('#b-chat').onclick = () => { ui.tab = 'chat'; ui.chatMode = 'visitor'; renderInspector(true); };
   if ($('#b-whisper')) $('#b-whisper').onclick = () => { ui.tab = 'chat'; ui.chatMode = 'whisper'; renderInspector(true); };
   $('#inow').innerHTML = `
@@ -529,7 +554,7 @@ async function sendChat(e) {
 // ---------- 故事面板（P2 / P3）----------
 const PHASE_ICON = { omen: '🔮', breach: '🌀', struggle: '⚔️', climax: '🌕', aftermath: '🌅' };
 const TH_STATUS = { open: ['未展开', 'open'], advanced: ['进行中', 'adv'], resolved: ['已回收', 'done'] };
-function storyModal(tab) {
+export function storyModal(tab) {
   ui.storyTab = tab || ui.storyTab || 'story';
   const card = openModal(`<h2>🎭 小镇的故事</h2>
     <div class="sub">叙事导演根据小镇的「张力」安排伏笔、冲突与喘息；剧情弧在关键时刻交给小镇（和你）来抉择。</div>
@@ -626,7 +651,7 @@ const P_STATUS = {
   building: ['🚧 施工中', 'build'], applied: ['✅ 已落地', 'ok'], rejected: ['❌ 已驳回', 'no'], failed: ['⚠️ 未能实施', 'no'], expired: ['⌛ 已作废', 'no'],
 };
 const P_LEVEL = { micro: '微调', minor: '小改', major: '大改' };
-function buildModal(tab) {
+export function buildModal(tab) {
   ui.buildTab = tab || ui.buildTab || 'list';
   const tabs = [['list', '🛠 提案'], ['history', '📜 编年史'], ...(app.perms.admin ? [['gaps', '🧩 AI 心愿单'], ['rollback', '⏳ 时间线'], ['regions', '🌗 区域']] : [])];
   const card = openModal(`<h2>🛠 小镇建设</h2>
@@ -774,7 +799,7 @@ function creatureFace(id) {
 }
 
 // ---------- 弹窗 ----------
-function openModal(html, cls = '') {
+export function openModal(html, cls = '') {
   const card = $('#modal-card');
   card.className = `modal-card ${cls}`;
   card.innerHTML = `<button class="modal-x" id="modal-x">✕</button>${html}`;
@@ -782,7 +807,7 @@ function openModal(html, cls = '') {
   $('#modal-x').onclick = closeModal;
   return card;
 }
-function closeModal() { $('#modal').hidden = true; $('#modal-card').innerHTML = ''; ui.storyOpen = false; ui.buildOpen = false; }
+export function closeModal() { $('#modal').hidden = true; $('#modal-card').innerHTML = ''; ui.storyOpen = false; ui.buildOpen = false; }
 
 const PRESETS = [
   '🎆 今晚八点，中央广场将举办一场神秘的烟花表演！',
@@ -794,7 +819,7 @@ const PRESETS = [
   '🎤 萤火节音乐会招募表演者，报名处设在星光咖啡馆。',
   '🐱 孙婆婆的猫走丢了，最后有人在樱花公园见过它。',
 ];
-function eventModal() {
+export function eventModal() {
   const opts = ['<option value="all">📢 全镇公告（所有人都会知道）</option>', ...Object.values(app.meta).map((a) => `<option value="${a.id}">✨ 只让 ${esc(a.name)} 知道（看消息如何传开）</option>`)].join('');
   const card = openModal(`
     <h2>📢 发布小镇事件</h2>
@@ -824,7 +849,7 @@ function eventModal() {
   };
 }
 
-async function newsModal(idx) {
+export async function newsModal(idx) {
   const papers = app.newspapers;
   if (!papers.length) {
     const card = openModal(`<div class="paper"><div class="masthead"><h1>云溪日报</h1></div><div class="paper-empty">
@@ -866,7 +891,7 @@ async function publishNow(e) {
   }
 }
 
-async function graphModal() {
+export async function graphModal() {
   const card = openModal(`<h2>🕸️ 关系网络</h2><div class="sub">箭头表示“谁对谁”的好感，颜色越绿越亲近、越红越疏远；悬停头像查看细节，点击头像查看居民。</div>
     <canvas id="graph"></canvas>
     <div class="legend"><span><i style="background:#7ddc8a"></i>亲近</span><span><i style="background:#8a8aa0"></i>普通</span><span><i style="background:#ff7a7a"></i>疏远</span></div>
@@ -950,28 +975,42 @@ async function graphModal() {
   cv.addEventListener('click', (e) => { const id = hitNode(e); if (id) { closeModal(); app.select(id); } });
 }
 
-function helpModal() {
+export function helpModal() {
+  const adm = app.perms.admin;
+  const k = (x) => x.split(' ').map((y) => (y === '/' ? '/' : `<kbd>${y}</kbd>`)).join(' ');
+  const rows = [
+    ['WASD / 方向键', '平移镜头', '—', '走路'],
+    ['拖拽 / 滚轮', '平移 / 缩放', '—', '平移 / 缩放'],
+    ['点击', '查看居民', '显示控制条', '走过去 / 和居民聊天'],
+    ['空格', adm ? '暂停' : '—', '锁定镜头', '—'],
+    ['Tab', '切换居民', '下一个镜头', '切换附近的人'],
+    ['E', '—', '—', '和最近的人聊天'],
+    ['F', '跟随选中的居民', '—', '镜头回到自己'],
+    ['I / G', '进入沉浸 / 游戏', '退出', '—'],
+    ['Ctrl+K', '搜索与跳转', '—', '搜索与跳转'],
+    ['Esc', '关闭面板', '退出沉浸', '结束对话 / 退出游戏'],
+  ];
   openModal(`<h2>🌸 欢迎来到云溪镇</h2>
-  <div class="sub">一座由大语言模型驱动的生成式智能体小镇。8 位居民各有性格、记忆、秘密和目标，他们会自己规划一天、相遇交谈、传播消息、反思成长。</div>
-  <ul>
-    <li>🗓️ <b>自主规划</b>：每天清晨，每位居民根据人设、昨天的日记和记忆制定日程。</li>
-    <li>💬 <b>自然交谈</b>：居民相遇时会根据彼此的关系与记忆展开对话，达成约定后会真的赴约。</li>
-    <li>🧠 <b>记忆与反思</b>：每段经历都写入记忆流，按时近性、重要性、相关性检索；积累够了会产生更深的领悟。</li>
-    <li>📖 <b>日记与日报</b>：每晚居民写日记，《云溪日报》为全镇出一期报纸。</li>
-    <li>🏮 <b>主线</b>：周六（第 4 天）晚上是萤火节——音乐会、热气球、匿名信、镜湖传说……结局由他们自己书写。</li>
-  </ul>
-  <b>你可以：</b>
-  <ul>
-    <li>点击居民查看 TA 的日程、记忆、关系与日记；<b>💬 以旅人身份搭话</b>或<b>💭 化作心声</b>，悄悄影响 TA。</li>
-    <li>📢 发布小镇事件，看居民如何反应、消息如何在人群中扩散。</li>
-    <li>⛅ 操控天气，🕸️ 查看关系网络，📰 翻阅日报。</li>
-  </ul>
-  <div class="sub" style="margin-top:10px">操作：拖拽平移 · 滚轮缩放 · <kbd>WASD</kbd> 移动 ${app.perms.admin ? '· <kbd>空格</kbd> 暂停 · <kbd>1-4</kbd> 调速 ' : ''}· <kbd>Tab</kbd> 切换居民 · <kbd>F</kbd> 跟随 · <kbd>Esc</kbd> 关闭</div>
-  ${app.perms.publicMode && !app.perms.admin ? `<div class="sub" style="margin-top:10px">🌿 你正以访客身份参观：可以搭话、发布事件和改变天气（有频率限制，内容会经过审核）；时间流速由小镇管理员掌管。</div>` : ''}
-  ${app.perms.needToken ? `<details class="admin-box"><summary>🔐 管理员</summary>
-    <form id="admin-form" class="chatin" style="margin-top:8px">${app.perms.admin ? '<span class="quota" style="flex:1">已登录为管理员</span><button class="ghost" type="button" id="admin-out">退出</button>' : '<input id="admin-token" type="password" autocomplete="current-password" placeholder="管理员令牌"><button class="send">登录</button>'}</form></details>` : ''}
-  <div class="row" style="justify-content:space-between">${app.perms.admin ? '<button class="ghost" id="help-reset">🔄 重置小镇</button>' : '<span></span>'}<button class="primary" id="help-ok">开始观察 ✨</button></div>`, 'help');
+  <div class="sub">一座由大语言模型驱动的生成式智能体小镇。居民们各有性格、记忆、秘密和目标，他们会自己规划一天、相遇交谈、传播消息、反思成长。</div>
+  <div class="help-modes">
+    <button data-go="observe"><b>🔭 观察模式</b><small>点击居民查看日程、记忆、关系与日记；发布事件、改变天气、翻阅日报。</small></button>
+    <button data-go="immerse"><b>🎬 沉浸模式</b><small>隐藏界面，镜头自动去有故事的地方，对白变成字幕。适合挂着慢慢看。</small></button>
+    ${app.perms.interaction ? '<button data-go="play"><b>🎮 游戏模式</b><small>以旅人的身份走进小镇，走到居民身边和 TA 聊天——TA 会记住你。</small></button>' : ''}
+  </div>
+  <table class="keys"><thead><tr><th></th><th>🔭 观察</th><th>🎬 沉浸</th><th>🎮 游戏</th></tr></thead>
+  <tbody>${rows.map(([key, ...c]) => `<tr><td>${k(key)}</td>${c.map((x) => `<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table>
+  ${adm ? '<div class="sub" style="margin-top:8px">管理员：<kbd>1-4</kbd> 调速。</div>' : ''}
+  ${app.perms.publicMode && !adm ? `<div class="sub" style="margin-top:10px">🌿 你正以访客身份参观：可以搭话、发布事件和改变天气（有频率限制，内容会经过审核）；时间流速由小镇管理员掌管。</div>` : ''}
+  <div class="row" style="justify-content:flex-end"><button class="primary" id="help-ok">开始 ✨</button></div>`, 'help');
   $('#help-ok').onclick = closeModal;
+  $$('.help-modes [data-go]').forEach((b) => b.addEventListener('click', () => { closeModal(); app.setMode(b.dataset.go); }));
+}
+
+export function adminModal() {
+  openModal(`<h2>🔐 管理</h2>
+  <div class="sub">${app.perms.admin ? '已登录为管理员：可以调速、暂停、立即出版号外和重置小镇。' : '输入管理员令牌后，可以调速、暂停、立即出版号外和重置小镇。'}</div>
+  <form id="admin-form" class="chatin">${app.perms.admin ? '<span class="quota" style="flex:1">已登录为管理员</span><button class="ghost" type="button" id="admin-out">退出登录</button>' : '<input id="admin-token" type="password" autocomplete="current-password" placeholder="管理员令牌"><button class="send">登录</button>'}</form>
+  ${app.perms.admin ? '<div class="row"><button class="ghost" id="help-reset">🔄 重置小镇</button></div>' : ''}`, 'help');
   $('#admin-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     app.storage.set('town-admin', $('#admin-token').value.trim());

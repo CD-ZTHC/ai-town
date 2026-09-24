@@ -218,6 +218,9 @@ test('访客化身：现身、限制、走动、被居民看见、聊天时记�
   assert.equal(v.name, '小满b');
   assert.throws(() => av.join('v2', '2.2.2.2', { name: '小满b' }), /已经有人用了/);
   // 同一个 IP 换个访客 ID 再现身，只保留一个化身
+  // 同一个 IP 换了浏览器，可以沿用自己原来的名字（旧化身会被替换）
+  av.join('v8', '1.1.1.1', { name: '小满b' });
+  assert.equal(av.list.length, 1);
   av.join('v9', '1.1.1.1', { name: '阿九' });
   assert.equal(av.list.length, 1);
   assert.equal(av.mine('v9').name, '阿九');

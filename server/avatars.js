@@ -24,7 +24,7 @@ export class AvatarSystem {
     const town = this.town;
     name = String(name ?? '').replace(/[\s<>{}[\]"'`\\]/g, '').slice(0, 8);
     if (name.length < 1) throw err(400, '起个名字吧');
-    if (town.agents.some((a) => a.name === name) || this.list.some((v) => v.name === name && v.vid !== vid)) throw err(409, '这个名字已经有人用了');
+    if (town.agents.some((a) => a.name === name) || this.list.some((v) => v.name === name && v.vid !== vid && v.ip !== ip)) throw err(409, '这个名字已经有人用了');
     const old = this.mine(vid) || this.list.find((v) => v.ip === ip);
     if (old) this.remove(old, false);
     if (this.list.length >= MAX) throw err(429, `小镇里的访客已经满了（最多 ${MAX} 位），稍后再来吧`);

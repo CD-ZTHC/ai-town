@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Noto+Serif+SC:wght@500;700;900&family=Ma+Shan+Zheng&display=swap" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="modes.css" />
 </head>
 <body>
   <canvas id="world"></canvas>
@@ -22,12 +23,9 @@
   </div>
 
   <header id="topbar" data-safe="t">
-    <div class="brand">
+    <div class="brand" title="云溪镇 · Generative Agents">
       <span class="brand-icon">🌸</span>
-      <div>
-        <div class="brand-name">云溪镇</div>
-        <div class="brand-sub">Generative Agents · AI Town</div>
-      </div>
+      <span class="brand-name">云溪镇</span>
     </div>
     <div class="clock">
       <div class="clock-sky" id="clock-sky">☀️</div>
@@ -37,55 +35,36 @@
       </div>
       <div class="clock-arc"><i id="clock-progress"></i></div>
     </div>
-    <div class="chip festival" id="festival-chip">🏮 萤火节</div>
-    <button class="chip story" id="story-chip" title="叙事导演、剧情弧、抉择与图鉴">🎭 故事</button>
-    <button class="chip region" id="region-chip" hidden title="在小镇与异界之间切换视角">🌗 去暗月界看看</button>
-    <div class="chip mode" id="mode-chip" hidden title="时间流速由小镇管理员掌管">🌿 访客模式</div>
-    <div class="seg" id="speed" hidden>
-      <button data-speed="0" title="暂停 (空格)">⏸</button>
-      <button data-speed="1" class="on">1×</button>
-      <button data-speed="3">3×</button>
-      <button data-speed="8">8×</button>
-      <button data-speed="20">20×</button>
+    <div class="chips">
+      <button class="chip story" id="story-chip" title="叙事导演、剧情弧、抉择与图鉴">🎭 故事</button>
+      <div class="chip festival" id="festival-chip">🏮 萤火节</div>
+      <button class="chip region" id="region-chip" hidden title="在小镇与异界之间切换视角">🌗 去暗月界看看</button>
+      <div class="chip mode" id="mode-chip" hidden title="时间流速由小镇管理员掌管">🌿 访客模式</div>
     </div>
-    <div class="actions">
-      <button class="btn" id="btn-weather" title="天气">⛅<span>天气</span></button>
-      <button class="btn" id="btn-event" title="发布小镇事件">📢<span>事件</span></button>
-      <button class="btn" id="btn-news" title="云溪日报">📰<span>日报</span></button>
-      <button class="btn" id="btn-graph" title="关系网络">🕸️<span>关系</span></button>
-      <button class="btn" id="btn-avatar" title="以旅人的身份在小镇里现身">👣<span>现身</span></button>
-      <button class="btn" id="btn-build" title="建设提案与世界编年史">🛠<span>建设</span></button>
-      <button class="btn icon" id="btn-sound" title="环境音">🔇</button>
-      <button class="btn icon" id="btn-help" title="说明">❔</button>
+    <div class="top-right">
+      <button class="brain-btn" id="brain-btn" title="AI 大脑：模型状态与用量"><span class="brain-dot" id="brain-dot"></span><b id="brain-q"></b></button>
+      <div class="seg" id="speed" hidden>
+        <button data-speed="0" title="暂停 (空格)">⏸</button>
+        <button data-speed="1" class="on">1×</button>
+        <button data-speed="3">3×</button>
+        <button data-speed="8">8×</button>
+        <button data-speed="20">20×</button>
+      </div>
+      <button class="btn icon" id="btn-more" title="更多">⋯</button>
     </div>
   </header>
 
+  <div id="more-menu" class="popover menu" hidden>
+    <button data-cmd="palette">🔍 搜索与跳转 <kbd>Ctrl K</kbd></button>
+    <button data-cmd="sound" id="more-sound">🔇 环境音：关</button>
+    <button data-cmd="minimap" id="more-minimap">🗺 小地图</button>
+    <button data-cmd="help">❔ 说明与快捷键</button>
+    <button data-cmd="admin" id="more-admin">🔐 管理</button>
+  </div>
   <div id="weather-menu" class="popover" hidden></div>
 
-  <aside id="roster" data-safe="l"></aside>
-
-  <aside id="inspector" data-safe="r" hidden>
-    <button class="close" id="insp-close">✕</button>
-    <div id="insp-body"></div>
-  </aside>
-
-  <section id="feed" class="panel">
-    <div class="feed-head">
-      <div class="tabs" id="feed-tabs">
-        <button data-f="all" class="on">全部</button>
-        <button data-f="convo">💬 对话</button>
-        <button data-f="event">✨ 动态</button>
-        <button data-f="thought">💭 心声</button>
-        <button data-f="story">🌀 剧情</button>
-      </div>
-      <button class="mini-btn" id="feed-toggle" title="折叠">▾</button>
-    </div>
-    <div class="feed-list" id="feed-list"></div>
-  </section>
-
-  <section id="brain" class="panel">
+  <section id="brain" class="popover" hidden>
     <div class="brain-head">
-      <span class="brain-dot" id="brain-dot"></span>
       <b>AI 大脑</b>
       <span class="brain-model" id="brain-model">—</span>
     </div>
@@ -93,8 +72,105 @@
     <div class="brain-active" id="brain-active"></div>
   </section>
 
+  <aside id="roster" data-safe="l"></aside>
+
+  <aside id="inspector" class="sheet" data-safe="r" hidden>
+    <button class="sheet-handle" data-sheet="inspector" aria-label="展开或收起"></button>
+    <button class="close" id="insp-close" aria-label="关闭">✕</button>
+    <div id="insp-body"></div>
+  </aside>
+
+  <section id="feed" class="panel sheet collapsed">
+    <div class="feed-head">
+      <button class="feed-latest" id="feed-latest" title="展开动态"></button>
+      <div class="tabs" id="feed-tabs">
+        <button data-f="all" class="on">全部</button>
+        <button data-f="convo">💬 对话</button>
+        <button data-f="event">✨ 动态</button>
+        <button data-f="thought">💭 心声</button>
+        <button data-f="story">🌀 剧情</button>
+        <button data-f="watch" title="只看关注的居民">🔔</button>
+      </div>
+      <button class="mini-btn" id="feed-toggle" title="展开 / 折叠">▴</button>
+    </div>
+    <div class="feed-list" id="feed-list"></div>
+  </section>
+
   <div id="minimap-wrap" class="panel">
     <canvas id="minimap"></canvas>
+  </div>
+
+  <nav id="dock" data-safe="b" aria-label="模式与工具">
+    <div class="dock-modes" role="tablist">
+      <button data-mode="observe" title="观察模式">🔭<span>观察</span></button>
+      <button data-mode="immerse" title="沉浸模式 (I)">🎬<span>沉浸</span></button>
+      <button data-mode="play" id="dock-play" title="游戏模式 (G)">🎮<span>游戏</span></button>
+    </div>
+    <i class="dock-sep"></i>
+    <div class="dock-tools">
+      <button id="btn-weather" title="天气">⛅<span>天气</span></button>
+      <button id="btn-event" title="发布小镇事件">📢<span>事件</span></button>
+      <button id="btn-news" title="云溪日报">📰<span>日报</span></button>
+      <button id="btn-graph" title="关系网络">🕸️<span>关系</span></button>
+      <button id="btn-build" title="建设提案与世界编年史">🛠<span>建设</span></button>
+    </div>
+  </nav>
+
+  <!-- 沉浸模式 -->
+  <div id="immerse" hidden>
+    <div class="letterbox top"></div>
+    <div class="letterbox bottom"></div>
+    <div class="im-status" id="im-status"><span id="im-clock"></span><span id="im-where"></span></div>
+    <div class="subtitles" id="subtitles" aria-live="polite"></div>
+    <div class="chapter" id="chapter" hidden></div>
+    <div class="im-bar" id="im-bar">
+      <button data-im="prev" title="上一个镜头 (←)">⏮</button>
+      <button data-im="lock" title="锁定当前镜头 (空格)">⏸</button>
+      <button data-im="next" title="下一个镜头 (→ / Tab)">⏭</button>
+      <i class="dock-sep"></i>
+      <button data-im="sound" title="环境音">🔇</button>
+      <button data-im="subs" title="字幕">字幕</button>
+      <button data-im="bars" title="电影黑边">黑边</button>
+      <button data-im="full" title="全屏">⛶</button>
+      <i class="dock-sep"></i>
+      <button data-im="exit" title="退出沉浸 (Esc)">✕ 退出</button>
+    </div>
+  </div>
+  <div id="fade"></div>
+
+  <!-- 游戏模式 -->
+  <div id="play" hidden>
+    <div class="play-top">
+      <div class="play-me" id="play-me"></div>
+      <div class="play-clock" id="play-clock"></div>
+      <div class="play-btns">
+        <button id="play-go" title="快速前往某个地点">🧭</button>
+        <button id="play-center" title="镜头回到自己 (F)">🎯</button>
+        <button id="play-sound" title="环境音">🔇</button>
+        <button id="play-exit" title="退出游戏模式 (Esc)">✕</button>
+      </div>
+    </div>
+    <div class="play-near" id="play-near"></div>
+    <div class="play-ear" id="play-ear" hidden></div>
+    <div class="joystick" id="joystick" hidden><i></i></div>
+    <button class="talk-btn" id="talk-btn" hidden>💬</button>
+    <section class="dialog" id="dialog" hidden>
+      <div class="dlg-head" id="dlg-head"></div>
+      <div class="dlg-log" id="dlg-log"></div>
+      <form class="dlg-in" id="dlg-form">
+        <button type="button" class="dlg-mode" id="dlg-mode" title="切换：以旅人身份说话 / 化作心声">🧳</button>
+        <input id="dlg-input" maxlength="200" autocomplete="off" placeholder="说点什么……">
+        <button class="send">发送 ⏎</button>
+      </form>
+      <div class="quota" id="dlg-quota"></div>
+    </section>
+  </div>
+
+  <div id="palette" hidden>
+    <div class="pal-card">
+      <input id="pal-input" placeholder="搜索居民、地点或功能……" autocomplete="off">
+      <div class="pal-list" id="pal-list"></div>
+    </div>
   </div>
 
   <div id="tooltip" hidden></div>
