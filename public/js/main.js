@@ -282,6 +282,23 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 
+// 画布上的气泡等叠加层要避开的界面区域（顶栏、名册、检查器）
+const visible = (el) => el && !el.hidden && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+function safeInsets() {
+  const s = { l: 8, t: 8, r: 8, b: 8 };
+  for (const el of document.querySelectorAll('[data-safe]')) {
+    if (!visible(el)) continue;
+    const r = el.getBoundingClientRect(), gap = 8;
+    if (r.width === 0 || r.height === 0) continue;
+    const side = el.dataset.safe;
+    if (side === 't') s.t = Math.max(s.t, r.bottom + gap);
+    if (side === 'b') s.b = Math.max(s.b, innerHeight - r.top + gap);
+    if (side === 'l') s.l = Math.max(s.l, r.right + gap);
+    if (side === 'r') s.r = Math.max(s.r, innerWidth - r.left + gap);
+  }
+  return s;
+}
+
 // ---------- 主循环 ----------
 let last = performance.now();
 function loop(now) {
@@ -359,6 +376,7 @@ function loop(now) {
       selected: app.selected, hover: app.hover, boardCount: app.board.length,
       festival: app.view === 'town' && (app.forceFestival || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns')),
     };
+    if (now - (app.safeT || 0) > 300) { app.safeT = now; renderer.safe = safeInsets(); }
     renderer.frame(S, dt);
     UI.frame(S, dt);
     Sound.update(S);

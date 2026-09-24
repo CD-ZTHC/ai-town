@@ -1490,7 +1490,7 @@ export class Renderer {
           ctx.fillStyle = '#a78bfa'; ctx.beginPath(); ctx.arc(x + 4, y + 4, 7, 0, 7); ctx.fill();
           ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif'; ctx.fillText('✦', x + 4, y + 4.5);
         }
-        if (a.bubble) bubbles.push({ a, x: x + size / 2, y: y - 6 });
+        if (a.bubble) bubbles.push({ a, x: x + size / 2, y: y - 6, below: y + size + 8 });
         x += size + gap;
       }
     }
@@ -1523,7 +1523,7 @@ export class Renderer {
         ctx.textAlign = 'center';
         ctx.fillText(a.emoji || '🙂', x, by + 1);
       }
-      if (a.bubble) bubbles.push({ a, x, y: headY - (a.thinking ? 34 : 4) });
+      if (a.bubble) bubbles.push({ a, x, y: headY - (a.thinking ? 34 : 4), below: fy + 24 });
     }
 
     // 对话连线
@@ -1563,7 +1563,7 @@ export class Renderer {
     }
   }
 
-  drawBubble(ctx, { a, x, y }, placed, now, S) {
+  drawBubble(ctx, { a, x, y, below }, placed, now, S) {
     const b = a.bubble;
     if (!this.bubbleSeen.has(b.id)) this.bubbleSeen.set(b.id, now);
     const age = (now - this.bubbleSeen.get(b.id)) / 1000;
@@ -1584,12 +1584,19 @@ export class Renderer {
     const w = Math.max(dots ? 44 : 30, Math.min(maxW, Math.max(...full.map((l) => ctx.measureText(l).width)))) + 20;
     const lh = 18;
     const h = full.length * lh + 12;
-    let bx = x - w / 2, by = y - h - 12;
+    // 放在头顶；贴近屏幕边缘或被界面挡住时，水平方向夹紧到安全区，头顶放不下就翻到脚下
+    const sf = this.safe || { l: 8, t: 8, r: 8, b: 8 };
+    const minX = sf.l, maxX = Math.max(minX, this.vw - sf.r - w);
+    let bx = Math.max(minX, Math.min(maxX, x - w / 2));
+    let flip = y - h - 12 < sf.t && below != null;
+    let by = flip ? below + 12 : y - h - 12;
     for (let i = 0; i < 8; i++) {
       const hit = placed.find((p) => bx < p.x + p.w && bx + w > p.x && by < p.y + p.h && by + h > p.y);
       if (!hit) break;
-      by = hit.y - h - 4;
+      by = flip ? hit.y + hit.h + 4 : hit.y - h - 4;
+      if (!flip && by < sf.t && below != null) { flip = true; by = below + 12; }
     }
+    by = Math.max(sf.t, Math.min(this.vh - sf.b - h, by));
     placed.push({ x: bx, y: by, w, h });
     const pop = Math.min(1, age * 6);
     ctx.save();
@@ -1603,14 +1610,17 @@ export class Renderer {
     ctx.shadowColor = 'transparent';
     ctx.stroke();
     // 尾巴
+    const tx = Math.max(bx + 12, Math.min(bx + w - 12, x));
     if (think) {
-      ctx.beginPath(); ctx.arc(x - 2, by + h + 5, 4, 0, 7); ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.arc(x + 1, y - 4, 2.5, 0, 7); ctx.fill(); ctx.stroke();
+      const ey = flip ? by - 5 : by + h + 5;
+      ctx.beginPath(); ctx.arc(tx - 2, ey, 4, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc((tx + x) / 2 + 1, flip ? ey - 7 : ey + 7, 2.5, 0, 7); ctx.fill(); ctx.stroke();
     } else {
-      const tx = Math.max(bx + 12, Math.min(bx + w - 12, x));
-      ctx.beginPath(); ctx.moveTo(tx - 6, by + h - 1); ctx.lineTo(x, y - 4); ctx.lineTo(tx + 6, by + h - 1); ctx.closePath();
+      // 尾巴指向说话的人（翻到脚下时朝上）
+      const ey = flip ? by + 1 : by + h - 1, ty = flip ? below - 6 : y - 4;
+      ctx.beginPath(); ctx.moveTo(tx - 6, ey); ctx.lineTo(x, ty); ctx.lineTo(tx + 6, ey); ctx.closePath();
       ctx.fillStyle = '#fffdf7'; ctx.fill();
-      ctx.beginPath(); ctx.moveTo(tx - 6, by + h); ctx.lineTo(x, y - 4); ctx.lineTo(tx + 6, by + h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(tx - 6, flip ? by : by + h); ctx.lineTo(x, ty); ctx.lineTo(tx + 6, flip ? by : by + h); ctx.stroke();
     }
     ctx.fillStyle = think ? '#5b4a8a' : '#2d2418';
     ctx.textAlign = 'left';
