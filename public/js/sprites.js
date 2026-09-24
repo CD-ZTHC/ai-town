@@ -57,6 +57,12 @@ function drawBody(ctx, look, dir, frame) {
     px(8 + sw, 13, 2, 5, topS); px(8 + sw, 18, 2, 1, skin);
   }
 
+  // ---- 旗袍：长裙盖住腿，只露出鞋 ----
+  if (acc.has('qipao')) {
+    if (!side) { px(5, 12, 8, 10, shirt); px(5, 20, 8, 2, shirtS); px(7, 12, 4, 1, shade(shirt, 0.3)); px(8, 13, 1, 4, shade(shirt, 0.3)); }
+    else { px(6, 12, 6, 10, shirt); px(6, 20, 6, 2, shirtS); }
+  }
+
   // ---- 头 ----
   px(4, 3, 10, 9, skin);
   px(3, 4, 1, 7, skin); px(14, 4, 1, 7, skin);
@@ -89,6 +95,7 @@ function drawBody(ctx, look, dir, frame) {
     if (style === 'bun') { px(7, -1, 4, 3, hair); px(8, -1, 2, 1, hairH); }
     if (style === 'spiky') { px(4, 0, 2, 1, hair); px(8, -1, 2, 2, hair); px(12, 0, 2, 1, hair); }
     if (style === 'messy') { px(5, 0, 2, 1, hair); px(10, 0, 2, 1, hair); }
+    if (style === 'braid') { px(8, 11, 2, 9, hair); px(8, 13, 2, 1, hairS); px(8, 16, 2, 1, hairS); px(8, 20, 2, 1, '#c0392b'); }
   } else {
     if (style === 'buzz') {
       px(4, 2, 10, 2, hair); px(3, 3, 1, 2, hair); px(14, 3, 1, 2, hair);
@@ -100,6 +107,7 @@ function drawBody(ctx, look, dir, frame) {
         if (style === 'messy') { px(6, 4, 2, 2, hair); px(4, 0, 2, 1, hair); px(9, 0, 2, 1, hair); px(12, 1, 2, 1, hair); }
         if (style === 'spiky') { px(4, 0, 2, 1, hair); px(7, -1, 2, 2, hair); px(10, 0, 2, 1, hair); px(12, 0, 2, 2, hair); px(8, 4, 3, 1, hair); }
         if (style === 'bun') { px(7, -1, 4, 3, hair); px(8, -1, 2, 1, hairH); }
+        if (style === 'braid') { px(3, 4, 2, 7, hair); px(13, 4, 2, 5, hair); px(13, 9, 2, 1, '#c0392b'); }
       } else {
         const back = dir === 'right' ? 3 : 10;
         px(back, 3, 5, 6, hair);
@@ -108,6 +116,7 @@ function drawBody(ctx, look, dir, frame) {
         if (style === 'bun') px(dir === 'right' ? 3 : 11, 0, 4, 3, hair);
         if (style === 'spiky') { px(5, -1, 2, 2, hair); px(9, 0, 2, 1, hair); px(dir === 'right' ? 3 : 13, 1, 2, 2, hair); }
         if (style === 'messy') { px(6, 0, 2, 1, hair); px(10, 0, 2, 1, hair); }
+        if (style === 'braid') { const bx = dir === 'right' ? 3 : 13; px(bx, 9, 2, 8, hair); px(bx, 12, 2, 1, hairS); px(bx, 17, 2, 1, '#c0392b'); }
       }
     }
   }
@@ -129,6 +138,7 @@ function drawBody(ctx, look, dir, frame) {
     if (dir === 'right') px(12, 3, 5, 1, '#a52f29');
     if (dir === 'left') px(1, 3, 5, 1, '#a52f29');
   }
+  if (acc.has('hairpin')) { px(12, 1, 3, 1, '#e0b64a'); px(14, 0, 1, 1, '#ff8fab'); }
   if (acc.has('earring') && dir !== 'up') {
     if (dir !== 'right') px(3, 10, 1, 1, '#ffd34d');
     if (dir !== 'left') px(14, 10, 1, 1, '#ffd34d');
@@ -153,16 +163,67 @@ function outline(canvas) {
   ctx.putImageData(img, 0, 0);
 }
 
+// ---------- 异界生物：同样画在 20×27 的像素格里，沿用描边与动画管线 ----------
+function drawCreature(ctx, look, dir, frame) {
+  const px = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x + 1, y + 1, w, h); };
+  const body = look.body || '#3a2f6b', glow = look.glow || '#8f7bff', eyes = look.eyes || '#f5e663';
+  const dark = shade(body, -0.3), light = shade(body, 0.25);
+  const side = dir === 'left' || dir === 'right';
+  if (look.bodyPlan === 'wisp') {
+    // 漂浮的影子：圆顶身体 + 摆动的烟尾
+    const bob = frame === 1 ? -1 : frame === 2 ? 1 : 0;
+    px(5, 6 + bob, 8, 2, light); px(4, 8 + bob, 10, 8, body); px(3, 10 + bob, 12, 5, body);
+    px(5, 7 + bob, 3, 2, shade(glow, 0.2));
+    const tail = frame === 1 ? [4, 7, 10] : frame === 2 ? [5, 8, 11] : [4, 8, 12];
+    for (const [i, x] of tail.entries()) px(x, 16 + bob, 2, 3 + (i % 2), dark);
+    px(6, 19 + bob, 6, 1, 'rgba(143,123,255,0.5)');
+    if (dir !== 'up') {
+      const ex = dir === 'right' ? [9, 12] : dir === 'left' ? [4, 7] : [6, 10];
+      px(ex[0], 10 + bob, 2, 2, eyes); px(ex[1], 10 + bob, 2, 2, eyes);
+    }
+    return;
+  }
+  if (look.bodyPlan === 'hound') {
+    // 四足影犬：横向身体、竖耳、会跑动的腿
+    const legA = frame === 1 ? 1 : 0, legB = frame === 2 ? 1 : 0;
+    if (side) {
+      px(3, 13, 11, 6, body); px(3, 12, 9, 1, light);
+      px(11, 9, 6, 6, body); px(12, 7, 2, 2, dark); px(15, 7, 2, 2, dark); px(16, 12, 2, 2, dark);
+      px(15, 10, 1, 1, eyes);
+      px(0, 11, 3, 2, dark); px(1, 10, 2, 1, glow);
+      px(4, 19, 2, 4 - legA, dark); px(7, 19, 2, 4 - legB, dark); px(10, 19, 2, 4 - legA, dark); px(12, 19, 2, 4 - legB, dark);
+    } else {
+      px(5, 12, 8, 8, body); px(4, 7, 10, 6, body); px(4, 5, 2, 2, dark); px(12, 5, 2, 2, dark);
+      if (dir === 'down') { px(6, 9, 2, 1, eyes); px(10, 9, 2, 1, eyes); px(8, 11, 2, 1, dark); }
+      px(5, 20, 2, 3 - legA, dark); px(11, 20, 2, 3 - legB, dark);
+      px(6, 13, 6, 1, light);
+    }
+    return;
+  }
+  // warden：高大的长袍身影，头顶一弯新月
+  const sway = frame === 1 ? 1 : frame === 2 ? -1 : 0;
+  px(3, 8, 12, 16, body); px(2, 14, 14, 10, body); px(2 + sway, 22, 14, 2, dark);
+  px(4, 3, 10, 7, dark); px(5, 2, 8, 1, dark);
+  px(7, 0, 4, 1, glow); px(6, -1, 2, 1, glow); px(10, -1, 2, 1, glow);
+  px(8, 10, 2, 13, light);
+  if (dir !== 'up') {
+    const ex = dir === 'right' ? [9, 12] : dir === 'left' ? [4, 7] : [6, 10];
+    px(ex[0], 6, 2, 1, eyes); px(ex[1], 6, 2, 1, eyes);
+  }
+  px(15, 9, 1, 15, shade(glow, -0.2)); px(14, 7, 3, 2, glow);
+}
+
 // 返回 { down:[c0,c1,c2], up:[...], left:[...], right:[...] }
 export function buildSprites(look) {
   const res = {};
+  const draw = look.bodyPlan ? drawCreature : drawBody;
   for (const dir of ['down', 'up', 'right']) {
     res[dir] = [0, 1, 2].map((f) => {
       const c = document.createElement('canvas');
       c.width = SPR_W; c.height = SPR_H;
       const ctx = c.getContext('2d');
       ctx.translate(0, 1);
-      drawBody(ctx, look, dir, f);
+      draw(ctx, look, dir, f);
       outline(c);
       return c;
     });

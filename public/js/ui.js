@@ -4,7 +4,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtTime = (t) => { const m = Math.floor(t % 1440); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
-const WEEK = ['周三', '周四', '周五', '周六', '周日', '周一', '周二'];
+const weekday = (day) => { const w = app.spec?.calendar.weekdays || []; return w.length ? w[(day - 1) % w.length] : ''; };
 const face = (id) => app.meta[id]?.portrait || '';
 const name = (id) => app.meta[id]?.name || id;
 
@@ -25,6 +25,7 @@ export function init(a, first) {
   $('#btn-news').addEventListener('click', () => newsModal());
   $('#btn-graph').addEventListener('click', graphModal);
   $('#btn-help').addEventListener('click', helpModal);
+  $('#story-chip').addEventListener('click', () => storyModal());
   $('#btn-sound').addEventListener('click', (e) => { e.currentTarget.textContent = app.sound.toggle() ? '🔊' : '🔇'; });
   $('#festival-chip').addEventListener('click', () => {
     app.forceFestival = !app.forceFestival;
@@ -53,14 +54,30 @@ export function init(a, first) {
 export function frame(S) {
   const m = S.t % 1440, h = m / 60;
   $('#clock-time').textContent = fmtTime(S.t);
-  $('#clock-date').textContent = `第${S.day}天 · ${WEEK[(S.day - 1) % 7]} · ${app.weathers[S.weather].emoji} ${app.weathers[S.weather].name}`;
-  $('#clock-sky').textContent = h < 5 || h >= 20 ? '🌙' : h < 7 ? '🌅' : h >= 17 ? '🌇' : app.weathers[S.weather].emoji;
+  const w = app.weathers[S.weatherId] || { emoji: '', name: S.weatherId };
+  $('#clock-date').textContent = `第${S.day}天 · ${weekday(S.day)} · ${w.emoji} ${w.name}`;
+  $('#clock-sky').textContent = h < 5 || h >= 20 ? '🌙' : h < 7 ? '🌅' : h >= 17 ? '🌇' : w.emoji;
   $('#clock-progress').style.width = `${(m / 1440) * 100}%`;
   $('#clock-date').textContent += app.snap.nightSkip ? ' · 🌙 夜深了，时间加速中' : '';
+  // 顶栏节日标签：显示下一个（或正在进行的）需要倒计时的日历事件
+  // 故事标签：张力 + 剧情阶段；有抉择时闪烁
+  const st = app.snap.story;
+  const sc = $('#story-chip');
+  if (st) {
+    const PH = { omen: '伏笔', breach: '爆发', struggle: '发展', climax: '高潮', aftermath: '余波' };
+    sc.textContent = st.vote ? '🗳️ 抉择进行中！' : `🎭 ${st.tension != null ? `张力 ${st.tension}` : '故事'}${st.arc ? ` · ${PH[st.arc] || st.arc}` : ''}`;
+    sc.classList.toggle('live', Boolean(st.vote));
+  }
   const fc = $('#festival-chip');
-  const d = 4 - S.day;
-  fc.textContent = d > 0 ? `🏮 萤火节 · 还有${d}天` : d === 0 ? (h >= 18 ? '🏮 萤火节进行中！' : '🏮 今晚萤火节！') : '🏮 萤火节已落幕';
-  fc.classList.toggle('live', d === 0 || app.forceFestival);
+  const evs = (app.spec?.calendar.events || []).filter((e) => e.countdown).sort((x, y) => x.day - y.day);
+  const ev = evs.find((e) => e.day >= S.day) || evs[evs.length - 1];
+  if (ev) {
+    const d = ev.day - S.day;
+    const from = Number(String(ev.from).split(':')[0]) || 0;
+    fc.textContent = d > 0 ? `${ev.emoji} ${ev.name} · 还有${d}天` : d === 0 ? (h >= from ? `${ev.emoji} ${ev.name}进行中！` : `${ev.emoji} 今晚${ev.name}！`) : `${ev.emoji} ${ev.name}已落幕`;
+  }
+  fc.hidden = !ev;
+  fc.classList.toggle('live', (ev && ev.day === S.day) || app.forceFestival);
   const sp = app.snap;
   $$('#speed button').forEach((b) => {
     const v = Number(b.dataset.speed);
@@ -101,7 +118,7 @@ export function tooltip(id, x, y) {
   if (!id) { t.hidden = true; return; }
   const a = app.snap.agents.find((q) => q.id === id);
   t.hidden = false;
-  t.innerHTML = `<b>${esc(name(id))}</b> <span style="color:var(--muted)">${esc(app.meta[id].role)}</span><br>${esc(a.emoji)} ${esc(a.action)}${a.thinking ? `<br><span style="color:#c4b5fd">✦ ${esc(a.thinking)}…</span>` : ''}`;
+  t.innerHTML = `<b>${esc(name(id))}</b> <span style="color:var(--muted)">${esc(app.meta[id]?.role || '')}</span><br>${esc(a.emoji)} ${esc(a.action)}${a.thinking ? `<br><span style="color:#c4b5fd">✦ ${esc(a.thinking)}…</span>` : ''}`;
   t.style.left = `${x + 16}px`; t.style.top = `${y + 12}px`;
 }
 
@@ -156,10 +173,19 @@ function weatherMenu(btn) {
 }
 
 // ---------- 动态流 ----------
-const FEED_GROUPS = { convo: ['convo'], thought: ['thought'], event: ['event', 'reflect', 'commit', 'visitor', 'reaction', 'plan', 'news', 'diary'] };
+const STORY_TYPES = ['arc', 'omen', 'thread', 'portal', 'creature', 'encounter', 'mischief', 'arrival', 'depart', 'vote', 'vote_cast', 'scene', 'scene_plan', 'news_spread', 'growth'];
+const FEED_GROUPS = { convo: ['convo', 'scene'], thought: ['thought'], event: ['event', 'reflect', 'commit', 'visitor', 'reaction', 'plan', 'news', 'diary', 'world', 'ability', 'learn', 'gift', 'effect'], story: STORY_TYPES };
 function feedItemHTML(l) {
   const faces = (l.agents || []).slice(0, 4).map((id) => `<img src="${face(id)}" alt="">`).join('');
   const t = fmtTime(l.t);
+  if (l.type === 'scene') {
+    return `<div class="fi convo scene" data-convo="${l.id}">
+      <div class="ft"><span class="faces">${faces}</span>&nbsp; ${t} · ${esc(l.where || '')} · 🎭 ${esc(l.title || '群戏')} · ${(l.lines || []).length} 句</div>
+      <div>${esc(l.text)}</div>
+      ${(l.commitments || []).length ? `<div style="color:var(--sakura);font-size:11.5px;margin-top:3px">📌 ${l.commitments.map(esc).join('；')}</div>` : ''}
+      <div class="lines">${(l.lines || []).map((x) => `<div class="line"><img src="${face(x.speaker)}"><b>${esc(name(x.speaker))}</b><span>${esc(x.text)}</span></div>`).join('')}</div>
+    </div>`;
+  }
   if (l.type === 'convo') {
     return `<div class="fi convo" data-convo="${l.id}">
       <div class="ft"><span class="faces">${faces}</span>&nbsp; ${t} · ${esc(l.where || '')} · 💬 ${(l.lines || []).length} 句</div>
@@ -168,7 +194,7 @@ function feedItemHTML(l) {
       <div class="lines">${(l.lines || []).map((x) => `<div class="line"><img src="${face(x.speaker)}"><b>${esc(name(x.speaker))}</b><span>${esc(x.text)}</span></div>`).join('')}</div>
     </div>`;
   }
-  const icon = { thought: '💭', reflect: '✨', event: '📢', commit: '', visitor: '', reaction: '❗', plan: '🗓️', news: '', diary: '📖', weather: '', system: '' }[l.type] ?? '';
+  const icon = { thought: '💭', reflect: '✨', event: '📢', commit: '', visitor: '', reaction: '❗', plan: '🗓️', news: '', diary: '📖', weather: '', system: '', world: '', ability: '', learn: '', gift: '', effect: '✨', vote_cast: '🗳️', growth: '', scene_plan: '' }[l.type] ?? '';
   const who = (l.agents || []).length === 1 && ['thought', 'reflect', 'reaction', 'plan', 'diary'].includes(l.type)
     ? `<span class="who" data-agent="${l.agents[0]}">${esc(name(l.agents[0]))}</span>${l.type === 'thought' ? '：' : ' '}` : '';
   let text = esc(l.text);
@@ -208,7 +234,24 @@ export function onLog(l) {
   if (l.type === 'commit') toast(esc(l.text));
   if (l.type === 'reflect') toast(`✨ ${esc(l.text)}`, 5000);
   if (l.type === 'weather') toast(esc(l.text), 2500);
+  if (l.type === 'learn' || l.type === 'gift') toast(esc(l.text), 4500);
+  if (['arc', 'vote', 'arrival', 'depart', 'portal'].includes(l.type)) toast(esc(l.text), 6500);
   if (l.agents?.includes(app.selected)) scheduleDetail();
+}
+export function onAgents() {
+  buildRoster();
+  refreshRoster();
+  if (app.selected && !app.meta[app.selected]) closeInspector();
+}
+
+let storyPending = null;
+export function onStory() {
+  if (!ui.storyOpen || storyPending) return;
+  storyPending = setTimeout(() => { storyPending = null; if (ui.storyOpen) renderStory(); }, 600);
+}
+
+export function onWorld(w) {
+  toast(`🌀 ${esc(w.desc || w.op?.op || '')}`, 5000);
 }
 export function onNewspaper(p) {
   app.newspapers.push(p);
@@ -312,8 +355,24 @@ function renderInspector(fresh) {
     <div class="where">📍 ${esc(d.locName)}</div>
     ${d.thought ? `<div class="thought">“${esc(d.thought)}”</div>` : ''}
     <div class="goal"><b>长期目标</b> ${esc(d.goal)}</div>
-    ${d.todayGoal ? `<div class="goal"><b>今日心愿</b> ${esc(d.todayGoal)}</div>` : ''}`;
+    ${d.todayGoal ? `<div class="goal"><b>今日心愿</b> ${esc(d.todayGoal)}</div>` : ''}
+    ${bodyHTML(d)}`;
   renderPane(fresh);
+}
+
+// 体力 / 勇气、状态、物品与能力（P1）
+function bodyHTML(d) {
+  if (!d.body) return '';
+  const bar = (label, v, cls) => `<div class="meter ${cls}"><span>${label}</span><i><b style="width:${Math.max(0, Math.min(100, v))}%"></b></i><em>${v}</em></div>`;
+  const inv = (d.inventory || []).map((x) => `<span class="chip-item" title="${esc(x.name)}">${esc(x.emoji)} ${esc(x.name)}×${x.n}</span>`).join('');
+  const abs = (d.abilities || []).map((x) => `<span class="chip-ab${x.cooldown ? ' cd' : ''}" title="${esc(x.desc)}${x.cooldown ? `（冷却 ${x.cooldown} 分钟）` : ''}">${esc(x.emoji)} ${esc(x.name)}${x.cooldown ? ' ⏳' : ''}</span>`).join('');
+  return `<div class="ibody">
+    ${bar('体力', d.body.stamina, 'st')}${bar('勇气', d.body.courage, 'co')}
+    ${d.body.conditions.length ? `<div class="conds">${d.body.conditions.map((c) => `<span>${esc(c)}</span>`).join('')}</div>` : ''}
+    ${d.researching ? `<div class="goal"><b>研究中</b> ${esc(d.researching)}</div>` : ''}
+    ${abs ? `<div class="chips"><b>能力</b>${abs}</div>` : ''}
+    ${inv ? `<div class="chips"><b>物品</b>${inv}</div>` : ''}
+  </div>`;
 }
 
 function renderPane(reset) {
@@ -343,7 +402,7 @@ function renderPane(reset) {
         <div class="bar"><i style="left:${v >= 0 ? 50 : 50 - w}%;width:${w}%;background:${col}"></i></div><div class="note">${esc(r.note)}</div></div></div>`;
     }).join('') || '<div class="empty">还没有建立关系</div>';
   } else if (ui.tab === 'diary') {
-    pane.innerHTML = d.diary.map((x) => `<div class="diary"><h4>第 ${x.day} 天 · ${WEEK[(x.day - 1) % 7]}</h4>${esc(x.text)}</div>`).join('') || '<div class="empty">📖 每晚 22:15 左右，居民会写下当天的日记</div>';
+    pane.innerHTML = d.diary.map((x) => `<div class="diary"><h4>第 ${x.day} 天 · ${weekday(x.day)}</h4>${esc(x.text)}</div>`).join('') || '<div class="empty">📖 每晚 22:15 左右，居民会写下当天的日记</div>';
   }
   if (!reset) pane.scrollTop = scroll;
 }
@@ -397,6 +456,113 @@ async function sendChat(e) {
   }
 }
 
+// ---------- 故事面板（P2 / P3）----------
+const PHASE_ICON = { omen: '🔮', breach: '🌀', struggle: '⚔️', climax: '🌕', aftermath: '🌅' };
+const TH_STATUS = { open: ['未展开', 'open'], advanced: ['进行中', 'adv'], resolved: ['已回收', 'done'] };
+function storyModal(tab) {
+  ui.storyTab = tab || ui.storyTab || 'story';
+  const card = openModal(`<h2>🎭 小镇的故事</h2>
+    <div class="sub">叙事导演根据小镇的「张力」安排伏笔、冲突与喘息；剧情弧在关键时刻交给小镇（和你）来抉择。</div>
+    <div class="tabs stabs">${[['story', '📖 剧情'], ['vote', '🗳️ 抉择'], ['threads', '🧵 伏笔'], ['crisis', '⚔️ 危机'], ['bestiary', '👾 图鉴']].map(([k, l]) => `<button data-t="${k}" class="${ui.storyTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div id="story-body" class="story-body"><div class="empty">正在翻开故事书……</div></div>`, 'story-wrap');
+  card.style.width = 'min(760px, 94vw)';
+  $$('.stabs button', card).forEach((b) => b.addEventListener('click', () => {
+    ui.storyTab = b.dataset.t;
+    $$('.stabs button', card).forEach((x) => x.classList.toggle('on', x === b));
+    renderStory();
+  }));
+  ui.storyOpen = true;
+  renderStory();
+}
+
+function sparkline(history) {
+  if (!history.length) return '<div class="empty">张力曲线会在整点更新</div>';
+  const W = 680, H = 90, n = history.length;
+  const x = (i) => (n === 1 ? W / 2 : (i / (n - 1)) * W);
+  const y = (v) => H - (Math.max(0, Math.min(100, v)) / 100) * H;
+  const line = (k) => history.map((p, i) => `${x(i).toFixed(1)},${y(p[k]).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <polyline points="${line('target')}" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-dasharray="4 4"/>
+    <polyline points="${line('v')}" fill="none" stroke="#ffb86b" stroke-width="2.5"/></svg>
+    <div class="legend"><span><i style="background:#ffb86b"></i>张力</span><span><i style="background:rgba(255,255,255,.35)"></i>叙事者的目标</span></div>`;
+}
+
+async function renderStory() {
+  const body = $('#story-body');
+  if (!body) { ui.storyOpen = false; return; }
+  let d;
+  try { d = await app.api('/api/story'); } catch (e) { body.innerHTML = `<div class="empty">⚠️ ${esc(e.message)}</div>`; return; }
+  if (!$('#story-body')) return;
+  const tab = ui.storyTab;
+  const ST = { gentle: '🌸 静水', voyage: '🗺️ 远航', chaos: '🎲 掷骰' };
+  const RT = { cozy: '温馨', adventure: '冒险', epic: '史诗' };
+  let html = '';
+  if (tab === 'story') {
+    const arcs = d.arcs.map((a) => `<div class="arc ${a.status}">
+      <b>${esc(a.emoji || '🌀')} 《${esc(a.title)}》</b> <small>${a.status === 'active' ? '进行中' : '已落幕'}${a.outcome ? ` · 结局「${esc(a.outcome.title)}」` : ''}</small>
+      <div class="phases">${a.phases.map((p) => { const i = a.phases.findIndex((x) => x.id === a.phase); const j = a.phases.indexOf(p); return `<span class="${j < i || a.status === 'done' ? 'past' : j === i ? 'now' : ''}">${PHASE_ICON[p.id] || '•'} ${esc(p.name)}</span>`; }).join('<i>›</i>')}</div></div>`).join('');
+    html = `<div class="srow"><span>叙事者 <b>${ST[d.storyteller] || d.storyteller}</b></span><span>内容分级 <b>${RT[d.rating] || d.rating}</b></span>
+      <span>当前张力 <b>${d.tension?.value ?? '—'}</b> / 目标 ${d.tension?.target ?? '—'}</span></div>
+      ${sparkline(d.history)}
+      <h3>剧情弧</h3>${arcs || '<div class="empty">还没有剧情弧开启。远航 / 掷骰叙事者会在夜里自动开启，管理员也可以手动开启。</div>'}
+      ${d.admin && !d.arcs.some((a) => a.status === 'active') ? '<button class="primary" id="arc-start">🌀 开启《镜湖裂隙》</button>' : ''}
+      ${d.scenes.length ? `<h3>即将上演</h3>${d.scenes.map((s) => `<div class="dec">🎭 ${fmtTime(s.time)} · ${esc(s.location)} · ${esc(s.title)}</div>`).join('')}` : ''}
+      <h3>导演笔记 ${d.admin ? '<button class="mini" id="dir-go">让导演现在想一想</button>' : ''}</h3>
+      ${d.decisions.map((x) => `<div class="dec"><b>${fmtTime(x.t)}</b> ${esc({ noop: '按兵不动', foreshadow: '埋伏笔', complicate: '添麻烦', escalate: '升级', relief: '喘息', resolve: '收束', launchArc: '开启剧情弧' }[x.decision] || x.decision)} — ${esc(x.reason)}${x.external ? '（回应了玩家事件）' : ''}</div>`).join('') || '<div class="empty">导演还没有出手（需要配置 LLM）。</div>'}`;
+  } else if (tab === 'vote') {
+    html = d.votes.map((v) => {
+      const total = Object.values(v.tally).reduce((s, x) => s + x.total, 0) || 1;
+      const open = v.status === 'open' || v.status === 'awaiting';
+      return `<div class="vote ${v.status}"><h3>${esc(v.question)}</h3>
+        <div class="vmeta">${v.status === 'open' ? `投票截止：${fmtTime(v.closesT)}` : v.status === 'awaiting' ? `投票已截止，等待管理员终审（${fmtTime(v.awaitUntil)} 前无人裁决则按多数决定）` : `已揭晓：${esc(v.options.find((o) => o.id === v.result?.option)?.label || '')}（${v.result?.by === 'admin' ? '管理员终审' : '多数决定'}）`}</div>
+        ${v.options.map((o) => { const t = v.tally[o.id]; return `<div class="vopt ${v.result?.option === o.id ? 'win' : ''} ${v.mine === o.id ? 'mine' : ''}">
+          <div class="vlab"><b>${esc(o.label)}</b><small>${esc(o.desc)}</small></div>
+          <div class="vbar"><i style="width:${(t.total / total) * 100}%"></i></div>
+          <div class="vnum">居民 ${t.residents} · 访客 ${t.visitors}</div>
+          ${open && !v.mine && app.perms.interaction ? `<button class="mini" data-vote="${v.id}" data-opt="${o.id}">投这个</button>` : ''}
+          ${open && d.admin ? `<button class="mini adm" data-decide="${v.id}" data-opt="${o.id}">终审</button>` : ''}</div>`; }).join('')}</div>`;
+    }).join('') || '<div class="empty">目前没有需要小镇抉择的事。剧情走到关键时刻时，这里会出现投票。</div>';
+  } else if (tab === 'threads') {
+    html = d.threads.map((t) => `<div class="thread ${TH_STATUS[t.status][1]}"><div><b>${esc(t.title)}</b><span class="badge">${TH_STATUS[t.status][0]}</span></div>
+      <small>${esc(t.hook)}</small>${t.notes.length ? `<div class="tnotes">${t.notes.map((n) => `<div>· ${fmtTime(n.t)} ${esc(n.text)}</div>`).join('')}</div>` : ''}</div>`).join('');
+  } else if (tab === 'crisis') {
+    const c = d.crisis;
+    const meter = (label, v, cls) => `<div class="cmeter ${cls}"><span>${label}</span><i><b style="width:${v}%"></b></i><em>${v}</em></div>`;
+    html = `${meter('士气', c.morale, 'mo')}${meter('物资', c.supplies, 'su')}
+      <div class="srow"><span>🏮 亮着的灯阵 <b>${c.defense}</b></span><span>👾 游荡的异界生物 <b>${c.creatures}</b></span><span>🌀 裂隙 <b>${c.portal ? `${esc(c.portal.name)}（${{ crack: '微裂', open: '开启', wide: '扩张', stable: '稳定' }[c.portal.stage] || c.portal.stage}）` : '无'}</b></span></div>
+      <div class="sub">影灵会偷西瓜、吹灭灯笼（物资下降）；居民遭遇生物时靠勇气、灯和同伴对抗，赢了士气上升。冒险模式下被吓坏的人会被送去诊所，但没有人会死。</div>`;
+  } else {
+    html = `<div class="beasts">${d.bestiary.map((b) => b.known ? `<div class="beast"><img src="${creatureFace(b.id)}" alt=""><div><b>${esc(b.emoji)} ${esc(b.name)}</b><small>${esc(b.origin || '')}</small><p>${esc(b.lore || '')}</p><div class="weak">弱点：${(b.weakness || []).map(esc).join('、')}</div></div></div>`
+      : '<div class="beast unknown"><div class="q">？</div><div><b>？？？</b><small>尚未遭遇</small></div></div>').join('')}</div>
+      <h3>来自别处的人</h3>${d.travellers.map((t) => `<div class="dec">🧳 <b>${esc(t.name)}</b> · ${esc(t.role)} · 来自${esc(t.origin || '远方')}${t.status === 'departed' ? ' · 已离开' : ''}</div>`).join('') || '<div class="empty">还没有人从别处来。</div>'}`;
+  }
+  body.innerHTML = html;
+  $$('[data-vote]', body).forEach((b) => b.addEventListener('click', async () => {
+    try { await app.api('/api/vote', { id: b.dataset.vote, option: b.dataset.opt }); toast('🗳️ 你的一票已投出'); renderStory(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
+  }));
+  $$('[data-decide]', body).forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('确定以管理员身份终审这个选项吗？')) return;
+    try { await app.api('/api/vote/decide', { id: b.dataset.decide, option: b.dataset.opt }); renderStory(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
+  }));
+  const as = $('#arc-start', body);
+  if (as) as.onclick = async () => { try { await app.api('/api/arc/start', { template: 'rift' }); renderStory(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); } };
+  const dg = $('#dir-go', body);
+  if (dg) dg.onclick = async () => { dg.disabled = true; dg.textContent = '导演思考中…'; try { await app.api('/api/director/decide', {}); } catch (e) { toast(`⚠️ ${esc(e.message)}`); } renderStory(); };
+}
+
+const creatureFaces = {};
+function creatureFace(id) {
+  if (creatureFaces[id]) return creatureFaces[id];
+  const spr = app.renderer.creatureSprites[id];
+  if (!spr) return '';
+  const c = document.createElement('canvas');
+  c.width = 80; c.height = 108;
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.drawImage(spr.down[0], 0, 0, 80, 108);
+  return (creatureFaces[id] = c.toDataURL());
+}
+
 // ---------- 弹窗 ----------
 function openModal(html, cls = '') {
   const card = $('#modal-card');
@@ -406,7 +572,7 @@ function openModal(html, cls = '') {
   $('#modal-x').onclick = closeModal;
   return card;
 }
-function closeModal() { $('#modal').hidden = true; $('#modal-card').innerHTML = ''; }
+function closeModal() { $('#modal').hidden = true; $('#modal-card').innerHTML = ''; ui.storyOpen = false; }
 
 const PRESETS = [
   '🎆 今晚八点，中央广场将举办一场神秘的烟花表演！',

@@ -41,7 +41,8 @@ export const LOCATION_INFO = {
   pier: { name: '镜湖码头', emoji: '🎣', desc: '湖边木码头，钓鱼、看日落、发呆' },
 };
 
-export function buildWorld() {
+// 生成器 yunxi-v1：建筑与地点信息可由世界规格传入，默认使用上面的常量
+export function buildWorld({ buildings: buildingDefs = BUILDINGS, locationInfo = LOCATION_INFO } = {}) {
   const W = 64, H = 44;
   const rnd = mulberry32(20260924);
   const tiles = new Array(W * H).fill(T.GRASS);
@@ -107,7 +108,7 @@ export function buildWorld() {
   objects.push({ type: 'scarecrow', x: 56, y: 7 }); block(56, 7);
 
   // ---- 建筑 ----
-  const buildings = BUILDINGS.map((b) => {
+  const buildings = buildingDefs.map((b) => {
     const door = { x: b.x + Math.floor(b.w / 2), y: b.y + b.h - 1 };
     for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) block(x, y);
     return { ...b, door, entrance: { x: door.x, y: door.y + 1 } };
@@ -199,7 +200,7 @@ export function buildWorld() {
   const B = Object.fromEntries(buildings.map((b) => [b.id, b]));
   const locations = {};
   const addLoc = (id, extra) => {
-    const info = LOCATION_INFO[id] || { name: B[id]?.name, emoji: '🏠', desc: '' };
+    const info = locationInfo[id] || { name: B[id]?.name, emoji: '🏠', desc: '' };
     locations[id] = { id, name: info.name, emoji: info.emoji, desc: info.desc, spots: [], ...extra };
   };
   for (const b of buildings) {

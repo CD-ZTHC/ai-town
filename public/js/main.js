@@ -22,6 +22,7 @@ export const app = {
   meta: {},
   snap: null,
   disp: {},
+  cdisp: {},
   logs: [],
   newspapers: [],
   board: [],
@@ -71,6 +72,12 @@ export const app = {
 };
 window.app = app;
 
+// 当前正在进行的日历事件（节日等），与服务端 kernel/spec.js 的 activeEvents 保持一致
+const hm = (s) => { const m = /(\d{1,2})[:：](\d{2})/.exec(String(s)); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+export function activeEvents(day, minute) {
+  return (app.spec?.calendar.events || []).filter((e) => e.day === day && minute >= (hm(e.from) ?? 0) && minute < (e.to ? hm(e.to) : 1440));
+}
+
 // ---------- 数据流 ----------
 function connect() {
   const es = new EventSource('api/stream');
@@ -79,6 +86,7 @@ function connect() {
     const first = !app.world;
     app.world = d.world;
     app.weathers = d.weathers;
+    app.spec = d.spec;
     app.meta = Object.fromEntries(d.agents.map((a) => [a.id, a]));
     app.logs = d.logs;
     app.newspapers = d.newspapers;
@@ -90,6 +98,7 @@ function connect() {
       renderer.setWorld(d.world);
     }
     renderer.setAgents(d.agents);
+    renderer.setCreatureTypes(d.spec?.creatures);
     for (const a of d.agents) a.portrait = renderer.portraits[a.id];
     UI.init(app, first);
     app.refreshPerms();
@@ -104,6 +113,23 @@ function connect() {
   es.addEventListener('log', (e) => UI.onLog(JSON.parse(e.data)));
   es.addEventListener('agent', (e) => UI.onAgentChanged(JSON.parse(e.data).id));
   es.addEventListener('newspaper', (e) => UI.onNewspaper(JSON.parse(e.data)));
+  es.addEventListener('vfx', (e) => renderer.addVfx(JSON.parse(e.data)));
+  // 角色登场 / 离场：重建精灵与名册
+  es.addEventListener('agents', (e) => {
+    const list = JSON.parse(e.data);
+    renderer.setAgents(list);
+    for (const a of list) a.portrait = renderer.portraits[a.id];
+    app.meta = Object.fromEntries(list.map((a) => [a.id, a]));
+    UI.onAgents();
+  });
+  es.addEventListener('story', () => UI.onStory());
+  es.addEventListener('world', (e) => {
+    const w = JSON.parse(e.data);
+    app.spec = w.spec;
+    app.weathers = w.spec.weather;
+    renderer.setCreatureTypes(w.spec.creatures);
+    UI.onWorld(w);
+  });
   es.addEventListener('llm', (e) => { app.llm = JSON.parse(e.data); UI.updateBrain(); });
   es.onerror = () => UI.toast('⚠️ 与小镇的连接中断，正在重连…', 2500);
 }
@@ -237,7 +263,8 @@ function loop(now) {
     if (keys.has('s') || keys.has('arrowdown')) { app.cam.y += pan; app.follow = null; }
 
     // 平滑角色位置
-    const agents = s.agents.map((a) => {
+    // 角色登场 / 离场的瞬间，快照与角色信息可能差一帧：只画两边都有的角色
+    const agents = s.agents.filter((a) => app.meta[a.id] && renderer.meta?.[a.id]).map((a) => {
       let d = app.disp[a.id];
       if (!d) d = app.disp[a.id] = { dx: a.x, dy: a.y, walkPhase: 0 };
       const dist = Math.hypot(a.x - d.dx, a.y - d.dy);
@@ -251,6 +278,14 @@ function loop(now) {
       const moving = a.moving || dist > 0.05;
       if (!moving) d.walkPhase = 0;
       return { ...a, dx: d.dx, dy: d.dy, walkPhase: d.walkPhase, moving, speaking: !!(a.convo && a.bubble && a.bubble.kind === 'say') };
+    });
+    // 异界生物也做平滑插值
+    const creatures = (s.creatures || []).map((c) => {
+      let d = app.cdisp[c.id];
+      if (!d || Math.hypot(c.x - d.dx, c.y - d.dy) > 4) d = app.cdisp[c.id] = { dx: c.x, dy: c.y };
+      const k = 1 - Math.exp(-dt * 10);
+      d.dx += (c.x - d.dx) * k; d.dy += (c.y - d.dy) * k;
+      return { ...c, dx: d.dx, dy: d.dy };
     });
     const agentMap = Object.fromEntries(agents.map((a) => [a.id, a]));
     const occupancy = {};
@@ -268,10 +303,14 @@ function loop(now) {
     const tt = app.debugT ?? s.t; // 调试：可在控制台设置 app.debugT / app.debugWeather 预览
     const day = Math.floor(tt / 1440) + 1;
     const minute = tt % 1440;
+    // 世界规格里新增的天气用已有的天气效果（render.base）加一层色调来表现
+    const weatherId = app.debugWeather ?? s.weather;
+    const winfo = app.weathers[weatherId] || {};
     const S = {
-      cam: app.cam, t: tt, day, weather: app.debugWeather ?? s.weather, agents, agentMap, occupancy, convos: s.convos,
+      cam: app.cam, t: tt, day, weather: winfo.render?.base || weatherId, weatherId, weatherTint: winfo.render?.tint ? winfo.render : null,
+      agents, agentMap, occupancy, convos: s.convos, entities: s.entities || [], creatures,
       selected: app.selected, hover: app.hover, boardCount: app.board.length,
-      festival: app.forceFestival || (day === 4 && minute >= 18 * 60),
+      festival: app.forceFestival || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns'),
     };
     renderer.frame(S, dt);
     UI.frame(S, dt);

@@ -4,6 +4,7 @@ import { buildSprites, makePortrait, shade, SPR_W, SPR_H } from './sprites.js';
 export const TS = 32;
 const T = { GRASS: 0, PATH: 1, PLAZA: 2, DIRT: 3, WATER: 4, SAND: 5, BRIDGE: 6, SOIL: 7, WOOD: 8, DEEP: 9, FLOWER: 10 };
 const SCALE = 2; // 角色精灵放大倍数
+const STATIC_OBJECTS = new Set(['fence', 'crop', 'bench', 'rock', 'stage', 'hay', 'anvil', 'woodpile']);
 
 // ---------- 工具 ----------
 function h2(x, y, s = 0) {
@@ -68,6 +69,19 @@ export class Renderer {
     this.time = 0;
     this.hits = [];
     this.bubbleSeen = new Map();
+    this.vfx = [];
+    this.creatureSprites = {};
+  }
+
+  /** 世界规格里的异界生物图鉴 → 预生成像素精灵 */
+  setCreatureTypes(types = {}) {
+    for (const [id, c] of Object.entries(types)) if (!this.creatureSprites[id] && c.look?.bodyPlan) this.creatureSprites[id] = buildSprites(c.look);
+  }
+
+  /** 能力等产生的一次性特效（世界坐标，单位：格） */
+  addVfx(v) {
+    this.vfx.push({ ...v, born: this.time, life: v.preset === 'ripple' ? 2.4 : 1.8 });
+    if (this.vfx.length > 40) this.vfx.shift();
   }
 
   // ---------- 初始化 ----------
@@ -78,7 +92,8 @@ export class Renderer {
     this.buildTreeSprites();
     this.buildStatic();
     this.buildMinimap();
-    this.dynamic = world.objects.filter((o) => ['tree', 'bush', 'lamp', 'stall', 'fountain', 'board', 'table', 'balloon', 'well', 'scarecrow', 'boat', 'lily'].includes(o.type));
+    // 静态物体已画进底图，其余（包括世界规格里新增的未知类型）都按动态物体参与 y 排序绘制
+    this.dynamic = world.objects.filter((o) => !STATIC_OBJECTS.has(o.type));
     const P = this.particles;
     P.flies = Array.from({ length: 46 }, () => this.newFly());
     P.butterflies = Array.from({ length: 10 }, () => ({ x: 2 + Math.random() * 28, y: 33 + Math.random() * 9, vx: 0, vy: 0, c: ['#fff4a3', '#ffc6e0', '#bfe3ff', '#ffffff'][Math.floor(Math.random() * 4)], ph: Math.random() * 6 }));
@@ -426,7 +441,8 @@ export class Renderer {
   drawBuilding(g, b) {
     const X = b.x * TS, Y = b.y * TS, w = b.w * TS, h = b.h * TS;
     const kind = b.kind;
-    const wallC = { house: '#f2e2c2', library: '#e9dfcf', cafe: '#fbe8d2', tavern: '#7b5a40', clinic: '#f7f8fb', workshop: '#a58b6c', farmhouse: '#e8cfa6' }[kind];
+    // 未知类型（由世界规格新增的建筑）使用 b.wall 或默认墙色
+    const wallC = { house: '#f2e2c2', library: '#e9dfcf', cafe: '#fbe8d2', tavern: '#7b5a40', clinic: '#f7f8fb', workshop: '#a58b6c', farmhouse: '#e8cfa6' }[kind] || b.wall || '#e8dcc4';
     const roofC = b.roof;
     const roofH = Math.round(h * (kind === 'library' ? 0.5 : 0.55));
     // 阴影
@@ -635,8 +651,14 @@ export class Renderer {
       if (a.inside) continue;
       items.push({ y: a.dy * TS + TS * 0.9, a });
     }
+    for (const e of S.entities || []) {
+      if (e.inside) continue;
+      items.push({ y: e.kind === 'portal' ? -1e6 : e.y * TS + TS * 0.8, e });
+    }
+    for (const c of S.creatures || []) items.push({ y: c.dy * TS + TS * 0.9, c });
     items.sort((p, q) => p.y - q.y);
-    for (const it of items) it.o ? this.drawObject(ctx, it.o, S) : this.drawAgent(ctx, it.a, S);
+    for (const it of items) it.o ? this.drawObject(ctx, it.o, S) : it.e ? (it.e.kind === 'portal' ? this.drawPortal(ctx, it.e) : this.drawEntity(ctx, it.e)) : it.c ? this.drawCreature(ctx, it.c) : this.drawAgent(ctx, it.a, S);
+    this.drawVfx(ctx);
 
     this.updateParticles(dt, S, sky);
     this.drawWorldParticles(ctx, S, sky);
@@ -787,7 +809,130 @@ export class Renderer {
         if (o.v > 0.6) { ctx.fillStyle = '#ffc2d8'; ctx.beginPath(); ctx.arc(X + 19, Y + 13 + bob, 3, 0, 7); ctx.fill(); ctx.fillStyle = '#fff3a0'; ctx.fillRect(X + 18, Y + 12 + bob, 2, 2); }
         break;
       }
+      default: {
+        // 兜底：没有专门绘制函数的物体（例如 AI 新增的类型）画成带阴影的 emoji
+        const w = (o.w || 1) * TS, h = (o.h || 1) * TS;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,.18)';
+        ctx.beginPath(); ctx.ellipse(X + w / 2, Y + h - 3, w * 0.4, 5, 0, 0, 7); ctx.fill();
+        ctx.font = `${Math.round(Math.min(w, h) * 0.8)}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillText(o.emoji || '❔', X + w / 2, Y + h - 2);
+        ctx.restore();
+      }
     }
+  }
+
+  /** 构筑物（例如萤火结界）：地面光圈 + 浮动的 emoji */
+  drawEntity(ctx, e) {
+    const X = e.x * TS + TS / 2, Y = e.y * TS + TS / 2, t = this.time;
+    const col = e.light?.color || '255,220,140';
+    const pulse = 0.5 + Math.sin(t * 2.4 + e.x) * 0.15;
+    const r = (e.light ? e.light.r / 110 : 1) * TS * 2.6;
+    const g = ctx.createRadialGradient(X, Y + 8, 4, X, Y + 8, r);
+    g.addColorStop(0, `rgba(${col},${0.32 * pulse})`); g.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = g; ctx.fillRect(X - r, Y + 8 - r, r * 2, r * 2);
+    ctx.strokeStyle = `rgba(${col},${0.55 * pulse})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(X, Y + 10, r * 0.55, r * 0.22, 0, 0, 7); ctx.stroke();
+    ctx.save();
+    ctx.font = '20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const n = e.light ? 5 : 1;
+    for (let i = 0; i < n; i++) {
+      const ang = t * 0.6 + (i / n) * Math.PI * 2;
+      const px = n > 1 ? X + Math.cos(ang) * r * 0.5 : X, py = n > 1 ? Y + 10 + Math.sin(ang) * r * 0.2 : Y + 10;
+      ctx.fillText(e.emoji || '✨', px, py - 4 + Math.sin(t * 3 + i) * 2);
+    }
+    ctx.restore();
+  }
+
+  /** 镜湖裂隙：旋转的紫色涡流，大小随阶段变化 */
+  drawPortal(ctx, e) {
+    const X = e.x * TS + TS / 2, Y = e.y * TS + TS / 2, t = this.time;
+    const size = { crack: 0.5, open: 1.3, wide: 2.2, stable: 1.4 }[e.stage] ?? 1;
+    const stable = e.stage === 'stable';
+    const R = TS * 1.6 * size;
+    const g = ctx.createRadialGradient(X, Y, 2, X, Y, R * 1.6);
+    g.addColorStop(0, stable ? 'rgba(255,230,160,.55)' : 'rgba(190,150,255,.65)');
+    g.addColorStop(0.5, stable ? 'rgba(180,160,255,.25)' : 'rgba(110,70,200,.35)');
+    g.addColorStop(1, 'rgba(60,30,120,0)');
+    ctx.fillStyle = g; ctx.fillRect(X - R * 1.6, Y - R * 1.6, R * 3.2, R * 3.2);
+    ctx.save();
+    ctx.translate(X, Y); ctx.scale(1, 0.45);
+    for (let i = 0; i < 4; i++) {
+      ctx.strokeStyle = stable ? `rgba(255,${220 - i * 20},150,${0.7 - i * 0.12})` : `rgba(${180 - i * 20},${120 - i * 15},255,${0.8 - i * 0.15})`;
+      ctx.lineWidth = 3 - i * 0.5;
+      ctx.beginPath(); ctx.arc(0, 0, R * (1 - i * 0.2), t * (1.2 + i * 0.4), t * (1.2 + i * 0.4) + Math.PI * 1.3); ctx.stroke();
+    }
+    if (e.stage === 'crack') { ctx.strokeStyle = 'rgba(200,170,255,.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-R, 0); ctx.lineTo(-R * 0.3, -4); ctx.lineTo(R * 0.2, 3); ctx.lineTo(R, -1); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  /** 异界生物：沿用角色精灵管线，漂浮 + 底部微光 */
+  drawCreature(ctx, c) {
+    const spr = this.creatureSprites[c.type];
+    if (!spr) return;
+    const cx = c.dx * TS + TS / 2, fy = c.dy * TS + TS - 2;
+    const fi = c.moving ? [1, 0, 2, 0][Math.floor(this.time * 6) % 4] : Math.floor(this.time * 2) % 2;
+    const float = Math.sin(this.time * 3 + c.dx) * 2;
+    ctx.fillStyle = c.friendly ? 'rgba(255,170,220,.35)' : 'rgba(110,80,220,.35)';
+    ctx.beginPath(); ctx.ellipse(cx, fy, 10, 4, 0, 0, 7); ctx.fill();
+    const img = spr[c.dir]?.[fi] || spr.down[0];
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+    ctx.drawImage(img, Math.round(cx - (SPR_W * SCALE) / 2), Math.round(fy - SPR_H * SCALE + 4 + float), SPR_W * SCALE, SPR_H * SCALE);
+    ctx.restore();
+    if (c.friendly && c.name) {
+      ctx.save(); ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd6ee';
+      ctx.fillText(`💜${c.name}`, cx, fy - SPR_H * SCALE - 2); ctx.restore();
+    }
+  }
+
+  drawVfx(ctx) {
+    const t = this.time;
+    this.vfx = this.vfx.filter((v) => t - v.born < v.life);
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const v of this.vfx) {
+      const k = (t - v.born) / v.life; // 0 → 1
+      const X = v.x * TS + TS / 2, Y = v.y * TS + TS / 2;
+      const R = (v.radius || 2) * TS;
+      const [r, g, b] = hexToRgb(v.color || '#ffe08a');
+      const a = 1 - k;
+      ctx.globalAlpha = a;
+      switch (v.preset) {
+        case 'glow_ring':
+        case 'ripple': {
+          const rings = v.preset === 'ripple' ? 3 : 2;
+          for (let i = 0; i < rings; i++) {
+            const kk = Math.max(0, k - i * 0.15);
+            ctx.strokeStyle = `rgb(${r},${g},${b})`; ctx.lineWidth = 3 * (1 - kk);
+            ctx.beginPath(); ctx.ellipse(X, Y + 8, R * kk, R * kk * 0.45, 0, 0, 7); ctx.stroke();
+          }
+          break;
+        }
+        case 'burst': {
+          for (let i = 0; i < 12; i++) {
+            const ang = (i / 12) * Math.PI * 2;
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(X + Math.cos(ang) * R * k * 1.4 - 2, Y + Math.sin(ang) * R * k * 1.4 - 2, 4, 4);
+          }
+          break;
+        }
+        case 'sparkle':
+        case 'heal':
+        case 'notes': {
+          const glyph = { sparkle: '✦', heal: '✚', notes: '♪' }[v.preset];
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.font = `bold ${v.preset === 'notes' ? 18 : 14}px sans-serif`;
+          for (let i = 0; i < 6; i++) {
+            const ox = Math.sin(i * 2.1) * R * 0.6 + Math.sin(t * 4 + i) * 4;
+            ctx.fillText(glyph, X + ox, Y - 10 - k * 40 - (i % 3) * 10);
+          }
+          break;
+        }
+      }
+    }
+    ctx.restore();
   }
 
   drawFountain(ctx, X, Y, S) {
@@ -1086,6 +1231,10 @@ export class Renderer {
       if (a.inside || !on) continue;
       out.push({ x: a.dx * TS + 16, y: a.dy * TS + 10, r: 56, i: 0.7, c: '255,200,120' });
     }
+    if (on) for (const c of S.creatures || []) out.push({ x: c.dx * TS + 16, y: c.dy * TS + 8, r: 34, i: 0.6, c: c.friendly ? '255,170,220' : '150,120,255' });
+    if (on) for (const e of S.entities || []) {
+      if (e.light && !e.inside) out.push({ x: e.x * TS + 16, y: e.y * TS + 16, r: e.light.r * 1.6, i: 0.95, c: e.light.color });
+    }
     if (S.festival && on) {
       for (const l of this.particles.lanterns) out.push({ x: l.x, y: l.y, r: l.water ? 46 : 36, i: 0.9, c: '255,160,70' });
       if (this.balloonLight) out.push({ x: this.balloonLight.x, y: this.balloonLight.y + 20, r: 110, i: 0.9, c: '255,170,80' });
@@ -1142,6 +1291,12 @@ export class Renderer {
       ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, 7); ctx.fill();
     }
     if (S.weather === 'snow') { ctx.fillStyle = 'rgba(230,240,255,.12)'; ctx.fillRect(0, 0, W, H); }
+    // 世界规格新增天气的色调（例如血月）
+    if (S.weatherTint) {
+      ctx.globalAlpha = S.weatherTint.tintAlpha ?? 0.2;
+      ctx.fillStyle = S.weatherTint.tint; ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
     // 雾
     if (S.weather === 'fog') {
       const t = this.time;

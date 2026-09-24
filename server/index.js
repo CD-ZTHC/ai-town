@@ -2,8 +2,9 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Town, llmPublic, WEATHER } from './sim.js';
+import { Town, llmPublic } from './sim.js';
 import * as llm from './llm.js';
+import { useAbility } from './kernel/abilities.js';
 import { config, clientIp, isAdmin, visitorId, limits, sanitize, moderate } from './guard.js';
 
 const PORT = Number(process.env.PORT || 3000);
@@ -32,6 +33,13 @@ function wire(t) {
   t.on('log', (l) => broadcast('log', l));
   t.on('agent', (id) => broadcast('agent', { id }));
   t.on('newspaper', (p) => broadcast('newspaper', p));
+  t.on('world', (w) => broadcast('world', w));
+  t.on('vfx', (v) => broadcast('vfx', v));
+  t.on('agents', (list) => broadcast('agents', list));
+  // 故事面板只推送「有变化」的通知，页面再按需拉取 /api/story
+  let storyTimer = null;
+  t.on('story', () => { if (!storyTimer) storyTimer = setTimeout(() => { storyTimer = null; broadcast('story', { t: t.t }); }, 800); });
+  t.votes.requireAdmin = config.publicMode && Boolean(config.adminToken);
   t.start();
 }
 wire(town);
@@ -128,6 +136,8 @@ async function handleApi(req, res, url, ip) {
     }
     if (p === '/api/relations') return json(res, 200, town.relationsGraph());
     if (p === '/api/newspapers') return json(res, 200, town.newspapers);
+    if (p === '/api/world/history') return json(res, 200, town.worldHistory().slice(-200));
+    if (p === '/api/story') return json(res, 200, { ...town.storyView(ip), admin });
     throw new HttpError(404, '不存在');
   }
 
@@ -142,7 +152,7 @@ async function handleApi(req, res, url, ip) {
     const text = sanitize(b.text, 200);
     if (text.length < 1) throw new HttpError(400, '说点什么吧');
     if (!admin) { take(limits.chatBurst, ip, '说话'); take(limits.chat, ip, '说话'); }
-    const m = await moderate(text, 'chat');
+    const m = await moderate(text, 'chat', town.spec.meta.rating);
     if (!m.ok) throw new HttpError(422, m.reason);
     const r = await town.visitorChat(agent.id, text, mode, vid);
     return json(res, 200, { ...r, remaining: remaining(ip, admin) });
@@ -162,7 +172,7 @@ async function handleApi(req, res, url, ip) {
       if (!e.ok) throw new HttpError(429, `每小时最多发布 ${config.eventPerHour} 个事件，请 ${fmtWait(e.retryAfter)}后再试`);
     }
     if (!admin) take(limits.eventAttempt, ip, '尝试发布事件');
-    const m = await moderate(text, 'event');
+    const m = await moderate(text, 'event', town.spec.meta.rating);
     if (!m.ok) throw new HttpError(422, m.reason);
     if (!admin) { take(limits.eventGlobal, 'all', '发布事件'); take(limits.event, ip, '发布事件'); }
     console.log(`[event] ${ip} → ${target}: ${text}`);
@@ -174,7 +184,7 @@ async function handleApi(req, res, url, ip) {
     const out = {};
     if (b.weather != null) {
       const w = String(b.weather);
-      if (w !== 'auto' && !WEATHER[w]) throw new HttpError(400, '未知天气');
+      if (w !== 'auto' && !Object.hasOwn(town.spec.weather, w)) throw new HttpError(400, '未知天气');
       if (!admin) {
         if (!config.allowInteraction) throw new HttpError(403, '当前为只读观赏模式');
         take(limits.weather, 'all', '改变天气');
@@ -198,6 +208,58 @@ async function handleApi(req, res, url, ip) {
       }
     }
     return json(res, 200, { ok: true, speed: town.speed, paused: town.paused, ...out });
+  }
+
+  // 直接应用一条世界操作（仅管理员）。之后的阶段里，AI 的提案经过投票与审批后也走这条路径。
+  if (p === '/api/world/op') {
+    requireAdmin(req);
+    if (!b.op || typeof b.op !== 'string') throw new HttpError(400, '缺少 op');
+    const rec = town.applyWorldOp({ op: b.op, args: b.args && typeof b.args === 'object' ? b.args : {} }, { by: 'admin' });
+    return json(res, 200, { ok: true, op: rec });
+  }
+
+  // 让某位居民立即使用一项能力（仅管理员，用于演示与排查）
+  if (p === '/api/ability') {
+    requireAdmin(req);
+    const agent = town.byId[String(b.id)];
+    if (!agent) throw new HttpError(404, '居民不存在');
+    const r = useAbility(town, agent, String(b.ability || ''), b.target ? sanitize(b.target, 12) : null, '（管理员指示）');
+    if (!r.ok) throw new HttpError(422, r.reason);
+    return json(res, 200, { ok: true });
+  }
+
+  // 访客投票（每个 IP 每次抉择一票）
+  if (p === '/api/vote') {
+    if (!config.allowInteraction && !admin) throw new HttpError(403, '当前为只读观赏模式');
+    if (!admin) take(limits.vote, ip, '投票');
+    const err = town.votes.cast(String(b.id || ''), ip, String(b.option || ''));
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
+  // 管理员终审
+  if (p === '/api/vote/decide') {
+    requireAdmin(req);
+    const err = town.votes.decide(String(b.id || ''), String(b.option || ''), 'admin');
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
+  // 手动开启剧情弧（管理员）
+  if (p === '/api/arc/start') {
+    requireAdmin(req);
+    const err = town.arcs.start(String(b.template || ''), 'admin');
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
+  // 让叙事导演立即做一次决策（管理员）
+  if (p === '/api/director/decide') {
+    requireAdmin(req);
+    if (!llm.stats.enabled) throw new HttpError(503, 'AI 尚未配置');
+    if (town.director.deciding) throw new HttpError(409, '导演正在思考');
+    const r = await town.director.decide();
+    return json(res, 200, { ok: true, ...r });
   }
 
   if (p === '/api/newspaper') {
@@ -295,7 +357,7 @@ server.requestTimeout = 30_000;
 
 server.listen(PORT, HOST, () => {
   const mode = config.publicMode ? `公网模式${config.adminToken ? '（已设置管理员令牌）' : '（⚠️ 未设置 ADMIN_TOKEN，管理功能全部关闭）'}` : '本地模式（所有访问者均为管理员，请勿直接暴露到公网）';
-  console.log(`\n  🌸 云溪镇已开放： http://${HOST || 'localhost'}:${PORT}\n  🔐 ${mode}\n  🧠 LLM: ${llm.stats.enabled ? `${process.env.MODEL}${llm.stats.dailyBudget ? ` · 每日预算 ${llm.stats.dailyBudget.toLocaleString()} tokens` : ''}` : '未配置（使用规则兜底）'}\n`);
+  console.log(`\n  🌸 云溪镇已开放： http://${HOST || 'localhost'}:${PORT}\n  🔐 ${mode}\n  🧠 LLM: ${llm.stats.enabled ? `${llm.stats.model}（快：${llm.stats.models.fast} · 强：${llm.stats.models.smart}）${llm.stats.dailyBudget ? ` · 每日预算 ${llm.stats.dailyBudget.toLocaleString()} tokens` : ''}` : '未配置（使用规则兜底）'}\n`);
 });
 
 const shutdown = () => { town.save(); process.exit(0); };
