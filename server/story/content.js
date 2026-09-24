@@ -217,6 +217,7 @@ export const RIFT_ARC = () => ({
       { kind: 'portal', stage: 'stable', name: '月之渡口' },
       { kind: 'dismissCreatures', keep: { type: 'shade_wisp', name: '小影', near: 'cafe' } },
       { kind: 'depart', id: 'moon_warden' },
+      { kind: 'region', id: 'moonrealm', open: true },
       { kind: 'calendar', id: 'double_moon', name: '双月节', emoji: '🌗', inDays: 7, from: '19:00', location: 'pier', hint: '两个世界的人会在月之渡口一起放灯' },
       { kind: 'canon', text: '小镇把原初之灯还给了暗月界。镜湖的裂隙成了「月之渡口」，每年双月节，两个世界的人一起放灯。', tags: ['镜湖', '双月节'] },
       { kind: 'spreadNews', text: '灯还回去了，暗月界的天空亮了。守门人说，以后门就开着，像个渡口', about: 'rift', claim: '裂隙成了两个世界之间的渡口', confidence: 0.95, at: 'all' },

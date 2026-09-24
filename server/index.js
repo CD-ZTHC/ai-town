@@ -2,7 +2,9 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Town, llmPublic } from './sim.js';
+import { Town, llmPublic, listSnapshots, restoreSnapshot } from './sim.js';
+import { ADMIN_OPS } from './worldai/proposals.js';
+import { registry, activeDir, forkTimeline, setActive } from './timelines.js';
 import * as llm from './llm.js';
 import { useAbility } from './kernel/abilities.js';
 import { config, clientIp, isAdmin, visitorId, limits, sanitize, moderate } from './guard.js';
@@ -10,7 +12,8 @@ import { config, clientIp, isAdmin, visitorId, limits, sanitize, moderate } from
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || undefined;
 const PUBLIC = path.resolve('public');
-const DATA = path.resolve('data');
+// 数据根目录：主时间线存放在这里，分支时间线在 timelines/ 子目录
+const DATA = path.resolve(process.env.DATA_DIR || 'data');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -20,7 +23,8 @@ const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
 };
 
-let town = new Town();
+const makeTown = () => new Town({ dataDir: activeDir(DATA) });
+let town = makeTown();
 const clients = new Set();
 const clientsPerIp = new Map();
 
@@ -40,6 +44,11 @@ function wire(t) {
   let storyTimer = null;
   t.on('story', () => { if (!storyTimer) storyTimer = setTimeout(() => { storyTimer = null; broadcast('story', { t: t.t }); }, 800); });
   t.votes.requireAdmin = config.publicMode && Boolean(config.adminToken);
+  t.proposalSystem.requireAdmin = config.publicMode && Boolean(config.adminToken);
+  t.on('worldmap', (w) => broadcast('worldmap', w));
+  t.on('regions', (r) => broadcast('regions', r));
+  let propTimer = null;
+  t.on('proposals', () => { if (!propTimer) propTimer = setTimeout(() => { propTimer = null; broadcast('proposals', { t: t.t }); }, 800); });
   t.start();
 }
 wire(town);
@@ -127,6 +136,7 @@ async function handleApi(req, res, url, ip) {
         interaction: config.allowInteraction || admin,
         limits: { chatPerHour: config.chatPerHour, eventPerHour: config.eventPerHour, weatherCooldownSec: config.weatherCooldownSec },
         remaining: remaining(ip, admin),
+        avatar: town.avatars.mine(vid)?.id || null,
         budget: { total: llm.stats.dailyBudget, left: Number.isFinite(llm.budgetLeft()) ? llm.budgetLeft() : null },
       });
     }
@@ -135,9 +145,13 @@ async function handleApi(req, res, url, ip) {
       return d ? json(res, 200, d) : json(res, 404, { error: '不存在' });
     }
     if (p === '/api/relations') return json(res, 200, town.relationsGraph());
+    if (p === '/api/usage') return json(res, 200, town.usageView());
     if (p === '/api/newspapers') return json(res, 200, town.newspapers);
     if (p === '/api/world/history') return json(res, 200, town.worldHistory().slice(-200));
     if (p === '/api/story') return json(res, 200, { ...town.storyView(ip), admin });
+    if (p === '/api/proposals') return json(res, 200, { ...town.proposalsView(ip, admin), admin });
+    if (p === '/api/snapshots') { requireAdmin(req); return json(res, 200, listSnapshots(town.dataDir)); }
+    if (p === '/api/timelines') { requireAdmin(req); return json(res, 200, registry(DATA)); }
     throw new HttpError(404, '不存在');
   }
 
@@ -228,6 +242,115 @@ async function handleApi(req, res, url, ip) {
     return json(res, 200, { ok: true });
   }
 
+  // 向世界架构师提一个建设建议（访客限流 + 审核；管理员不限）
+  if (p === '/api/proposals') {
+    requireInteraction(req);
+    const text = sanitize(b.intent, 120);
+    if (text.length < 4) throw new HttpError(400, '说得再具体一点吧');
+    if (!admin) take(limits.proposal, ip, '提建议');
+    const m = await moderate(text, 'event', town.spec.meta.rating);
+    if (!m.ok) throw new HttpError(422, m.reason);
+    const err = town.architect.enqueue(text, admin ? 'admin' : 'visitor');
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
+  // 管理员直接提交一份世界补丁（仍然经过校验、设定考据与审批流程）
+  if (p === '/api/proposals/direct') {
+    requireAdmin(req);
+    const r = town.proposalSystem.submit({ title: b.title, motive: b.motive, ops: b.ops, construction: b.construction, origin: 'admin', allowed: ADMIN_OPS });
+    if (r.error) throw new HttpError(422, r.error);
+    return json(res, 200, { ok: true, id: r.proposal.id });
+  }
+
+  if (p === '/api/proposals/vote') {
+    if (!config.allowInteraction && !admin) throw new HttpError(403, '当前为只读观赏模式');
+    if (!admin) take(limits.vote, ip, '投票');
+    const err = town.proposalSystem.vote(String(b.id || ''), ip, Boolean(b.yes));
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
+  // 管理员处理 AI 心愿单
+  if (p === '/api/gaps/status') {
+    requireAdmin(req);
+    const err = town.architect.setGapStatus(String(b.id || ''), String(b.status || ''));
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
+  if (p === '/api/proposals/decide') {
+    requireAdmin(req);
+    const err = town.proposalSystem.decide(String(b.id || ''), Boolean(b.approve), 'admin');
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
+  // 时光回溯：恢复到某个整点快照（仅管理员，需二次确认；当前存档自动备份）
+  if (p === '/api/rollback') {
+    requireAdmin(req);
+    if (b.confirm !== 'ROLLBACK') throw new HttpError(400, '需要确认');
+    const name = String(b.name || '');
+    // 先校验快照（不合法时小镇照常运行），再存盘（备份里包含最新进度），最后才停止旧小镇
+    if (!/^d\d{3}-\d{2}\.json$/.test(name)) throw new HttpError(400, '快照名称不合法');
+    if (!listSnapshots(town.dataDir).some((x) => x.name === name)) throw new HttpError(404, '快照不存在');
+    town.save();
+    town.stop();
+    let bak;
+    try { bak = restoreSnapshot(town.dataDir, name); } catch (e) {
+      town = makeTown();
+      wire(town);
+      throw e;
+    }
+    town = makeTown();
+    town.idle = config.idlePauseSec > 0 && clients.size === 0;
+    wire(town);
+    broadcast('init', town.initPayload());
+    console.log(`[rollback] ${ip} 把小镇回溯到 ${b.name}，原存档备份为 ${bak}`);
+    return json(res, 200, { ok: true, backup: bak });
+  }
+
+  // 时间线分支：从快照（或此刻）分出新时间线，可选择立即切换过去
+  if (p === '/api/timelines/fork') {
+    requireAdmin(req);
+    const fromId = registry(DATA).active;
+    if (!b.snapshot) town.save();
+    const entry = forkTimeline(DATA, { fromId, snapshot: b.snapshot ? String(b.snapshot) : null, name: sanitize(b.name, 20) });
+    if (b.switch !== false) switchTimeline(entry.id, ip);
+    return json(res, 200, { ok: true, timeline: entry });
+  }
+
+  if (p === '/api/timelines/switch') {
+    requireAdmin(req);
+    switchTimeline(String(b.id || ''), ip);
+    return json(res, 200, { ok: true });
+  }
+
+  // 访客化身：现身 / 走动 / 离开（不调用模型）
+  if (p === '/api/avatar') {
+    if (!config.allowInteraction && !admin) throw new HttpError(403, '当前为只读观赏模式');
+    if (!admin) take(limits.avatar, ip, '现身');
+    const name = sanitize(b.name, 8);
+    const m = await moderate(name, 'chat', town.spec.meta.rating);
+    if (!m.ok) throw new HttpError(422, m.reason);
+    const v = town.avatars.join(vid, ip, { name, color: b.color });
+    return json(res, 200, { ok: true, avatar: { id: v.id, name: v.name, color: v.color } });
+  }
+  if (p === '/api/avatar/move') {
+    town.avatars.move(vid, String(b.location || ''));
+    return json(res, 200, { ok: true });
+  }
+  if (p === '/api/avatar/leave') {
+    return json(res, 200, { ok: town.avatars.leave(vid) });
+  }
+
+  // 打开 / 关闭异界区域（管理员）
+  if (p === '/api/region') {
+    requireAdmin(req);
+    if (!town.openRegion(String(b.id || ''), b.open !== false)) throw new HttpError(400, '未知区域');
+    return json(res, 200, { ok: true, regions: town.regionsView() });
+  }
+
   // 访客投票（每个 IP 每次抉择一票）
   if (p === '/api/vote') {
     if (!config.allowInteraction && !admin) throw new HttpError(403, '当前为只读观赏模式');
@@ -273,13 +396,13 @@ async function handleApi(req, res, url, ip) {
     if (b.confirm !== 'RESET') throw new HttpError(400, '需要确认');
     town.stop();
     // 不直接删除：旧存档改名备份，可手动恢复
-    const save = path.join(DATA, 'save.json');
+    const save = path.join(town.dataDir, 'save.json');
     if (fs.existsSync(save)) {
-      const bak = path.join(DATA, `save-${new Date().toISOString().replace(/[:.]/g, '-')}.bak.json`);
+      const bak = path.join(town.dataDir, `save-${new Date().toISOString().replace(/[:.]/g, '-')}.bak.json`);
       fs.renameSync(save, bak);
       console.log(`[reset] 旧存档已备份为 ${path.basename(bak)}`);
     }
-    town = new Town();
+    town = makeTown();
     town.idle = config.idlePauseSec > 0 && clients.size === 0;
     wire(town);
     broadcast('init', town.initPayload());
@@ -288,6 +411,20 @@ async function handleApi(req, res, url, ip) {
   }
 
   throw new HttpError(404, '不存在');
+}
+
+/** 切换到另一条时间线：当前小镇存盘停下，换成目标时间线的小镇 */
+function switchTimeline(id, ip) {
+  const r = registry(DATA);
+  if (!r.list.some((t) => t.id === id)) throw new HttpError(404, '时间线不存在');
+  town.save();
+  town.stop();
+  setActive(DATA, id);
+  town = makeTown();
+  town.idle = config.idlePauseSec > 0 && clients.size === 0;
+  wire(town);
+  broadcast('init', town.initPayload());
+  console.log(`[timeline] ${ip} 切换到时间线 ${id}`);
 }
 
 function openStream(req, res, ip) {

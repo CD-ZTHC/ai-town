@@ -15,6 +15,9 @@ mise run token      # 生成管理员令牌
 mise run check      # 语法检查
 mise run test       # 运行测试（不调用 LLM）
 mise run spec       # 打印默认世界规格
+mise run evolve     # 把 AI 心愿单里已采纳的能力缺口整理成需求文档（docs/rfcs/）
+mise run manifest   # 重新生成能力清单 docs/capabilities.md
+mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实调用一次（默认 token 上限 20 万）
 ```
 
 LLM 配置读取 `.env`（OpenAI 兼容接口）：
@@ -26,6 +29,12 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 | `STORY_RATING` | 内容分级：`cozy`（默认）/ `adventure` / `epic`；决定异界生物的危险程度与审核尺度 |
 | `STORYTELLER` | 叙事者：`voyage`（默认，每季自动上演一个剧情弧）/ `gentle`（以日常为主）/ `chaos` |
 | `LLM_CONCURRENCY` | 并发请求数，默认 4；遇到限流会自动退避并降低并发 |
+| `LLM_JSON_MODE` | 默认开启：请求模型以 JSON 模式输出（`response_format: json_object`），网关不支持时自动关闭；设为 `0` 手动关闭 |
+| `NODE_USE_ENV_PROXY` | 服务器需要经由 HTTPS 代理访问模型时设为 `1`（Node ≥ 22.21），否则 Node 内置的 fetch 不会读取 `HTTPS_PROXY` |
+| `PACE_WITH_LLM` / `PACE_QUEUE` | 默认开启：模型排队超过 `PACE_QUEUE`（默认 6）个请求时按比例放慢时间（最低 1/4），避免游戏时间跑在思考前面；设为 `0` 关闭 |
+| `MODS` | 要加载的 Mod，逗号分隔（见 [spec/mods](spec/mods/README.md)） |
+| `AVATAR_MAX` | 同时在小镇里现身的访客上限，默认 8 |
+| `DATA_DIR` | 存档目录，默认 `data` |
 | `PORT` / `HOST` | 端口（默认 3000）/ 监听地址 |
 | 公网相关 | `PUBLIC_MODE`、`ADMIN_TOKEN`、`TRUST_PROXY`、`LLM_DAILY_TOKENS` 等，完整列表见 `.env.example` |
 
@@ -127,6 +136,33 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 - 顶栏「🎭 故事」打开故事面板：张力曲线、剧情弧阶段、导演笔记、抉择投票、伏笔看板、危机状态、生物图鉴。
 - 接口：`GET /api/story`；`POST /api/vote`；管理员 `POST /api/vote/decide`、`POST /api/arc/start`、`POST /api/director/decide`。
 
+## 小镇建设：世界架构师与时光回溯
+
+- **世界架构师**：把「意图」变成世界补丁（新建筑、节日、天气、物品、构筑物、能力、世界法则、设定）。意图来自四处：叙事导演的 `propose` 节拍、居民聊天中聊出的建设点子（每天最多一个）、访客在「🛠 建设」面板提的建议（每 IP 每小时 2 条，经审核）、管理员。补丁校验失败时带着错误修正一轮；做不到的事记入「AI 心愿单」。
+- **新建筑**：AI 只描述「靠近哪里、多大」，系统在附近自动选址——占地必须是空地、与其他建筑隔一格、门口可达，且不会挡住任何建筑入口或地点站位。新建筑叠加在原地图上，原地图其余部分不变；落地后成为居民可以去的地点。
+- **设定考据官**：先做规则检查（重名、违背「温馨、没有人会死亡」的支柱设定），再由模型对照相关设定判断是否矛盾，明显矛盾的补丁直接驳回。
+- **审批**：本地模式小改自动通过、大改等管理员确认；公网模式（设置了管理员令牌）小改和大改都先征求访客意见 1 小时，再由管理员终审，24 小时无人终审则作废。微调（如写一条设定）直接通过。每个游戏日最多落地 3 个小改、1 个大改，超出的排到第二天。
+- **施工**：新建筑会先出现工地 🚧，指定的居民去施工，到时完工。
+- **时光回溯**：每个游戏小时自动保存一份快照（保留 24 份）；管理员可以在「🛠 建设 → ⏳ 时光回溯」把整个小镇恢复到某个整点，当前存档会先备份。
+- 接口：`GET /api/proposals`、`POST /api/proposals`（提建议）、`POST /api/proposals/vote`；管理员 `POST /api/proposals/direct`（直接提交补丁）、`POST /api/proposals/decide`、`GET /api/snapshots`、`POST /api/rollback`。
+
+## 异界、时间线、访客化身与 Mod
+
+- **暗月界**：和小镇相连的口袋地图（36×26 的浮岛：暗月广场、月光花园、星坠崖、月之渡口·彼岸）。《镜湖裂隙》走到「双月当空」结局时打开，也可以由管理员在「🛠 建设 → 🌗 区域」开关。开放后，居民的日程、约定、节日都可以写异界地点，他们会先走到镜湖的渡口，穿过去再继续走；第一次过去的人会记住这段经历。那边住着三只友善的小影灵。顶栏的「🌗」按钮切换查看的区域；跟随某位居民时，画面会跟着他穿过渡口。
+- **时间线分支**：管理员可以在「🛠 建设 → ⏳ 时间线」从此刻或任意整点快照分出一条新时间线（最多 12 条），各自独立存档（`data/timelines/tl-N/`），随时切换。「回到这里」仍然是在当前时间线上回溯。
+- **访客化身**：访客点「👣 现身」起个名字，就会以旅人的样子出现在中央广场，可以走到任何开放的公共地点（包括异界）。居民看得见身边的旅人，认识的人会打招呼；和居民聊天时，对方知道是谁在说话、是不是就站在面前，记忆里也会记下名字。化身不进存档，每个 IP 同时一个，20 分钟不操作自动离开，不消耗模型额度。
+- **Mod**：`mise run export-mod` 把存档里 AI 创造的内容导出成 Mod，别的小镇用 `MODS=` 加载。详见 [spec/mods/README.md](spec/mods/README.md)。
+- **AI 负载调速与用量**：模型排队过长时自动放慢时间，顶栏会显示「🧠 大家在思考，时间放慢了」；AI 大脑面板显示最近几个游戏日的平均 token 用量（`GET /api/usage` 有按模块的明细）。
+- 接口：`POST /api/avatar`（`{"name":"小满","color":"#64b5f6"}`）、`POST /api/avatar/move`（`{"location":"pier"}`）、`POST /api/avatar/leave`；管理员 `POST /api/region`（`{"id":"moonrealm","open":true}`）、`GET /api/timelines`、`POST /api/timelines/fork`（`{"name":"…","snapshot":"d003-10.json"}`，不填快照则从此刻分叉）、`POST /api/timelines/switch`（`{"id":"tl-1"}`）。
+
+## 自我进化：AI 心愿单 → 需求文档 → 扩展
+
+- **AI 心愿单**：世界架构师做不到的点子、叙事导演想用却不存在的剧情动作，都会记为「能力缺口」，相似的自动合并计数。管理员在「🛠 建设 → 🧩 AI 心愿单」里采纳或忽略。
+- **`mise run evolve`**：把已采纳的缺口整理成需求文档写进 `docs/rfcs/`（有 LLM 时由强模型撰写，否则生成带数据的骨架）。**只生成文档，不写代码、不开 PR**。
+- **扩展点 `server/ext/`**：维护者按需求文档用 `registerEffect` / `registerExprFn` 实现新能力，启动时自动加载；扩展只能新增、不能覆盖内核能力。
+- **能力清单**：由代码自动生成（`docs/capabilities.md`，也用于架构师的提示词），新扩展合并后 AI 立刻能用。
+- 第一个走完闭环的例子：[RFC 0001 让居民立刻动身前往指定地点](docs/rfcs/0001-go-to.md) → `server/ext/go-to.js` 的效果 `goTo`。详见 [docs/rfcs/README.md](docs/rfcs/README.md)。
+
 ## 能力、行动与世界法则
 
 - **体力与勇气**：活动会消耗体力、睡觉恢复，体力过低会「疲惫」；勇气受能力和世界法则影响，会慢慢回到平常。
@@ -177,10 +213,15 @@ server/
   kernel/abilities.js 能力：校验、使用、研究
   story/director.js 叙事导演；story/tension.js 张力模型；story/threads.js 剧情线程
   story/beats.js  剧情节拍（导演与剧情弧共用的剧情动作）；story/scene.js 多人场景；story/votes.js 投票
+  kernel/placement.js 新建筑的语义化选址与连通性校验
+  worldai/manifest.js 能力清单（自动生成）
+  kernel/mods.js  Mod 导出与加载；timelines.js 时间线分支；avatars.js 访客化身
+  ext/            扩展点：registry.js 注册表、index.js 加载器、go-to.js（RFC 0001）
+  worldai/architect.js 世界架构师；worldai/proposals.js 提案与审批；worldai/canon.js 设定考据官
   story/arcs.js   剧情弧引擎；story/creatures.js 异界生物；story/content.js 默认剧情内容（线程、图鉴、《镜湖裂隙》）
   llm.js       OpenAI 兼容客户端：并发队列、自适应限流、JSON 提取
   memory.js    记忆流与检索
-  world.js     程序化地图（瓦片、建筑、站位、A* 寻路）
+  world.js     程序化地图（小镇与暗月界：瓦片、建筑、站位、A* 寻路）
   personas.js  8 位居民的人设、初始关系与记忆
 public/
   js/render.js 世界渲染：地形、建筑、树木、昼夜光照、天气与粒子、气泡
@@ -189,7 +230,9 @@ public/
   js/main.js   数据流、相机、输入、环境音
 deploy/        Caddy / Nginx / systemd 部署模板
 Dockerfile, docker-compose.yml, .env.example
+tools/         evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）
+spec/mods/     Mod（AI 创造的内容包）
 test/          node:test 测试（无需安装依赖）
 docs/design/   设计方案
-data/save.json 自动存档（每 20 秒），ops.jsonl 世界变更日志，snapshots/ 每小时快照
+data/save.json 自动存档（每 20 秒），ops.jsonl 世界变更日志，snapshots/ 每小时快照，timelines/ 分支时间线
 ```

@@ -2,7 +2,7 @@
 import { buildSprites, makePortrait, shade, SPR_W, SPR_H } from './sprites.js';
 
 export const TS = 32;
-const T = { GRASS: 0, PATH: 1, PLAZA: 2, DIRT: 3, WATER: 4, SAND: 5, BRIDGE: 6, SOIL: 7, WOOD: 8, DEEP: 9, FLOWER: 10 };
+const T = { GRASS: 0, PATH: 1, PLAZA: 2, DIRT: 3, WATER: 4, SAND: 5, BRIDGE: 6, SOIL: 7, WOOD: 8, DEEP: 9, FLOWER: 10, MOON: 11, VOID: 12, MOONPATH: 13 };
 const SCALE = 2; // 角色精灵放大倍数
 const STATIC_OBJECTS = new Set(['fence', 'crop', 'bench', 'rock', 'stage', 'hay', 'anvil', 'woodpile']);
 
@@ -95,11 +95,15 @@ export class Renderer {
     // 静态物体已画进底图，其余（包括世界规格里新增的未知类型）都按动态物体参与 y 排序绘制
     this.dynamic = world.objects.filter((o) => !STATIC_OBJECTS.has(o.type));
     const P = this.particles;
-    P.flies = Array.from({ length: 46 }, () => this.newFly());
-    P.butterflies = Array.from({ length: 10 }, () => ({ x: 2 + Math.random() * 28, y: 33 + Math.random() * 9, vx: 0, vy: 0, c: ['#fff4a3', '#ffc6e0', '#bfe3ff', '#ffffff'][Math.floor(Math.random() * 4)], ph: Math.random() * 6 }));
+    this.moon = world.id === 'moonrealm';
+    this.balloonLight = null;
+    this.particles.lanterns = [];
+    P.flies = Array.from({ length: this.moon ? 60 : 46 }, () => this.newFly());
+    P.butterflies = this.moon ? [] : Array.from({ length: 10 }, () => ({ x: 2 + Math.random() * 28, y: 33 + Math.random() * 9, vx: 0, vy: 0, c: ['#fff4a3', '#ffc6e0', '#bfe3ff', '#ffffff'][Math.floor(Math.random() * 4)], ph: Math.random() * 6 }));
   }
 
   newFly() {
+    if (this.moon) return { x: 4 + Math.random() * 28, y: 3 + Math.random() * 20, ph: Math.random() * 10, sp: 0.2 + Math.random() * 0.5 };
     const zones = [[2, 33, 29, 10], [44, 30, 18, 3], [15, 36, 15, 6], [38, 2, 8, 12]];
     const z = zones[Math.floor(Math.random() * zones.length)];
     return { x: z[0] + Math.random() * z[2], y: z[1] + Math.random() * z[3], ph: Math.random() * 10, sp: 0.3 + Math.random() * 0.6 };
@@ -193,6 +197,9 @@ export class Renderer {
       const X = x * TS, Y = y * TS;
       if (t === T.GRASS || t === T.FLOWER) this.paintGrass(g, x, y, t === T.FLOWER);
       else if (t === T.PATH) this.paintCobble(g, x, y);
+      else if (t === T.MOON) this.paintMoonGrass(g, x, y);
+      else if (t === T.MOONPATH) this.paintSpeckle(g, x, y, '#8d86b8', '#77709f', '#a9a2d4');
+      else if (t === T.VOID) this.paintVoid(g, x, y);
       else if (t === T.PLAZA) this.paintPlaza(g, x, y);
       else if (t === T.DIRT) this.paintSpeckle(g, x, y, '#c9a46e', '#b58f5a', '#d8b884');
       else if (t === T.SAND) this.paintSpeckle(g, x, y, '#ecd9a2', '#dcc68a', '#f6e8bd');
@@ -263,7 +270,22 @@ export class Renderer {
         }
       }
     }
+    // 暗月界：浮岛边缘的微光
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (tile(x, y) !== T.VOID) continue;
+      for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+        const nt = tile(x + dx, y + dy);
+        if (nt !== T.MOON && nt !== T.MOONPATH) continue;
+        const X = x * TS, Y = y * TS;
+        g.fillStyle = dy === -1 ? 'rgba(60,40,110,.95)' : 'rgba(170,140,255,.35)';
+        if (dy === -1) g.fillRect(X, Y, TS, 10); // 岛的侧面
+        if (dy === 1) g.fillRect(X, Y + TS - 3, TS, 3);
+        if (dx === -1) g.fillRect(X, Y, 3, TS);
+        if (dx === 1) g.fillRect(X + TS - 3, Y, 3, TS);
+      }
+    }
     // 广场马赛克：喷泉周围的圆环
+    if (this.world.id === 'town') {
     g.save();
     g.strokeStyle = 'rgba(170,140,110,.55)';
     g.lineWidth = 6;
@@ -272,6 +294,7 @@ export class Renderer {
     g.lineWidth = 3;
     g.beginPath(); g.arc(22.5 * TS, 23.5 * TS, 3.6 * TS, 0, Math.PI * 2); g.stroke();
     g.restore();
+    }
 
     // 静态物体
     for (const o of this.world.objects) {
@@ -313,6 +336,26 @@ export class Renderer {
         g.fillRect(fx, fy + 1, 3, 1); g.fillRect(fx + 1, fy, 1, 3);
         g.fillStyle = '#ffe98a'; g.fillRect(fx + 1, fy + 1, 1, 1);
       }
+    }
+  }
+
+  paintMoonGrass(g, x, y) {
+    const X = x * TS, Y = y * TS;
+    for (let by = 0; by < TS; by += 4) for (let bx = 0; bx < TS; bx += 4) {
+      const n = vnoise((X + bx) / 120, (Y + by) / 120, 5) * 0.8 + (h2(X + bx, Y + by, 3) - 0.5) * 0.3;
+      g.fillStyle = mix('#3b3470', '#5a4f9a', n);
+      g.fillRect(X + bx, Y + by, 4, 4);
+    }
+    if (h2(x, y, 11) > 0.7) { g.fillStyle = '#b9a8ff'; g.fillRect(X + h2(x, y, 12) * 28, Y + h2(x, y, 13) * 28, 2, 2); }
+  }
+
+  paintVoid(g, x, y) {
+    const X = x * TS, Y = y * TS;
+    g.fillStyle = mix('#0b0820', '#1a1240', vnoise(x / 6, y / 6, 9));
+    g.fillRect(X, Y, TS, TS);
+    for (let i = 0; i < 2; i++) if (h2(x, y, 20 + i) > 0.55) {
+      g.fillStyle = h2(x, y, 30 + i) > 0.8 ? '#fff6d0' : 'rgba(200,190,255,.7)';
+      g.fillRect(X + h2(x, y, 40 + i) * 30, Y + h2(x, y, 50 + i) * 30, 1.5, 1.5);
     }
   }
 
@@ -569,6 +612,7 @@ export class Renderer {
     }
     // 招牌
     const signs = { cafe: '☕', library: '📚', tavern: '🍺', clinic: '', workshop: '🔨', farmhouse: '🌾' };
+    if (!signs[kind] && b.sign) signs[kind] = b.sign; // 新增建筑的招牌
     if (signs[kind]) {
       const sx = doorX + 22, sy = dy + 2;
       g.fillStyle = '#5a3e28'; g.fillRect(sx - 1, sy - 4, 2, 6);
@@ -586,9 +630,9 @@ export class Renderer {
     const c = document.createElement('canvas');
     c.width = W * s; c.height = H * s;
     const g = c.getContext('2d');
-    const col = { 0: '#78b656', 1: '#d7c79f', 2: '#e4d8bd', 3: '#c6a06a', 4: '#4b9fd4', 5: '#e9d59c', 6: '#a77a4c', 7: '#8a5c3a', 8: '#b98b58', 9: '#2f76ae', 10: '#86c160' };
+    const col = { 0: '#78b656', 1: '#d7c79f', 2: '#e4d8bd', 3: '#c6a06a', 4: '#4b9fd4', 5: '#e9d59c', 6: '#a77a4c', 7: '#8a5c3a', 8: '#b98b58', 9: '#2f76ae', 10: '#86c160', 11: '#4a4288', 12: '#0e0a26', 13: '#8d86b8' };
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { g.fillStyle = col[tiles[y * W + x]]; g.fillRect(x * s, y * s, s, s); }
-    for (const o of this.world.objects) if (o.type === 'tree') { g.fillStyle = o.kind === 'sakura' ? '#e89ab8' : '#3f7d3c'; g.fillRect(o.x * s, o.y * s, s, s); }
+    for (const o of this.world.objects) if (o.type === 'moonwell' || o.type === 'crystal') { g.fillStyle = '#c9b8ff'; g.fillRect(o.x * s, o.y * s, (o.w || 1) * s, (o.h || 1) * s); } else if (o.type === 'tree') { g.fillStyle = o.kind === 'sakura' ? '#e89ab8' : '#3f7d3c'; g.fillRect(o.x * s, o.y * s, s, s); }
     for (const b of this.world.buildings) { g.fillStyle = b.roof; g.fillRect(b.x * s, b.y * s, b.w * s, b.h * s); g.strokeStyle = 'rgba(0,0,0,.4)'; g.strokeRect(b.x * s + 0.5, b.y * s + 0.5, b.w * s - 1, b.h * s - 1); }
     this.miniBase = c;
     this.miniScale = s;
@@ -614,14 +658,16 @@ export class Renderer {
     const { ctx, dpr } = this;
     const cam = S.cam;
     const minute = S.t % 1440;
-    const sky = skyAt(minute, S.weather);
+    let sky = skyAt(minute, S.weather);
+    // 暗月界：永远是紫色的黄昏
+    if (this.moon) sky = { dark: Math.max(0.5, sky.dark * 0.4 + 0.45), warm: 0, pink: 0, night: true, moon: true };
     this.sky = sky;
     const festival = S.festival;
     this.S = S;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#1a2a1e';
+    ctx.fillStyle = this.moon ? '#0b0820' : '#1a2a1e';
     ctx.fillRect(0, 0, this.vw, this.vh);
 
     // 世界坐标变换
@@ -656,8 +702,9 @@ export class Renderer {
       items.push({ y: e.kind === 'portal' ? -1e6 : e.y * TS + TS * 0.8, e });
     }
     for (const c of S.creatures || []) items.push({ y: c.dy * TS + TS * 0.9, c });
+    for (const v of S.avatars || []) items.push({ y: v.dy * TS + TS * 0.9, v });
     items.sort((p, q) => p.y - q.y);
-    for (const it of items) it.o ? this.drawObject(ctx, it.o, S) : it.e ? (it.e.kind === 'portal' ? this.drawPortal(ctx, it.e) : this.drawEntity(ctx, it.e)) : it.c ? this.drawCreature(ctx, it.c) : this.drawAgent(ctx, it.a, S);
+    for (const it of items) it.v ? this.drawAvatar(ctx, it.v, S) : it.o ? this.drawObject(ctx, it.o, S) : it.e ? (it.e.kind === 'portal' ? this.drawPortal(ctx, it.e) : this.drawEntity(ctx, it.e)) : it.c ? this.drawCreature(ctx, it.c) : this.drawAgent(ctx, it.a, S);
     this.drawVfx(ctx);
 
     this.updateParticles(dt, S, sky);
@@ -800,6 +847,39 @@ export class Renderer {
         ctx.fillStyle = '#a86a3a'; ctx.fillRect(-24, -4, 48, 4);
         ctx.fillStyle = '#e8d8b8'; ctx.fillRect(-4, -4, 8, 4);
         ctx.restore();
+        break;
+      }
+      case 'moonwell': {
+        const cx = X + TS, cy = Y + TS + 4;
+        ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(cx + 2, cy + 8, 30, 14, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#6d6699'; ctx.beginPath(); ctx.ellipse(cx, cy + 4, 28, 14, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#9a93c8'; ctx.beginPath(); ctx.ellipse(cx, cy, 28, 13, 0, 0, 7); ctx.fill();
+        const wg = ctx.createRadialGradient(cx, cy, 2, cx, cy, 22);
+        wg.addColorStop(0, '#e6f4ff'); wg.addColorStop(1, '#6a8cff');
+        ctx.fillStyle = wg; ctx.beginPath(); ctx.ellipse(cx, cy, 22, 9, 0, 0, 7); ctx.fill();
+        for (let i = 0; i < 5; i++) {
+          const p = (t * 0.4 + i / 5) % 1;
+          ctx.fillStyle = `rgba(220,235,255,${1 - p})`;
+          ctx.fillRect(cx - 14 + i * 7, cy - p * 40, 2, 2);
+        }
+        break;
+      }
+      case 'moonflower': {
+        const glow = 0.6 + Math.sin(t * 2 + o.v * 10) * 0.3;
+        ctx.fillStyle = '#2d5a55'; ctx.fillRect(X + 15, Y + 14, 2, 12);
+        ctx.fillStyle = `rgba(160,235,255,${glow})`;
+        for (const [dx, dy] of [[0, -4], [4, 0], [0, 4], [-4, 0]]) { ctx.beginPath(); ctx.arc(X + 16 + dx, Y + 12 + dy, 3, 0, 7); ctx.fill(); }
+        ctx.fillStyle = '#fffbe0'; ctx.fillRect(X + 15, Y + 11, 2, 2);
+        break;
+      }
+      case 'crystal': {
+        const h = 20 + o.v * 18;
+        ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(X + 16, Y + 26, 10, 4, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#7b5cd6';
+        ctx.beginPath(); ctx.moveTo(X + 10, Y + 26); ctx.lineTo(X + 14, Y + 26 - h); ctx.lineTo(X + 20, Y + 26 - h * 0.8); ctx.lineTo(X + 22, Y + 26); ctx.fill();
+        ctx.fillStyle = '#b69bff';
+        ctx.beginPath(); ctx.moveTo(X + 14, Y + 26); ctx.lineTo(X + 14, Y + 26 - h); ctx.lineTo(X + 17, Y + 26 - h * 0.9); ctx.lineTo(X + 17, Y + 26); ctx.fill();
+        if (Math.sin(t * 1.5 + o.v * 30) > 0.9) { ctx.fillStyle = '#fff'; ctx.fillRect(X + 15, Y + 24 - h, 2, 2); }
         break;
       }
       case 'lily': {
@@ -1006,6 +1086,33 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** 访客化身：带兜帽的斗篷小人 + 名牌（自己的化身有金色光圈） */
+  drawAvatar(ctx, v, S) {
+    const cx = v.dx * TS + TS / 2, fy = v.dy * TS + TS - 2;
+    const bob = v.moving ? Math.abs(Math.sin(this.time * 10)) * -2 : 0;
+    ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(cx, fy, 10, 4, 0, 0, 7); ctx.fill();
+    if (v.mine) {
+      const p = (Math.sin(this.time * 4) + 1) / 2;
+      ctx.strokeStyle = `rgba(255,214,102,${0.6 + p * 0.4})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(cx, fy, 14 + p * 2, 5 + p, 0, 0, 7); ctx.stroke();
+    }
+    const y0 = fy - 38 + bob;
+    ctx.fillStyle = v.color;
+    ctx.beginPath(); ctx.moveTo(cx - 11, fy - 2 + bob); ctx.lineTo(cx - 7, y0 + 14); ctx.lineTo(cx + 7, y0 + 14); ctx.lineTo(cx + 11, fy - 2 + bob); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, y0 + 10, 9, 0, 7); ctx.fill();
+    ctx.fillStyle = '#f3d7b6'; ctx.beginPath(); ctx.arc(cx, y0 + 12, 5.5, 0, 7); ctx.fill();
+    ctx.fillStyle = '#3a2a20';
+    if (v.dir !== 'up') { ctx.fillRect(cx - 3, y0 + 11, 2, 2); ctx.fillRect(cx + 1, y0 + 11, 2, 2); }
+    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(cx - 1, y0 + 20, 2, fy - y0 - 22);
+    ctx.save();
+    ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const label = `👣${v.name}`;
+    const w = ctx.measureText(label).width + 8;
+    ctx.fillStyle = 'rgba(20,20,30,.6)'; roundRect(ctx, cx - w / 2, y0 - 16, w, 14, 5); ctx.fill();
+    ctx.fillStyle = v.mine ? '#ffe08a' : '#fff'; ctx.fillText(label, cx, y0 - 3);
+    ctx.restore();
+  }
+
   drawAgent(ctx, a, S) {
     const spr = this.sprites[a.id];
     if (!spr) return;
@@ -1148,7 +1255,7 @@ export class Renderer {
     const toL = (wx, wy) => [(wx * z + ox) * ls, (wy * z + oy) * ls];
     lctx.globalCompositeOperation = 'source-over';
     lctx.clearRect(0, 0, light.width, light.height);
-    lctx.fillStyle = `rgba(10,14,42,${sky.dark})`;
+    lctx.fillStyle = sky.moon ? `rgba(30,10,60,${sky.dark})` : `rgba(10,14,42,${sky.dark})`;
     lctx.fillRect(0, 0, light.width, light.height);
     lctx.globalCompositeOperation = 'destination-out';
     const lights = this.collectLights(S, sky, minute);
@@ -1212,7 +1319,12 @@ export class Renderer {
     const on = sky.dark > 0.15;
     const h = minute / 60;
     if (on) for (const l of this.world.lamps) {
-      out.push({ x: l.x * TS + 16, y: l.y * TS - 16, r: 120, i: 0.95, c: '255,190,110' });
+      out.push({ x: l.x * TS + 16, y: l.y * TS - 16, r: 120, i: 0.95, c: this.moon ? '190,160,255' : '255,190,110' });
+    }
+    if (this.moon) for (const o of this.world.objects) {
+      if (o.type === 'moonwell') out.push({ x: (o.x + 1) * TS, y: (o.y + 1) * TS, r: 150, i: 0.95, c: '160,200,255' });
+      else if (o.type === 'crystal') out.push({ x: o.x * TS + 16, y: o.y * TS + 8, r: 40, i: 0.6, c: '200,150,255' });
+      else if (o.type === 'moonflower' && o.v > 0.6) out.push({ x: o.x * TS + 16, y: o.y * TS + 16, r: 26, i: 0.5, c: '150,230,255' });
     }
     this.litWindows = [];
     if (on) {
@@ -1226,7 +1338,7 @@ export class Renderer {
         out.push({ x: w.x + w.w / 2, y: w.y + w.h + 6, r: w.door ? 50 : 42, i: 0.85, c: '255,180,90' });
       }
     }
-    out.push({ x: 22.5 * TS, y: 23.5 * TS, r: 90, i: 0.5, c: '120,200,255' });
+    if (!this.moon) out.push({ x: 22.5 * TS, y: 23.5 * TS, r: 90, i: 0.5, c: '120,200,255' });
     for (const a of S.agents) {
       if (a.inside || !on) continue;
       out.push({ x: a.dx * TS + 16, y: a.dy * TS + 10, r: 56, i: 0.7, c: '255,200,120' });

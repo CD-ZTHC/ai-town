@@ -16,6 +16,9 @@ const models = {
   smart: process.env.MODEL_SMART || '',
 };
 const modelFor = (tier) => models[tier] || models.default;
+// JSON 模式（response_format: json_object）：大幅减少模型输出不合法 JSON 的情况。
+// 网关不支持时会报错，此时自动关闭并重试；也可以用 LLM_JSON_MODE=0 手动关闭。
+let jsonMode = process.env.LLM_JSON_MODE !== '0';
 let modelChecked = false;
 const listeners = new Set();
 
@@ -36,6 +39,7 @@ export const stats = {
   dayTokens: 0,
   dailyBudget: DAILY_BUDGET,
   recent: [], // {label, agent, ms, ok, at}
+  byLabel: {}, // 按模块统计：{ 规划一天: { calls, fails, tokens, ms } }
   active: [], // {id, label, agent, since}
 };
 
@@ -124,7 +128,7 @@ function enqueue(fn, priority = false) {
 }
 
 let seq = 0;
-async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = TIMEOUT_MS, attempts = 3, tier = 'default' }) {
+async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = TIMEOUT_MS, attempts = 3, tier = 'default', json = false }) {
   await ensureModel();
   const model = modelFor(tier);
   const id = ++seq;
@@ -150,6 +154,7 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
             temperature,
             max_tokens: maxTokens,
             reasoning_effort: 'low',
+            ...(json && jsonMode ? { response_format: { type: 'json_object' } } : {}),
           }),
         });
         const text = await res.text();
@@ -165,6 +170,10 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
         stats.completionTokens += data.usage?.completion_tokens || 0;
         rollDay();
         stats.dayTokens += (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
+        const u = (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0 });
+        u.calls++;
+        u.tokens += (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
+        u.ms += Date.now() - started;
         if (!content.trim()) throw new Error(`空回复 (finish_reason=${data.choices?.[0]?.finish_reason})`);
         const ms = Date.now() - started;
         backoff = Math.max(0, backoff - 1);
@@ -176,6 +185,11 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
       } catch (e) {
         lastErr = e;
         if (/no access|invalid.*key|unauthori/i.test(e.message)) break;
+        if (json && jsonMode && /response_format|json_object|json mode/i.test(e.message)) {
+          jsonMode = false;
+          console.warn('[llm] 网关不支持 JSON 模式，已自动关闭');
+          continue;
+        }
         if (/速率|频率|rate.?limit|429|too many|concurren|并发/i.test(e.message)) {
           // 限流：全局冷却 + 指数退避 + 降低并发
           backoff = Math.min(5, backoff + 1);
@@ -193,6 +207,7 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
     stats.errors++;
     stats.lastError = String(lastErr?.message || lastErr).slice(0, 200);
     pushRecent({ label, agent, ms: Date.now() - started, ok: false });
+    (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0 }).fails++;
     throw lastErr;
   } finally {
     stats.active = stats.active.filter((a) => a.id !== id);
@@ -233,6 +248,9 @@ export function extractJSON(text) {
     // 常见修复：中文引号、尾逗号
     const fixed = s
       .replace(/[“”]/g, '"')
+      .replace(/"\s*：\s*/g, '":') // 键后面的全角冒号
+      .replace(/"\s*，\s*"/g, '","') // 字符串之间的全角逗号
+      .replace(/([:[,]\s*)\+(\d)/g, '$1$2') // 数字前的 + 号
       .replace(/,\s*([}\]])/g, '$1')
       .replace(/\n/g, ' ');
     return JSON.parse(fixed);
@@ -240,6 +258,7 @@ export function extractJSON(text) {
 }
 
 export async function chatJSON(messages, opts = {}) {
+  opts = { json: true, ...opts };
   let content = await chat(messages, opts);
   try {
     return extractJSON(content);

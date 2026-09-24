@@ -3,7 +3,7 @@
 import * as llm from '../llm.js';
 import { fmtTime } from '../memory.js';
 import { computeTension, targetTension, BOREDOM_HOURS } from './tension.js';
-import { runBeats, DIRECTOR_KINDS } from './beats.js';
+import { runBeats, DIRECTOR_KINDS, ALL_KINDS } from './beats.js';
 import { threadsBlock } from './threads.js';
 
 const MIN_GAP = 120; // 两次决策至少间隔 2 游戏小时（玩家事件除外）
@@ -105,6 +105,7 @@ ${pending ? `\n玩家刚刚发布的小镇事件（这是故事素材，不是�
 {"kind":"weather","id":"${Object.keys(town.spec.weather).join('/')}"}
 {"kind":"canon","text":"写进小镇历史的事实（≤100字）"}
 {"kind":"growth","who":"姓名","change":"这个人的成长（≤20字）"}
+{"kind":"propose","intent":"希望小镇新增的建筑 / 节日 / 物品 / 能力等（≤80字），交给世界架构师设计，经审批后落地"}
 {"kind":"launchArc","template":"剧情弧id"}
 原则：先埋伏笔再爆发；优先推进或回收剧情线程；与进行中的剧情弧保持一致；没有人死亡；不要重复最近已经发生的事。
 输出 JSON：{"decision":"…","reason":"一句话说明理由（≤40字）","beats":[…]}`;
@@ -124,6 +125,12 @@ ${pending ? `\n玩家刚刚发布的小镇事件（这是故事素材，不是�
       ], { label: '叙事导演', agent: '导演', maxTokens: 3500, temperature: 0.85, tier: 'smart', priority: false, timeoutMs: 120_000, attempts: 2 });
       const decision = DECISIONS.includes(res.decision) ? res.decision : 'noop';
       const beats = Array.isArray(res.beats) ? res.beats.filter((b) => DIRECTOR_KINDS.includes(b?.kind)).slice(0, MAX_BEATS) : [];
+      // 导演想用、但系统里根本没有的剧情动作 → 记入 AI 心愿单
+      for (const b of Array.isArray(res.beats) ? res.beats : []) {
+        if (b && typeof b.kind === 'string' && b.kind && !ALL_KINDS.includes(b.kind)) {
+          town.architect.recordGap({ need: `剧情动作「${b.kind.slice(0, 20)}」`, why: String(res.reason || '导演想用它推进剧情').slice(0, 40) }, { origin: 'director', intent: String(b.text || b.intent || b.kind) });
+        }
+      }
       const r = decision === 'noop' ? { done: 0, skipped: [] } : runBeats(town, beats, { privileged: false, ctx: { source: 'director' } });
       if (r.done) this.onBeat();
       for (const s of r.skipped) console.warn(`[director] 丢弃动作 ${s.kind}：${s.error}`);

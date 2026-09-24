@@ -2,8 +2,9 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildWorld, findPath } from './world.js';
+import { buildWorld, buildMoonRealm, findPath } from './world.js';
 import * as llm from './llm.js';
+import './ext/index.js'; // 加载 server/ext/ 下人工审核后的扩展能力
 import { addMemory, retrieve, fmtTime, fmtStamp, parseHM } from './memory.js';
 import { defaultSpec, validateSpec, weekdayOf, calendarHint, pickWeather, publicSpec, PARAM_BOUNDS } from './kernel/spec.js';
 import { RuleEngine } from './kernel/rules.js';
@@ -14,11 +15,17 @@ import { ArcEngine } from './story/arcs.js';
 import { SceneManager } from './story/scene.js';
 import { VoteSystem } from './story/votes.js';
 import { CreatureSystem } from './story/creatures.js';
+import { AvatarSystem } from './avatars.js';
 import { threadList } from './story/threads.js';
-import { applyOp, replay, OpJournal, OPS } from './kernel/ops.js';
+import { ProposalSystem } from './worldai/proposals.js';
+import { Architect } from './worldai/architect.js';
+import { applyOp, replay, OpJournal, OPS, OpError } from './kernel/ops.js';
+import { checkPlacement } from './kernel/placement.js';
+import { applyMods } from './kernel/mods.js';
 
 const SAVE_VERSION = 2;
 const SNAPSHOT_KEEP = 24; // 保留最近 24 个游戏小时的快照
+const PACE_QUEUE = Number(process.env.PACE_QUEUE || 6); // 模型排队超过这个数时开始放慢时间
 const MAX_STRUCTURES = 30;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -39,17 +46,27 @@ export class Town extends EventEmitter {
     this.dataDir = path.resolve(opts.dataDir || process.env.DATA_DIR || 'data');
     this.saveFile = path.join(this.dataDir, 'save.json');
     this.instantTalk = Boolean(opts.instantTalk);
+    this.pacing = opts.pacing ?? process.env.PACE_WITH_LLM !== '0';
+    this.queueSize = opts.queueSize || null; // 测试可注入
     this.journal = new OpJournal(path.join(this.dataDir, 'ops.jsonl'));
     const saved = this.readSave();
     // 世界规格 = 默认规格 + 存档中的操作历史重放
     this.specOps = Array.isArray(saved?.specOps) ? saved.specOps : [];
-    const base = defaultSpec();
-    const baseErrs = validateSpec(base);
+    const baseErrs = validateSpec(defaultSpec());
     if (baseErrs.length) throw new Error(`默认世界规格不合法：${baseErrs.join('；')}`);
+    // Mod 叠加在默认规格之上、存档之下（MODS=a,b 或 opts.mods）
+    const modNames = opts.mods ?? String(process.env.MODS || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const m = applyMods(defaultSpec(), modNames, opts.modsDir);
+    for (const k of m.skipped) console.warn(`[mod] ${k.mod}${k.op ? ` / ${k.op}` : ''}：${k.error}`);
+    if (m.loaded.length) console.log(`[mod] 已加载：${m.loaded.map((x) => `${x.name}（${x.ops} 项）`).join('、')}`);
+    this.mods = m.loaded;
+    const base = m.spec;
     const { spec, skipped } = replay(base, this.specOps);
     for (const k of skipped) console.warn(`[spec] 跳过无法重放的操作 #${k.seq} ${k.op}：${k.error}`);
     this.spec = spec;
     this.world = buildWorld({ buildings: this.spec.buildings, locationInfo: this.spec.locations });
+    // 区域：主地图 + 暗月界（口袋地图，默认关闭，由剧情或管理员打开）
+    this.regions = { town: this.world, moonrealm: buildMoonRealm() };
     this.t = 6 * 60 + 15;
     this.speed = 1;
     this.paused = false;
@@ -84,6 +101,10 @@ export class Town extends EventEmitter {
     this.scenes = new SceneManager(this);
     this.votes = new VoteSystem(this);
     this.creatures = new CreatureSystem(this);
+    this.avatars = new AvatarSystem(this);
+    // P4：世界架构师与提案
+    this.proposalSystem = new ProposalSystem(this);
+    this.architect = new Architect(this);
     this.load(saved);
     this.syncAgents(false);
   }
@@ -109,14 +130,42 @@ export class Town extends EventEmitter {
   get dayEnd() { return this.spec.params.dayEnd; }
   festivalHint() { return calendarHint(this.spec, this.day); }
   weatherText() { return this.spec.weather[this.weather]?.name || this.weather; }
-  locName(id) { return this.world.locations[id]?.name || this.spec.locations[id]?.name || id; }
-  publicLocs() { return Object.keys(this.spec.locations).filter((id) => this.spec.locations[id].public && this.world.locations[id]); }
+  locName(id) { return this.findLocation(id)?.name || (Object.hasOwn(this.spec.locations, id) && this.spec.locations[id].name) || id; }
+  publicLocs() { return Object.keys(this.spec.locations).filter((id) => this.spec.locations[id].public && this.regionOpen(this.locRegion(id)) && this.findLocation(id)); }
   resolveLoc(a, loc) {
     if (!loc || loc === 'home' || loc === a.home) return a.home;
-    if (this.world.locations[loc]) return loc;
-    // LLM 偶尔写中文地名：尝试匹配
-    const hit = Object.values(this.world.locations).find((l) => loc.includes(l.name) || l.name.includes(loc));
+    if (this.findLocation(loc) && this.regionOpen(this.locRegion(loc))) return loc;
+    // LLM 偶尔写中文地名：在开放的区域里尝试匹配
+    const all = Object.values(this.regions).filter((w) => this.regionOpen(w.id)).flatMap((w) => Object.values(w.locations));
+    const hit = all.find((l) => loc.includes(l.name) || l.name.includes(loc));
     return hit ? hit.id : a.home;
+  }
+
+  // ---------- 区域（设计文档 P6：异界口袋地图） ----------
+  worldOf(region) { return this.regions[region] || this.world; }
+  locRegion(id) { return (Object.hasOwn(this.spec.locations, id) && this.spec.locations[id].region) || 'town'; }
+  findLocation(id) { const w = this.worldOf(this.locRegion(id)); return Object.hasOwn(w.locations, id) ? w.locations[id] : null; }
+  regionOpen(id) { return id === 'town' || this.worldFlags[`region_${id}`] === true; }
+  openRegion(id, open = true) {
+    if (!Object.hasOwn(this.regions, id) || id === 'town') return false;
+    this.worldFlags[`region_${id}`] = Boolean(open);
+    const name = this.regions[id].name;
+    this.log('region', open ? `🌗 月之渡口那头的「${name}」向小镇敞开了` : `「${name}」的通路关闭了`, {});
+    if (open && id === 'moonrealm' && !this.creatures.list.some((c) => c.region === 'moonrealm')) {
+      for (const n of ['月月', '萤萤', '朦朦']) this.creatures.addFriend({ type: 'shade_wisp', name: n, near: 'moon_plaza', region: 'moonrealm' });
+    }
+    if (!open) {
+      // 通路关闭：还在那边的人回到渡口；那边的小家伙留在那边
+      const g = this.world.gate;
+      for (const a of this.agents) if (a.region === id) Object.assign(a, { region: 'town', x: g.x, y: g.y, inside: null, path: [], dest: null, hop: null, curKey: null, locId: null, status: 'acting' });
+      this.creatureList = this.creatures.list.filter((c) => (c.region || 'town') !== id);
+    }
+    this.emit('regions', this.regionsView());
+    this.emit('story');
+    return true;
+  }
+  regionsView() {
+    return Object.fromEntries(Object.values(this.regions).map((w) => [w.id, { name: w.name || '小镇', open: this.regionOpen(w.id) }]));
   }
   locListText() {
     return ['home（自己家）', ...this.publicLocs().map((id) => `${id}（${this.spec.locations[id].name}：${this.spec.locations[id].desc}）`)].join('\n');
@@ -130,7 +179,7 @@ export class Town extends EventEmitter {
     const a = {
       id: p.id, name: p.name, age: p.age, role: p.role, persona: p.persona, goal: p.goal, look: p.look,
       home: p.home, work: p.work,
-      x: spot.x, y: spot.y, dir: 'down', moving: false, inside: b ? b.id : null, locId: p.home,
+      x: spot.x, y: spot.y, dir: 'down', moving: false, inside: b ? b.id : null, locId: p.home, region: 'town',
       status: 'sleeping', action: { text: '睡觉', emoji: '😴' }, thought: '', mood: { text: '平静', emoji: '🙂' },
       schedule: [], scheduleDay: 0, curKey: null, path: [], dest: null,
       memories: [], relations: {}, diary: [], importanceAcc: 0,
@@ -214,16 +263,26 @@ export class Town extends EventEmitter {
     if (!this.paused && !this.idle) {
       // 深夜全员熟睡时自动快进，避免漫长的空白夜晚
       this.nightSkip = this.convos.size === 0 && this.agents.every((a) => a.status === 'sleeping');
-      const dtGame = dtReal * (this.nightSkip ? Math.max(this.speed, 15) : this.speed);
+      // 随 AI 负载放慢：模型排队太长时时间流速按比例降低，避免游戏时间跑在思考前面（最低 1/4）
+      this.paced = 1;
+      if (this.pacing && llm.stats.enabled && !this.nightSkip) {
+        const q = (this.queueSize || llm.queueSize)();
+        const cap = PACE_QUEUE;
+        if (q > cap) this.paced = Math.max(0.25, cap / q);
+      }
+      const dtGame = dtReal * (this.nightSkip ? Math.max(this.speed, 15) : this.speed * this.paced);
       this.t += dtGame;
       for (const a of this.agents) this.updateAgent(a, dtGame);
       this.expire();
       this.rules.tick();
       this.creatures.tick(dtGame);
+      this.avatars.tick(dtGame);
       this.scenes.tick();
       this.votes.tick();
       this.arcs.tick();
       this.director.tick();
+      this.proposalSystem.tick();
+      this.architect.tick();
       this.crisisTick();
       this.dailyHooks();
       this.autoWeather();
@@ -245,19 +304,20 @@ export class Town extends EventEmitter {
   snapshot() {
     const now = Date.now();
     return {
-      t: this.t, speed: this.speed, paused: this.paused, idle: !!this.idle, weather: this.weather, nightSkip: !!this.nightSkip,
+      t: this.t, speed: this.speed, paced: this.paced < 1 ? +this.paced.toFixed(2) : null, paused: this.paused, idle: !!this.idle, weather: this.weather, nightSkip: !!this.nightSkip,
       agents: this.agents.map((a) => ({
-        id: a.id, x: +a.x.toFixed(3), y: +a.y.toFixed(3), dir: a.dir, moving: a.moving, status: a.status,
+        id: a.id, x: +a.x.toFixed(3), y: +a.y.toFixed(3), dir: a.dir, moving: a.moving, status: a.status, region: a.region || 'town',
         inside: a.inside, emoji: a.action.emoji, action: a.action.text, loc: a.locId, mood: a.mood.emoji,
         thinking: a.thinking > 0 ? a.thinkingLabel : '', convo: a.convoId,
         bubble: a.bubble && a.bubble.until > now ? { id: a.bubble.id, text: a.bubble.text, kind: a.bubble.kind } : null,
       })),
       convos: [...this.convos.values()].map((c) => ({ id: c.id, a: c.a, b: c.b, state: c.state })),
       entities: [
-        ...this.entities.map((e) => ({ id: e.id, kind: 'structure', type: e.type, emoji: e.emoji, name: e.name, x: +e.x.toFixed(2), y: +e.y.toFixed(2), inside: e.inside, light: e.light || null })),
+        ...this.entities.map((e) => ({ id: e.id, kind: 'structure', type: e.type, emoji: e.emoji, name: e.name, x: +e.x.toFixed(2), y: +e.y.toFixed(2), inside: e.inside, light: e.light || null, region: e.region || 'town' })),
         ...(this.portalState ? [{ id: 'portal', kind: 'portal', type: 'portal', stage: this.portalState.stage, name: this.portalState.name, x: this.portalState.x, y: this.portalState.y, inside: null, light: { r: 140, color: '170,120,255' } }] : []),
       ],
       creatures: this.creatures.view(),
+      avatars: this.avatars.view(),
       story: { tension: this.story?.now?.value ?? null, arc: this.arcs.active()?.phase || null, vote: this.votes.list.some((v) => v.status !== 'closed') },
     };
   }
@@ -370,17 +430,30 @@ export class Town extends EventEmitter {
   }
 
   navigate(a, locId, e) {
-    const loc = this.world.locations[locId];
+    const loc = this.findLocation(locId);
+    const here = this.worldOf(a.region);
     // 离开建筑：从入口出发
     if (a.inside) {
-      const b = this.world.buildings.find((x) => x.id === a.inside);
+      const b = here.buildings.find((x) => x.id === a.inside);
       if (b) { a.x = b.entrance.x; a.y = b.entrance.y; }
       a.inside = null;
+    }
+    // 目的地在另一个区域：先走到本区域的渡口，穿过去再继续
+    const to = this.locRegion(locId);
+    if (to !== (a.region || 'town')) {
+      a.hop = { to, locId };
+      a.dest = { locId: null, x: here.gate.x, y: here.gate.y, indoor: null, hop: true };
+      a.locId = null;
+      a.path = findPath(here, a.x, a.y, here.gate.x, here.gate.y) || [];
+      a.status = 'walking';
+      a.moving = true;
+      a.action = { text: `前往${loc.name}（经月之渡口）`, emoji: '🌀' };
+      return;
     }
     let dest;
     const indoorPreferred = loc.indoor && (!loc.spots.length || e.sleep || ['rain', 'storm', 'snow'].includes(this.weather) || this.minute > 19 * 60 || a.work === locId || Math.random() < 0.5);
     if (loc.indoor && indoorPreferred) {
-      const b = this.world.buildings.find((x) => x.id === loc.indoor);
+      const b = here.buildings.find((x) => x.id === loc.indoor);
       dest = { locId, x: b.entrance.x, y: b.entrance.y, indoor: b.id };
     } else {
       const taken = new Set(this.agents.filter((o) => o !== a && o.dest).map((o) => `${o.dest.x},${o.dest.y}`));
@@ -390,7 +463,7 @@ export class Town extends EventEmitter {
     }
     a.dest = dest;
     a.locId = null;
-    const p = findPath(this.world, a.x, a.y, dest.x, dest.y);
+    const p = findPath(here, a.x, a.y, dest.x, dest.y);
     if (!p) { a.x = dest.x; a.y = dest.y; a.path = []; }
     else a.path = p;
     a.status = 'walking';
@@ -414,6 +487,23 @@ export class Town extends EventEmitter {
 
   arrive(a) {
     const e = a.curEntry;
+    if (a.dest?.hop) {
+      // 走到渡口：穿过去，出现在另一个区域的渡口，继续前往目的地
+      const hop = a.hop;
+      a.hop = null;
+      if (!hop || !this.regionOpen(hop.to)) { a.curKey = null; a.status = 'acting'; a.moving = false; a.dest = null; return; }
+      this.emit('vfx', { preset: 'ripple', x: a.x, y: a.y, color: '#b58cff', radius: 1.5, region: a.region || 'town' });
+      const gate = this.worldOf(hop.to).gate;
+      Object.assign(a, { region: hop.to, x: gate.x, y: gate.y });
+      this.emit('vfx', { preset: 'ripple', x: gate.x, y: gate.y, color: '#b58cff', radius: 1.5, region: hop.to });
+      if (hop.to !== 'town' && !a.visited?.includes(hop.to)) {
+        (a.visited ||= []).push(hop.to);
+        addMemory(a, { t: this.t, type: 'obs', text: `第一次穿过月之渡口，来到了${this.regions[hop.to].name}：天是深紫色的，到处是会发光的花`, importance: 7 });
+        this.log('region', `🌗 ${a.name}第一次踏进了${this.regions[hop.to].name}`, { agents: [a.id] });
+      }
+      this.navigate(a, hop.locId, e);
+      return;
+    }
     a.moving = false;
     a.locId = a.dest.locId;
     if (a.dest.indoor) a.inside = a.dest.indoor;
@@ -430,6 +520,7 @@ export class Town extends EventEmitter {
   // ---------- 认知：一天的规划 ----------
   planAll() {
     this.flags.plannedDay = this.day;
+    this.recordUsage();
     this.log('system', `🌅 第${this.day}天（${this.weekday}）开始了。${this.festivalHint()}`);
     for (const a of this.agents) if (a.kind !== 'creature') this.planDay(a);
   }
@@ -633,7 +724,7 @@ ${this.actionBlock(a)}
     if (!def) return null;
     const e = {
       id: `s${++this.seq}`, kind: 'structure', type, name: def.name, emoji: def.emoji, tags: [...def.tags],
-      ...(def.light ? { light: def.light } : {}), x: at.x, y: at.y, inside: at.inside || null, until: this.t + ttl, owner: ctx.self?.id || null,
+      ...(def.light ? { light: def.light } : {}), x: at.x, y: at.y, inside: at.inside || null, region: at.region || 'town', until: this.t + ttl, owner: ctx.self?.id || null,
     };
     this.entities.push(e);
     if (this.entities.length > MAX_STRUCTURES) this.entities.shift();
@@ -707,9 +798,11 @@ ${this.abilityList(a)}
   }
 
   nearbyText(a) {
-    const near = this.agents.filter((o) => o !== a && o.status !== 'sleeping' &&
+    const near = this.agents.filter((o) => o !== a && o.status !== 'sleeping' && (o.region || 'town') === (a.region || 'town') &&
       ((a.inside && o.inside === a.inside) || (!a.inside && !o.inside && Math.hypot(o.x - a.x, o.y - a.y) < 6)));
-    return near.length ? `身边的人：${near.map((o) => `${o.name}（${o.action.text}）`).join('、')}` : '身边没有熟人。';
+    const guests = this.avatars.near(a).map((v) => `旅人「${v.name}」`);
+    const txt = near.length ? `身边的人：${near.map((o) => `${o.name}（${o.action.text}）`).join('、')}` : '身边没有熟人。';
+    return guests.length ? `${txt}\n附近还有外地来的访客：${guests.join('、')}` : txt;
   }
 
   // ---------- 认知：对话 ----------
@@ -722,7 +815,7 @@ ${this.abilityList(a)}
       for (let j = i + 1; j < free.length; j++) {
         const a = free[i], b = free[j];
         if (a.status === 'walking' && b.status === 'walking') continue;
-        const near = (a.inside && a.inside === b.inside) || (!a.inside && !b.inside && Math.hypot(a.x - b.x, a.y - b.y) < 2.6);
+        const near = (a.region || 'town') === (b.region || 'town') && ((a.inside && a.inside === b.inside) || (!a.inside && !b.inside && Math.hypot(a.x - b.x, a.y - b.y) < 2.6));
         if (!near) continue;
         if (this.t - (this.pairCd[pairKey(a.id, b.id)] ?? -999) < 150) continue;
         const aff = ((a.relations[b.id]?.affinity ?? 0) + (b.relations[a.id]?.affinity ?? 0)) / 2;
@@ -773,7 +866,7 @@ ${this.abilityList(a)}
           { speaker: a.name, text: `${this.weatherText()}的天，心情也跟着变了。` },
           { speaker: b.name, text: '回头再聊，我还有点事～' },
         ],
-        memoryA: `和${b.name}简单寒暄了几句。`, memoryB: `和${a.name}简单寒暄了几句。`, importance: 2,
+        memoryA: `和${b.name}简单寒暄了几句。`, memoryB: `和${a.name}简单寒暄了几句。`, importance: 2, fallback: true,
       };
     }
     convo.state = 'talking';
@@ -817,7 +910,8 @@ ${recent.length ? `\n他们最近聊过：${recent.map((c) => c.summary).join('�
 "noteA":"${a.name}现在对${b.name}的看法（≤25字）","noteB":"${b.name}现在对${a.name}的看法（≤25字）",
 "importance":这段对话的重要程度(1~10),
 "commitments":[{"who":["${a.name}"],"time":"HH:MM","location":"地点id","activity":"≤14字","emoji":"一个emoji"}]}
-commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22:30之前的约定或新计划，没有就给空数组。约定里要送东西、教本事、使用能力时，可以加 act 字段（格式同日程的 act）。`;
+commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22:30之前的约定或新计划，没有就给空数组。约定里要送东西、教本事、使用能力时，可以加 act 字段（格式同日程的 act）。
+另外可以输出 "idea"：两人聊出来的、想为小镇添点什么的具体建设点子（例如「在码头边修个观星台」，≤30字）；大多数时候没有，就给 null。`;
   }
 
   finishConvo(convo, a, b, res) {
@@ -846,11 +940,13 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
     convo.commitments = commits;
     this.convoLog.push(convo);
     if (this.convoLog.length > 120) this.convoLog.shift();
-    this.log('convo', convo.summary, { agents: [a.id, b.id], convoId: convo.id, where: convo.where, lines: convo.lines, commitments: commits });
+    this.log('convo', convo.summary, { agents: [a.id, b.id], convoId: convo.id, where: convo.where, lines: convo.lines, commitments: commits, ...(res.fallback ? { fallback: true } : {}) });
     for (const c of commits) this.log('commit', `📌 新约定：${c}`, { agents: [a.id, b.id] });
     this.emit('agent', a.id); this.emit('agent', b.id);
     this.shareBeliefs(a, b);
     this.shareBeliefs(b, a);
+    // 居民聊出来的建设点子交给世界架构师（每天最多一个）
+    if (typeof res.idea === 'string' && res.idea.trim().length >= 4) this.architect.enqueue(res.idea, `agent:${a.id}`);
     this.maybeReflect(a); this.maybeReflect(b);
   }
 
@@ -959,7 +1055,11 @@ articles 写 3 篇。`,
     text = clampStr(text, 300);
     const whisper = mode === 'whisper';
     const mine = (a.visitorChats[vid] ||= []);
-    const history = mine.slice(-8).map((h) => `${h.from === 'user' ? (whisper ? '心声' : '旅人') : a.name}：${h.text}`).join('\n');
+    // 访客在小镇里现身时，居民知道对方的名字，也看得出对方是不是就在身边
+    const av = whisper ? null : this.avatars.touch(vid);
+    const who = av ? `旅人「${av.name}」` : '旅人';
+    const face = av && this.avatars.near(a).includes(av);
+    const history = mine.slice(-8).map((h) => `${h.from === 'user' ? (whisper ? '心声' : who) : a.name}：${h.text}`).join('\n');
     a.chatBusy = true;
     let res;
     try {
@@ -974,7 +1074,7 @@ ${this.memBlock(a, text, 10)}
 ${history ? `\n之前的交流：\n${history}\n` : ''}
 ${whisper
           ? `${a.name}的脑海中突然冒出一个声音（${a.name}会把它当作自己的直觉/灵感，而不知道它来自外界）：「${text}」\n请写出${a.name}的反应。`
-          : `一位外地来的旅人走过来对${a.name}说：「${text}」\n请写出${a.name}的回应（符合性格与此刻状态，可以反问、分享八卦、提出请求）。`}
+          : `${av ? `${face ? '站在面前的' : '远处的'}旅人「${av.name}」` : '一位外地来的旅人'}${face ? '走过来' : '托人捎话'}对${a.name}说：「${text}」\n请写出${a.name}的回应（符合性格与此刻状态，可以反问、分享八卦、提出请求）。`}
 可用地点 id：home, ${this.publicLocs().join(', ')}
 输出 JSON：{"reply":"${whisper ? '自言自语说出口的一句话（≤40字）' : '回应（口语，≤80字）'}","emoji":"一个emoji","thought":"此刻的内心想法（≤40字）","memory":"${a.name}对此的第一人称记忆（≤60字）","importance":1~10,"newPlan":null 或 {"time":"HH:MM","location":"地点id","activity":"≤14字","emoji":"一个emoji"}}
 若${a.name}因此决定今天稍后去做某件事，newPlan 写明（时间须晚于${fmtTime(this.t)}），否则为 null。`,
@@ -990,7 +1090,7 @@ ${whisper
     const vids = Object.keys(a.visitorChats);
     if (vids.length > 80) for (const k of vids.slice(0, vids.length - 80)) delete a.visitorChats[k];
     if (res.thought) a.thought = clampStr(res.thought, 80);
-    addMemory(a, { t: this.t, type: whisper ? 'thought' : 'chat', text: clampStr(res.memory, 120) || (whisper ? `我突然想到：${text}` : `一位旅人对我说：${text}`), importance: Math.max(1, Math.min(10, Number(res.importance) || 5)) });
+    addMemory(a, { t: this.t, type: whisper ? 'thought' : 'chat', text: (av && res.memory && !String(res.memory).includes(av.name) ? `（旅人「${av.name}」）` : '') + (clampStr(res.memory, 120) || (whisper ? `我突然想到：${text}` : `${av ? `旅人「${av.name}」` : '一位旅人'}对我说：${text}`)), importance: Math.max(1, Math.min(10, Number(res.importance) || 5)) });
     let plan = null;
     if (res.newPlan && typeof res.newPlan === 'object' && this.addCommitment(a, res.newPlan, whisper ? '（突然的灵感）' : '（因为旅人的话）')) {
       plan = `${res.newPlan.time} ${this.locName(this.resolveLoc(a, res.newPlan.location))} ${res.newPlan.activity}`;
@@ -1079,6 +1179,8 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
   initPayload() {
     return {
       world: this.world,
+      regions: { moonrealm: this.regions.moonrealm },
+      regionsOpen: this.regionsView(),
       weathers: this.spec.weather,
       spec: publicSpec(this.spec),
       agents: this.agentsMeta(),
@@ -1136,10 +1238,10 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
     else if (this.agents.includes(this.byId[cast.id])) return this.byId[cast.id];
     this.syncAgents();
     const a = this.byId[cast.id];
-    const loc = this.world.locations[at];
+    const loc = this.findLocation(at);
     const s = loc?.spots?.length ? rand(loc.spots) : this.locCenter(at);
-    Object.assign(a, { x: s.x, y: s.y, inside: null, locId: at, status: 'acting', path: [], dest: null, curKey: null, action: { text: '四处张望', emoji: '👀' } });
-    this.emit('vfx', { preset: 'burst', x: s.x, y: s.y, color: '#b58cff', radius: 2 });
+    Object.assign(a, { x: s.x, y: s.y, inside: null, locId: at, region: this.locRegion(at), status: 'acting', path: [], dest: null, curKey: null, action: { text: '四处张望', emoji: '👀' } });
+    this.emit('vfx', { preset: 'burst', x: s.x, y: s.y, color: '#b58cff', radius: 2, region: a.region });
     this.log('arrival', a.kind === 'creature' ? `🌑 ${a.name}从裂隙中现身了` : `🌀 ${a.name}从裂隙中跌了出来——${a.role}`, { agents: [a.id] });
     if (a.kind === 'traveller') this.replan(a, `你刚从一道紫色的裂隙中跌出来，落在了${this.locName(at)}。这里的一切都很陌生。`).catch(() => {});
     return a;
@@ -1177,11 +1279,11 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
   }
 
   locCenter(id) {
-    const l = this.world.locations[id];
+    const l = this.findLocation(id);
     if (!l) return null;
     if (l.spots?.length) return { x: l.spots[0].x, y: l.spots[0].y };
     if (l.indoor) {
-      const b = this.world.buildings.find((x) => x.id === l.indoor);
+      const b = this.worldOf(this.locRegion(id)).buildings.find((x) => x.id === l.indoor);
       if (b) return { x: b.entrance.x, y: b.entrance.y };
     }
     if (l.rect) return { x: Math.round(l.rect.x + l.rect.w / 2), y: Math.round(l.rect.y + l.rect.h / 2) };
@@ -1207,6 +1309,30 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
     if (doc && this.agents.includes(doc) && doc !== a) addMemory(doc, { t: this.t, type: 'event', text: `${a.name}被吓晕了，送到了诊所`, importance: 6 });
   }
 
+  /** 按游戏日记录 token 用量（每天清晨结算前一天），用于估算真实的日用量 */
+  recordUsage() {
+    const u = (this.usage ||= { days: {}, mark: null });
+    const now = { tokens: llm.stats.promptTokens + llm.stats.completionTokens, calls: llm.stats.calls, byLabel: structuredClone(llm.stats.byLabel) };
+    if (u.mark && this.day > 1) {
+      const byLabel = {};
+      for (const [k, v] of Object.entries(now.byLabel)) {
+        const p = u.mark.byLabel[k] || { calls: 0, tokens: 0 };
+        if (v.calls - p.calls > 0) byLabel[k] = { calls: v.calls - p.calls, tokens: v.tokens - p.tokens };
+      }
+      // 重启会让进程内的计数归零：出现负数时说明这一天跨越了重启，不记录
+      if (now.tokens >= u.mark.tokens) u.days[this.day - 1] = { tokens: now.tokens - u.mark.tokens, calls: now.calls - u.mark.calls, byLabel, speed: this.speed };
+    }
+    u.mark = now;
+    const keys = Object.keys(u.days).map(Number).sort((a, b) => a - b);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 30))) delete u.days[k];
+  }
+
+  usageView() {
+    const days = Object.entries(this.usage?.days || {}).map(([d, v]) => ({ day: Number(d), ...v })).sort((a, b) => a.day - b.day);
+    const avg = days.length ? Math.round(days.reduce((s, d) => s + d.tokens, 0) / days.length) : null;
+    return { days, avgPerDay: avg, byLabel: llm.stats.byLabel };
+  }
+
   crisisTick() {
     const hour = Math.floor(this.t / 60);
     if (this.crisisHour === hour) return;
@@ -1217,6 +1343,24 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
   }
 
   storyContext() { return this.arcs.contextText(); }
+
+  /** 心愿单 + 已生成的需求文档（mise run evolve 写在 data/evolve.json 里） */
+  gapsWithRfc() {
+    let rfcs = {};
+    try { rfcs = JSON.parse(fs.readFileSync(path.join(this.dataDir, 'evolve.json'), 'utf8')).gaps || {}; } catch {}
+    return [...this.architect.gaps].sort((a, b) => b.count - a.count).map((g) => ({ ...g, status: g.status || 'open', rfc: rfcs[g.id]?.file || null }));
+  }
+
+  proposalsView(key = null, admin = false) {
+    const ps = this.proposalSystem;
+    return {
+      proposals: ps.list.slice(-20).reverse().map((p) => ps.view(p, key)),
+      queue: this.architect.queue.map((q) => ({ intent: q.intent, origin: ps.originText(q.origin) })),
+      thinking: this.architect.busy,
+      gaps: admin ? this.gapsWithRfc() : undefined,
+      requireAdmin: ps.requireAdmin,
+    };
+  }
 
   storyView(key = null) {
     const st = this.story || {};
@@ -1245,13 +1389,30 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
    */
   applyWorldOp(op, cause = { by: 'system' }, { quiet = false } = {}) {
     const rec = { seq: (this.specOps.at(-1)?.seq || 0) + 1, t: Math.floor(this.t), op: op.op, args: op.args || {}, cause };
+    if (rec.op === 'addBuilding') {
+      // 先做静态检查，再以新建筑重建地图校验占地与连通性
+      const def = OPS.addBuilding.check(this.spec, rec.args);
+      if (def) throw new OpError(def);
+      const err = checkPlacement(this.spec, rec.args);
+      if (err) throw new OpError(`放不下：${err}`);
+    }
     this.spec = applyOp(this.spec, rec, rec);
+    if (rec.op === 'addBuilding') this.rebuildWorld();
     this.specOps.push(rec);
     this.journal.append(rec);
     const desc = OPS[rec.op].describe?.(rec.args) || rec.op;
     if (!quiet) this.log('world', `🌀 世界发生了变化：${desc}`, { op: rec.op, seq: rec.seq });
     this.emit('world', { spec: publicSpec(this.spec), op: rec, desc });
     return rec;
+  }
+
+  /** 世界结构变化（新增建筑）后重建地图；正在走路的角色与生物重新寻路 */
+  rebuildWorld() {
+    this.world = buildWorld({ buildings: this.spec.buildings, locationInfo: this.spec.locations });
+    this.regions.town = this.world;
+    for (const a of this.agents) if (a.status === 'walking') { a.curKey = null; a.path = []; }
+    for (const c of this.creatures.list) c.path = [];
+    this.emit('worldmap', this.world);
   }
 
   worldHistory() {
@@ -1274,12 +1435,14 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
     try {
       fs.mkdirSync(this.dataDir, { recursive: true });
       const agents = [...this.agents, ...this.away].map((a) => {
-        const { path: _p, dest: _d, curKey: _k, curEntry: _e, bubble: _b, thinking: _t, thinkingLabel: _l, reflecting: _r, convoId: _c, chatBusy: _cb, visitorChat: _vc, pendingAct: _pa, actKey: _ak, ...rest } = a;
+        const { path: _p, dest: _d, curKey: _k, curEntry: _e, bubble: _b, thinking: _t, thinkingLabel: _l, reflecting: _r, convoId: _c, chatBusy: _cb, visitorChat: _vc, pendingAct: _pa, actKey: _ak, hop: _h, ...rest } = a;
         return rest;
       });
       const data = { v: SAVE_VERSION, t: this.t, weather: this.weather, weatherLock: this.weatherLock, specOps: this.specOps, agents, entities: this.entities, worldFlags: this.worldFlags, paramMods: this.paramMods, ruleState: this.ruleState,
         threadState: this.threadState, crisis: this.crisis, discovered: this.discovered, story: this.story, arcRuns: this.arcRuns, voteState: this.voteState,
-        pendingScenes: this.pendingScenes, creatureList: this.creatureList, portalState: this.portalState, swarmGoal: this.swarmGoal || null, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens } };
+        pendingScenes: this.pendingScenes, creatureList: this.creatureList, portalState: this.portalState, swarmGoal: this.swarmGoal || null,
+        proposals: this.proposals, architectQueue: this.architectQueue, gaps: this.gaps, architectUsage: this.architectUsage,
+        usage: this.usage ? { days: this.usage.days } : undefined, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens } };
       const text = JSON.stringify(data);
       fs.writeFileSync(this.saveFile + '.tmp', text);
       fs.renameSync(this.saveFile + '.tmp', this.saveFile);
@@ -1317,6 +1480,8 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
       Object.assign(this, {
         threadState: d.threadState || {}, crisis: d.crisis || { morale: 70, supplies: 80 }, discovered: d.discovered || [], story: d.story || undefined,
         arcRuns: d.arcRuns || [], voteState: d.voteState || [], pendingScenes: d.pendingScenes || [], creatureList: d.creatureList || [], portalState: d.portalState || null, swarmGoal: d.swarmGoal || null,
+        proposals: d.proposals || [], architectQueue: d.architectQueue || [], gaps: d.gaps || [], architectUsage: d.architectUsage || undefined,
+        usage: { days: d.usage?.days || {}, mark: null }, // 进程内计数重启后归零，重新开始标记
       });
       if (this.story) this.story.lastHour = -1;
       // 恢复当日令牌用量，避免重启后预算被重置
@@ -1347,6 +1512,34 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
       console.warn('[save] 存档损坏，重新开始：', e.message);
     }
   }
+}
+
+// ---------- 时光回溯（设计文档 4.3）----------
+const SNAP_RE = /^d(\d{3})-(\d{2})\.json$/;
+
+/** 列出可回溯的整点快照（新的在前） */
+export function listSnapshots(dataDir) {
+  const dir = path.join(path.resolve(dataDir), 'snapshots');
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((f) => SNAP_RE.test(f)).sort().reverse().map((f) => {
+    const [, d, h] = SNAP_RE.exec(f);
+    return { name: f, day: Number(d), hour: Number(h), size: fs.statSync(path.join(dir, f)).size };
+  });
+}
+
+/** 用快照替换当前存档（当前存档先备份）。调用方负责之后重建 Town。返回备份文件名。 */
+export function restoreSnapshot(dataDir, name) {
+  if (!SNAP_RE.test(String(name))) throw Object.assign(new Error('快照名称不合法'), { status: 400 });
+  const dir = path.resolve(dataDir);
+  const src = path.join(dir, 'snapshots', name);
+  if (!fs.existsSync(src)) throw Object.assign(new Error('快照不存在'), { status: 404 });
+  JSON.parse(fs.readFileSync(src, 'utf8')); // 损坏的快照不允许回溯
+  const save = path.join(dir, 'save.json');
+  const bak = `save-before-rollback-${new Date().toISOString().replace(/[:.]/g, '-')}.bak.json`;
+  if (fs.existsSync(save)) fs.copyFileSync(save, path.join(dir, bak));
+  fs.copyFileSync(src, save);
+  new OpJournal(path.join(dir, 'ops.jsonl')).append({ op: 'rollback', to: name, at: new Date().toISOString() });
+  return bak;
 }
 
 export function llmPublic() {

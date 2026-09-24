@@ -1,0 +1,51 @@
+{
+  "id": "lakeside-story-corner",
+  "name": "湖畔故事角",
+  "description": "真实模型（glm-5.3）实测中，林晓雨在聊天里想到的点子，经世界架构师设计、考据官审查后落地：码头边的讲古场地与「湖边老故事会」。",
+  "source": "第9天的存档",
+  "createdAt": "2026-09-24T13:26:51.967Z",
+  "ops": [
+    {
+      "op": "addBuilding",
+      "args": {
+        "id": "lakeside_story",
+        "name": "湖畔故事角",
+        "kind": "garden",
+        "w": 3,
+        "h": 3,
+        "roof": "#8a5a3a",
+        "wall": "#e8d9b5",
+        "sign": "📖",
+        "desc": "码头边的半圆木阶围坐场，中央留一盏常明萤火灯，专供长辈讲古。",
+        "lightAtNight": true,
+        "x": 54,
+        "y": 29,
+        "near": "pier"
+      }
+    },
+    {
+      "op": "addCalendarEvent",
+      "args": {
+        "id": "lakeside_tales",
+        "name": "湖边老故事会",
+        "emoji": "📖",
+        "day": 4,
+        "from": "19:30",
+        "location": "lakeside_story",
+        "hint": "放灯前，孙婆婆等长辈在故事角讲百年前萤火灯的传说。",
+        "countdown": true
+      }
+    },
+    {
+      "op": "addCanon",
+      "args": {
+        "text": "萤火节前，林晓雨提议在码头边搭起湖畔故事角；自此每年放灯前，镇上长辈会在此讲百年前少女放灯引路的传说。",
+        "tags": [
+          "萤火节",
+          "传说",
+          "湖畔故事角"
+        ]
+      }
+    }
+  ]
+}

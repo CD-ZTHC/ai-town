@@ -8,6 +8,7 @@ WORKDIR /app
 COPY package.json ./
 COPY server ./server
 COPY public ./public
+COPY spec ./spec
 RUN mkdir -p /app/data && chown -R node:node /app/data
 USER node
 VOLUME ["/app/data"]

@@ -71,18 +71,26 @@ export class CreatureSystem {
   /** 剧情收尾：生物回到裂隙那边；可以留下一只友善的 */
   dismiss(keep = null) {
     const town = this.town;
-    const n = this.list.length;
-    town.creatureList = [];
+    // 暗月界里的友善生物不受影响
+    const elsewhere = this.list.filter((c) => (c.region || 'town') !== 'town');
+    const n = this.list.length - elsewhere.length;
+    town.creatureList = elsewhere;
     if (n) town.log('creature', `🌙 ${n} 只异界生物回到了湖的那一边`, {});
-    if (keep && town.spec.creatures[keep.type]) {
-      const p = town.locCenter(keep.near) || this.spawnPoint();
-      this.list.push({
-        id: `m${++town.seq}`, type: keep.type, name: String(keep.name || '').slice(0, 8) || town.spec.creatures[keep.type].name,
-        x: p.x, y: p.y, dir: 'down', moving: false, hp: 30, goal: keep.near, path: [], friendly: true, hidden: false, dwellUntil: 0, fleeUntil: 0, lastMischief: 0, nextSeek: 0,
-      });
-      town.log('creature', `💜 一只叫「${keep.name}」的小影灵留在了小镇`, {});
-    }
+    if (keep && this.addFriend(keep)) town.log('creature', `💜 一只叫「${keep.name}」的小影灵留在了小镇`, {});
     town.emit('story');
+  }
+
+  /** 一只友善的生物，在 near 附近闲逛；region 为所在区域 */
+  addFriend({ type, name, near, region = 'town' }) {
+    const town = this.town;
+    if (!town.spec.creatures[type] || this.list.length >= MAX_CREATURES) return null;
+    const p = town.locCenter(near) || this.spawnPoint();
+    const c = {
+      id: `m${++town.seq}`, type, name: String(name || '').slice(0, 8) || town.spec.creatures[type].name, region,
+      x: p.x, y: p.y, dir: 'down', moving: false, hp: 30, goal: near, path: [], friendly: true, hidden: false, dwellUntil: 0, fleeUntil: 0, lastMischief: 0, nextSeek: 0,
+    };
+    this.list.push(c);
+    return c;
   }
 
   // ---------- 每次推进 ----------
@@ -101,11 +109,11 @@ export class CreatureSystem {
   }
 
   nearLight(c, r = 3) {
-    return this.town.entities.some((e) => e.tags.includes('light') && !e.inside && Math.hypot(e.x - c.x, e.y - c.y) <= r);
+    return this.town.entities.some((e) => e.tags.includes('light') && !e.inside && (e.region || 'town') === (c.region || 'town') && Math.hypot(e.x - c.x, e.y - c.y) <= r);
   }
 
   goTo(c, x, y) {
-    const p = findPath(this.town.world, c.x, c.y, x, y);
+    const p = findPath(this.town.worldOf?.(c.region) || this.town.world, c.x, c.y, x, y);
     c.path = p || [{ x, y }];
   }
 
@@ -142,7 +150,7 @@ export class CreatureSystem {
     const beh = def.behavior;
     if (c.friendly || beh.archetype === 'wander') {
       const p = town.locCenter(c.goal) || { x: c.x, y: c.y };
-      const spots = town.world.locations[c.goal]?.spots || [];
+      const spots = town.findLocation?.(c.goal)?.spots || [];
       const s = spots.length ? rand(spots) : { x: Math.round(p.x + (Math.random() - 0.5) * 6), y: Math.round(p.y + (Math.random() - 0.5) * 4) };
       this.goTo(c, s.x, s.y);
       c.dwellUntil = town.t + 20 + Math.random() * 40;
@@ -198,7 +206,7 @@ export class CreatureSystem {
     for (const c of this.list) {
       if (c.friendly || c.hidden || c.hp <= 0) continue;
       for (const a of town.agents) {
-        if (a.kind === 'creature' || a.inside || a.status === 'sleeping' || a.convoId) continue;
+        if (a.kind === 'creature' || a.inside || a.status === 'sleeping' || a.convoId || (a.region || 'town') !== (c.region || 'town')) continue;
         if (Math.hypot(a.x - c.x, a.y - c.y) > 1.3) continue;
         const key = `${c.id}|${a.id}`;
         if (town.t - (town.encounterCd[key] ?? -999) < 90) continue;
@@ -214,7 +222,7 @@ export class CreatureSystem {
     const def = this.def(c);
     const rating = town.spec.meta.rating;
     const at = posOf(town, a);
-    town.emit('vfx', { preset: 'burst', x: at.x, y: at.y, color: '#9b6bff', radius: 1.5 });
+    town.emit('vfx', { preset: 'burst', x: at.x, y: at.y, color: '#9b6bff', radius: 1.5, region: at.region });
     // 了解影灵之后，淘气的小家伙不再与人为敌
     if (town.worldFlags.shades_understood && def.temperament !== 'hostile') {
       addMemory(a, { t: town.t, type: 'obs', text: `和一只${def.name}对视了一会儿，它歪着头飘走了，好像并不想伤害我`, importance: 4 });
@@ -299,6 +307,6 @@ export class CreatureSystem {
   }
 
   view() {
-    return this.list.filter((c) => !c.hidden).map((c) => ({ id: c.id, type: c.type, name: c.name, x: +c.x.toFixed(2), y: +c.y.toFixed(2), dir: c.dir, moving: c.moving, friendly: c.friendly }));
+    return this.list.filter((c) => !c.hidden).map((c) => ({ id: c.id, type: c.type, name: c.name, x: +c.x.toFixed(2), y: +c.y.toFixed(2), dir: c.dir, moving: c.moving, friendly: c.friendly, region: c.region || 'town' }));
   }
 }

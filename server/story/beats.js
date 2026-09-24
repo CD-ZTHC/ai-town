@@ -133,6 +133,13 @@ const KINDS = {
       }
     },
   },
+  propose: {
+    check(b) { return String(b.intent || '').trim().length >= 4 ? null : 'intent 太短'; },
+    run(town, b) {
+      const err = town.architect.enqueue(b.intent, 'director');
+      if (err) console.warn('[beat] propose：', err);
+    },
+  },
   launchArc: {
     check(b, town) {
       if (!town.spec.arcs.some((x) => x.id === b.template)) return `未知剧情弧：${b.template}`;
@@ -154,6 +161,11 @@ const KINDS = {
       return inRange(b.count, 1, 8) ? null : 'count 应在 1~8';
     },
     run(town, b) { town.creatures.spawn(b.type, b.count, b.goal); },
+  },
+  region: {
+    privileged: true,
+    check(b, town) { return b.id !== 'town' && Object.hasOwn(town.regions || {}, b.id || '') ? null : `未知区域：${b.id}`; },
+    run(town, b) { town.openRegion(b.id, b.open !== false); },
   },
   dismissCreatures: {
     privileged: true,
@@ -208,6 +220,7 @@ const KINDS = {
 };
 
 export const DIRECTOR_KINDS = Object.keys(KINDS).filter((k) => !KINDS[k].privileged);
+export const ALL_KINDS = Object.keys(KINDS);
 
 export function checkBeat(town, b, { privileged = false, ctx = {} } = {}) {
   if (!b || typeof b !== 'object' || !Object.hasOwn(KINDS, b.kind || '')) return `未知动作：${b?.kind}`;

@@ -1,7 +1,7 @@
 // 世界规格：把原本写死在代码里的世界（设定、居民、建筑、地点、天气、日历、参数）变成一份可校验的数据。
 // 默认规格由 personas.js / world.js 的常量生成，保证与重构前完全一致；之后的一切改动都以 WorldOp 叠加在它上面。
 import { PERSONAS, TOWN_LORE } from '../personas.js';
-import { BUILDINGS, LOCATION_INFO } from '../world.js';
+import { BUILDINGS, LOCATION_INFO, MOON_LOCATIONS } from '../world.js';
 import { parseHM } from '../memory.js';
 import { validateAbility } from './abilities.js';
 import { validateRule } from './rules.js';
@@ -37,6 +37,7 @@ const DEFAULT_ITEMS = () => ({
 
 const DEFAULT_STRUCTURES = () => ({
   light_ward: { name: '萤火结界', emoji: '🏮', tags: ['light'], ttl: 90, light: { r: 110, color: '255,205,110' } },
+  scaffold: { name: '施工中', emoji: '🚧', tags: [], ttl: 240 },
 });
 
 const DEFAULT_ABILITIES = () => [
@@ -170,8 +171,11 @@ export function defaultSpec(env = process.env) {
       snow: { name: '下雪', emoji: '❄️', weight: 0 },
       bloodmoon: { name: '血月', emoji: '🌕', weight: 0, render: { base: 'cloudy', tint: '#8a1c3c', tintAlpha: 0.22 } },
     },
-    regions: [{ id: 'town', generator: 'yunxi-v1', seed: 20260924, size: [64, 44] }],
-    locations,
+    regions: [
+      { id: 'town', generator: 'yunxi-v1', seed: 20260924, size: [64, 44], name: '云溪镇' },
+      { id: 'moonrealm', generator: 'moonrealm-v1', size: [36, 26], name: '暗月界', gateFrom: 'pier' }, // 默认关闭，由剧情打开
+    ],
+    locations: { ...locations, ...structuredClone(MOON_LOCATIONS) },
     buildings: clone(BUILDINGS),
     personas: clone(PERSONAS),
     creatures: DEFAULT_CREATURES(),
@@ -232,8 +236,10 @@ export function validateSpec(s) {
     if (![b.x, b.y, b.w, b.h].every(isInt) || b.w < 2 || b.h < 2) err(`buildings.${b.id}`, '位置或尺寸不合法');
   }
   const locs = s.locations || {};
+  const regionIds = new Set((s.regions || []).map((r) => r.id));
   for (const [id, l] of Object.entries(locs)) {
     if (!isStr(l.name, 16)) err(`locations.${id}`, 'name 缺失或过长');
+    if (l.region != null && !regionIds.has(l.region)) err(`locations.${id}`, `未知区域：${l.region}`);
   }
 
   const items = s.items || {};
