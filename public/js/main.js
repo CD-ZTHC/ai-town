@@ -71,6 +71,12 @@ export const app = {
 };
 window.app = app;
 
+// 当前正在进行的日历事件（节日等），与服务端 kernel/spec.js 的 activeEvents 保持一致
+const hm = (s) => { const m = /(\d{1,2})[:：](\d{2})/.exec(String(s)); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+export function activeEvents(day, minute) {
+  return (app.spec?.calendar.events || []).filter((e) => e.day === day && minute >= (hm(e.from) ?? 0) && minute < (e.to ? hm(e.to) : 1440));
+}
+
 // ---------- 数据流 ----------
 function connect() {
   const es = new EventSource('api/stream');
@@ -79,6 +85,7 @@ function connect() {
     const first = !app.world;
     app.world = d.world;
     app.weathers = d.weathers;
+    app.spec = d.spec;
     app.meta = Object.fromEntries(d.agents.map((a) => [a.id, a]));
     app.logs = d.logs;
     app.newspapers = d.newspapers;
@@ -104,6 +111,12 @@ function connect() {
   es.addEventListener('log', (e) => UI.onLog(JSON.parse(e.data)));
   es.addEventListener('agent', (e) => UI.onAgentChanged(JSON.parse(e.data).id));
   es.addEventListener('newspaper', (e) => UI.onNewspaper(JSON.parse(e.data)));
+  es.addEventListener('world', (e) => {
+    const w = JSON.parse(e.data);
+    app.spec = w.spec;
+    app.weathers = w.spec.weather;
+    UI.onWorld(w);
+  });
   es.addEventListener('llm', (e) => { app.llm = JSON.parse(e.data); UI.updateBrain(); });
   es.onerror = () => UI.toast('⚠️ 与小镇的连接中断，正在重连…', 2500);
 }
@@ -268,10 +281,14 @@ function loop(now) {
     const tt = app.debugT ?? s.t; // 调试：可在控制台设置 app.debugT / app.debugWeather 预览
     const day = Math.floor(tt / 1440) + 1;
     const minute = tt % 1440;
+    // 世界规格里新增的天气用已有的天气效果（render.base）加一层色调来表现
+    const weatherId = app.debugWeather ?? s.weather;
+    const winfo = app.weathers[weatherId] || {};
     const S = {
-      cam: app.cam, t: tt, day, weather: app.debugWeather ?? s.weather, agents, agentMap, occupancy, convos: s.convos,
+      cam: app.cam, t: tt, day, weather: winfo.render?.base || weatherId, weatherId, weatherTint: winfo.render?.tint ? winfo.render : null,
+      agents, agentMap, occupancy, convos: s.convos,
       selected: app.selected, hover: app.hover, boardCount: app.board.length,
-      festival: app.forceFestival || (day === 4 && minute >= 18 * 60),
+      festival: app.forceFestival || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns'),
     };
     renderer.frame(S, dt);
     UI.frame(S, dt);

@@ -1,0 +1,183 @@
+// 世界规格：把原本写死在代码里的世界（设定、居民、建筑、地点、天气、日历、参数）变成一份可校验的数据。
+// 默认规格由 personas.js / world.js 的常量生成，保证与重构前完全一致；之后的一切改动都以 WorldOp 叠加在它上面。
+import { PERSONAS, TOWN_LORE } from '../personas.js';
+import { BUILDINGS, LOCATION_INFO } from '../world.js';
+import { parseHM } from '../memory.js';
+
+export const SPEC_VERSION = 2;
+export const RATINGS = ['cozy', 'adventure', 'epic'];
+export const STORYTELLERS = ['gentle', 'voyage', 'chaos'];
+
+// 内核参数：AI 只能在上下限之内调节（见设计文档 4.6）
+export const PARAM_BOUNDS = {
+  walkSpeed: [2, 5],
+  maxConvos: [1, 6],
+  convoBaseProb: [0.05, 0.6],
+  reflectThreshold: [20, 80],
+  dayEnd: [21 * 60, 25 * 60], // 分钟，可以晚到次日 01:00
+};
+
+const PUBLIC_LOCS = ['cafe', 'library', 'tavern', 'clinic', 'workshop', 'square', 'market', 'park', 'farm', 'pier'];
+
+const clone = (x) => structuredClone(x);
+
+export function defaultSpec(env = process.env) {
+  const rating = RATINGS.includes(env.STORY_RATING) ? env.STORY_RATING : 'cozy';
+  const locations = {};
+  for (const [id, info] of Object.entries(LOCATION_INFO)) {
+    if (id === 'home') continue;
+    locations[id] = { ...info, public: PUBLIC_LOCS.includes(id) };
+  }
+  return {
+    id: 'yunxi',
+    specVersion: SPEC_VERSION,
+    meta: { name: '云溪镇', rating, storyteller: 'gentle' },
+    lore: {
+      summary: TOWN_LORE,
+      pillars: ['云溪镇的温馨底色不可改变', '居民不会死亡，离开小镇也总是可以回来'],
+      canon: [],
+    },
+    calendar: {
+      weekdays: ['周三', '周四', '周五', '周六', '周日', '周一', '周二'],
+      events: [
+        { id: 'firefly', name: '萤火节', emoji: '🏮', day: 4, from: '18:00', location: 'pier', hint: '晚上大家会在镜湖边放灯许愿', vfx: 'festival_lanterns', countdown: true },
+      ],
+    },
+    // weight 为自动天气的相对权重；avoid 表示在某时段内改用 fallback（例如白天不起雾）
+    weather: {
+      sunny: { name: '晴朗', emoji: '☀️', weight: 50 },
+      cloudy: { name: '多云', emoji: '⛅', weight: 25 },
+      rain: { name: '下雨', emoji: '🌧️', weight: 13 },
+      storm: { name: '雷阵雨', emoji: '⛈️', weight: 5 },
+      fog: { name: '起雾', emoji: '🌫️', weight: 7, avoid: { from: '10:00', to: '19:00', fallback: 'cloudy' } },
+      snow: { name: '下雪', emoji: '❄️', weight: 0 },
+    },
+    regions: [{ id: 'town', generator: 'yunxi-v1', seed: 20260924, size: [64, 44] }],
+    locations,
+    buildings: clone(BUILDINGS),
+    personas: clone(PERSONAS),
+    creatures: [],
+    items: [],
+    abilities: [],
+    rules: [],
+    factions: [],
+    arcs: [],
+    params: { walkSpeed: 3.2, maxConvos: 3, convoBaseProb: 0.22, reflectThreshold: 40, dayEnd: 22 * 60 + 30 },
+  };
+}
+
+// ---------- 校验 ----------
+const ID_RE = /^[a-z][a-z0-9_]{1,31}$/;
+const isStr = (v, max = 200) => typeof v === 'string' && v.length > 0 && v.length <= max;
+const isInt = (v) => Number.isInteger(v);
+
+/** 返回错误列表（空数组表示通过）。只做结构与引用完整性检查，不涉及剧情合理性。 */
+export function validateSpec(s) {
+  const errs = [];
+  const err = (path, msg) => errs.push(`${path}: ${msg}`);
+  if (!s || typeof s !== 'object') return ['spec: 不是对象'];
+  if (s.specVersion !== SPEC_VERSION) err('specVersion', `应为 ${SPEC_VERSION}`);
+  if (!RATINGS.includes(s.meta?.rating)) err('meta.rating', `只能是 ${RATINGS.join('/')}`);
+  if (!STORYTELLERS.includes(s.meta?.storyteller)) err('meta.storyteller', `只能是 ${STORYTELLERS.join('/')}`);
+  if (!isStr(s.lore?.summary, 2000)) err('lore.summary', '缺失或过长');
+  if (!Array.isArray(s.lore?.canon)) err('lore.canon', '应为数组');
+
+  const cal = s.calendar || {};
+  if (!Array.isArray(cal.weekdays) || cal.weekdays.length !== 7 || !cal.weekdays.every((w) => isStr(w, 8))) err('calendar.weekdays', '应为 7 个名称');
+  const evIds = new Set();
+  for (const [i, e] of (cal.events || []).entries()) {
+    const p = `calendar.events[${i}]`;
+    if (!ID_RE.test(e.id || '')) err(p, 'id 不合法');
+    else if (evIds.has(e.id)) err(p, `id 重复：${e.id}`);
+    evIds.add(e.id);
+    if (!isStr(e.name, 16)) err(p, 'name 缺失或过长');
+    if (!isInt(e.day) || e.day < 1) err(p, 'day 应为正整数');
+    if (parseHM(e.from) == null) err(p, 'from 应为 HH:MM');
+  }
+
+  const weathers = Object.entries(s.weather || {});
+  if (!weathers.length) err('weather', '至少需要一种天气');
+  if (!weathers.some(([, w]) => w.weight > 0)) err('weather', '至少一种天气的 weight > 0');
+  for (const [id, w] of weathers) {
+    if (!/^[a-z][a-z0-9_]{1,23}$/.test(id)) err(`weather.${id}`, 'id 不合法');
+    if (!isStr(w.name, 8) || !isStr(w.emoji, 8)) err(`weather.${id}`, 'name/emoji 缺失');
+    if (typeof w.weight !== 'number' || w.weight < 0 || w.weight > 100) err(`weather.${id}`, 'weight 应在 0~100');
+    if (w.avoid && !Object.hasOwn(s.weather, w.avoid.fallback)) err(`weather.${id}`, `fallback 不存在：${w.avoid.fallback}`);
+  }
+
+  const bIds = new Set();
+  for (const b of s.buildings || []) {
+    if (bIds.has(b.id)) err(`buildings.${b.id}`, 'id 重复');
+    bIds.add(b.id);
+    if (![b.x, b.y, b.w, b.h].every(isInt) || b.w < 2 || b.h < 2) err(`buildings.${b.id}`, '位置或尺寸不合法');
+  }
+  const locs = s.locations || {};
+  for (const [id, l] of Object.entries(locs)) {
+    if (!isStr(l.name, 16)) err(`locations.${id}`, 'name 缺失或过长');
+  }
+
+  const pIds = new Set();
+  for (const p of s.personas || []) {
+    const path = `personas.${p.id}`;
+    if (!ID_RE.test(p.id || '')) { err(path, 'id 不合法'); continue; }
+    if (pIds.has(p.id)) err(path, 'id 重复');
+    pIds.add(p.id);
+    if (!isStr(p.name, 12) || !isStr(p.persona, 400) || !isStr(p.role, 30)) err(path, 'name/persona/role 缺失或过长');
+    if (!bIds.has(p.home)) err(path, `home 不是建筑：${p.home}`);
+    if (!locs[p.work] && !bIds.has(p.work)) err(path, `work 不存在：${p.work}`);
+    if (!p.look || typeof p.look !== 'object') err(path, '缺少 look');
+  }
+  for (const p of s.personas || []) {
+    for (const rid of Object.keys(p.relations || {})) if (!pIds.has(rid)) err(`personas.${p.id}.relations`, `未知居民：${rid}`);
+  }
+
+  for (const [k, v] of Object.entries(s.params || {})) {
+    const b = Object.hasOwn(PARAM_BOUNDS, k) && PARAM_BOUNDS[k];
+    if (!b) err(`params.${k}`, '未知参数');
+    else if (typeof v !== 'number' || v < b[0] || v > b[1]) err(`params.${k}`, `应在 ${b[0]}~${b[1]}`);
+  }
+  return errs;
+}
+
+// ---------- 查询工具 ----------
+export function weekdayOf(spec, day) {
+  const w = spec.calendar.weekdays;
+  return w[(((day - 1) % w.length) + w.length) % w.length];
+}
+
+/** 当前正在进行的日历事件 */
+export function activeEvents(spec, day, minute) {
+  return spec.calendar.events.filter((e) => {
+    if (e.day !== day) return false;
+    const from = parseHM(e.from) ?? 0;
+    const to = e.to ? parseHM(e.to) : 24 * 60;
+    return minute >= from && minute < to;
+  });
+}
+
+/** 给提示词用的节日倒计时文案（与重构前的 festivalHint 文案一致） */
+export function calendarHint(spec, day) {
+  return spec.calendar.events.filter((e) => e.countdown).map((e) => {
+    const d = e.day - day;
+    if (d > 0) return `距离${weekdayOf(spec, e.day)}${e.name}还有${d}天。`;
+    if (d === 0) return `今天就是${e.name}！${e.hint ? `${e.hint}。` : ''}`;
+    return `${e.name}已经过去了。`;
+  }).join('');
+}
+
+/** 按权重抽取自动天气 */
+export function pickWeather(spec, minute, rnd = Math.random) {
+  const list = Object.entries(spec.weather).filter(([, w]) => w.weight > 0);
+  const total = list.reduce((s, [, w]) => s + w.weight, 0);
+  let r = rnd() * total;
+  let id = list[list.length - 1][0];
+  for (const [k, w] of list) { if ((r -= w.weight) < 0) { id = k; break; } }
+  const av = spec.weather[id].avoid;
+  if (av && minute > parseHM(av.from) && minute < parseHM(av.to)) id = av.fallback;
+  return id;
+}
+
+/** 前端需要的规格子集 */
+export function publicSpec(spec) {
+  return { meta: spec.meta, calendar: spec.calendar, weather: spec.weather, canon: spec.lore.canon };
+}

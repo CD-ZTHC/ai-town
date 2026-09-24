@@ -13,6 +13,8 @@ mise run reset      # 清空存档，从第一天重新开始
 mise run public     # 以公网模式启动（需要 ADMIN_TOKEN）
 mise run token      # 生成管理员令牌
 mise run check      # 语法检查
+mise run test       # 运行测试（不调用 LLM）
+mise run spec       # 打印默认世界规格
 ```
 
 LLM 配置读取 `.env`（OpenAI 兼容接口）：
@@ -20,6 +22,8 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 | 变量 | 说明 |
 | --- | --- |
 | `BASE_URL` / `API_KEY` / `MODEL` | 接口地址、密钥、模型名（模型名写错时会自动匹配最接近的可用模型） |
+| `MODEL_FAST` / `MODEL_SMART` | 可选的模型分档：高频小任务用快模型，日报等重要任务用强模型（例如 `glm-5.3-flash` / `glm-5.3`），不填则都用 `MODEL` |
+| `STORY_RATING` | 内容分级：`cozy`（默认）/ `adventure` / `epic` |
 | `LLM_CONCURRENCY` | 并发请求数，默认 4；遇到限流会自动退避并降低并发 |
 | `PORT` / `HOST` | 端口（默认 3000）/ 监听地址 |
 | 公网相关 | `PUBLIC_MODE`、`ADMIN_TOKEN`、`TRUST_PROXY`、`LLM_DAILY_TOKENS` 等，完整列表见 `.env.example` |
@@ -106,6 +110,21 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 
 快捷键：拖拽平移 · 滚轮缩放 · `WASD` · `空格` 暂停 · `1-4` 调速 · `Tab` 切换居民 · `F` 跟随 · `Esc` 关闭。
 
+## 世界规格与世界操作
+
+小镇的设定、居民、建筑、地点、天气、日历和内核参数都由一份**世界规格**描述（`server/kernel/spec.js`，默认规格由 `personas.js` / `world.js` 生成）。对世界的修改都是一条可校验、可重放的 **WorldOp**（`server/kernel/ops.js`）：
+
+- 存档只保存操作历史，读档时 = 默认规格 + 按序重放；审计日志追加写入 `data/ops.jsonl`，每个游戏小时的快照保存在 `data/snapshots/`；
+- 目前支持 `setParam`（在上下限内调节步速、对话数等）、`setMeta`（内容分级 / 叙事者）、`addCanon`（设定集）、`addCalendarEvent`（新节日）、`addWeather`（新天气）；
+- 管理员可以通过 `POST /api/world/op` 直接应用操作，`GET /api/world/history` 查看变更史。
+
+```bash
+curl -X POST localhost:3000/api/world/op -H 'content-type: application/json' \
+  -d '{"op":"addWeather","args":{"id":"bloodmoon","name":"血月","emoji":"🌕","render":{"base":"cloudy","tint":"#a01c2c"}}}'
+```
+
+后续规划（叙事导演、人物穿越、异世界入侵、AI 世界架构师等）见 [设计方案](docs/design/ai-world-evolution.md)。
+
 ## 结构
 
 ```
@@ -113,6 +132,8 @@ server/
   index.js     HTTP + SSE 实时推送 + REST 接口（权限、限流、休眠）
   guard.js     公网防护：配置、管理员鉴权、限流器、内容审核
   sim.js       模拟核心：时间、移动、日程执行、所有 LLM 认知模块、存档
+  kernel/spec.js  世界规格：默认规格、校验、日历与天气工具
+  kernel/ops.js   WorldOp：操作定义、校验、应用、重放、审计日志
   llm.js       OpenAI 兼容客户端：并发队列、自适应限流、JSON 提取
   memory.js    记忆流与检索
   world.js     程序化地图（瓦片、建筑、站位、A* 寻路）
@@ -124,5 +145,7 @@ public/
   js/main.js   数据流、相机、输入、环境音
 deploy/        Caddy / Nginx / systemd 部署模板
 Dockerfile, docker-compose.yml, .env.example
-data/save.json 自动存档（每 20 秒）
+test/          node:test 测试（无需安装依赖）
+docs/design/   设计方案
+data/save.json 自动存档（每 20 秒），ops.jsonl 世界变更日志，snapshots/ 每小时快照
 ```

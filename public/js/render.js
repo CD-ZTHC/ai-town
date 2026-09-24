@@ -4,6 +4,7 @@ import { buildSprites, makePortrait, shade, SPR_W, SPR_H } from './sprites.js';
 export const TS = 32;
 const T = { GRASS: 0, PATH: 1, PLAZA: 2, DIRT: 3, WATER: 4, SAND: 5, BRIDGE: 6, SOIL: 7, WOOD: 8, DEEP: 9, FLOWER: 10 };
 const SCALE = 2; // 角色精灵放大倍数
+const STATIC_OBJECTS = new Set(['fence', 'crop', 'bench', 'rock', 'stage', 'hay', 'anvil', 'woodpile']);
 
 // ---------- 工具 ----------
 function h2(x, y, s = 0) {
@@ -78,7 +79,8 @@ export class Renderer {
     this.buildTreeSprites();
     this.buildStatic();
     this.buildMinimap();
-    this.dynamic = world.objects.filter((o) => ['tree', 'bush', 'lamp', 'stall', 'fountain', 'board', 'table', 'balloon', 'well', 'scarecrow', 'boat', 'lily'].includes(o.type));
+    // 静态物体已画进底图，其余（包括世界规格里新增的未知类型）都按动态物体参与 y 排序绘制
+    this.dynamic = world.objects.filter((o) => !STATIC_OBJECTS.has(o.type));
     const P = this.particles;
     P.flies = Array.from({ length: 46 }, () => this.newFly());
     P.butterflies = Array.from({ length: 10 }, () => ({ x: 2 + Math.random() * 28, y: 33 + Math.random() * 9, vx: 0, vy: 0, c: ['#fff4a3', '#ffc6e0', '#bfe3ff', '#ffffff'][Math.floor(Math.random() * 4)], ph: Math.random() * 6 }));
@@ -426,7 +428,8 @@ export class Renderer {
   drawBuilding(g, b) {
     const X = b.x * TS, Y = b.y * TS, w = b.w * TS, h = b.h * TS;
     const kind = b.kind;
-    const wallC = { house: '#f2e2c2', library: '#e9dfcf', cafe: '#fbe8d2', tavern: '#7b5a40', clinic: '#f7f8fb', workshop: '#a58b6c', farmhouse: '#e8cfa6' }[kind];
+    // 未知类型（由世界规格新增的建筑）使用 b.wall 或默认墙色
+    const wallC = { house: '#f2e2c2', library: '#e9dfcf', cafe: '#fbe8d2', tavern: '#7b5a40', clinic: '#f7f8fb', workshop: '#a58b6c', farmhouse: '#e8cfa6' }[kind] || b.wall || '#e8dcc4';
     const roofC = b.roof;
     const roofH = Math.round(h * (kind === 'library' ? 0.5 : 0.55));
     // 阴影
@@ -787,6 +790,17 @@ export class Renderer {
         if (o.v > 0.6) { ctx.fillStyle = '#ffc2d8'; ctx.beginPath(); ctx.arc(X + 19, Y + 13 + bob, 3, 0, 7); ctx.fill(); ctx.fillStyle = '#fff3a0'; ctx.fillRect(X + 18, Y + 12 + bob, 2, 2); }
         break;
       }
+      default: {
+        // 兜底：没有专门绘制函数的物体（例如 AI 新增的类型）画成带阴影的 emoji
+        const w = (o.w || 1) * TS, h = (o.h || 1) * TS;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,.18)';
+        ctx.beginPath(); ctx.ellipse(X + w / 2, Y + h - 3, w * 0.4, 5, 0, 0, 7); ctx.fill();
+        ctx.font = `${Math.round(Math.min(w, h) * 0.8)}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillText(o.emoji || '❔', X + w / 2, Y + h - 2);
+        ctx.restore();
+      }
     }
   }
 
@@ -1142,6 +1156,12 @@ export class Renderer {
       ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, 7); ctx.fill();
     }
     if (S.weather === 'snow') { ctx.fillStyle = 'rgba(230,240,255,.12)'; ctx.fillRect(0, 0, W, H); }
+    // 世界规格新增天气的色调（例如血月）
+    if (S.weatherTint) {
+      ctx.globalAlpha = S.weatherTint.tintAlpha ?? 0.2;
+      ctx.fillStyle = S.weatherTint.tint; ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
     // 雾
     if (S.weather === 'fog') {
       const t = this.time;

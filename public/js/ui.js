@@ -4,7 +4,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtTime = (t) => { const m = Math.floor(t % 1440); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
-const WEEK = ['周三', '周四', '周五', '周六', '周日', '周一', '周二'];
+const weekday = (day) => { const w = app.spec?.calendar.weekdays || []; return w.length ? w[(day - 1) % w.length] : ''; };
 const face = (id) => app.meta[id]?.portrait || '';
 const name = (id) => app.meta[id]?.name || id;
 
@@ -53,14 +53,22 @@ export function init(a, first) {
 export function frame(S) {
   const m = S.t % 1440, h = m / 60;
   $('#clock-time').textContent = fmtTime(S.t);
-  $('#clock-date').textContent = `第${S.day}天 · ${WEEK[(S.day - 1) % 7]} · ${app.weathers[S.weather].emoji} ${app.weathers[S.weather].name}`;
-  $('#clock-sky').textContent = h < 5 || h >= 20 ? '🌙' : h < 7 ? '🌅' : h >= 17 ? '🌇' : app.weathers[S.weather].emoji;
+  const w = app.weathers[S.weatherId] || { emoji: '', name: S.weatherId };
+  $('#clock-date').textContent = `第${S.day}天 · ${weekday(S.day)} · ${w.emoji} ${w.name}`;
+  $('#clock-sky').textContent = h < 5 || h >= 20 ? '🌙' : h < 7 ? '🌅' : h >= 17 ? '🌇' : w.emoji;
   $('#clock-progress').style.width = `${(m / 1440) * 100}%`;
   $('#clock-date').textContent += app.snap.nightSkip ? ' · 🌙 夜深了，时间加速中' : '';
+  // 顶栏节日标签：显示下一个（或正在进行的）需要倒计时的日历事件
   const fc = $('#festival-chip');
-  const d = 4 - S.day;
-  fc.textContent = d > 0 ? `🏮 萤火节 · 还有${d}天` : d === 0 ? (h >= 18 ? '🏮 萤火节进行中！' : '🏮 今晚萤火节！') : '🏮 萤火节已落幕';
-  fc.classList.toggle('live', d === 0 || app.forceFestival);
+  const evs = (app.spec?.calendar.events || []).filter((e) => e.countdown).sort((x, y) => x.day - y.day);
+  const ev = evs.find((e) => e.day >= S.day) || evs[evs.length - 1];
+  if (ev) {
+    const d = ev.day - S.day;
+    const from = Number(String(ev.from).split(':')[0]) || 0;
+    fc.textContent = d > 0 ? `${ev.emoji} ${ev.name} · 还有${d}天` : d === 0 ? (h >= from ? `${ev.emoji} ${ev.name}进行中！` : `${ev.emoji} 今晚${ev.name}！`) : `${ev.emoji} ${ev.name}已落幕`;
+  }
+  fc.hidden = !ev;
+  fc.classList.toggle('live', (ev && ev.day === S.day) || app.forceFestival);
   const sp = app.snap;
   $$('#speed button').forEach((b) => {
     const v = Number(b.dataset.speed);
@@ -156,7 +164,7 @@ function weatherMenu(btn) {
 }
 
 // ---------- 动态流 ----------
-const FEED_GROUPS = { convo: ['convo'], thought: ['thought'], event: ['event', 'reflect', 'commit', 'visitor', 'reaction', 'plan', 'news', 'diary'] };
+const FEED_GROUPS = { convo: ['convo'], thought: ['thought'], event: ['event', 'reflect', 'commit', 'visitor', 'reaction', 'plan', 'news', 'diary', 'world'] };
 function feedItemHTML(l) {
   const faces = (l.agents || []).slice(0, 4).map((id) => `<img src="${face(id)}" alt="">`).join('');
   const t = fmtTime(l.t);
@@ -168,7 +176,7 @@ function feedItemHTML(l) {
       <div class="lines">${(l.lines || []).map((x) => `<div class="line"><img src="${face(x.speaker)}"><b>${esc(name(x.speaker))}</b><span>${esc(x.text)}</span></div>`).join('')}</div>
     </div>`;
   }
-  const icon = { thought: '💭', reflect: '✨', event: '📢', commit: '', visitor: '', reaction: '❗', plan: '🗓️', news: '', diary: '📖', weather: '', system: '' }[l.type] ?? '';
+  const icon = { thought: '💭', reflect: '✨', event: '📢', commit: '', visitor: '', reaction: '❗', plan: '🗓️', news: '', diary: '📖', weather: '', system: '', world: '' }[l.type] ?? '';
   const who = (l.agents || []).length === 1 && ['thought', 'reflect', 'reaction', 'plan', 'diary'].includes(l.type)
     ? `<span class="who" data-agent="${l.agents[0]}">${esc(name(l.agents[0]))}</span>${l.type === 'thought' ? '：' : ' '}` : '';
   let text = esc(l.text);
@@ -209,6 +217,9 @@ export function onLog(l) {
   if (l.type === 'reflect') toast(`✨ ${esc(l.text)}`, 5000);
   if (l.type === 'weather') toast(esc(l.text), 2500);
   if (l.agents?.includes(app.selected)) scheduleDetail();
+}
+export function onWorld(w) {
+  toast(`🌀 ${esc(w.desc || w.op?.op || '')}`, 5000);
 }
 export function onNewspaper(p) {
   app.newspapers.push(p);
@@ -343,7 +354,7 @@ function renderPane(reset) {
         <div class="bar"><i style="left:${v >= 0 ? 50 : 50 - w}%;width:${w}%;background:${col}"></i></div><div class="note">${esc(r.note)}</div></div></div>`;
     }).join('') || '<div class="empty">还没有建立关系</div>';
   } else if (ui.tab === 'diary') {
-    pane.innerHTML = d.diary.map((x) => `<div class="diary"><h4>第 ${x.day} 天 · ${WEEK[(x.day - 1) % 7]}</h4>${esc(x.text)}</div>`).join('') || '<div class="empty">📖 每晚 22:15 左右，居民会写下当天的日记</div>';
+    pane.innerHTML = d.diary.map((x) => `<div class="diary"><h4>第 ${x.day} 天 · ${weekday(x.day)}</h4>${esc(x.text)}</div>`).join('') || '<div class="empty">📖 每晚 22:15 左右，居民会写下当天的日记</div>';
   }
   if (!reset) pane.scrollTop = scroll;
 }

@@ -1,4 +1,4 @@
-// OpenAI 兼容接口的 LLM 客户端：并发队列、重试、模型自动校正、JSON 提取、统计
+// OpenAI 兼容接口的 LLM 客户端：并发队列、重试、模型分档与自动校正、JSON 提取、统计
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/+$/, '');
 const API_KEY = process.env.API_KEY || '';
 const CONCURRENCY = Number(process.env.LLM_CONCURRENCY || 4);
@@ -8,13 +8,21 @@ const PUBLIC = process.env.PUBLIC_MODE === '1' || process.env.PUBLIC_MODE === 't
 // 每日令牌预算（0 = 不限）。公网模式默认 300 万，超出后小镇退化为规则驱动，玩家交互暂停
 const DAILY_BUDGET = Number(process.env.LLM_DAILY_TOKENS ?? (PUBLIC ? 3_000_000 : 0));
 
-let model = process.env.MODEL || '';
+// 模型分档：fast 用于高频的小任务（独白、审核），smart 用于低频的重要任务（日报，以及之后的叙事导演、世界架构师）。
+// 未配置的档位回落到 MODEL，因此只配置 MODEL 时行为与之前完全一致。
+const models = {
+  default: process.env.MODEL || '',
+  fast: process.env.MODEL_FAST || '',
+  smart: process.env.MODEL_SMART || '',
+};
+const modelFor = (tier) => models[tier] || models.default;
 let modelChecked = false;
 const listeners = new Set();
 
 export const stats = {
   enabled: Boolean(BASE_URL && API_KEY),
-  model,
+  model: models.default,
+  models: { fast: modelFor('fast'), smart: modelFor('smart') },
   calls: 0,
   ok: 0,
   errors: 0,
@@ -57,20 +65,23 @@ async function ensureModel() {
     const res = await fetch(`${BASE_URL}/models`, { headers: { Authorization: `Bearer ${API_KEY}` } });
     const data = await res.json();
     const ids = (data.data || []).map((m) => m.id);
-    if (ids.length && !ids.includes(model)) {
+    for (const tier of Object.keys(models)) {
+      const want = models[tier];
+      if (!want || !ids.length || ids.includes(want)) continue;
       // 容错：尝试找到字符组成最相近的模型（例如 glm-5.3-xflash -> glm-5.3-flashx）
       const score = (id) => {
-        const a = [...model].sort().join('');
+        const a = [...want].sort().join('');
         const b = [...id].sort().join('');
         let same = 0;
         for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] === b[i]) same++;
         return same - Math.abs(a.length - b.length) * 2;
       };
       const best = ids.slice().sort((x, y) => score(y) - score(x))[0];
-      console.warn(`[llm] 模型 "${model}" 不可用，自动改用 "${best}"（可用: ${ids.join(', ')}）`);
-      model = best;
-      stats.model = model;
+      console.warn(`[llm] 模型 "${want}"（${tier}）不可用，自动改用 "${best}"（可用: ${ids.join(', ')}）`);
+      models[tier] = best;
     }
+    stats.model = models.default;
+    stats.models = { fast: modelFor('fast'), smart: modelFor('smart') };
   } catch (e) {
     console.warn('[llm] 无法获取模型列表：', e.message);
   }
@@ -113,11 +124,12 @@ function enqueue(fn, priority = false) {
 }
 
 let seq = 0;
-async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = TIMEOUT_MS, attempts = 3 }) {
+async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = TIMEOUT_MS, attempts = 3, tier = 'default' }) {
   await ensureModel();
+  const model = modelFor(tier);
   const id = ++seq;
   const started = Date.now();
-  stats.active.push({ id, label, agent, since: started });
+  stats.active.push({ id, label, agent, since: started, model });
   stats.calls++;
   notify();
   let lastErr;

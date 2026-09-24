@@ -2,7 +2,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Town, llmPublic, WEATHER } from './sim.js';
+import { Town, llmPublic } from './sim.js';
 import * as llm from './llm.js';
 import { config, clientIp, isAdmin, visitorId, limits, sanitize, moderate } from './guard.js';
 
@@ -32,6 +32,7 @@ function wire(t) {
   t.on('log', (l) => broadcast('log', l));
   t.on('agent', (id) => broadcast('agent', { id }));
   t.on('newspaper', (p) => broadcast('newspaper', p));
+  t.on('world', (w) => broadcast('world', w));
   t.start();
 }
 wire(town);
@@ -128,6 +129,7 @@ async function handleApi(req, res, url, ip) {
     }
     if (p === '/api/relations') return json(res, 200, town.relationsGraph());
     if (p === '/api/newspapers') return json(res, 200, town.newspapers);
+    if (p === '/api/world/history') return json(res, 200, town.worldHistory().slice(-200));
     throw new HttpError(404, '不存在');
   }
 
@@ -174,7 +176,7 @@ async function handleApi(req, res, url, ip) {
     const out = {};
     if (b.weather != null) {
       const w = String(b.weather);
-      if (w !== 'auto' && !WEATHER[w]) throw new HttpError(400, '未知天气');
+      if (w !== 'auto' && !Object.hasOwn(town.spec.weather, w)) throw new HttpError(400, '未知天气');
       if (!admin) {
         if (!config.allowInteraction) throw new HttpError(403, '当前为只读观赏模式');
         take(limits.weather, 'all', '改变天气');
@@ -198,6 +200,14 @@ async function handleApi(req, res, url, ip) {
       }
     }
     return json(res, 200, { ok: true, speed: town.speed, paused: town.paused, ...out });
+  }
+
+  // 直接应用一条世界操作（仅管理员）。之后的阶段里，AI 的提案经过投票与审批后也走这条路径。
+  if (p === '/api/world/op') {
+    requireAdmin(req);
+    if (!b.op || typeof b.op !== 'string') throw new HttpError(400, '缺少 op');
+    const rec = town.applyWorldOp({ op: b.op, args: b.args && typeof b.args === 'object' ? b.args : {} }, { by: 'admin' });
+    return json(res, 200, { ok: true, op: rec });
   }
 
   if (p === '/api/newspaper') {
@@ -295,7 +305,7 @@ server.requestTimeout = 30_000;
 
 server.listen(PORT, HOST, () => {
   const mode = config.publicMode ? `公网模式${config.adminToken ? '（已设置管理员令牌）' : '（⚠️ 未设置 ADMIN_TOKEN，管理功能全部关闭）'}` : '本地模式（所有访问者均为管理员，请勿直接暴露到公网）';
-  console.log(`\n  🌸 云溪镇已开放： http://${HOST || 'localhost'}:${PORT}\n  🔐 ${mode}\n  🧠 LLM: ${llm.stats.enabled ? `${process.env.MODEL}${llm.stats.dailyBudget ? ` · 每日预算 ${llm.stats.dailyBudget.toLocaleString()} tokens` : ''}` : '未配置（使用规则兜底）'}\n`);
+  console.log(`\n  🌸 云溪镇已开放： http://${HOST || 'localhost'}:${PORT}\n  🔐 ${mode}\n  🧠 LLM: ${llm.stats.enabled ? `${llm.stats.model}（快：${llm.stats.models.fast} · 强：${llm.stats.models.smart}）${llm.stats.dailyBudget ? ` · 每日预算 ${llm.stats.dailyBudget.toLocaleString()} tokens` : ''}` : '未配置（使用规则兜底）'}\n`);
 });
 
 const shutdown = () => { town.save(); process.exit(0); };
