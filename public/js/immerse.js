@@ -258,7 +258,8 @@ function locName(c) {
 }
 function showStatus() {
   if (!st.cur) return;
-  $('#im-where').textContent = [locName(st.cur), st.cur.label].filter(Boolean).join(' · ');
+  const where = locName(st.cur), label = st.cur.label || '';
+  $('#im-where').textContent = where && label.includes(where.replace('📍 ', '')) ? label : [where, label].filter(Boolean).join(' · ');
   const el = $('#im-status');
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
 }

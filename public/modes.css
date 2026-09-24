@@ -63,6 +63,7 @@ body[data-mode='play'] #inspector { top: 64px; bottom: calc(var(--gap) + 8px); }
 /* ---------- 🎬 沉浸模式 ---------- */
 #immerse { position: fixed; inset: 0; z-index: 25; pointer-events: none; }
 body.bars { --bar-h: clamp(0px, calc((100vh - 100vw / 2.35) / 2), 11vh); }
+@media (orientation: portrait) { body.bars { --bar-h: 4vh; } }
 .letterbox { position: absolute; left: 0; right: 0; height: var(--bar-h); background: #000; transition: height 0.6s var(--ease); }
 .letterbox.top { top: 0; }
 .letterbox.bottom { bottom: 0; }
@@ -89,7 +90,7 @@ body.im-active .im-status { opacity: 1; animation: none; }
 }
 body.im-active .im-bar { opacity: 1; transform: translate(-50%, 0); }
 body.im-active .subtitles { bottom: calc(var(--bar-h) + 72px); }
-.im-bar button { padding: 7px 11px; border-radius: 11px; font-size: 14px; color: var(--muted); }
+.im-bar button { padding: 7px 11px; border-radius: 11px; font-size: 14px; color: var(--muted); white-space: nowrap; flex: none; }
 .im-bar button:hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
 .im-bar button.on { color: var(--text); background: rgba(255, 184, 107, 0.2); }
 body[data-mode='immerse']:not(.im-active), body[data-mode='immerse']:not(.im-active) canvas#world { cursor: none; }
@@ -105,7 +106,7 @@ body[data-mode='immerse']:not(.im-active), body[data-mode='immerse']:not(.im-act
 .play-me { padding: 8px 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: #ffe08a; }
 .play-me i { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3); }
 .play-clock { margin: 0 auto; padding: 8px 16px; font-variant-numeric: tabular-nums; }
-.play-btns { display: flex; padding: 3px; gap: 2px; }
+.play-btns { display: flex; padding: 3px; gap: 2px; margin-left: auto; }
 .play-btns button { padding: 6px 10px; border-radius: 10px; font-size: 15px; }
 .play-btns button:hover { background: rgba(255, 255, 255, 0.1); }
 .play-near { position: absolute; left: var(--gap); top: 64px; display: flex; flex-direction: column; gap: 6px; }
