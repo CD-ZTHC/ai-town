@@ -64,7 +64,8 @@ const STEPS = {
     place(['lin', 'su']);
     await town.startConvo(town.byId.lin, town.byId.su);
     const c = town.convoLog.at(-1);
-    return { ok: c && c.lines.length >= 2 && !c.summary.includes('寒暄'), out: `${c?.lines.length} 句：${c?.summary}` };
+    const log = town.logs.findLast((l) => l.type === 'convo');
+    return { ok: Boolean(c && c.lines.length >= 2 && !log?.fallback), out: `${c?.lines.length} 句：${c?.summary}${log?.fallback ? '（兜底台词）' : ''}` };
   },
   async director() {
     town.t = 10 * 60;
@@ -78,7 +79,7 @@ const STEPS = {
     town.scenes.tick();
     const ok = await waitFor(() => town.logs.some((l) => l.type === 'scene' && l.title === '酒馆夜谈'));
     const l = town.logs.find((x) => x.type === 'scene' && x.title === '酒馆夜谈');
-    return { ok, out: l ? `${l.lines.length} 句：${l.text}` : '超时' };
+    return { ok: ok && !l?.fallback, out: l ? `${l.lines.length} 句：${l.text}${l.fallback ? '（模型输出无法解析，用了预设台词）' : ''}` : '超时' };
   },
   async architect() {
     const r = await town.architect.process({ intent: '在码头边修一座可以看星星的小塔', origin: 'admin' });
@@ -109,7 +110,8 @@ for (const [name, fn] of Object.entries(STEPS)) {
   const t0 = Date.now(), k0 = tokens(), e0 = llm.stats.errors;
   let r;
   try { r = await fn(); } catch (e) { r = { ok: false, out: `出错：${e.message}` }; }
-  const row = { name, ok: r.ok, ms: Date.now() - t0, tokens: tokens() - k0, errors: llm.stats.errors - e0, out: String(r.out).slice(0, 120) };
+  // 有失败的模型调用时，即使走了兜底逻辑也不算通过
+  const row = { name, ok: r.ok && llm.stats.errors === e0, ms: Date.now() - t0, tokens: tokens() - k0, errors: llm.stats.errors - e0, out: String(r.out).slice(0, 120) };
   rows.push(row);
   console.log(`${row.ok ? '✅' : '❌'} ${name.padEnd(10)} ${String(row.ms).padStart(6)}ms ${String(row.tokens).padStart(7)} tokens${row.errors ? ` · 失败调用 ${row.errors}` : ''}\n   ${row.out}`);
 }

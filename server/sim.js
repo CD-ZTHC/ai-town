@@ -782,7 +782,7 @@ ${this.abilityList(a)}
           { speaker: a.name, text: `${this.weatherText()}的天，心情也跟着变了。` },
           { speaker: b.name, text: '回头再聊，我还有点事～' },
         ],
-        memoryA: `和${b.name}简单寒暄了几句。`, memoryB: `和${a.name}简单寒暄了几句。`, importance: 2,
+        memoryA: `和${b.name}简单寒暄了几句。`, memoryB: `和${a.name}简单寒暄了几句。`, importance: 2, fallback: true,
       };
     }
     convo.state = 'talking';
@@ -856,7 +856,7 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
     convo.commitments = commits;
     this.convoLog.push(convo);
     if (this.convoLog.length > 120) this.convoLog.shift();
-    this.log('convo', convo.summary, { agents: [a.id, b.id], convoId: convo.id, where: convo.where, lines: convo.lines, commitments: commits });
+    this.log('convo', convo.summary, { agents: [a.id, b.id], convoId: convo.id, where: convo.where, lines: convo.lines, commitments: commits, ...(res.fallback ? { fallback: true } : {}) });
     for (const c of commits) this.log('commit', `📌 新约定：${c}`, { agents: [a.id, b.id] });
     this.emit('agent', a.id); this.emit('agent', b.id);
     this.shareBeliefs(a, b);

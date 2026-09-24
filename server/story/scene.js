@@ -92,7 +92,9 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
       }
     }
     const present = new Set(members.map((a) => a.id));
+    let fallback = false;
     if (!res) {
+      fallback = true;
       const lines = (sc.fallback || []).filter(([id]) => present.has(id)).map(([id, text]) => ({ speaker: town.byId[id].name, text }));
       res = {
         lines: lines.length >= 2 ? lines : members.slice(0, 4).map((a, i) => ({ speaker: a.name, text: i ? '嗯，我听着呢。' : `大家都来了，我们说说「${sc.title}」吧。` })),
@@ -113,10 +115,10 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
       town.emit('say', { convo: sc.id, speaker: sp.id, text: line.text });
       await town.sleepReal(ms);
     }
-    this.finish(sc, members, res, convo);
+    this.finish(sc, members, res, convo, fallback);
   }
 
-  finish(sc, members, res, convo) {
+  finish(sc, members, res, convo, fallback = false) {
     const town = this.town;
     town.convos.delete(sc.id);
     const summary = str(res.summary, 80) || `${members.map((a) => a.name).join('、')}${sc.title}`;
@@ -152,7 +154,7 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
     convo.summary = summary;
     town.convoLog.push(convo);
     if (town.convoLog.length > 120) town.convoLog.shift();
-    town.log('scene', summary, { agents: members.map((a) => a.id), convoId: sc.id, where: convo.where, lines: convo.lines, title: sc.title, commitments: commits });
+    town.log('scene', summary, { agents: members.map((a) => a.id), convoId: sc.id, where: convo.where, lines: convo.lines, title: sc.title, commitments: commits, ...(fallback ? { fallback: true } : {}) });
     for (const c of commits) town.log('commit', `📌 新分工：${c}`, { agents: members.map((a) => a.id).slice(0, 2) });
     for (const a of members) town.emit('agent', a.id);
     town.emit('story');

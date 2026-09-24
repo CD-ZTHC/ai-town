@@ -29,6 +29,8 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 | `STORY_RATING` | 内容分级：`cozy`（默认）/ `adventure` / `epic`；决定异界生物的危险程度与审核尺度 |
 | `STORYTELLER` | 叙事者：`voyage`（默认，每季自动上演一个剧情弧）/ `gentle`（以日常为主）/ `chaos` |
 | `LLM_CONCURRENCY` | 并发请求数，默认 4；遇到限流会自动退避并降低并发 |
+| `LLM_JSON_MODE` | 默认开启：请求模型以 JSON 模式输出（`response_format: json_object`），网关不支持时自动关闭；设为 `0` 手动关闭 |
+| `NODE_USE_ENV_PROXY` | 服务器需要经由 HTTPS 代理访问模型时设为 `1`（Node ≥ 22.21），否则 Node 内置的 fetch 不会读取 `HTTPS_PROXY` |
 | `PORT` / `HOST` | 端口（默认 3000）/ 监听地址 |
 | 公网相关 | `PUBLIC_MODE`、`ADMIN_TOKEN`、`TRUST_PROXY`、`LLM_DAILY_TOKENS` 等，完整列表见 `.env.example` |
 
