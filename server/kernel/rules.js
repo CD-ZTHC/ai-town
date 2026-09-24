@@ -1,7 +1,7 @@
 // 规则引擎（设计文档 4.5）：世界法则 = 触发 → 条件（安全表达式）→ 效果。
 // 触发器：every（每隔 N 游戏分钟）、at（每天某时刻）、weather（天气变为某种）、enter（居民到达某地点）。
 import { compile, evaluate } from './expr.js';
-import { EXPR_FNS, checkEffects, checkExpr, runEffects, posOf, agentsNear } from './effects.js';
+import { EXPR_FNS, EXT_FNS, checkEffects, checkExpr, runEffects, posOf, agentsNear } from './effects.js';
 import { parseHM } from '../memory.js';
 
 const ID_RE = /^[a-z][a-z0-9_]{1,31}$/;
@@ -31,6 +31,8 @@ export function exprEnv(town, { self = null, target = null, e = null } = {}) {
     nearAgents: (v, r = 3) => { const a = real(v); return a ? agentsNear(town, posOf(town, a), r, a).length : 0; },
     min: Math.min, max: Math.max, abs: Math.abs, rand: Math.random,
   };
+  // 扩展函数：拿到小镇与「快照 → 真实居民」的换算，返回普通值
+  for (const [name, impl] of Object.entries(EXT_FNS)) fns[name] = (...args) => impl({ town, real }, ...args);
   const vars = {
     self: agentView(self), target: agentView(target), e: agentView(e),
     weather: town.weather, hour: Math.floor(town.minute / 60), minute: Math.floor(town.minute), day: town.day,

@@ -264,6 +264,14 @@ async function handleApi(req, res, url, ip) {
     return json(res, 200, { ok: true });
   }
 
+  // 管理员处理 AI 心愿单
+  if (p === '/api/gaps/status') {
+    requireAdmin(req);
+    const err = town.architect.setGapStatus(String(b.id || ''), String(b.status || ''));
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
   if (p === '/api/proposals/decide') {
     requireAdmin(req);
     const err = town.proposalSystem.decide(String(b.id || ''), Boolean(b.approve), 'admin');

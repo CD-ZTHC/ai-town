@@ -641,7 +641,12 @@ async function renderBuild() {
         || '<div class="empty">世界还没有发生过结构性的变化。</div>';
     } else if (tab === 'gaps') {
       const d = await app.api('/api/proposals');
-      html = `<div class="sub">世界架构师想做、但现有能力做不到的事。出现得越多，越值得在 P5 里补上这项能力。</div>` + ((d.gaps || []).map((g) => `<div class="dec"><b>×${g.count}</b> ${esc(g.need)} <small class="quota">— ${esc(g.why)}（起因：${esc(g.intent)}）</small></div>`).join('') || '<div class="empty">暂时没有能力缺口。</div>');
+      const GS = { open: '待处理', adopted: '已采纳', ignored: '已忽略' };
+      html = `<div class="sub">叙事导演和世界架构师想做、但现有能力做不到的事。「采纳」后运行 <code>mise run evolve</code>，会把它整理成需求文档（docs/rfcs/），由维护者实现后合并。</div>` + ((d.gaps || []).map((g) => `<div class="gap ${g.status}">
+        <div><b>×${g.count}</b> ${esc(g.need)} <span class="badge">${g.rfc ? '📄 已有需求文档' : GS[g.status] || g.status}</span></div>
+        <small class="quota">${esc(g.why)}（起因：${esc(g.intent || '')}）</small>
+        ${g.rfc ? `<div class="quota">📄 ${esc(g.rfc)}</div>` : `<div class="pact">${g.status !== 'adopted' ? `<button class="mini adm" data-gap="${esc(g.id)}" data-st="adopted">✅ 采纳</button>` : ''}${g.status !== 'ignored' ? `<button class="mini" data-gap="${esc(g.id)}" data-st="ignored">忽略</button>` : ''}${g.status !== 'open' ? `<button class="mini" data-gap="${esc(g.id)}" data-st="open">重新打开</button>` : ''}</div>`}
+      </div>`).join('') || '<div class="empty">暂时没有能力缺口。</div>');
     } else {
       const list = await app.api('/api/snapshots');
       html = `<div class="sub">把整个小镇恢复到某个整点的状态（居民、剧情和世界结构都会一起回去）。当前存档会先自动备份。</div>` + (list.map((s) => `<div class="dec snap"><b>第${s.day}天 ${String(s.hour).padStart(2, '0')}:00</b> <small class="quota">${Math.round(s.size / 1024)} KB</small><button class="mini adm" data-snap="${esc(s.name)}">回到这里</button></div>`).join('') || '<div class="empty">还没有快照（每个游戏小时自动保存一份，保留最近 24 份）。</div>');
@@ -662,6 +667,9 @@ async function renderBuild() {
   $$('[data-pd]', body).forEach((b) => b.addEventListener('click', async () => {
     if (!confirm(b.dataset.ok === '1' ? '批准这份世界补丁？' : '驳回这份世界补丁？')) return;
     try { await app.api('/api/proposals/decide', { id: b.dataset.pd, approve: b.dataset.ok === '1' }); renderBuild(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
+  }));
+  $$('[data-gap]', body).forEach((b) => b.addEventListener('click', async () => {
+    try { await app.api('/api/gaps/status', { id: b.dataset.gap, status: b.dataset.st }); renderBuild(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
   }));
   $$('[data-snap]', body).forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('确定把小镇回溯到这个时刻吗？之后发生的一切都会消失（当前存档会备份）。')) return;

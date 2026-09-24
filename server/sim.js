@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildWorld, findPath } from './world.js';
 import * as llm from './llm.js';
+import './ext/index.js'; // 加载 server/ext/ 下人工审核后的扩展能力
 import { addMemory, retrieve, fmtTime, fmtStamp, parseHM } from './memory.js';
 import { defaultSpec, validateSpec, weekdayOf, calendarHint, pickWeather, publicSpec, PARAM_BOUNDS } from './kernel/spec.js';
 import { RuleEngine } from './kernel/rules.js';
@@ -1229,13 +1230,20 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
 
   storyContext() { return this.arcs.contextText(); }
 
+  /** 心愿单 + 已生成的需求文档（mise run evolve 写在 data/evolve.json 里） */
+  gapsWithRfc() {
+    let rfcs = {};
+    try { rfcs = JSON.parse(fs.readFileSync(path.join(this.dataDir, 'evolve.json'), 'utf8')).gaps || {}; } catch {}
+    return [...this.architect.gaps].sort((a, b) => b.count - a.count).map((g) => ({ ...g, status: g.status || 'open', rfc: rfcs[g.id]?.file || null }));
+  }
+
   proposalsView(key = null, admin = false) {
     const ps = this.proposalSystem;
     return {
       proposals: ps.list.slice(-20).reverse().map((p) => ps.view(p, key)),
       queue: this.architect.queue.map((q) => ({ intent: q.intent, origin: ps.originText(q.origin) })),
       thinking: this.architect.busy,
-      gaps: admin ? [...this.architect.gaps].sort((a, b) => b.count - a.count) : undefined,
+      gaps: admin ? this.gapsWithRfc() : undefined,
       requireAdmin: ps.requireAdmin,
     };
   }

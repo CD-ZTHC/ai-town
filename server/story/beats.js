@@ -215,6 +215,7 @@ const KINDS = {
 };
 
 export const DIRECTOR_KINDS = Object.keys(KINDS).filter((k) => !KINDS[k].privileged);
+export const ALL_KINDS = Object.keys(KINDS);
 
 export function checkBeat(town, b, { privileged = false, ctx = {} } = {}) {
   if (!b || typeof b !== 'object' || !Object.hasOwn(KINDS, b.kind || '')) return `未知动作：${b?.kind}`;

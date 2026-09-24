@@ -3,7 +3,7 @@
 import * as llm from '../llm.js';
 import { similarity } from '../memory.js';
 import { ARCHITECT_OPS } from './proposals.js';
-import { VFX } from '../kernel/effects.js';
+import { manifestText } from './manifest.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const MAX_QUEUE = 5;
@@ -46,26 +46,8 @@ export class Architect {
     this.process(item).catch((e) => console.warn('[architect]', e.message)).finally(() => { this.busy = false; });
   }
 
-  /** 能力清单：告诉 AI 现在能做什么、有哪些现成的东西 */
-  manifest() {
-    const s = this.town.spec;
-    return `可用操作（ops 数组中每项为 {"op":"…","args":{…}}，只能用这些：${ARCHITECT_OPS.join('、')}）：
-- addBuilding {"id":"英文小写id","name":"≤10字","kind":"英文小写类型，如 tower/shrine/shop/garden","w":3~7,"h":3~6,"place":{"near":"地点id","within":6~16},"roof":"#rrggbb","wall":"#rrggbb","sign":"一个emoji","desc":"≤60字","lightAtNight":true/false} —— 不要写坐标，系统会在 near 附近自动找空地；新建筑会成为居民可以去的地点
-- addCalendarEvent {"id","name":"≤16字","emoji","day":第几天（必须大于今天 ${this.town.day}）,"from":"HH:MM","location":"地点id","hint":"≤60字","countdown":true}
-- addWeather {"id","name":"≤8字","emoji","weight":0~20,"render":{"base":"sunny/cloudy/rain/storm/fog/snow","tint":"#rrggbb","tintAlpha":0~0.5}}
-- addItem {"id","name":"≤8字","emoji","desc":"≤40字"}
-- addStructure {"id","name":"≤8字","emoji","ttl":10~240,"tags":["light"],"light":{"r":20~160,"color":"255,200,100"}}
-- addAbility {"id","name":"≤8字","emoji","target":"self/agent/area","desc":"≤50字","aiHint":"≤50字","cost":{"stamina":0~40,"items":{"物品id":1~3}},"cooldown":0~1440,"requires":"表达式(可选)","effects":[效果，最多8个],"learn":{"teach":true,"research":{"location":"地点id","keywords":["关键词"]}}}
-- addRule {"id","name":"≤16字","when":{"every":10~1440} 或 {"at":"HH:MM"} 或 {"weather":"天气id"} 或 {"enter":"地点id"},"forEach":"agent"(可选),"if":"表达式(可选)","then":[效果]}
-- addCanon {"text":"写进小镇历史的事实（≤100字）","tags":["标签"]}
-效果：{"op":"stat","stat":"hp/stamina/courage","add":-30~30,"target":"self/target/e/nearby/all","radius":1~6}、{"op":"condition","add":"≤6字"}、{"op":"mood","text":"两字","emoji":""}、{"op":"memory","text":"≤80字","importance":1~8}、{"op":"giveItem","item":"物品id","count":1~5}、{"op":"spawn","structure":"构筑物id","ttl":10~240}、{"op":"vfx","preset":"${VFX.join('/')}","color":"#rrggbb","radius":0.5~6}、{"op":"say","text":"≤40字"}、{"op":"belief","about":"话题","claim":"看法"}、{"op":"affinity","toward":"self/target","delta":-10~10}
-表达式：只能用 e.loc e.inside e.stamina e.courage e.status weather hour day，函数 has(e,'物品id') nearStructure(e,'light',3) knows(e,'能力id')
-现有地点：${Object.entries(s.locations).map(([id, l]) => `${id}(${l.name})`).join('、')}
-现有物品：${Object.entries(s.items).map(([id, i]) => `${id}(${i.name})`).join('、')}
-现有构筑物：${Object.entries(s.structures).map(([id, x]) => `${id}(${x.name})`).join('、')}
-现有能力：${s.abilities.map((a) => `${a.id}(${a.name})`).join('、')}
-现有建筑：${s.buildings.map((b) => b.name).join('、')}`;
-  }
+  /** 能力清单：告诉 AI 现在能做什么、有哪些现成的东西（自动生成，扩展合并后自动出现） */
+  manifest() { return manifestText(this.town.spec, this.town.day); }
 
   prompt(item) {
     const town = this.town;
@@ -115,9 +97,20 @@ ${this.manifest()}
     if (!need) return;
     const same = this.gaps.find((g) => similarity(g.need, need) > 0.5);
     if (same) { same.count++; same.lastT = Math.floor(this.town.t); }
-    else this.gaps.push({ id: `gap${++this.town.seq}`, need, why: str(gap.why, 60), by: item.origin, intent: item.intent, count: 1, t: Math.floor(this.town.t), lastT: Math.floor(this.town.t) });
+    else this.gaps.push({ id: `gap${++this.town.seq}`, need, why: str(gap.why, 60), by: item.origin, intent: str(item.intent, 120), count: 1, status: 'open', t: Math.floor(this.town.t), lastT: Math.floor(this.town.t) });
     if (this.gaps.length > 50) this.gaps.sort((a, b) => b.count - a.count).splice(50);
-    this.town.log('proposal', `🧩 世界架构师暂时做不到「${item.intent.slice(0, 20)}」（缺少：${need}），已记入 AI 心愿单`, {});
+    const who = item.origin === 'director' ? '叙事导演' : '世界架构师';
+    this.town.log('proposal', `🧩 ${who}暂时做不到「${str(item.intent, 20)}」（缺少：${need}），已记入 AI 心愿单`, {});
     this.town.emit('proposals');
+  }
+
+  /** 管理员处理心愿单：采纳（会被 mise run evolve 整理成需求文档）/ 忽略 / 重新打开 */
+  setGapStatus(id, status) {
+    const g = this.gaps.find((x) => x.id === id);
+    if (!g) return '没有这个心愿';
+    if (!['open', 'adopted', 'ignored'].includes(status)) return '状态只能是 open / adopted / ignored';
+    g.status = status;
+    this.town.emit('proposals');
+    return null;
   }
 }

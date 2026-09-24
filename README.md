@@ -15,6 +15,8 @@ mise run token      # 生成管理员令牌
 mise run check      # 语法检查
 mise run test       # 运行测试（不调用 LLM）
 mise run spec       # 打印默认世界规格
+mise run evolve     # 把 AI 心愿单里已采纳的能力缺口整理成需求文档（docs/rfcs/）
+mise run manifest   # 重新生成能力清单 docs/capabilities.md
 ```
 
 LLM 配置读取 `.env`（OpenAI 兼容接口）：
@@ -137,6 +139,14 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 - **时光回溯**：每个游戏小时自动保存一份快照（保留 24 份）；管理员可以在「🛠 建设 → ⏳ 时光回溯」把整个小镇恢复到某个整点，当前存档会先备份。
 - 接口：`GET /api/proposals`、`POST /api/proposals`（提建议）、`POST /api/proposals/vote`；管理员 `POST /api/proposals/direct`（直接提交补丁）、`POST /api/proposals/decide`、`GET /api/snapshots`、`POST /api/rollback`。
 
+## 自我进化：AI 心愿单 → 需求文档 → 扩展
+
+- **AI 心愿单**：世界架构师做不到的点子、叙事导演想用却不存在的剧情动作，都会记为「能力缺口」，相似的自动合并计数。管理员在「🛠 建设 → 🧩 AI 心愿单」里采纳或忽略。
+- **`mise run evolve`**：把已采纳的缺口整理成需求文档写进 `docs/rfcs/`（有 LLM 时由强模型撰写，否则生成带数据的骨架）。**只生成文档，不写代码、不开 PR**。
+- **扩展点 `server/ext/`**：维护者按需求文档用 `registerEffect` / `registerExprFn` 实现新能力，启动时自动加载；扩展只能新增、不能覆盖内核能力。
+- **能力清单**：由代码自动生成（`docs/capabilities.md`，也用于架构师的提示词），新扩展合并后 AI 立刻能用。
+- 第一个走完闭环的例子：[RFC 0001 让居民立刻动身前往指定地点](docs/rfcs/0001-go-to.md) → `server/ext/go-to.js` 的效果 `goTo`。详见 [docs/rfcs/README.md](docs/rfcs/README.md)。
+
 ## 能力、行动与世界法则
 
 - **体力与勇气**：活动会消耗体力、睡觉恢复，体力过低会「疲惫」；勇气受能力和世界法则影响，会慢慢回到平常。
@@ -188,6 +198,8 @@ server/
   story/director.js 叙事导演；story/tension.js 张力模型；story/threads.js 剧情线程
   story/beats.js  剧情节拍（导演与剧情弧共用的剧情动作）；story/scene.js 多人场景；story/votes.js 投票
   kernel/placement.js 新建筑的语义化选址与连通性校验
+  worldai/manifest.js 能力清单（自动生成）
+  ext/            扩展点：registry.js 注册表、index.js 加载器、go-to.js（RFC 0001）
   worldai/architect.js 世界架构师；worldai/proposals.js 提案与审批；worldai/canon.js 设定考据官
   story/arcs.js   剧情弧引擎；story/creatures.js 异界生物；story/content.js 默认剧情内容（线程、图鉴、《镜湖裂隙》）
   llm.js       OpenAI 兼容客户端：并发队列、自适应限流、JSON 提取
@@ -201,6 +213,7 @@ public/
   js/main.js   数据流、相机、输入、环境音
 deploy/        Caddy / Nginx / systemd 部署模板
 Dockerfile, docker-compose.yml, .env.example
+tools/         evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）
 test/          node:test 测试（无需安装依赖）
 docs/design/   设计方案
 data/save.json 自动存档（每 20 秒），ops.jsonl 世界变更日志，snapshots/ 每小时快照
