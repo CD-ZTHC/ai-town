@@ -17,6 +17,7 @@ mise run test       # 运行测试（不调用 LLM）
 mise run spec       # 打印默认世界规格
 mise run evolve     # 把 AI 心愿单里已采纳的能力缺口整理成需求文档（docs/rfcs/）
 mise run manifest   # 重新生成能力清单 docs/capabilities.md
+mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实调用一次（默认 token 上限 20 万）
 ```
 
 LLM 配置读取 `.env`（OpenAI 兼容接口）：
