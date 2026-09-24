@@ -231,6 +231,24 @@ test('访客化身：现身、限制、走动、被居民看见、聊天时记�
   assert.equal(me.locId, 'pier');
   assert.ok(town.snapshot().avatars.some((x) => x.name === '小满'));
 
+  // 游戏模式：走到任意可达的格子
+  const W = town.world;
+  const free = [...W.walk.keys()].find((i) => W.walk[i] && Math.hypot(i % W.W - me.x, Math.floor(i / W.W) - me.y) > 5);
+  now += 1000;
+  assert.throws(() => av.goto('v1', -1, 0), /走不过去/);
+  assert.throws(() => av.goto('v1', 'x', 3), /走不过去/);
+  const wall = [...W.walk.keys()].find((i) => !W.walk[i]);
+  assert.throws(() => av.goto('v1', wall % W.W, Math.floor(wall / W.W)), /走不过去/);
+  av.goto('v1', free % W.W, Math.floor(free / W.W));
+  assert.throws(() => av.goto('v1', free % W.W, Math.floor(free / W.W)), /慢一点/);
+  assert.ok(av.view()[0].to, '行走中下发终点');
+  for (let i = 0; i < 400 && me.path.length; i++) av.tick(0.5);
+  assert.deepEqual([me.x, me.y], [free % W.W, Math.floor(free / W.W)]);
+  assert.equal(av.view()[0].to, undefined);
+  now += 4000;
+  av.move('v1', 'pier');
+  for (let i = 0; i < 400 && me.path.length; i++) av.tick(0.5);
+
   // 居民在身边时能看见
   const a = town.byId.zhou;
   Object.assign(a, { x: me.x + 1, y: me.y, inside: null, region: 'town', status: 'acting' });

@@ -340,6 +340,10 @@ async function handleApi(req, res, url, ip) {
     town.avatars.move(vid, String(b.location || ''));
     return json(res, 200, { ok: true });
   }
+  if (p === '/api/avatar/goto') {
+    town.avatars.goto(vid, b.x, b.y);
+    return json(res, 200, { ok: true });
+  }
   if (p === '/api/avatar/leave') {
     return json(res, 200, { ok: town.avatars.leave(vid) });
   }

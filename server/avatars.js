@@ -5,7 +5,8 @@ import { findPath } from './world.js';
 const MAX = Number(process.env.AVATAR_MAX || 8);
 const IDLE_MS = 20 * 60_000; // 20 分钟不操作就离开
 const MOVE_CD_MS = 3000;
-const SPEED = 3.2; // 格/游戏分钟，与居民步速相近
+const GOTO_CD_MS = 250; // 游戏模式里点地 / 键盘走路，间隔可以短一些
+const SPEED = 4; // 格/真实秒：化身按真实时间行走，不受调速、暂停影响，操作手感一致
 const COLORS = ['#e57373', '#64b5f6', '#81c784', '#ffb74d', '#ba68c8', '#4db6ac', '#f06292', '#a1887f'];
 const err = (status, message) => Object.assign(new Error(message), { status });
 
@@ -44,11 +45,27 @@ export class AvatarSystem {
     const town = this.town;
     const v = this.mine(vid);
     if (!v) throw err(404, '你还没有在小镇里现身');
-    if (this.now() - v.movedAt < MOVE_CD_MS) throw err(429, '慢一点，刚刚才动身');
+    if (this.now() - (v.movedLocAt || 0) < MOVE_CD_MS) throw err(429, '慢一点，刚刚才动身');
     locId = String(locId || '');
     if (!town.publicLocs().includes(locId)) throw err(400, '只能去开放的公共地点');
-    v.movedAt = v.seen = this.now();
+    v.movedAt = v.movedLocAt = v.seen = this.now();
     this.walk(v, locId);
+    return v;
+  }
+
+  /** 游戏模式：走到当前区域里任意一个可以走到的格子 */
+  goto(vid, x, y) {
+    const town = this.town;
+    const v = this.mine(vid);
+    if (!v) throw err(404, '你还没有在小镇里现身');
+    if (this.now() - v.movedAt < GOTO_CD_MS) throw err(429, '慢一点');
+    const w = town.worldOf(v.region);
+    x = Math.round(Number(x)); y = Math.round(Number(y));
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= w.W || y >= w.H || !w.walk[y * w.W + x]) throw err(400, '那里走不过去');
+    const path = findPath(w, Math.round(v.x), Math.round(v.y), x, y);
+    if (!path) throw err(400, '那里走不过去');
+    v.movedAt = v.seen = this.now();
+    Object.assign(v, { path, hop: null, target: null, locId: null });
     return v;
   }
 
@@ -83,11 +100,12 @@ export class AvatarSystem {
 
   touch(vid) { const v = this.mine(vid); if (v) v.seen = this.now(); return v; }
 
-  tick(dtGame) {
+  /** dtReal：真实秒数 */
+  tick(dtReal) {
     const now = this.now();
     for (const v of [...this.list]) {
       if (now - v.seen > IDLE_MS) { this.remove(v, true); continue; }
-      let dist = SPEED * dtGame;
+      let dist = SPEED * dtReal;
       v.moving = v.path.length > 0;
       while (dist > 0 && v.path.length) {
         const n = v.path[0];
@@ -129,6 +147,8 @@ export class AvatarSystem {
   }
 
   view() {
-    return this.list.map((v) => ({ id: v.id, name: v.name, color: v.color, x: +v.x.toFixed(2), y: +v.y.toFixed(2), dir: v.dir, moving: v.moving, region: v.region }));
+    return this.list.map((v) => ({ id: v.id, name: v.name, color: v.color, x: +v.x.toFixed(2), y: +v.y.toFixed(2), dir: v.dir, moving: v.moving, region: v.region,
+      // 接下来要走的几格与终点：前端据此预览路线、平滑插值
+      ...(v.path.length ? { next: v.path.slice(0, 3), to: v.path[v.path.length - 1] } : {}) }));
   }
 }
