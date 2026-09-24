@@ -1,0 +1,24 @@
+services:
+  town:
+    build: .
+    image: ai-town:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PUBLIC_MODE: "1"
+      TRUST_PROXY: "1"
+    ports:
+      - "127.0.0.1:3000:3000"   # 只暴露给本机的反向代理
+    volumes:
+      - town-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+
+volumes:
+  town-data:

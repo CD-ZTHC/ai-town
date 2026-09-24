@@ -1,0 +1,29 @@
+[tools]
+node = "26"
+
+[env]
+_.file = ".env"
+
+[tasks.start]
+description = "启动 AI 小镇 (http://localhost:3000)"
+run = "node server/index.js"
+
+[tasks.dev]
+description = "开发模式（文件变更自动重启）"
+run = "node --watch-path=server server/index.js"
+
+[tasks.reset]
+description = "清空存档，小镇从第一天重新开始"
+run = "rm -f data/save.json && echo '存档已清除'"
+
+[tasks.public]
+description = "以公网模式启动（需在 .env 中设置 ADMIN_TOKEN）"
+run = "PUBLIC_MODE=1 node server/index.js"
+
+[tasks.token]
+description = "生成一个随机的管理员令牌"
+run = "node -e \"console.log('ADMIN_TOKEN=' + require('crypto').randomBytes(24).toString('base64url'))\""
+
+[tasks.check]
+description = "语法检查"
+run = "for f in server/*.js public/js/*.js; do node --check $f || exit 1; done && echo ok"

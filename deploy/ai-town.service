@@ -1,0 +1,25 @@
+# 不用 Docker 时的 systemd 部署：复制到 /etc/systemd/system/ai-town.service
+# 然后 systemctl daemon-reload && systemctl enable --now ai-town
+[Unit]
+Description=AI Town (云溪镇)
+After=network-online.target
+
+[Service]
+Type=simple
+User=aitown
+WorkingDirectory=/opt/ai-town
+EnvironmentFile=/opt/ai-town/.env
+Environment=PUBLIC_MODE=1 TRUST_PROXY=1 HOST=127.0.0.1 PORT=3000
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=5
+# 加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/ai-town/data
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,303 @@
+// HTTP 服务：静态资源 + SSE 实时推送 + REST 接口（零依赖），含公网部署所需的权限、限流与审核
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { Town, llmPublic, WEATHER } from './sim.js';
+import * as llm from './llm.js';
+import { config, clientIp, isAdmin, visitorId, limits, sanitize, moderate } from './guard.js';
+
+const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || undefined;
+const PUBLIC = path.resolve('public');
+const DATA = path.resolve('data');
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'SAMEORIGIN',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
+};
+
+let town = new Town();
+const clients = new Set();
+const clientsPerIp = new Map();
+
+function broadcast(event, data) {
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const res of clients) res.write(msg);
+}
+function wire(t) {
+  t.on('tick', (s) => { if (clients.size) broadcast('tick', s); });
+  t.on('log', (l) => broadcast('log', l));
+  t.on('agent', (id) => broadcast('agent', { id }));
+  t.on('newspaper', (p) => broadcast('newspaper', p));
+  t.start();
+}
+wire(town);
+let llmDirty = false;
+llm.onActivity(() => { llmDirty = true; });
+setInterval(() => { if (llmDirty || llm.stats.active.length) { llmDirty = false; broadcast('llm', llmPublic()); } }, 400);
+
+// ---------- 无人观看时自动暂停（节省 LLM 开销）----------
+let lastViewer = Date.now();
+if (config.idlePauseSec > 0) {
+  setInterval(() => {
+    if (clients.size) { lastViewer = Date.now(); if (town.idle) { town.idle = false; console.log('[idle] 有访客，小镇继续运转'); } return; }
+    if (!town.idle && Date.now() - lastViewer > config.idlePauseSec * 1000) {
+      town.idle = true;
+      town.save();
+      console.log('[idle] 无人观看，小镇进入休眠');
+    }
+  }, 5000).unref();
+}
+
+// ---------- 工具 ----------
+class HttpError extends Error {
+  constructor(status, message, extra = {}) { super(message); this.status = status; this.extra = extra; }
+}
+const json = (res, code, data, headers = {}) => {
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...SECURITY_HEADERS, ...headers });
+  res.end(JSON.stringify(data));
+};
+const readBody = (req) => new Promise((resolve, reject) => {
+  const type = String(req.headers['content-type'] || '');
+  // 强制 JSON：跨站表单无法伪造，跨站 fetch 会触发预检而被拒绝
+  if (!type.startsWith('application/json')) return reject(new HttpError(415, '需要 application/json'));
+  if (Number(req.headers['content-length'] || 0) > 8192) { req.resume(); return reject(new HttpError(413, '请求过大')); }
+  let s = '';
+  let over = false;
+  req.setEncoding('utf8');
+  req.on('data', (c) => {
+    if (over) return;
+    s += c;
+    if (s.length > 8192) { over = true; s = ''; reject(new HttpError(413, '请求过大')); }
+  });
+  req.on('end', () => {
+    try {
+      const v = s ? JSON.parse(s) : {};
+      if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error();
+      resolve(v);
+    } catch { reject(new HttpError(400, '请求格式错误')); }
+  });
+  req.on('error', reject);
+});
+const take = (limiter, key, what) => {
+  const r = limiter.check(key);
+  if (!r.ok) throw new HttpError(429, `${what}太频繁了，请 ${fmtWait(r.retryAfter)}后再试`, { retryAfter: r.retryAfter });
+  return r;
+};
+const fmtWait = (s) => (s >= 90 ? `${Math.ceil(s / 60)} 分钟` : `${s} 秒`);
+function requireAdmin(req) {
+  if (!isAdmin(req)) throw new HttpError(403, '只有小镇管理员可以这样做');
+}
+function requireInteraction(req) {
+  if (!config.allowInteraction && !isAdmin(req)) throw new HttpError(403, '当前为只读观赏模式');
+  if (!llm.stats.enabled) throw new HttpError(503, 'AI 尚未配置');
+  if (llm.budgetLeft() <= 0) throw new HttpError(429, '今天小镇的 AI 额度已经用完了，明天再来吧 🌙');
+  if (llm.queueSize() > config.maxQueueForUser && !isAdmin(req)) throw new HttpError(503, '居民们正忙着思考，请稍后再试');
+}
+function remaining(ip, admin) {
+  if (admin) return { chat: null, event: null };
+  return {
+    chat: limits.chat.check(ip, false).remaining,
+    event: limits.event.check(ip, false).remaining,
+  };
+}
+
+// ---------- 路由 ----------
+async function handleApi(req, res, url, ip) {
+  const p = url.pathname;
+  const admin = isAdmin(req);
+  const vid = visitorId(req, ip);
+
+  if (req.method === 'GET') {
+    if (p === '/api/stream') return openStream(req, res, ip);
+    if (p === '/api/me') {
+      return json(res, 200, {
+        admin, publicMode: config.publicMode, needToken: Boolean(config.adminToken),
+        interaction: config.allowInteraction || admin,
+        limits: { chatPerHour: config.chatPerHour, eventPerHour: config.eventPerHour, weatherCooldownSec: config.weatherCooldownSec },
+        remaining: remaining(ip, admin),
+        budget: { total: llm.stats.dailyBudget, left: Number.isFinite(llm.budgetLeft()) ? llm.budgetLeft() : null },
+      });
+    }
+    if (p.startsWith('/api/agent/')) {
+      const d = town.agentDetail(decodeURIComponent(p.slice(11)), vid);
+      return d ? json(res, 200, d) : json(res, 404, { error: '不存在' });
+    }
+    if (p === '/api/relations') return json(res, 200, town.relationsGraph());
+    if (p === '/api/newspapers') return json(res, 200, town.newspapers);
+    throw new HttpError(404, '不存在');
+  }
+
+  if (req.method !== 'POST') throw new HttpError(405, '不支持的方法');
+  const b = await readBody(req);
+
+  if (p === '/api/chat') {
+    requireInteraction(req);
+    const agent = town.byId[String(b.id)];
+    if (!agent) throw new HttpError(404, '居民不存在');
+    const mode = b.mode === 'whisper' ? 'whisper' : 'visitor';
+    const text = sanitize(b.text, 200);
+    if (text.length < 1) throw new HttpError(400, '说点什么吧');
+    if (!admin) { take(limits.chatBurst, ip, '说话'); take(limits.chat, ip, '说话'); }
+    const m = await moderate(text, 'chat');
+    if (!m.ok) throw new HttpError(422, m.reason);
+    const r = await town.visitorChat(agent.id, text, mode, vid);
+    return json(res, 200, { ...r, remaining: remaining(ip, admin) });
+  }
+
+  if (p === '/api/event') {
+    requireInteraction(req);
+    const text = sanitize(b.text, 120);
+    if (text.length < 4) throw new HttpError(400, '事件描述太短了');
+    const target = b.target === 'all' || !b.target ? 'all' : String(b.target);
+    if (target !== 'all' && !town.byId[target]) throw new HttpError(404, '居民不存在');
+    if (!admin) {
+      // 先检查不扣次数，审核通过后再扣，避免被拒的内容也消耗额度
+      const g = limits.eventGlobal.check('all', false);
+      if (!g.ok) throw new HttpError(429, `小镇刚刚发生过一件事，请 ${fmtWait(g.retryAfter)}后再发布`);
+      const e = limits.event.check(ip, false);
+      if (!e.ok) throw new HttpError(429, `每小时最多发布 ${config.eventPerHour} 个事件，请 ${fmtWait(e.retryAfter)}后再试`);
+    }
+    if (!admin) take(limits.eventAttempt, ip, '尝试发布事件');
+    const m = await moderate(text, 'event');
+    if (!m.ok) throw new HttpError(422, m.reason);
+    if (!admin) { take(limits.eventGlobal, 'all', '发布事件'); take(limits.event, ip, '发布事件'); }
+    console.log(`[event] ${ip} → ${target}: ${text}`);
+    town.godEvent(text, target).catch((e) => console.warn('[event]', e.message));
+    return json(res, 200, { ok: true, remaining: remaining(ip, admin) });
+  }
+
+  if (p === '/api/control') {
+    const out = {};
+    if (b.weather != null) {
+      const w = String(b.weather);
+      if (w !== 'auto' && !WEATHER[w]) throw new HttpError(400, '未知天气');
+      if (!admin) {
+        if (!config.allowInteraction) throw new HttpError(403, '当前为只读观赏模式');
+        take(limits.weather, 'all', '改变天气');
+      }
+      town.setWeather(w);
+      out.weather = w;
+    }
+    if (b.speed != null || b.paused != null || b.skipTo != null) {
+      requireAdmin(req);
+      if (b.speed != null) {
+        const sp = Number(b.speed);
+        if (!Number.isFinite(sp)) throw new HttpError(400, '速度无效');
+        town.speed = Math.max(0.25, Math.min(30, sp));
+      }
+      if (b.paused != null) town.paused = Boolean(b.paused);
+      if (b.skipTo != null) {
+        const target = Number(b.skipTo);
+        if (!Number.isFinite(target) || target < 0 || target >= 1440) throw new HttpError(400, '时间无效');
+        const m = town.t % 1440;
+        town.t += ((target - m + 1440) % 1440) || 1440;
+      }
+    }
+    return json(res, 200, { ok: true, speed: town.speed, paused: town.paused, ...out });
+  }
+
+  if (p === '/api/newspaper') {
+    requireAdmin(req);
+    if (llm.budgetLeft() <= 0) throw new HttpError(429, '今日 AI 额度已用完');
+    return json(res, 200, await town.makeNewspaper());
+  }
+
+  if (p === '/api/reset') {
+    requireAdmin(req);
+    if (b.confirm !== 'RESET') throw new HttpError(400, '需要确认');
+    town.stop();
+    // 不直接删除：旧存档改名备份，可手动恢复
+    const save = path.join(DATA, 'save.json');
+    if (fs.existsSync(save)) {
+      const bak = path.join(DATA, `save-${new Date().toISOString().replace(/[:.]/g, '-')}.bak.json`);
+      fs.renameSync(save, bak);
+      console.log(`[reset] 旧存档已备份为 ${path.basename(bak)}`);
+    }
+    town = new Town();
+    town.idle = config.idlePauseSec > 0 && clients.size === 0;
+    wire(town);
+    broadcast('init', town.initPayload());
+    console.log(`[reset] 小镇已由 ${ip} 重置到第一天`);
+    return json(res, 200, { ok: true });
+  }
+
+  throw new HttpError(404, '不存在');
+}
+
+function openStream(req, res, ip) {
+  const n = clientsPerIp.get(ip) || 0;
+  if (clients.size >= config.maxClients) throw new HttpError(503, '小镇访客太多了，请稍后再来');
+  if (n >= config.maxClientsPerIp) throw new HttpError(429, '同时打开的页面太多了');
+  clientsPerIp.set(ip, n + 1);
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no', ...SECURITY_HEADERS });
+  res.write('retry: 3000\n\n');
+  res.write(`event: init\ndata: ${JSON.stringify(town.initPayload())}\n\n`);
+  clients.add(res);
+  if (town.idle) { town.idle = false; console.log('[idle] 有访客，小镇继续运转'); }
+  const ka = setInterval(() => res.write(': ka\n\n'), 15000);
+  req.on('close', () => {
+    clients.delete(res);
+    clearInterval(ka);
+    const left = (clientsPerIp.get(ip) || 1) - 1;
+    left > 0 ? clientsPerIp.set(ip, left) : clientsPerIp.delete(ip);
+    lastViewer = Date.now();
+  });
+}
+
+function serveStatic(req, res, url) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: '不支持的方法' });
+  let rel;
+  try { rel = decodeURIComponent(url.pathname); } catch { return json(res, 400, { error: 'bad path' }); }
+  if (rel.endsWith('/')) rel += 'index.html';
+  const file = path.normalize(path.join(PUBLIC, rel));
+  if (!file.startsWith(PUBLIC + path.sep) || rel.split('/').some((seg) => seg.startsWith('.'))) {
+    res.writeHead(404, SECURITY_HEADERS); return res.end('not found');
+  }
+  fs.stat(file, (err, st) => {
+    if (err || !st.isFile()) { res.writeHead(404, SECURITY_HEADERS); return res.end('not found'); }
+    const etag = `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
+    const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', ETag: etag, ...SECURITY_HEADERS };
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return res.end(); }
+    res.writeHead(200, { ...headers, 'Content-Length': st.size });
+    if (req.method === 'HEAD') return res.end();
+    fs.createReadStream(file).pipe(res);
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  let url;
+  try { url = new URL(req.url, 'http://x'); } catch { res.writeHead(400); return res.end(); }
+  const ip = clientIp(req);
+  if (url.pathname === '/healthz') return json(res, 200, { ok: true, day: town.day, clients: clients.size, idle: !!town.idle });
+  if (!url.pathname.startsWith('/api/')) return serveStatic(req, res, url);
+  try {
+    const r = limits.api.check(ip);
+    if (!r.ok) throw new HttpError(429, '请求太频繁了', { retryAfter: r.retryAfter });
+    await handleApi(req, res, url, ip);
+  } catch (e) {
+    if (res.headersSent) return res.end();
+    if (e instanceof HttpError) {
+      return json(res, e.status, { error: e.message, ...e.extra }, e.extra.retryAfter ? { 'Retry-After': String(e.extra.retryAfter) } : {});
+    }
+    if (e.code === 'BUDGET') return json(res, 429, { error: '今天小镇的 AI 额度已经用完了，明天再来吧 🌙' });
+    if (e.status) return json(res, e.status, { error: e.message });
+    console.warn('[api]', url.pathname, e.message);
+    // 不向客户端暴露上游错误细节
+    json(res, 502, { error: '居民们一时没反应过来，请稍后再试' });
+  }
+});
+server.headersTimeout = 20_000;
+server.requestTimeout = 30_000;
+
+server.listen(PORT, HOST, () => {
+  const mode = config.publicMode ? `公网模式${config.adminToken ? '（已设置管理员令牌）' : '（⚠️ 未设置 ADMIN_TOKEN，管理功能全部关闭）'}` : '本地模式（所有访问者均为管理员，请勿直接暴露到公网）';
+  console.log(`\n  🌸 云溪镇已开放： http://${HOST || 'localhost'}:${PORT}\n  🔐 ${mode}\n  🧠 LLM: ${llm.stats.enabled ? `${process.env.MODEL}${llm.stats.dailyBudget ? ` · 每日预算 ${llm.stats.dailyBudget.toLocaleString()} tokens` : ''}` : '未配置（使用规则兜底）'}\n`);
+});
+
+const shutdown = () => { town.save(); process.exit(0); };
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

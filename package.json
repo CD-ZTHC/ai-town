@@ -1,0 +1,12 @@
+{
+  "name": "ai-town",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "云溪镇 · 由 LLM 驱动的生成式智能体小镇",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "engines": { "node": ">=22" }
+}

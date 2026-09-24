@@ -1,0 +1,18 @@
+# ---- 方案 A：独立子域名 ----
+town.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000 {
+		flush_interval -1          # SSE 实时推送，不要缓冲
+	}
+}
+
+# ---- 方案 B：挂在个人网站的子路径下（https://example.com/town/）----
+# example.com {
+# 	redir /town /town/ 308
+# 	handle_path /town/* {
+# 		reverse_proxy 127.0.0.1:3000 {
+# 			flush_interval -1
+# 		}
+# 	}
+# 	# ……你网站原有的配置
+# }

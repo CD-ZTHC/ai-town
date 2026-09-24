@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>云溪镇 · AI Town</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌸</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Noto+Serif+SC:wght@500;700;900&family=Ma+Shan+Zheng&display=swap" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="world"></canvas>
+
+  <div id="loading">
+    <div class="load-inner">
+      <div class="load-logo">🌸</div>
+      <h1>云溪镇</h1>
+      <p>正在唤醒居民们的记忆……</p>
+      <div class="load-bar"><i></i></div>
+    </div>
+  </div>
+
+  <header id="topbar">
+    <div class="brand">
+      <span class="brand-icon">🌸</span>
+      <div>
+        <div class="brand-name">云溪镇</div>
+        <div class="brand-sub">Generative Agents · AI Town</div>
+      </div>
+    </div>
+    <div class="clock">
+      <div class="clock-sky" id="clock-sky">☀️</div>
+      <div>
+        <div class="clock-time" id="clock-time">06:00</div>
+        <div class="clock-date" id="clock-date">第1天 · 周三</div>
+      </div>
+      <div class="clock-arc"><i id="clock-progress"></i></div>
+    </div>
+    <div class="chip festival" id="festival-chip">🏮 萤火节</div>
+    <div class="chip mode" id="mode-chip" hidden title="时间流速由小镇管理员掌管">🌿 访客模式</div>
+    <div class="seg" id="speed" hidden>
+      <button data-speed="0" title="暂停 (空格)">⏸</button>
+      <button data-speed="1" class="on">1×</button>
+      <button data-speed="3">3×</button>
+      <button data-speed="8">8×</button>
+      <button data-speed="20">20×</button>
+    </div>
+    <div class="actions">
+      <button class="btn" id="btn-weather" title="天气">⛅<span>天气</span></button>
+      <button class="btn" id="btn-event" title="发布小镇事件">📢<span>事件</span></button>
+      <button class="btn" id="btn-news" title="云溪日报">📰<span>日报</span></button>
+      <button class="btn" id="btn-graph" title="关系网络">🕸️<span>关系</span></button>
+      <button class="btn icon" id="btn-sound" title="环境音">🔇</button>
+      <button class="btn icon" id="btn-help" title="说明">❔</button>
+    </div>
+  </header>
+
+  <div id="weather-menu" class="popover" hidden></div>
+
+  <aside id="roster"></aside>
+
+  <aside id="inspector" hidden>
+    <button class="close" id="insp-close">✕</button>
+    <div id="insp-body"></div>
+  </aside>
+
+  <section id="feed" class="panel">
+    <div class="feed-head">
+      <div class="tabs" id="feed-tabs">
+        <button data-f="all" class="on">全部</button>
+        <button data-f="convo">💬 对话</button>
+        <button data-f="event">✨ 动态</button>
+        <button data-f="thought">💭 心声</button>
+      </div>
+      <button class="mini-btn" id="feed-toggle" title="折叠">▾</button>
+    </div>
+    <div class="feed-list" id="feed-list"></div>
+  </section>
+
+  <section id="brain" class="panel">
+    <div class="brain-head">
+      <span class="brain-dot" id="brain-dot"></span>
+      <b>AI 大脑</b>
+      <span class="brain-model" id="brain-model">—</span>
+    </div>
+    <div class="brain-stats" id="brain-stats"></div>
+    <div class="brain-active" id="brain-active"></div>
+  </section>
+
+  <div id="minimap-wrap" class="panel">
+    <canvas id="minimap"></canvas>
+  </div>
+
+  <div id="tooltip" hidden></div>
+  <div id="toasts"></div>
+  <div id="modal" hidden><div class="modal-card" id="modal-card"></div></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
