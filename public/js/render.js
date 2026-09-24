@@ -569,6 +569,7 @@ export class Renderer {
     }
     // 招牌
     const signs = { cafe: '☕', library: '📚', tavern: '🍺', clinic: '', workshop: '🔨', farmhouse: '🌾' };
+    if (!signs[kind] && b.sign) signs[kind] = b.sign; // 新增建筑的招牌
     if (signs[kind]) {
       const sx = doorX + 22, sy = dy + 2;
       g.fillStyle = '#5a3e28'; g.fillRect(sx - 1, sy - 4, 2, 6);

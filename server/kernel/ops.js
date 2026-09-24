@@ -145,6 +145,30 @@ export const OPS = {
     },
     describe: (a) => `世界上出现了一种新能力：${str(a.emoji, 4)}「${str(a.name, 8)}」`,
   },
+  addBuilding: {
+    level: 'minor',
+    // 坐标由放置求解器给出；这里只做静态检查，占地与连通性由小镇在应用前用 checkPlacement 校验
+    check(spec, a) {
+      if (!validId(a.id)) return 'id 不合法';
+      if (spec.buildings.some((b) => b.id === a.id) || Object.hasOwn(spec.locations, a.id)) return `建筑或地点已存在：${a.id}`;
+      if (spec.buildings.filter((b) => b.added).length >= 12) return '新增建筑已达上限（12 座）';
+      if (!str(a.name, 10)) return 'name 不能为空（≤10字）';
+      if (!/^[a-z]{2,16}$/.test(a.kind || '')) return 'kind 应为 2~16 个小写字母';
+      if (!(Number.isInteger(a.w) && a.w >= 3 && a.w <= 7 && Number.isInteger(a.h) && a.h >= 3 && a.h <= 6)) return '尺寸应为宽 3~7、高 3~6';
+      const [W, H] = spec.regions[0].size;
+      if (!(Number.isInteger(a.x) && Number.isInteger(a.y) && a.x >= 1 && a.y >= 1 && a.x + a.w <= W - 1 && a.y + a.h <= H - 2)) return '位置超出地图';
+      for (const k of ['roof', 'wall']) if (a[k] != null && !COLOR_RE.test(a[k])) return `${k} 应为 #rrggbb`;
+      return null;
+    },
+    apply(spec, a) {
+      spec.buildings.push({
+        id: a.id, name: str(a.name, 10), kind: a.kind, x: a.x, y: a.y, w: a.w, h: a.h,
+        roof: a.roof || '#8a6a4a', wall: a.wall || '#e8dcc4', ...(a.sign ? { sign: str(a.sign, 4) } : {}), lightAtNight: Boolean(a.lightAtNight), added: true,
+      });
+      spec.locations[a.id] = { name: str(a.name, 10), emoji: str(a.emoji, 4) || str(a.sign, 4) || '🏠', desc: str(a.desc, 60) || str(a.name, 10), public: a.public !== false };
+    },
+    describe: (a) => `小镇上建起了新地方：${str(a.sign || a.emoji, 4)}「${str(a.name, 10)}」`,
+  },
   addPersona: {
     level: 'major',
     check(spec, a) {

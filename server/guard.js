@@ -76,6 +76,7 @@ export const limits = {
   eventAttempt: new Limiter(Math.max(6, config.eventPerHour * 3), 3600_000), // 含被审核拒绝的尝试，防止刷审核调用
   weather: new Limiter(1, config.weatherCooldownSec * 1000),
   vote: new Limiter(20, 3600_000),
+  proposal: new Limiter(2, 3600_000),
   api: new Limiter(240, 60_000), // 所有请求的兜底限流
 };
 setInterval(() => Object.values(limits).forEach((l) => l.sweep()), 300_000).unref();

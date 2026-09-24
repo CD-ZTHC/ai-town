@@ -123,6 +123,12 @@ function connect() {
     UI.onAgents();
   });
   es.addEventListener('story', () => UI.onStory());
+  // 新建筑落地：重建地图与静态图层
+  es.addEventListener('worldmap', (e) => {
+    app.world = JSON.parse(e.data);
+    renderer.setWorld(app.world);
+  });
+  es.addEventListener('proposals', () => UI.onProposals());
   es.addEventListener('world', (e) => {
     const w = JSON.parse(e.data);
     app.spec = w.spec;

@@ -2,7 +2,8 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Town, llmPublic } from './sim.js';
+import { Town, llmPublic, listSnapshots, restoreSnapshot } from './sim.js';
+import { ADMIN_OPS } from './worldai/proposals.js';
 import * as llm from './llm.js';
 import { useAbility } from './kernel/abilities.js';
 import { config, clientIp, isAdmin, visitorId, limits, sanitize, moderate } from './guard.js';
@@ -40,6 +41,10 @@ function wire(t) {
   let storyTimer = null;
   t.on('story', () => { if (!storyTimer) storyTimer = setTimeout(() => { storyTimer = null; broadcast('story', { t: t.t }); }, 800); });
   t.votes.requireAdmin = config.publicMode && Boolean(config.adminToken);
+  t.proposalSystem.requireAdmin = config.publicMode && Boolean(config.adminToken);
+  t.on('worldmap', (w) => broadcast('worldmap', w));
+  let propTimer = null;
+  t.on('proposals', () => { if (!propTimer) propTimer = setTimeout(() => { propTimer = null; broadcast('proposals', { t: t.t }); }, 800); });
   t.start();
 }
 wire(town);
@@ -138,6 +143,8 @@ async function handleApi(req, res, url, ip) {
     if (p === '/api/newspapers') return json(res, 200, town.newspapers);
     if (p === '/api/world/history') return json(res, 200, town.worldHistory().slice(-200));
     if (p === '/api/story') return json(res, 200, { ...town.storyView(ip), admin });
+    if (p === '/api/proposals') return json(res, 200, { ...town.proposalsView(ip, admin), admin });
+    if (p === '/api/snapshots') { requireAdmin(req); return json(res, 200, listSnapshots(town.dataDir)); }
     throw new HttpError(404, '不存在');
   }
 
@@ -226,6 +233,66 @@ async function handleApi(req, res, url, ip) {
     const r = useAbility(town, agent, String(b.ability || ''), b.target ? sanitize(b.target, 12) : null, '（管理员指示）');
     if (!r.ok) throw new HttpError(422, r.reason);
     return json(res, 200, { ok: true });
+  }
+
+  // 向世界架构师提一个建设建议（访客限流 + 审核；管理员不限）
+  if (p === '/api/proposals') {
+    requireInteraction(req);
+    const text = sanitize(b.intent, 120);
+    if (text.length < 4) throw new HttpError(400, '说得再具体一点吧');
+    if (!admin) take(limits.proposal, ip, '提建议');
+    const m = await moderate(text, 'event', town.spec.meta.rating);
+    if (!m.ok) throw new HttpError(422, m.reason);
+    const err = town.architect.enqueue(text, admin ? 'admin' : 'visitor');
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
+  // 管理员直接提交一份世界补丁（仍然经过校验、设定考据与审批流程）
+  if (p === '/api/proposals/direct') {
+    requireAdmin(req);
+    const r = town.proposalSystem.submit({ title: b.title, motive: b.motive, ops: b.ops, construction: b.construction, origin: 'admin', allowed: ADMIN_OPS });
+    if (r.error) throw new HttpError(422, r.error);
+    return json(res, 200, { ok: true, id: r.proposal.id });
+  }
+
+  if (p === '/api/proposals/vote') {
+    if (!config.allowInteraction && !admin) throw new HttpError(403, '当前为只读观赏模式');
+    if (!admin) take(limits.vote, ip, '投票');
+    const err = town.proposalSystem.vote(String(b.id || ''), ip, Boolean(b.yes));
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
+  if (p === '/api/proposals/decide') {
+    requireAdmin(req);
+    const err = town.proposalSystem.decide(String(b.id || ''), Boolean(b.approve), 'admin');
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
+  // 时光回溯：恢复到某个整点快照（仅管理员，需二次确认；当前存档自动备份）
+  if (p === '/api/rollback') {
+    requireAdmin(req);
+    if (b.confirm !== 'ROLLBACK') throw new HttpError(400, '需要确认');
+    const name = String(b.name || '');
+    // 先校验快照（不合法时小镇照常运行），再存盘（备份里包含最新进度），最后才停止旧小镇
+    if (!/^d\d{3}-\d{2}\.json$/.test(name)) throw new HttpError(400, '快照名称不合法');
+    if (!listSnapshots(town.dataDir).some((x) => x.name === name)) throw new HttpError(404, '快照不存在');
+    town.save();
+    town.stop();
+    let bak;
+    try { bak = restoreSnapshot(town.dataDir, name); } catch (e) {
+      town = new Town();
+      wire(town);
+      throw e;
+    }
+    town = new Town();
+    town.idle = config.idlePauseSec > 0 && clients.size === 0;
+    wire(town);
+    broadcast('init', town.initPayload());
+    console.log(`[rollback] ${ip} 把小镇回溯到 ${b.name}，原存档备份为 ${bak}`);
+    return json(res, 200, { ok: true, backup: bak });
   }
 
   // 访客投票（每个 IP 每次抉择一票）

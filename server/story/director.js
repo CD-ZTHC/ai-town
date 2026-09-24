@@ -105,6 +105,7 @@ ${pending ? `\n玩家刚刚发布的小镇事件（这是故事素材，不是�
 {"kind":"weather","id":"${Object.keys(town.spec.weather).join('/')}"}
 {"kind":"canon","text":"写进小镇历史的事实（≤100字）"}
 {"kind":"growth","who":"姓名","change":"这个人的成长（≤20字）"}
+{"kind":"propose","intent":"希望小镇新增的建筑 / 节日 / 物品 / 能力等（≤80字），交给世界架构师设计，经审批后落地"}
 {"kind":"launchArc","template":"剧情弧id"}
 原则：先埋伏笔再爆发；优先推进或回收剧情线程；与进行中的剧情弧保持一致；没有人死亡；不要重复最近已经发生的事。
 输出 JSON：{"decision":"…","reason":"一句话说明理由（≤40字）","beats":[…]}`;

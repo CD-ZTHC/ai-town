@@ -37,6 +37,7 @@ const DEFAULT_ITEMS = () => ({
 
 const DEFAULT_STRUCTURES = () => ({
   light_ward: { name: '萤火结界', emoji: '🏮', tags: ['light'], ttl: 90, light: { r: 110, color: '255,205,110' } },
+  scaffold: { name: '施工中', emoji: '🚧', tags: [], ttl: 240 },
 });
 
 const DEFAULT_ABILITIES = () => [

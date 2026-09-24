@@ -15,7 +15,10 @@ import { SceneManager } from './story/scene.js';
 import { VoteSystem } from './story/votes.js';
 import { CreatureSystem } from './story/creatures.js';
 import { threadList } from './story/threads.js';
-import { applyOp, replay, OpJournal, OPS } from './kernel/ops.js';
+import { ProposalSystem } from './worldai/proposals.js';
+import { Architect } from './worldai/architect.js';
+import { applyOp, replay, OpJournal, OPS, OpError } from './kernel/ops.js';
+import { checkPlacement } from './kernel/placement.js';
 
 const SAVE_VERSION = 2;
 const SNAPSHOT_KEEP = 24; // 保留最近 24 个游戏小时的快照
@@ -84,6 +87,9 @@ export class Town extends EventEmitter {
     this.scenes = new SceneManager(this);
     this.votes = new VoteSystem(this);
     this.creatures = new CreatureSystem(this);
+    // P4：世界架构师与提案
+    this.proposalSystem = new ProposalSystem(this);
+    this.architect = new Architect(this);
     this.load(saved);
     this.syncAgents(false);
   }
@@ -224,6 +230,8 @@ export class Town extends EventEmitter {
       this.votes.tick();
       this.arcs.tick();
       this.director.tick();
+      this.proposalSystem.tick();
+      this.architect.tick();
       this.crisisTick();
       this.dailyHooks();
       this.autoWeather();
@@ -817,7 +825,8 @@ ${recent.length ? `\n他们最近聊过：${recent.map((c) => c.summary).join('�
 "noteA":"${a.name}现在对${b.name}的看法（≤25字）","noteB":"${b.name}现在对${a.name}的看法（≤25字）",
 "importance":这段对话的重要程度(1~10),
 "commitments":[{"who":["${a.name}"],"time":"HH:MM","location":"地点id","activity":"≤14字","emoji":"一个emoji"}]}
-commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22:30之前的约定或新计划，没有就给空数组。约定里要送东西、教本事、使用能力时，可以加 act 字段（格式同日程的 act）。`;
+commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22:30之前的约定或新计划，没有就给空数组。约定里要送东西、教本事、使用能力时，可以加 act 字段（格式同日程的 act）。
+另外可以输出 "idea"：两人聊出来的、想为小镇添点什么的具体建设点子（例如「在码头边修个观星台」，≤30字）；大多数时候没有，就给 null。`;
   }
 
   finishConvo(convo, a, b, res) {
@@ -851,6 +860,8 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
     this.emit('agent', a.id); this.emit('agent', b.id);
     this.shareBeliefs(a, b);
     this.shareBeliefs(b, a);
+    // 居民聊出来的建设点子交给世界架构师（每天最多一个）
+    if (typeof res.idea === 'string' && res.idea.trim().length >= 4) this.architect.enqueue(res.idea, `agent:${a.id}`);
     this.maybeReflect(a); this.maybeReflect(b);
   }
 
@@ -1218,6 +1229,17 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
 
   storyContext() { return this.arcs.contextText(); }
 
+  proposalsView(key = null, admin = false) {
+    const ps = this.proposalSystem;
+    return {
+      proposals: ps.list.slice(-20).reverse().map((p) => ps.view(p, key)),
+      queue: this.architect.queue.map((q) => ({ intent: q.intent, origin: ps.originText(q.origin) })),
+      thinking: this.architect.busy,
+      gaps: admin ? [...this.architect.gaps].sort((a, b) => b.count - a.count) : undefined,
+      requireAdmin: ps.requireAdmin,
+    };
+  }
+
   storyView(key = null) {
     const st = this.story || {};
     return {
@@ -1245,13 +1267,29 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
    */
   applyWorldOp(op, cause = { by: 'system' }, { quiet = false } = {}) {
     const rec = { seq: (this.specOps.at(-1)?.seq || 0) + 1, t: Math.floor(this.t), op: op.op, args: op.args || {}, cause };
+    if (rec.op === 'addBuilding') {
+      // 先做静态检查，再以新建筑重建地图校验占地与连通性
+      const def = OPS.addBuilding.check(this.spec, rec.args);
+      if (def) throw new OpError(def);
+      const err = checkPlacement(this.spec, rec.args);
+      if (err) throw new OpError(`放不下：${err}`);
+    }
     this.spec = applyOp(this.spec, rec, rec);
+    if (rec.op === 'addBuilding') this.rebuildWorld();
     this.specOps.push(rec);
     this.journal.append(rec);
     const desc = OPS[rec.op].describe?.(rec.args) || rec.op;
     if (!quiet) this.log('world', `🌀 世界发生了变化：${desc}`, { op: rec.op, seq: rec.seq });
     this.emit('world', { spec: publicSpec(this.spec), op: rec, desc });
     return rec;
+  }
+
+  /** 世界结构变化（新增建筑）后重建地图；正在走路的角色与生物重新寻路 */
+  rebuildWorld() {
+    this.world = buildWorld({ buildings: this.spec.buildings, locationInfo: this.spec.locations });
+    for (const a of this.agents) if (a.status === 'walking') { a.curKey = null; a.path = []; }
+    for (const c of this.creatures.list) c.path = [];
+    this.emit('worldmap', this.world);
   }
 
   worldHistory() {
@@ -1279,7 +1317,8 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
       });
       const data = { v: SAVE_VERSION, t: this.t, weather: this.weather, weatherLock: this.weatherLock, specOps: this.specOps, agents, entities: this.entities, worldFlags: this.worldFlags, paramMods: this.paramMods, ruleState: this.ruleState,
         threadState: this.threadState, crisis: this.crisis, discovered: this.discovered, story: this.story, arcRuns: this.arcRuns, voteState: this.voteState,
-        pendingScenes: this.pendingScenes, creatureList: this.creatureList, portalState: this.portalState, swarmGoal: this.swarmGoal || null, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens } };
+        pendingScenes: this.pendingScenes, creatureList: this.creatureList, portalState: this.portalState, swarmGoal: this.swarmGoal || null,
+        proposals: this.proposals, architectQueue: this.architectQueue, gaps: this.gaps, architectUsage: this.architectUsage, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens } };
       const text = JSON.stringify(data);
       fs.writeFileSync(this.saveFile + '.tmp', text);
       fs.renameSync(this.saveFile + '.tmp', this.saveFile);
@@ -1317,6 +1356,7 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
       Object.assign(this, {
         threadState: d.threadState || {}, crisis: d.crisis || { morale: 70, supplies: 80 }, discovered: d.discovered || [], story: d.story || undefined,
         arcRuns: d.arcRuns || [], voteState: d.voteState || [], pendingScenes: d.pendingScenes || [], creatureList: d.creatureList || [], portalState: d.portalState || null, swarmGoal: d.swarmGoal || null,
+        proposals: d.proposals || [], architectQueue: d.architectQueue || [], gaps: d.gaps || [], architectUsage: d.architectUsage || undefined,
       });
       if (this.story) this.story.lastHour = -1;
       // 恢复当日令牌用量，避免重启后预算被重置
@@ -1347,6 +1387,34 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
       console.warn('[save] 存档损坏，重新开始：', e.message);
     }
   }
+}
+
+// ---------- 时光回溯（设计文档 4.3）----------
+const SNAP_RE = /^d(\d{3})-(\d{2})\.json$/;
+
+/** 列出可回溯的整点快照（新的在前） */
+export function listSnapshots(dataDir) {
+  const dir = path.join(path.resolve(dataDir), 'snapshots');
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((f) => SNAP_RE.test(f)).sort().reverse().map((f) => {
+    const [, d, h] = SNAP_RE.exec(f);
+    return { name: f, day: Number(d), hour: Number(h), size: fs.statSync(path.join(dir, f)).size };
+  });
+}
+
+/** 用快照替换当前存档（当前存档先备份）。调用方负责之后重建 Town。返回备份文件名。 */
+export function restoreSnapshot(dataDir, name) {
+  if (!SNAP_RE.test(String(name))) throw Object.assign(new Error('快照名称不合法'), { status: 400 });
+  const dir = path.resolve(dataDir);
+  const src = path.join(dir, 'snapshots', name);
+  if (!fs.existsSync(src)) throw Object.assign(new Error('快照不存在'), { status: 404 });
+  JSON.parse(fs.readFileSync(src, 'utf8')); // 损坏的快照不允许回溯
+  const save = path.join(dir, 'save.json');
+  const bak = `save-before-rollback-${new Date().toISOString().replace(/[:.]/g, '-')}.bak.json`;
+  if (fs.existsSync(save)) fs.copyFileSync(save, path.join(dir, bak));
+  fs.copyFileSync(src, save);
+  new OpJournal(path.join(dir, 'ops.jsonl')).append({ op: 'rollback', to: name, at: new Date().toISOString() });
+  return bak;
 }
 
 export function llmPublic() {

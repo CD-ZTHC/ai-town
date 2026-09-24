@@ -127,6 +127,16 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 - 顶栏「🎭 故事」打开故事面板：张力曲线、剧情弧阶段、导演笔记、抉择投票、伏笔看板、危机状态、生物图鉴。
 - 接口：`GET /api/story`；`POST /api/vote`；管理员 `POST /api/vote/decide`、`POST /api/arc/start`、`POST /api/director/decide`。
 
+## 小镇建设：世界架构师与时光回溯
+
+- **世界架构师**：把「意图」变成世界补丁（新建筑、节日、天气、物品、构筑物、能力、世界法则、设定）。意图来自四处：叙事导演的 `propose` 节拍、居民聊天中聊出的建设点子（每天最多一个）、访客在「🛠 建设」面板提的建议（每 IP 每小时 2 条，经审核）、管理员。补丁校验失败时带着错误修正一轮；做不到的事记入「AI 心愿单」。
+- **新建筑**：AI 只描述「靠近哪里、多大」，系统在附近自动选址——占地必须是空地、与其他建筑隔一格、门口可达，且不会挡住任何建筑入口或地点站位。新建筑叠加在原地图上，原地图其余部分不变；落地后成为居民可以去的地点。
+- **设定考据官**：先做规则检查（重名、违背「温馨、没有人会死亡」的支柱设定），再由模型对照相关设定判断是否矛盾，明显矛盾的补丁直接驳回。
+- **审批**：本地模式小改自动通过、大改等管理员确认；公网模式（设置了管理员令牌）小改和大改都先征求访客意见 1 小时，再由管理员终审，24 小时无人终审则作废。微调（如写一条设定）直接通过。每个游戏日最多落地 3 个小改、1 个大改，超出的排到第二天。
+- **施工**：新建筑会先出现工地 🚧，指定的居民去施工，到时完工。
+- **时光回溯**：每个游戏小时自动保存一份快照（保留 24 份）；管理员可以在「🛠 建设 → ⏳ 时光回溯」把整个小镇恢复到某个整点，当前存档会先备份。
+- 接口：`GET /api/proposals`、`POST /api/proposals`（提建议）、`POST /api/proposals/vote`；管理员 `POST /api/proposals/direct`（直接提交补丁）、`POST /api/proposals/decide`、`GET /api/snapshots`、`POST /api/rollback`。
+
 ## 能力、行动与世界法则
 
 - **体力与勇气**：活动会消耗体力、睡觉恢复，体力过低会「疲惫」；勇气受能力和世界法则影响，会慢慢回到平常。
@@ -177,6 +187,8 @@ server/
   kernel/abilities.js 能力：校验、使用、研究
   story/director.js 叙事导演；story/tension.js 张力模型；story/threads.js 剧情线程
   story/beats.js  剧情节拍（导演与剧情弧共用的剧情动作）；story/scene.js 多人场景；story/votes.js 投票
+  kernel/placement.js 新建筑的语义化选址与连通性校验
+  worldai/architect.js 世界架构师；worldai/proposals.js 提案与审批；worldai/canon.js 设定考据官
   story/arcs.js   剧情弧引擎；story/creatures.js 异界生物；story/content.js 默认剧情内容（线程、图鉴、《镜湖裂隙》）
   llm.js       OpenAI 兼容客户端：并发队列、自适应限流、JSON 提取
   memory.js    记忆流与检索

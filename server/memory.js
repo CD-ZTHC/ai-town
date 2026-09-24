@@ -8,6 +8,15 @@ function bigrams(text) {
   return set;
 }
 
+/** 两段文本的双字组相似度（0~1），供记忆检索、设定检索与能力缺口去重共用 */
+export function similarity(a, b) {
+  const x = bigrams(a), y = bigrams(b);
+  if (!x.size || !y.size) return 0;
+  let hit = 0;
+  for (const g of x) if (y.has(g)) hit++;
+  return hit / Math.sqrt(x.size * y.size);
+}
+
 let memSeq = 0;
 export function addMemory(agent, { t, type = 'obs', text, importance = 3 }) {
   const m = { id: `${agent.id}-${Date.now().toString(36)}-${(memSeq++).toString(36)}`, t, type, text, importance };

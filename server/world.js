@@ -108,7 +108,9 @@ export function buildWorld({ buildings: buildingDefs = BUILDINGS, locationInfo =
   objects.push({ type: 'scarecrow', x: 56, y: 7 }); block(56, 7);
 
   // ---- 建筑 ----
-  const buildings = buildingDefs.map((b) => {
+  // 世界规格里后来新增的建筑（added）不参与基础生成，而是在最后叠加，保证原地图的随机序列与其余部分不变
+  const added = buildingDefs.filter((b) => b.added);
+  const buildings = buildingDefs.filter((b) => !b.added).map((b) => {
     const door = { x: b.x + Math.floor(b.w / 2), y: b.y + b.h - 1 };
     for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) block(x, y);
     return { ...b, door, entrance: { x: door.x, y: door.y + 1 } };
@@ -266,6 +268,45 @@ export function buildWorld({ buildings: buildingDefs = BUILDINGS, locationInfo =
     }
   }
 
+  // ---- 叠加新增建筑：清理占地及周围一格的树木 / 灌木 / 石头，开辟连到道路的小路 ----
+  const overlayErrors = {};
+  const REMOVABLE = new Set(['tree', 'bush', 'rock']);
+  const BUILDABLE = new Set([T.GRASS, T.FLOWER, T.DIRT, T.SAND]);
+  const inRect = (x, y, r, m = 0) => x >= r.x - m && x < r.x + r.w + m && y >= r.y - m && y < r.y + r.h + m;
+  for (const def of added) {
+    const door = { x: def.x + Math.floor(def.w / 2), y: def.y + def.h - 1 };
+    const entrance = { x: door.x, y: door.y + 1 };
+    let err = null;
+    for (let y = def.y; y < def.y + def.h && !err; y++) {
+      for (let x = def.x; x < def.x + def.w && !err; x++) {
+        if (!inb(x, y) || !BUILDABLE.has(get(x, y))) err = `(${x},${y}) 不是可以建房的地面`;
+        else if (solid[y * W + x] && !objects.some((o) => REMOVABLE.has(o.type) && o.x === x && o.y === y)) err = `(${x},${y}) 已被占用`;
+      }
+    }
+    // 与已有建筑至少隔一格
+    if (!err && buildings.some((b) => b.x < def.x + def.w + 1 && b.x + b.w + 1 > def.x && b.y < def.y + def.h + 1 && b.y + b.h + 1 > def.y)) err = '和已有建筑挨得太近';
+    if (!err && (!inb(entrance.x, entrance.y) || !WALKABLE.has(get(entrance.x, entrance.y)))) err = '门口不能通行';
+    if (err) { overlayErrors[def.id] = err; continue; }
+    // 清理占地（含门口一列）周围的可移除物体
+    for (let i = objects.length - 1; i >= 0; i--) {
+      const o = objects[i];
+      if (REMOVABLE.has(o.type) && (inRect(o.x, o.y, def, 1) || (o.x === entrance.x && o.y <= entrance.y + 1 && o.y >= entrance.y))) {
+        objects.splice(i, 1);
+        solid[o.y * W + o.x] = 0;
+      }
+    }
+    for (let y = def.y; y < def.y + def.h; y++) for (let x = def.x; x < def.x + def.w; x++) block(x, y);
+    const b = { ...def, door, entrance };
+    buildings.push(b);
+    B[b.id] = b;
+    carve(entrance.x, entrance.y);
+    addLoc(b.id, { indoor: b.id, rect: b, name: b.name });
+    if (def.lightAtNight) {
+      const lx = Math.min(W - 1, def.x + def.w), ly = def.y + def.h - 1;
+      if (!solid[ly * W + lx] && WALKABLE.has(get(lx, ly))) { objects.push({ type: 'lamp', x: lx, y: ly }); block(lx, ly); lamps.push({ x: lx, y: ly }); }
+    }
+  }
+
   // 连通性校验：丢弃不可达的站位
   const reach = new Uint8Array(W * H);
   const q = [[22, 20]];
@@ -289,7 +330,7 @@ export function buildWorld({ buildings: buildingDefs = BUILDINGS, locationInfo =
   const walk = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) walk[i] = reach[i] ? 1 : 0;
 
-  return { W, H, tiles, walk, objects, buildings, locations, lamps };
+  return { W, H, tiles, walk, objects, buildings, locations, lamps, overlayErrors };
 }
 
 // A* 寻路（4 邻接）

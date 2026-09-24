@@ -133,6 +133,13 @@ const KINDS = {
       }
     },
   },
+  propose: {
+    check(b) { return String(b.intent || '').trim().length >= 4 ? null : 'intent 太短'; },
+    run(town, b) {
+      const err = town.architect.enqueue(b.intent, 'director');
+      if (err) console.warn('[beat] propose：', err);
+    },
+  },
   launchArc: {
     check(b, town) {
       if (!town.spec.arcs.some((x) => x.id === b.template)) return `未知剧情弧：${b.template}`;
