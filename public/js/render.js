@@ -69,6 +69,13 @@ export class Renderer {
     this.time = 0;
     this.hits = [];
     this.bubbleSeen = new Map();
+    this.vfx = [];
+  }
+
+  /** 能力等产生的一次性特效（世界坐标，单位：格） */
+  addVfx(v) {
+    this.vfx.push({ ...v, born: this.time, life: v.preset === 'ripple' ? 2.4 : 1.8 });
+    if (this.vfx.length > 40) this.vfx.shift();
   }
 
   // ---------- 初始化 ----------
@@ -638,8 +645,13 @@ export class Renderer {
       if (a.inside) continue;
       items.push({ y: a.dy * TS + TS * 0.9, a });
     }
+    for (const e of S.entities || []) {
+      if (e.inside) continue;
+      items.push({ y: e.y * TS + TS * 0.8, e });
+    }
     items.sort((p, q) => p.y - q.y);
-    for (const it of items) it.o ? this.drawObject(ctx, it.o, S) : this.drawAgent(ctx, it.a, S);
+    for (const it of items) it.o ? this.drawObject(ctx, it.o, S) : it.e ? this.drawEntity(ctx, it.e) : this.drawAgent(ctx, it.a, S);
+    this.drawVfx(ctx);
 
     this.updateParticles(dt, S, sky);
     this.drawWorldParticles(ctx, S, sky);
@@ -802,6 +814,76 @@ export class Renderer {
         ctx.restore();
       }
     }
+  }
+
+  /** 构筑物（例如萤火结界）：地面光圈 + 浮动的 emoji */
+  drawEntity(ctx, e) {
+    const X = e.x * TS + TS / 2, Y = e.y * TS + TS / 2, t = this.time;
+    const col = e.light?.color || '255,220,140';
+    const pulse = 0.5 + Math.sin(t * 2.4 + e.x) * 0.15;
+    const r = (e.light ? e.light.r / 110 : 1) * TS * 2.6;
+    const g = ctx.createRadialGradient(X, Y + 8, 4, X, Y + 8, r);
+    g.addColorStop(0, `rgba(${col},${0.32 * pulse})`); g.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = g; ctx.fillRect(X - r, Y + 8 - r, r * 2, r * 2);
+    ctx.strokeStyle = `rgba(${col},${0.55 * pulse})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(X, Y + 10, r * 0.55, r * 0.22, 0, 0, 7); ctx.stroke();
+    ctx.save();
+    ctx.font = '20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const n = e.light ? 5 : 1;
+    for (let i = 0; i < n; i++) {
+      const ang = t * 0.6 + (i / n) * Math.PI * 2;
+      const px = n > 1 ? X + Math.cos(ang) * r * 0.5 : X, py = n > 1 ? Y + 10 + Math.sin(ang) * r * 0.2 : Y + 10;
+      ctx.fillText(e.emoji || '✨', px, py - 4 + Math.sin(t * 3 + i) * 2);
+    }
+    ctx.restore();
+  }
+
+  drawVfx(ctx) {
+    const t = this.time;
+    this.vfx = this.vfx.filter((v) => t - v.born < v.life);
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const v of this.vfx) {
+      const k = (t - v.born) / v.life; // 0 → 1
+      const X = v.x * TS + TS / 2, Y = v.y * TS + TS / 2;
+      const R = (v.radius || 2) * TS;
+      const [r, g, b] = hexToRgb(v.color || '#ffe08a');
+      const a = 1 - k;
+      ctx.globalAlpha = a;
+      switch (v.preset) {
+        case 'glow_ring':
+        case 'ripple': {
+          const rings = v.preset === 'ripple' ? 3 : 2;
+          for (let i = 0; i < rings; i++) {
+            const kk = Math.max(0, k - i * 0.15);
+            ctx.strokeStyle = `rgb(${r},${g},${b})`; ctx.lineWidth = 3 * (1 - kk);
+            ctx.beginPath(); ctx.ellipse(X, Y + 8, R * kk, R * kk * 0.45, 0, 0, 7); ctx.stroke();
+          }
+          break;
+        }
+        case 'burst': {
+          for (let i = 0; i < 12; i++) {
+            const ang = (i / 12) * Math.PI * 2;
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(X + Math.cos(ang) * R * k * 1.4 - 2, Y + Math.sin(ang) * R * k * 1.4 - 2, 4, 4);
+          }
+          break;
+        }
+        case 'sparkle':
+        case 'heal':
+        case 'notes': {
+          const glyph = { sparkle: '✦', heal: '✚', notes: '♪' }[v.preset];
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.font = `bold ${v.preset === 'notes' ? 18 : 14}px sans-serif`;
+          for (let i = 0; i < 6; i++) {
+            const ox = Math.sin(i * 2.1) * R * 0.6 + Math.sin(t * 4 + i) * 4;
+            ctx.fillText(glyph, X + ox, Y - 10 - k * 40 - (i % 3) * 10);
+          }
+          break;
+        }
+      }
+    }
+    ctx.restore();
   }
 
   drawFountain(ctx, X, Y, S) {
@@ -1099,6 +1181,9 @@ export class Renderer {
     for (const a of S.agents) {
       if (a.inside || !on) continue;
       out.push({ x: a.dx * TS + 16, y: a.dy * TS + 10, r: 56, i: 0.7, c: '255,200,120' });
+    }
+    if (on) for (const e of S.entities || []) {
+      if (e.light && !e.inside) out.push({ x: e.x * TS + 16, y: e.y * TS + 16, r: e.light.r * 1.6, i: 0.95, c: e.light.color });
     }
     if (S.festival && on) {
       for (const l of this.particles.lanterns) out.push({ x: l.x, y: l.y, r: l.water ? 46 : 36, i: 0.9, c: '255,160,70' });

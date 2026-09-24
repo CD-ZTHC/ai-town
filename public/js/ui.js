@@ -164,7 +164,7 @@ function weatherMenu(btn) {
 }
 
 // ---------- 动态流 ----------
-const FEED_GROUPS = { convo: ['convo'], thought: ['thought'], event: ['event', 'reflect', 'commit', 'visitor', 'reaction', 'plan', 'news', 'diary', 'world'] };
+const FEED_GROUPS = { convo: ['convo'], thought: ['thought'], event: ['event', 'reflect', 'commit', 'visitor', 'reaction', 'plan', 'news', 'diary', 'world', 'ability', 'learn', 'gift', 'effect'] };
 function feedItemHTML(l) {
   const faces = (l.agents || []).slice(0, 4).map((id) => `<img src="${face(id)}" alt="">`).join('');
   const t = fmtTime(l.t);
@@ -176,7 +176,7 @@ function feedItemHTML(l) {
       <div class="lines">${(l.lines || []).map((x) => `<div class="line"><img src="${face(x.speaker)}"><b>${esc(name(x.speaker))}</b><span>${esc(x.text)}</span></div>`).join('')}</div>
     </div>`;
   }
-  const icon = { thought: '💭', reflect: '✨', event: '📢', commit: '', visitor: '', reaction: '❗', plan: '🗓️', news: '', diary: '📖', weather: '', system: '', world: '' }[l.type] ?? '';
+  const icon = { thought: '💭', reflect: '✨', event: '📢', commit: '', visitor: '', reaction: '❗', plan: '🗓️', news: '', diary: '📖', weather: '', system: '', world: '', ability: '', learn: '', gift: '', effect: '✨' }[l.type] ?? '';
   const who = (l.agents || []).length === 1 && ['thought', 'reflect', 'reaction', 'plan', 'diary'].includes(l.type)
     ? `<span class="who" data-agent="${l.agents[0]}">${esc(name(l.agents[0]))}</span>${l.type === 'thought' ? '：' : ' '}` : '';
   let text = esc(l.text);
@@ -216,6 +216,7 @@ export function onLog(l) {
   if (l.type === 'commit') toast(esc(l.text));
   if (l.type === 'reflect') toast(`✨ ${esc(l.text)}`, 5000);
   if (l.type === 'weather') toast(esc(l.text), 2500);
+  if (l.type === 'learn' || l.type === 'gift') toast(esc(l.text), 4500);
   if (l.agents?.includes(app.selected)) scheduleDetail();
 }
 export function onWorld(w) {
@@ -323,8 +324,24 @@ function renderInspector(fresh) {
     <div class="where">📍 ${esc(d.locName)}</div>
     ${d.thought ? `<div class="thought">“${esc(d.thought)}”</div>` : ''}
     <div class="goal"><b>长期目标</b> ${esc(d.goal)}</div>
-    ${d.todayGoal ? `<div class="goal"><b>今日心愿</b> ${esc(d.todayGoal)}</div>` : ''}`;
+    ${d.todayGoal ? `<div class="goal"><b>今日心愿</b> ${esc(d.todayGoal)}</div>` : ''}
+    ${bodyHTML(d)}`;
   renderPane(fresh);
+}
+
+// 体力 / 勇气、状态、物品与能力（P1）
+function bodyHTML(d) {
+  if (!d.body) return '';
+  const bar = (label, v, cls) => `<div class="meter ${cls}"><span>${label}</span><i><b style="width:${Math.max(0, Math.min(100, v))}%"></b></i><em>${v}</em></div>`;
+  const inv = (d.inventory || []).map((x) => `<span class="chip-item" title="${esc(x.name)}">${esc(x.emoji)} ${esc(x.name)}×${x.n}</span>`).join('');
+  const abs = (d.abilities || []).map((x) => `<span class="chip-ab${x.cooldown ? ' cd' : ''}" title="${esc(x.desc)}${x.cooldown ? `（冷却 ${x.cooldown} 分钟）` : ''}">${esc(x.emoji)} ${esc(x.name)}${x.cooldown ? ' ⏳' : ''}</span>`).join('');
+  return `<div class="ibody">
+    ${bar('体力', d.body.stamina, 'st')}${bar('勇气', d.body.courage, 'co')}
+    ${d.body.conditions.length ? `<div class="conds">${d.body.conditions.map((c) => `<span>${esc(c)}</span>`).join('')}</div>` : ''}
+    ${d.researching ? `<div class="goal"><b>研究中</b> ${esc(d.researching)}</div>` : ''}
+    ${abs ? `<div class="chips"><b>能力</b>${abs}</div>` : ''}
+    ${inv ? `<div class="chips"><b>物品</b>${inv}</div>` : ''}
+  </div>`;
 }
 
 function renderPane(reset) {

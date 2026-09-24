@@ -204,7 +204,16 @@ function pushRecent(r) {
   stats.recent.length = Math.min(stats.recent.length, 12);
 }
 
+// 测试用：注入一个假的模型（fn(messages, opts) => 回复文本），不发出任何网络请求
+let mock = null;
+const realEnabled = stats.enabled;
+export function setMock(fn) {
+  mock = fn || null;
+  stats.enabled = Boolean(mock) || realEnabled;
+}
+
 export function chat(messages, opts = {}) {
+  if (mock) return Promise.resolve().then(() => mock(messages, opts));
   if (!stats.enabled) return Promise.reject(new Error('LLM 未配置'));
   if (budgetLeft() <= 0) return Promise.reject(new BudgetError());
   return enqueue(() => rawChat(messages, opts), opts.priority);

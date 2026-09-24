@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PARAM_BOUNDS, RATINGS, STORYTELLERS, validateSpec } from './spec.js';
 import { parseHM } from '../memory.js';
+import { validateAbility } from './abilities.js';
+import { validateRule } from './rules.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const ID_RE = /^[a-z][a-z0-9_]{1,23}$/;
@@ -99,6 +101,62 @@ export const OPS = {
       };
     },
     describe: (a) => `天空中出现了一种新的天气：${str(a.emoji, 4)} ${str(a.name, 8)}`,
+  },
+  addItem: {
+    level: 'micro',
+    check(spec, a) {
+      if (!validId(a.id)) return 'id 不合法';
+      if (Object.hasOwn(spec.items, a.id)) return `物品已存在：${a.id}`;
+      if (!str(a.name, 8) || !str(a.emoji, 4)) return 'name / emoji 不能为空';
+      return null;
+    },
+    apply(spec, a) { spec.items[a.id] = { name: str(a.name, 8), emoji: str(a.emoji, 4), desc: str(a.desc, 40) }; },
+    describe: (a) => `小镇上出现了新东西：${str(a.emoji, 4)} ${str(a.name, 8)}`,
+  },
+  addStructure: {
+    level: 'minor',
+    check(spec, a) {
+      if (!validId(a.id)) return 'id 不合法';
+      if (Object.hasOwn(spec.structures, a.id)) return `构筑物已存在：${a.id}`;
+      if (!str(a.name, 8) || !str(a.emoji, 4)) return 'name / emoji 不能为空';
+      if (a.ttl != null && !(a.ttl >= 10 && a.ttl <= 240)) return 'ttl 应在 10~240';
+      if (a.light && !(a.light.r >= 20 && a.light.r <= 160 && /^\d{1,3},\d{1,3},\d{1,3}$/.test(a.light.color))) return 'light 不合法（r 20~160，color 形如 255,200,100）';
+      return null;
+    },
+    apply(spec, a) {
+      spec.structures[a.id] = {
+        name: str(a.name, 8), emoji: str(a.emoji, 4), ttl: a.ttl ?? 60,
+        tags: (Array.isArray(a.tags) ? a.tags : []).map((t) => str(t, 12)).filter(Boolean).slice(0, 4),
+        ...(a.light ? { light: { r: a.light.r, color: a.light.color } } : {}),
+      };
+    },
+    describe: (a) => `人们学会了搭建「${str(a.name, 8)}」`,
+  },
+  addAbility: {
+    level: 'minor',
+    check(spec, a) {
+      if (!validId(a.id)) return 'id 不合法';
+      if (spec.abilities.some((x) => x.id === a.id)) return `能力已存在：${a.id}`;
+      return validateAbility(a, spec);
+    },
+    apply(spec, a) {
+      const { id, name, emoji, desc, aiHint, target, range, cost, cooldown, requires, effects, learn } = structuredClone(a);
+      spec.abilities.push(Object.fromEntries(Object.entries({ id, name, emoji: str(emoji, 4) || '✨', desc, aiHint, target, range, cost, cooldown, requires, effects, learn }).filter(([, v]) => v !== undefined)));
+    },
+    describe: (a) => `世界上出现了一种新能力：${str(a.emoji, 4)}「${str(a.name, 8)}」`,
+  },
+  addRule: {
+    level: 'major',
+    check(spec, a) {
+      if (spec.rules.some((x) => x.id === a.id)) return `规则已存在：${a.id}`;
+      if (spec.rules.length >= 40) return '规则数量已达上限';
+      return validateRule(a, spec);
+    },
+    apply(spec, a) {
+      const { id, name, when, forEach, if: cond, then } = structuredClone(a);
+      spec.rules.push(Object.fromEntries(Object.entries({ id, name, when, forEach, if: cond, then }).filter(([, v]) => v !== undefined)));
+    },
+    describe: (a) => `新的世界法则生效了：「${str(a.name, 16)}」`,
   },
 };
 

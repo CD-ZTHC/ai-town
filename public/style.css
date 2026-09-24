@@ -293,3 +293,22 @@ canvas#world.pointer { cursor: pointer; }
 .msg.sys.err { color: var(--bad); background: rgba(255, 122, 122, 0.1); }
 .admin-box { margin-top: 12px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); }
 .admin-box summary { cursor: pointer; color: var(--muted); }
+
+/* P1：体力、物品与能力 */
+.ibody { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); display: grid; gap: 5px; }
+.ibody .meter { display: grid; grid-template-columns: 32px 1fr 26px; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.ibody .meter i { height: 6px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.ibody .meter b { display: block; height: 100%; border-radius: 4px; }
+.ibody .meter.st b { background: linear-gradient(90deg, #7ddc8a, #5ad1c3); }
+.ibody .meter.co b { background: linear-gradient(90deg, #ffb86b, #ffd76a); }
+.ibody .meter em { font-style: normal; text-align: right; }
+.ibody .conds span { display: inline-block; margin-right: 4px; padding: 0 7px; border-radius: 8px; background: rgba(255, 122, 122, 0.18); color: #ffb4b4; font-size: 11px; }
+.ibody .chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 11.5px; }
+.ibody .chips b { color: var(--accent); margin-right: 2px; font-weight: 600; }
+.chip-item, .chip-ab { padding: 1px 8px; border-radius: 10px; background: rgba(255, 255, 255, 0.07); cursor: default; }
+.chip-ab { background: rgba(167, 139, 250, 0.18); color: #d9ccff; }
+.chip-ab.cd { opacity: 0.55; }
+.fi.ability, .fi.learn { border-left: 3px solid var(--violet); }
+.fi.gift { border-left: 3px solid var(--sakura); }
+/* 检查器头部内容变多后不被压缩，由下方的 .ipane 滚动 */
+.ihead, .inow, .itabs { flex-shrink: 0; }

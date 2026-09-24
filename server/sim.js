@@ -5,11 +5,16 @@ import path from 'node:path';
 import { buildWorld, findPath } from './world.js';
 import * as llm from './llm.js';
 import { addMemory, retrieve, fmtTime, fmtStamp, parseHM } from './memory.js';
-import { defaultSpec, validateSpec, weekdayOf, calendarHint, pickWeather, publicSpec } from './kernel/spec.js';
+import { defaultSpec, validateSpec, weekdayOf, calendarHint, pickWeather, publicSpec, PARAM_BOUNDS } from './kernel/spec.js';
+import { RuleEngine } from './kernel/rules.js';
+import { useAbility, describeAbility, findAbility, matchResearch } from './kernel/abilities.js';
+import { agentsNear, posOf } from './kernel/effects.js';
 import { applyOp, replay, OpJournal, OPS } from './kernel/ops.js';
 
 const SAVE_VERSION = 2;
 const SNAPSHOT_KEEP = 24; // 保留最近 24 个游戏小时的快照
+const MAX_STRUCTURES = 30;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 const rand = (a) => a[Math.floor(Math.random() * a.length)];
 const clampStr = (s, n) => String(s ?? '').trim().slice(0, n);
@@ -55,6 +60,12 @@ export class Town extends EventEmitter {
     this.pairCd = {};
     this.flags = {};
     this.seq = 0;
+    // P1：运行时世界状态
+    this.entities = []; // 构筑物等临时实体（例如萤火结界）
+    this.worldFlags = {}; // 效果原语 flag 写入的世界标记
+    this.paramMods = []; // 效果原语 paramMod 带来的临时参数调整
+    this.ruleState = { every: {}, at: {} };
+    this.rules = new RuleEngine(this);
     this.load(saved);
   }
 
@@ -62,7 +73,20 @@ export class Town extends EventEmitter {
   get day() { return Math.floor(this.t / 1440) + 1; }
   get minute() { return this.t % 1440; }
   get weekday() { return weekdayOf(this.spec, this.day); }
-  get params() { return this.spec.params; }
+  /** 生效中的内核参数 = 规格参数 + 临时调整（始终夹在上下限之内） */
+  get params() {
+    if (!this.paramMods.length) return this.spec.params;
+    const out = { ...this.spec.params };
+    for (const m of this.paramMods) {
+      if (!Object.hasOwn(out, m.name)) continue;
+      let v = out[m.name];
+      if (m.mul != null) v *= m.mul;
+      if (m.add != null) v += m.add;
+      const [lo, hi] = PARAM_BOUNDS[m.name];
+      out[m.name] = clamp(m.name === 'maxConvos' ? Math.round(v) : v, lo, hi);
+    }
+    return out;
+  }
   get dayEnd() { return this.spec.params.dayEnd; }
   festivalHint() { return calendarHint(this.spec, this.day); }
   weatherText() { return this.spec.weather[this.weather]?.name || this.weather; }
@@ -94,7 +118,8 @@ export class Town extends EventEmitter {
       // 通用组件（设计文档 4.2）：P0 先建立数据结构，能力与对抗系统在后续阶段接入
       kind: 'resident',
       body: { hp: 100, stamina: 100, courage: 50, conditions: [] },
-      inventory: {}, abilities: [], beliefs: [], growth: [],
+      inventory: { ...(p.start?.inventory || {}) }, abilities: [...(p.start?.abilities || [])], beliefs: [], growth: [],
+      cooldowns: {}, kit: 1, // kit：已发放初始物品与能力（旧存档读档时补发）
     };
     for (const [id, [aff, note]] of Object.entries(p.relations)) a.relations[id] = { affinity: aff, note };
     for (const text of p.memories) addMemory(a, { t: Math.max(0, this.t - 60 * (1 + Math.random() * 5)), type: 'obs', text, importance: 6 });
@@ -132,7 +157,9 @@ export class Town extends EventEmitter {
       .map(([id, r]) => `${this.byId[id]?.name}（好感${r.affinity}）：${r.note}`)
       .join('；');
     const growth = (a.growth || []).slice(-3).map((g) => `第${g.day}天：${g.change}`).join('；');
-    return `姓名：${a.name}，${a.age}岁，${a.role}。\n性格：${a.persona}${growth ? `\n成长经历：${growth}` : ''}\n当前目标：${a.goal}\n心情：${a.mood.text}\n人际关系：${rel || '暂无'}`;
+    const b = a.body;
+    const status = `体力${Math.round(b.stamina)}，勇气${Math.round(b.courage)}${b.conditions.length ? `，${b.conditions.join('、')}` : ''}`;
+    return `姓名：${a.name}，${a.age}岁，${a.role}。\n性格：${a.persona}${growth ? `\n成长经历：${growth}` : ''}\n当前目标：${a.goal}\n心情：${a.mood.text}；状态：${status}\n人际关系：${rel || '暂无'}`;
   }
   memBlock(a, query, k = 10) {
     const ms = retrieve(a, query, this.t, k);
@@ -165,6 +192,8 @@ export class Town extends EventEmitter {
       const dtGame = dtReal * (this.nightSkip ? Math.max(this.speed, 15) : this.speed);
       this.t += dtGame;
       for (const a of this.agents) this.updateAgent(a, dtGame);
+      this.expire();
+      this.rules.tick();
       this.dailyHooks();
       this.autoWeather();
       acc.convo += dtReal;
@@ -193,6 +222,7 @@ export class Town extends EventEmitter {
         bubble: a.bubble && a.bubble.until > now ? { id: a.bubble.id, text: a.bubble.text, kind: a.bubble.kind } : null,
       })),
       convos: [...this.convos.values()].map((c) => ({ id: c.id, a: c.a, b: c.b, state: c.state })),
+      entities: this.entities.map((e) => ({ id: e.id, type: e.type, emoji: e.emoji, name: e.name, x: +e.x.toFixed(2), y: +e.y.toFixed(2), inside: e.inside, light: e.light || null })),
     };
   }
 
@@ -217,6 +247,7 @@ export class Town extends EventEmitter {
       this.weather = w;
       const info = this.spec.weather[w];
       this.log('weather', `天气转为${info.emoji} ${info.name}`);
+      this.rules.onWeather(w);
     }
   }
 
@@ -227,6 +258,7 @@ export class Town extends EventEmitter {
     this.weather = w;
     this.weatherLock = true;
     this.log('weather', `天空听从了你的意志：${info.emoji} ${info.name}`);
+    this.rules.onWeather(w);
   }
 
   // ---------- 日程执行 ----------
@@ -245,23 +277,40 @@ export class Town extends EventEmitter {
     if (m < s[0].start) return m < 6 * 60 + 30 ? sleep : { key: `early-${this.day}`, location: a.home, activity: '在家吃早饭', emoji: '🍳' };
     if (m >= s[s.length - 1].end) return m >= this.dayEnd ? sleep : { key: `eve-${this.day}`, location: a.home, activity: '在家休息', emoji: '🛋️' };
     const prev = [...s].reverse().find((e) => e.end <= m);
-    return { ...prev, key: `${this.day}-gap-${prev.end}`, activity: '随便转转', emoji: '🚶' };
+    return { ...prev, key: `${this.day}-gap-${prev.end}`, activity: '随便转转', emoji: '🚶', act: undefined };
   }
 
   updateAgent(a, dt) {
+    this.updateBody(a, dt);
     if (a.convoId) return;
     const e = this.desired(a);
     if (e.key !== a.curKey) {
+      if (a.researching && a.researching.key !== e.key) this.finishResearch(a);
       a.curKey = e.key;
       a.curEntry = e;
       const locId = this.resolveLoc(a, e.location);
       if (a.locId === locId && a.status !== 'walking') {
         this.settle(a, e);
+        this.runAct(a, e);
       } else {
         this.navigate(a, locId, e);
       }
     }
     if (a.status === 'walking') this.step(a, dt);
+    // 对象还没到场的行动：每 10 游戏分钟重试一次，直到这条日程结束
+    const pa = a.pendingAct;
+    if (pa && pa.key === a.curKey && a.status === 'acting' && this.t >= pa.next) this.runAct(a, a.curEntry, true);
+  }
+
+  /** 体力随活动消耗、睡觉恢复；勇气缓慢回归平常 */
+  updateBody(a, dt) {
+    const b = a.body;
+    const rate = a.status === 'sleeping' ? 0.2 : a.status === 'walking' ? -0.05 : -0.025;
+    b.stamina = clamp(b.stamina + rate * dt, 0, 100);
+    b.courage = clamp(b.courage + (50 - b.courage) * 0.002 * dt, 0, 100);
+    const tired = b.conditions.includes('疲惫');
+    if (!tired && b.stamina < 20) b.conditions = [...b.conditions, '疲惫'];
+    else if (tired && b.stamina > 40) b.conditions = b.conditions.filter((c) => c !== '疲惫');
   }
 
   settle(a, e) {
@@ -325,6 +374,8 @@ export class Town extends EventEmitter {
     a.locId = a.dest.locId;
     if (a.dest.indoor) a.inside = a.dest.indoor;
     this.settle(a, e);
+    if (!e.sleep) this.rules.onEnter(a, a.locId);
+    this.runAct(a, e);
     if (!e.sleep) {
       if (a.dest.indoor) a.dir = 'up';
       else a.dir = rand(['down', 'left', 'right', 'down']);
@@ -359,7 +410,8 @@ export class Town extends EventEmitter {
       s = Math.max(s, minStart);
       e = Math.min(e, 23 * 60);
       if (e - s < 10) continue;
-      out.push({ start: s, end: e, location: this.resolveLoc(a, it.location) === a.home ? 'home' : this.resolveLoc(a, it.location), activity: clampStr(it.activity, 24) || '做点事', emoji: clampStr(it.emoji, 4) || '🙂', src: it.src || 'plan' });
+      const act = this.normalizeAct(it.act);
+      out.push({ start: s, end: e, location: this.resolveLoc(a, it.location) === a.home ? 'home' : this.resolveLoc(a, it.location), activity: clampStr(it.activity, 24) || '做点事', emoji: clampStr(it.emoji, 4) || '🙂', src: it.src || 'plan', ...(act ? { act } : {}) });
     }
     out.sort((x, y) => x.start - y.start);
     // 去重叠
@@ -382,7 +434,7 @@ ${this.memBlock(a, `今天 计划 约定 ${a.goal}`, 12)}
 ${keepCommits.length ? `今天已有的约定（必须保留）：${keepCommits.map((c) => `${fmtTime(c.start)} 在${this.locName(this.resolveLoc(a, c.location))}${c.activity}`).join('；')}\n` : ''}
 可去的地点（location 字段只能填这些 id）：
 ${this.locListText()}
-
+${this.actionBlock(a)}
 请为${a.name}安排今天的日程（从起床到22:30），8~13项，时间连续不重叠，符合职业与性格，并包含推进目标、与特定的人见面的安排（写进 activity）。输出 JSON：
 {"mood":"两字心情","moodEmoji":"一个emoji","goal":"今天最想做成的一件事（≤30字）","schedule":[{"start":"06:30","end":"07:15","location":"home","activity":"≤14字具体活动","emoji":"一个emoji"}]}`,
         },
@@ -424,10 +476,151 @@ ${this.locListText()}
     if (start == null || start <= this.minute || start >= 23 * 60) return false;
     const end = Math.min(start + (Number(c.duration) || 60), 23 * 60);
     const location = this.resolveLoc(a, c.location);
-    const entry = { start, end, location: location === a.home ? 'home' : location, activity: clampStr(c.activity, 24), emoji: clampStr(c.emoji, 4) || '📌', src: 'commit' };
+    const act = this.normalizeAct(c.act);
+    const entry = { start, end, location: location === a.home ? 'home' : location, activity: clampStr(c.activity, 24), emoji: clampStr(c.emoji, 4) || '📌', src: 'commit', ...(act ? { act } : {}) };
     this.insertEntry(a, entry);
     addMemory(a, { t: this.t, type: 'plan', text: `我打算${fmtTime(start)}去${this.locName(location)}${entry.activity}${why}`, importance: 5 });
     return true;
+  }
+
+  // ---------- 行动（P1）：日程条目可以附带 act ----------
+  /** 校验并规范化 LLM 给出的行动；不合法返回 undefined（该条日程照常执行，只是没有行动） */
+  normalizeAct(act) {
+    if (!act || typeof act !== 'object') return undefined;
+    const type = String(act.type || '');
+    const to = clampStr(act.to, 12);
+    if (type === 'use' && findAbility(this.spec, act.ability)) {
+      const target = clampStr(act.target, 12);
+      return { type, ability: act.ability, ...(target && target !== 'null' ? { target } : {}) };
+    }
+    if (type === 'give' && Object.hasOwn(this.spec.items, act.item) && to) {
+      return { type, item: act.item, to, count: clamp(Math.floor(Number(act.count) || 1), 1, 5) };
+    }
+    if (type === 'teach' && findAbility(this.spec, act.ability) && to) return { type, ability: act.ability, to };
+    if (type === 'research' && clampStr(act.topic, 20)) return { type, topic: clampStr(act.topic, 20) };
+    return undefined;
+  }
+
+  /** 到达日程地点时执行行动；对象不在身边时稍后重试 */
+  runAct(a, e, retry = false) {
+    const act = e?.act;
+    if (!act || e.sleep || (!retry && a.actKey === e.key)) return;
+    a.actKey = e.key;
+    let r;
+    if (act.type === 'research') {
+      a.researching = { topic: act.topic, since: this.t, key: e.key, loc: a.locId };
+      a.action = { text: `研究：${act.topic}`, emoji: '📚' };
+      r = { ok: true };
+    } else if (act.type === 'use') r = useAbility(this, a, act.ability, act.target, '（按计划）');
+    else if (act.type === 'give') r = this.giveItem(a, act);
+    else if (act.type === 'teach') r = this.teach(a, act);
+    if (r?.ok || !r) { a.pendingAct = null; return; }
+    if (r.retry) {
+      const tries = (a.pendingAct?.key === e.key ? a.pendingAct.tries : 0) + 1;
+      a.pendingAct = tries <= 6 ? { key: e.key, next: this.t + 10, tries } : null;
+    } else a.pendingAct = null;
+    if (!a.pendingAct) addMemory(a, { t: this.t, type: 'obs', text: `本想${e.activity}，可惜没成：${r.reason}`, importance: 2 });
+  }
+
+  findNear(a, ref, r = 3) {
+    const s = String(ref || '').trim();
+    return agentsNear(this, posOf(this, a), r, a).find((o) => o.id === s || o.name === s || (s && s.includes(o.name))) || null;
+  }
+
+  giveItem(a, { item, to, count = 1 }) {
+    const it = this.spec.items[item];
+    if ((a.inventory[item] || 0) < 1) return { ok: false, reason: `身上没有${it.name}` };
+    const b = this.findNear(a, to);
+    if (!b) return { ok: false, reason: `${to}不在身边`, retry: true };
+    const n = Math.min(count, a.inventory[item]);
+    a.inventory[item] -= n;
+    if (!a.inventory[item]) delete a.inventory[item];
+    b.inventory[item] = Math.min(99, (b.inventory[item] || 0) + n);
+    addMemory(a, { t: this.t, type: 'obs', text: `我送给${b.name}${it.name}×${n}`, importance: 3 });
+    addMemory(b, { t: this.t, type: 'obs', text: `${a.name}送给我${it.name}×${n}`, importance: 4 });
+    const rel = (b.relations[a.id] ||= { affinity: 0, note: '' });
+    rel.affinity = clamp(rel.affinity + 3, -100, 100);
+    if (!a.convoId) this.say(a, `${it.emoji} 这个给你！`, 3500);
+    this.log('gift', `🎁 ${a.name}送给${b.name} ${it.emoji}${it.name}×${n}`, { agents: [a.id, b.id] });
+    this.emit('agent', a.id); this.emit('agent', b.id);
+    return { ok: true };
+  }
+
+  teach(a, { ability, to }) {
+    const ab = findAbility(this.spec, ability);
+    if (!a.abilities.includes(ability)) return { ok: false, reason: `自己还不会「${ab.name}」` };
+    if (!ab.learn?.teach) return { ok: false, reason: `「${ab.name}」没法教给别人` };
+    const b = this.findNear(a, to);
+    if (!b) return { ok: false, reason: `${to}不在身边`, retry: true };
+    if (b.abilities.includes(ability)) return { ok: false, reason: `${b.name}已经会了` };
+    if (a.body.stamina < 10) return { ok: false, reason: '太累了，教不动' };
+    a.body.stamina -= 10;
+    this.learnAbility(b, ability, `跟${a.name}`);
+    for (const [x, y] of [[a, b], [b, a]]) {
+      const rel = (x.relations[y.id] ||= { affinity: 0, note: '' });
+      rel.affinity = clamp(rel.affinity + 3, -100, 100);
+    }
+    addMemory(a, { t: this.t, type: 'obs', text: `我把「${ab.name}」教给了${b.name}`, importance: 5 });
+    return { ok: true };
+  }
+
+  /** 研究结束：在合适的地点钻研足够久，且课题对得上，就能学会新能力 */
+  finishResearch(a) {
+    const r = a.researching;
+    a.researching = null;
+    if (!r || this.t - r.since < 45) return;
+    const ab = r.loc && matchResearch(this.spec, a, r.loc, r.topic);
+    if (ab) this.learnAbility(a, ab.id, '通过研究');
+    else addMemory(a, { t: this.t, type: 'obs', text: `在${this.locName(r.loc)}研究了「${r.topic}」，有了些头绪`, importance: 3 });
+  }
+
+  learnAbility(a, id, how = '') {
+    const ab = findAbility(this.spec, id);
+    if (!ab || a.abilities.includes(id)) return false;
+    a.abilities.push(id);
+    addMemory(a, { t: this.t, type: 'obs', text: `我${how}学会了「${ab.name}」：${ab.desc}`, importance: 6 });
+    this.log('learn', `✨ ${a.name}${how}学会了${ab.emoji || ''}「${ab.name}」`, { agents: [a.id], ability: id });
+    this.emit('agent', a.id);
+    return true;
+  }
+
+  spawnStructure(type, at, ttl, ctx = {}) {
+    const def = this.spec.structures[type];
+    if (!def) return null;
+    const e = {
+      id: `s${++this.seq}`, kind: 'structure', type, name: def.name, emoji: def.emoji, tags: [...def.tags],
+      ...(def.light ? { light: def.light } : {}), x: at.x, y: at.y, inside: at.inside || null, until: this.t + ttl, owner: ctx.self?.id || null,
+    };
+    this.entities.push(e);
+    if (this.entities.length > MAX_STRUCTURES) this.entities.shift();
+    return e;
+  }
+
+  addParamMod(m) {
+    this.paramMods.push(m);
+    if (this.paramMods.length > 10) this.paramMods.shift();
+  }
+
+  expire() {
+    if (this.entities.some((e) => e.until <= this.t)) this.entities = this.entities.filter((e) => e.until > this.t);
+    if (this.paramMods.some((m) => m.until <= this.t)) this.paramMods = this.paramMods.filter((m) => m.until > this.t);
+  }
+
+  abilityList(a) {
+    const abs = a.abilities.map((id) => findAbility(this.spec, id)).filter(Boolean);
+    return abs.length ? `${a.name}会的能力：\n${abs.map((ab) => `- ${describeAbility(this, a, ab)}`).join('\n')}\n` : '';
+  }
+
+  /** 规划 / 重新规划时告诉 LLM：会什么、有什么、可以做哪些行动 */
+  actionBlock(a) {
+    const inv = Object.entries(a.inventory).map(([k, n]) => `${this.spec.items[k]?.emoji || ''}${this.spec.items[k]?.name || k}×${n}（${k}）`).join('、');
+    const labs = [...new Set(this.spec.abilities.filter((ab) => ab.learn?.research && !a.abilities.includes(ab.id)).map((ab) => ab.learn.research.location))];
+    const teachable = a.abilities.map((id) => findAbility(this.spec, id)).filter((ab) => ab?.learn?.teach).map((ab) => ab.id);
+    return `${this.abilityList(a)}${inv ? `身上的物品：${inv}\n` : ''}${labs.length ? `在${labs.map((l) => `${this.locName(l)}（${l}）`).join('、')}钻研合适的课题，也许能学会新本事。\n` : ''}日程条目可以附带一个可选的 act 字段（没有就不写）：
+{"type":"use","ability":"能力id","target":"对象姓名"} 使用能力（要在合适的地点；对别人使用时要和对方在同一地点）
+{"type":"give","item":"物品id","to":"姓名","count":1} 把身上的东西送人（要和对方在同一地点）
+${teachable.length ? `{"type":"teach","ability":"能力id","to":"姓名"} 把会的本事教给别人（可教：${teachable.join('、')}）\n` : ''}{"type":"research","topic":"课题"} 在当前地点研究一个课题（至少一小时）
+`;
   }
 
   // ---------- 认知：内心独白 ----------
@@ -446,7 +639,8 @@ ${this.nearbyText(a)}
 相关记忆：
 ${this.memBlock(a, `${a.action.text} ${this.locName(a.locId)} ${a.goal}`, 8)}
 
-请生成${a.name}此刻的状态。输出 JSON：{"thought":"内心独白（≤40字，真实细腻，可涉及目标、他人、回忆）","action":"此刻具体在做的事（≤14字）","emoji":"一个表示动作的emoji","mood":"两字心情","moodEmoji":"一个emoji"}`,
+${this.abilityList(a)}
+请生成${a.name}此刻的状态。输出 JSON：{"thought":"内心独白（≤40字，真实细腻，可涉及目标、他人、回忆）","action":"此刻具体在做的事（≤14字）","emoji":"一个表示动作的emoji","mood":"两字心情","moodEmoji":"一个emoji"${a.abilities.length ? ',"use":null 或 {"ability":"能力id","target":"身边某人的姓名，不需要对象时为null"}（只有此刻真的合适才使用能力）' : ''}}`,
         },
       ], { label: '内心独白', agent: a.name, maxTokens: 2500, timeoutMs: 60_000, attempts: 1, tier: 'fast' }));
       a.thought = clampStr(res.thought, 80);
@@ -457,6 +651,11 @@ ${this.memBlock(a, `${a.action.text} ${this.locName(a.locId)} ${a.goal}`, 8)}
       if (a.thought && !a.convoId && a.status === 'acting') this.say(a, a.thought, 5500, 'think');
       addMemory(a, { t: this.t, type: 'thought', text: a.thought, importance: 2 });
       this.log('thought', a.thought, { agents: [a.id] });
+      // 居民自主决定使用能力
+      if (res.use && typeof res.use === 'object' && res.use.ability && a.status === 'acting' && !a.convoId) {
+        const r = useAbility(this, a, String(res.use.ability), res.use.target ? String(res.use.target) : null);
+        if (!r.ok) console.log(`[ability] ${a.name} 想用 ${res.use.ability} 未成功：${r.reason}`);
+      }
       this.maybeReflect(a);
     } catch (err) {
       console.warn(`[thought] ${a.name}：`, err.message);
@@ -574,7 +773,7 @@ ${recent.length ? `\n他们最近聊过：${recent.map((c) => c.summary).join('�
 "noteA":"${a.name}现在对${b.name}的看法（≤25字）","noteB":"${b.name}现在对${a.name}的看法（≤25字）",
 "importance":这段对话的重要程度(1~10),
 "commitments":[{"who":["${a.name}"],"time":"HH:MM","location":"地点id","activity":"≤14字","emoji":"一个emoji"}]}
-commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22:30之前的约定或新计划，没有就给空数组。`;
+commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22:30之前的约定或新计划，没有就给空数组。约定里要送东西、教本事、使用能力时，可以加 act 字段（格式同日程的 act）。`;
   }
 
   finishConvo(convo, a, b, res) {
@@ -783,7 +982,7 @@ ${this.memBlock(a, news, 8)}
 原本接下来的安排：${rest.map((e) => `${fmtTime(e.start)}-${fmtTime(e.end)} ${e.location} ${e.activity}`).join('；') || '无'}
 可去的地点：
 ${this.locListText()}
-
+${this.actionBlock(a)}
 ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22:30的日程（可保留原有安排，也可因消息调整）。
 输出 JSON：{"reaction":"脱口而出的一句话（≤30字）","thought":"内心想法（≤40字）","schedule":[{"start":"HH:MM","end":"HH:MM","location":"id","activity":"≤14字","emoji":"一个emoji"}]}`,
         },
@@ -819,6 +1018,12 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
       relations: Object.entries(a.relations).map(([oid, r]) => ({ id: oid, name: this.byId[oid]?.name, ...r })).sort((x, y) => y.affinity - x.affinity),
       diary: a.diary.slice().reverse(),
       chat: a.visitorChats[vid] || [],
+      body: { ...a.body, stamina: Math.round(a.body.stamina), courage: Math.round(a.body.courage) },
+      inventory: Object.entries(a.inventory).map(([k, n]) => ({ id: k, n, name: this.spec.items[k]?.name || k, emoji: this.spec.items[k]?.emoji || '📦' })),
+      abilities: a.abilities.map((k) => findAbility(this.spec, k)).filter(Boolean).map((ab) => ({
+        id: ab.id, name: ab.name, emoji: ab.emoji, desc: ab.desc, cooldown: Math.max(0, Math.ceil((a.cooldowns?.[ab.id] || 0) - this.t)),
+      })),
+      researching: a.researching?.topic || null,
     };
   }
 
@@ -877,10 +1082,10 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
     try {
       fs.mkdirSync(this.dataDir, { recursive: true });
       const agents = this.agents.map((a) => {
-        const { path: _p, dest: _d, curKey: _k, curEntry: _e, bubble: _b, thinking: _t, thinkingLabel: _l, reflecting: _r, convoId: _c, chatBusy: _cb, visitorChat: _vc, ...rest } = a;
+        const { path: _p, dest: _d, curKey: _k, curEntry: _e, bubble: _b, thinking: _t, thinkingLabel: _l, reflecting: _r, convoId: _c, chatBusy: _cb, visitorChat: _vc, pendingAct: _pa, actKey: _ak, ...rest } = a;
         return rest;
       });
-      const data = { v: SAVE_VERSION, t: this.t, weather: this.weather, weatherLock: this.weatherLock, specOps: this.specOps, agents, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens } };
+      const data = { v: SAVE_VERSION, t: this.t, weather: this.weather, weatherLock: this.weatherLock, specOps: this.specOps, agents, entities: this.entities, worldFlags: this.worldFlags, paramMods: this.paramMods, ruleState: this.ruleState, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens } };
       const text = JSON.stringify(data);
       fs.writeFileSync(this.saveFile + '.tmp', text);
       fs.renameSync(this.saveFile + '.tmp', this.saveFile);
@@ -914,6 +1119,7 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
       }
       Object.assign(this, { t: d.t, weather: Object.hasOwn(this.spec.weather, d.weather) ? d.weather : 'sunny', weatherLock: d.weatherLock, logs: d.logs || [], convoLog: d.convoLog || [], newspapers: d.newspapers || [], board: d.board || [], pairCd: d.pairCd || {}, flags: d.flags || {}, seq: d.seq || 0 });
       this.nextWeatherT = this.t + 60;
+      Object.assign(this, { entities: d.entities || [], worldFlags: d.worldFlags || {}, paramMods: d.paramMods || [], ruleState: d.ruleState || { every: {}, at: {} } });
       // 恢复当日令牌用量，避免重启后预算被重置
       if (d.llmDay?.key === new Date().toISOString().slice(0, 10)) { llm.stats.dayKey = d.llmDay.key; llm.stats.dayTokens = Math.max(llm.stats.dayTokens, d.llmDay.tokens || 0); }
       const personas = Object.fromEntries(this.spec.personas.map((p) => [p.id, p]));
@@ -921,8 +1127,17 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
         const a = this.byId[saved.id];
         if (!a) continue;
         const p = personas[saved.id];
+        const kit = { inventory: { ...a.inventory }, abilities: [...a.abilities] };
         // 基础人设以世界规格为准；经历带来的变化记录在 growth 里，不会被覆盖
         Object.assign(a, saved, { look: p.look, persona: p.persona, role: p.role, home: p.home, work: p.work });
+        if (!saved.kit) {
+          // 早于 P1 的存档：补发初始物品与能力
+          for (const [k, n] of Object.entries(kit.inventory)) a.inventory[k] = (a.inventory[k] || 0) + n;
+          a.abilities = [...new Set([...(a.abilities || []), ...kit.abilities])];
+          a.kit = 1;
+        }
+        a.cooldowns ||= {};
+        a.abilities = a.abilities.filter((id) => findAbility(this.spec, id));
         a.visitorChats ||= {};
         delete a.visitorChat;
         Object.assign(a, { chatBusy: false, path: [], dest: null, curKey: null, thinking: 0, thinkingLabel: '', convoId: null, bubble: null, reflecting: false });

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Town, llmPublic } from './sim.js';
 import * as llm from './llm.js';
+import { useAbility } from './kernel/abilities.js';
 import { config, clientIp, isAdmin, visitorId, limits, sanitize, moderate } from './guard.js';
 
 const PORT = Number(process.env.PORT || 3000);
@@ -33,6 +34,7 @@ function wire(t) {
   t.on('agent', (id) => broadcast('agent', { id }));
   t.on('newspaper', (p) => broadcast('newspaper', p));
   t.on('world', (w) => broadcast('world', w));
+  t.on('vfx', (v) => broadcast('vfx', v));
   t.start();
 }
 wire(town);
@@ -208,6 +210,16 @@ async function handleApi(req, res, url, ip) {
     if (!b.op || typeof b.op !== 'string') throw new HttpError(400, '缺少 op');
     const rec = town.applyWorldOp({ op: b.op, args: b.args && typeof b.args === 'object' ? b.args : {} }, { by: 'admin' });
     return json(res, 200, { ok: true, op: rec });
+  }
+
+  // 让某位居民立即使用一项能力（仅管理员，用于演示与排查）
+  if (p === '/api/ability') {
+    requireAdmin(req);
+    const agent = town.byId[String(b.id)];
+    if (!agent) throw new HttpError(404, '居民不存在');
+    const r = useAbility(town, agent, String(b.ability || ''), b.target ? sanitize(b.target, 12) : null, '（管理员指示）');
+    if (!r.ok) throw new HttpError(422, r.reason);
+    return json(res, 200, { ok: true });
   }
 
   if (p === '/api/newspaper') {

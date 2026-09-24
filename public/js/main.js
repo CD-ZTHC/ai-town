@@ -111,6 +111,7 @@ function connect() {
   es.addEventListener('log', (e) => UI.onLog(JSON.parse(e.data)));
   es.addEventListener('agent', (e) => UI.onAgentChanged(JSON.parse(e.data).id));
   es.addEventListener('newspaper', (e) => UI.onNewspaper(JSON.parse(e.data)));
+  es.addEventListener('vfx', (e) => renderer.addVfx(JSON.parse(e.data)));
   es.addEventListener('world', (e) => {
     const w = JSON.parse(e.data);
     app.spec = w.spec;
@@ -286,7 +287,7 @@ function loop(now) {
     const winfo = app.weathers[weatherId] || {};
     const S = {
       cam: app.cam, t: tt, day, weather: winfo.render?.base || weatherId, weatherId, weatherTint: winfo.render?.tint ? winfo.render : null,
-      agents, agentMap, occupancy, convos: s.convos,
+      agents, agentMap, occupancy, convos: s.convos, entities: s.entities || [],
       selected: app.selected, hover: app.hover, boardCount: app.board.length,
       festival: app.forceFestival || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns'),
     };

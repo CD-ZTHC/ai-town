@@ -3,6 +3,8 @@
 import { PERSONAS, TOWN_LORE } from '../personas.js';
 import { BUILDINGS, LOCATION_INFO } from '../world.js';
 import { parseHM } from '../memory.js';
+import { validateAbility } from './abilities.js';
+import { validateRule } from './rules.js';
 
 export const SPEC_VERSION = 2;
 export const RATINGS = ['cozy', 'adventure', 'epic'];
@@ -20,6 +22,115 @@ export const PARAM_BOUNDS = {
 const PUBLIC_LOCS = ['cafe', 'library', 'tavern', 'clinic', 'workshop', 'square', 'market', 'park', 'farm', 'pier'];
 
 const clone = (x) => structuredClone(x);
+
+// ---------- 默认内容：物品、构筑物、能力、规则（都可以被 WorldOp 扩充）----------
+const DEFAULT_ITEMS = () => ({
+  lantern: { name: '萤火灯', emoji: '🏮', desc: '竹骨纸面的小灯，萤火节必备' },
+  wood: { name: '木材', emoji: '🪵', desc: '工坊和农场常用的木料' },
+  herb: { name: '草药', emoji: '🌿', desc: '周医生常备的安神草药' },
+  melon: { name: '西瓜', emoji: '🍉', desc: '陈家农场的西瓜，镇上最甜' },
+});
+
+const DEFAULT_STRUCTURES = () => ({
+  light_ward: { name: '萤火结界', emoji: '🏮', tags: ['light'], ttl: 90, light: { r: 110, color: '255,205,110' } },
+});
+
+const DEFAULT_ABILITIES = () => [
+  {
+    id: 'firefly_ward', name: '萤火结界', emoji: '🏮', target: 'area',
+    desc: '点起一圈萤火灯，让周围亮堂起来、让人安心',
+    aiHint: '夜里、雾天或有人害怕时，在户外使用',
+    cost: { stamina: 15, items: { lantern: 1 } }, cooldown: 120,
+    requires: '!self.inside',
+    effects: [
+      { op: 'spawn', structure: 'light_ward', ttl: 90 },
+      { op: 'vfx', preset: 'glow_ring', color: '#ffd76a', radius: 3 },
+      { op: 'stat', stat: 'courage', add: 6, target: 'nearby', radius: 3, includeSelf: true },
+      { op: 'memory', text: '{self}点起了一圈萤火灯，四周一下子亮了', target: 'nearby', radius: 3, importance: 4 },
+    ],
+    learn: { teach: true, research: { location: 'library', keywords: ['萤火', '灯', '结界', '传说', '镜湖'] } },
+  },
+  {
+    id: 'warm_coffee', name: '暖心咖啡', emoji: '☕', target: 'agent',
+    desc: '亲手冲一杯对方爱喝的咖啡',
+    aiHint: '朋友疲惫或心情低落时',
+    cost: { stamina: 5 }, cooldown: 60, requires: "self.loc == 'cafe'",
+    effects: [
+      { op: 'stat', stat: 'stamina', add: 15, target: 'target' },
+      { op: 'affinity', toward: 'self', delta: 2, target: 'target' },
+      { op: 'memory', text: '{self}给我冲了一杯咖啡，暖暖的', target: 'target', importance: 3 },
+      { op: 'vfx', preset: 'sparkle', color: '#c48a5a', radius: 1 },
+    ],
+    learn: { teach: true },
+  },
+  {
+    id: 'checkup', name: '问诊', emoji: '🩺', target: 'agent',
+    desc: '给对方做个简单检查，叮嘱注意身体',
+    aiHint: '发现有人疲惫、受惊或身体不适时',
+    cost: { stamina: 10 }, cooldown: 90,
+    effects: [
+      { op: 'condition', remove: '疲惫', target: 'target' },
+      { op: 'condition', remove: '受惊', target: 'target' },
+      { op: 'stat', stat: 'stamina', add: 10, target: 'target' },
+      { op: 'memory', text: '{self}给我做了检查，叮嘱我注意身体', target: 'target', importance: 4 },
+      { op: 'vfx', preset: 'heal', color: '#7fd6a0', radius: 1 },
+    ],
+  },
+  {
+    id: 'moon_song', name: '月光之歌', emoji: '🎶', target: 'area',
+    desc: '轻轻唱一首流浪时学会的歌',
+    aiHint: '傍晚在酒馆或广场，大家需要鼓舞时',
+    cost: { stamina: 15 }, cooldown: 180, requires: 'hour >= 17',
+    effects: [
+      { op: 'stat', stat: 'courage', add: 8, target: 'nearby', radius: 4 },
+      { op: 'memory', text: '听{self}唱了一首歌，心里暖暖的', target: 'nearby', radius: 4, importance: 4 },
+      { op: 'vfx', preset: 'notes', color: '#b58cff', radius: 3 },
+    ],
+    learn: { teach: true },
+  },
+  {
+    id: 'craft_lantern', name: '扎萤火灯', emoji: '🔨', target: 'self',
+    desc: '用木材扎一盏萤火灯',
+    aiHint: '在工坊、有木材时，为萤火节或结界备灯',
+    cost: { stamina: 10, items: { wood: 2 } }, cooldown: 60, requires: "self.loc == 'workshop'",
+    effects: [
+      { op: 'giveItem', item: 'lantern', count: 1 },
+      { op: 'vfx', preset: 'burst', color: '#ffb347', radius: 1 },
+    ],
+    learn: { teach: true },
+  },
+  {
+    id: 'old_tale', name: '讲古', emoji: '📜', target: 'agent',
+    desc: '给对方讲一段云溪镇的老故事',
+    aiHint: '和年轻人闲坐、对方好奇过去时',
+    cost: { stamina: 5 }, cooldown: 120,
+    effects: [
+      { op: 'memory', text: '{self}给我讲了一段镜湖的老故事', target: 'target', importance: 5 },
+      { op: 'stat', stat: 'courage', add: 3, target: 'target' },
+      { op: 'affinity', toward: 'self', delta: 2, target: 'target' },
+    ],
+  },
+  {
+    id: 'pick_melon', name: '摘西瓜', emoji: '🍉', target: 'self',
+    desc: '从瓜田里挑一个熟透的西瓜',
+    aiHint: '在农场、想送人西瓜时',
+    cost: { stamina: 8 }, cooldown: 90, requires: "self.loc == 'farm'",
+    effects: [{ op: 'giveItem', item: 'melon', count: 1 }],
+  },
+];
+
+const DEFAULT_RULES = () => [
+  {
+    id: 'ward_comfort', name: '萤火安神', when: { every: 30 }, forEach: 'agent',
+    if: "e.status != 'sleeping' && nearStructure(e, 'light', 3)",
+    then: [{ op: 'stat', stat: 'courage', add: 2, target: 'e' }, { op: 'stat', stat: 'stamina', add: 1, target: 'e' }],
+  },
+  {
+    id: 'rain_tired', name: '淋雨疲惫', when: { every: 60 }, forEach: 'agent',
+    if: "(weather == 'rain' || weather == 'storm') && !e.inside && e.status != 'sleeping'",
+    then: [{ op: 'stat', stat: 'stamina', add: -3, target: 'e' }],
+  },
+];
 
 export function defaultSpec(env = process.env) {
   const rating = RATINGS.includes(env.STORY_RATING) ? env.STORY_RATING : 'cozy';
@@ -57,9 +168,10 @@ export function defaultSpec(env = process.env) {
     buildings: clone(BUILDINGS),
     personas: clone(PERSONAS),
     creatures: [],
-    items: [],
-    abilities: [],
-    rules: [],
+    items: DEFAULT_ITEMS(),
+    structures: DEFAULT_STRUCTURES(),
+    abilities: DEFAULT_ABILITIES(),
+    rules: DEFAULT_RULES(),
     factions: [],
     arcs: [],
     params: { walkSpeed: 3.2, maxConvos: 3, convoBaseProb: 0.22, reflectThreshold: 40, dayEnd: 22 * 60 + 30 },
@@ -116,6 +228,32 @@ export function validateSpec(s) {
     if (!isStr(l.name, 16)) err(`locations.${id}`, 'name 缺失或过长');
   }
 
+  const items = s.items || {};
+  for (const [id, it] of Object.entries(items)) {
+    if (!/^[a-z][a-z0-9_]{1,23}$/.test(id)) err(`items.${id}`, 'id 不合法');
+    if (!isStr(it.name, 8) || !isStr(it.emoji, 8)) err(`items.${id}`, 'name/emoji 缺失');
+  }
+  for (const [id, st] of Object.entries(s.structures || {})) {
+    if (!/^[a-z][a-z0-9_]{1,23}$/.test(id)) err(`structures.${id}`, 'id 不合法');
+    if (!isStr(st.name, 8) || !isStr(st.emoji, 8)) err(`structures.${id}`, 'name/emoji 缺失');
+    if (!Array.isArray(st.tags)) err(`structures.${id}`, 'tags 应为数组');
+    if (st.light && !(st.light.r >= 20 && st.light.r <= 160 && /^\d{1,3},\d{1,3},\d{1,3}$/.test(st.light.color))) err(`structures.${id}`, 'light 不合法');
+  }
+  const abIds = new Set();
+  for (const ab of s.abilities || []) {
+    if (abIds.has(ab.id)) err(`abilities.${ab.id}`, 'id 重复');
+    abIds.add(ab.id);
+    const e = validateAbility(ab, s);
+    if (e) err(`abilities.${ab.id}`, e);
+  }
+  const ruleIds = new Set();
+  for (const r of s.rules || []) {
+    if (ruleIds.has(r.id)) err(`rules.${r.id}`, 'id 重复');
+    ruleIds.add(r.id);
+    const e = validateRule(r, s);
+    if (e) err(`rules.${r.id}`, e);
+  }
+
   const pIds = new Set();
   for (const p of s.personas || []) {
     const path = `personas.${p.id}`;
@@ -126,6 +264,8 @@ export function validateSpec(s) {
     if (!bIds.has(p.home)) err(path, `home 不是建筑：${p.home}`);
     if (!locs[p.work] && !bIds.has(p.work)) err(path, `work 不存在：${p.work}`);
     if (!p.look || typeof p.look !== 'object') err(path, '缺少 look');
+    for (const id of p.start?.abilities || []) if (!abIds.has(id)) err(path, `初始能力不存在：${id}`);
+    for (const id of Object.keys(p.start?.inventory || {})) if (!Object.hasOwn(items, id)) err(path, `初始物品不存在：${id}`);
   }
   for (const p of s.personas || []) {
     for (const rid of Object.keys(p.relations || {})) if (!pIds.has(rid)) err(`personas.${p.id}.relations`, `未知居民：${rid}`);
@@ -179,5 +319,10 @@ export function pickWeather(spec, minute, rnd = Math.random) {
 
 /** 前端需要的规格子集 */
 export function publicSpec(spec) {
-  return { meta: spec.meta, calendar: spec.calendar, weather: spec.weather, canon: spec.lore.canon };
+  return {
+    meta: spec.meta, calendar: spec.calendar, weather: spec.weather, canon: spec.lore.canon,
+    items: spec.items, structures: spec.structures,
+    abilities: spec.abilities.map(({ id, name, emoji, desc, target }) => ({ id, name, emoji, desc, target })),
+    rules: spec.rules.map(({ id, name }) => ({ id, name })),
+  };
 }
