@@ -162,6 +162,11 @@ const KINDS = {
     },
     run(town, b) { town.creatures.spawn(b.type, b.count, b.goal); },
   },
+  region: {
+    privileged: true,
+    check(b, town) { return b.id !== 'town' && Object.hasOwn(town.regions || {}, b.id || '') ? null : `未知区域：${b.id}`; },
+    run(town, b) { town.openRegion(b.id, b.open !== false); },
+  },
   dismissCreatures: {
     privileged: true,
     check() { return null; },

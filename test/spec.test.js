@@ -29,7 +29,7 @@ test('由规格生成的地图与原地图逐格一致', () => {
 test('居民、公共地点与重构前一致', () => {
   const s = defaultSpec({});
   assert.deepEqual(s.personas, PERSONAS);
-  const pub = Object.keys(s.locations).filter((id) => s.locations[id].public);
+  const pub = Object.keys(s.locations).filter((id) => s.locations[id].public && !s.locations[id].region);
   assert.deepEqual(pub, ['cafe', 'library', 'tavern', 'clinic', 'workshop', 'square', 'market', 'park', 'farm', 'pier']);
 });
 

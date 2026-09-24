@@ -39,6 +39,7 @@ export const stats = {
   dayTokens: 0,
   dailyBudget: DAILY_BUDGET,
   recent: [], // {label, agent, ms, ok, at}
+  byLabel: {}, // 按模块统计：{ 规划一天: { calls, fails, tokens, ms } }
   active: [], // {id, label, agent, since}
 };
 
@@ -169,6 +170,10 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
         stats.completionTokens += data.usage?.completion_tokens || 0;
         rollDay();
         stats.dayTokens += (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
+        const u = (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0 });
+        u.calls++;
+        u.tokens += (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
+        u.ms += Date.now() - started;
         if (!content.trim()) throw new Error(`空回复 (finish_reason=${data.choices?.[0]?.finish_reason})`);
         const ms = Date.now() - started;
         backoff = Math.max(0, backoff - 1);
@@ -202,6 +207,7 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
     stats.errors++;
     stats.lastError = String(lastErr?.message || lastErr).slice(0, 200);
     pushRecent({ label, agent, ms: Date.now() - started, ok: false });
+    (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0 }).fails++;
     throw lastErr;
   } finally {
     stats.active = stats.active.filter((a) => a.id !== id);

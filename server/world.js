@@ -1,8 +1,9 @@
 // 云溪镇地图生成：瓦片、建筑、装饰物、地点与站位点（确定性随机，前后端共享同一份数据）
 export const T = {
   GRASS: 0, PATH: 1, PLAZA: 2, DIRT: 3, WATER: 4, SAND: 5, BRIDGE: 6, SOIL: 7, WOOD: 8, DEEP: 9, FLOWER: 10,
+  MOON: 11, VOID: 12, MOONPATH: 13, // 暗月界：月砂地、星空虚空、月光小径
 };
-const WALKABLE = new Set([T.GRASS, T.PATH, T.PLAZA, T.DIRT, T.SAND, T.BRIDGE, T.SOIL, T.WOOD, T.FLOWER]);
+const WALKABLE = new Set([T.GRASS, T.PATH, T.PLAZA, T.DIRT, T.SAND, T.BRIDGE, T.SOIL, T.WOOD, T.FLOWER, T.MOON, T.MOONPATH]);
 
 function mulberry32(a) {
   return function () {
@@ -330,7 +331,78 @@ export function buildWorld({ buildings: buildingDefs = BUILDINGS, locationInfo =
   const walk = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) walk[i] = reach[i] ? 1 : 0;
 
-  return { W, H, tiles, walk, objects, buildings, locations, lamps, overlayErrors };
+  // gate：通往其他区域（暗月界）的渡口位置，与裂隙的出怪点相同
+  return { id: 'town', W, H, tiles, walk, objects, buildings, locations, lamps, overlayErrors, gate: { x: 51, y: 37 } };
+}
+
+// ---------- 区域生成器 moonrealm-v1：暗月界（裂隙另一头的口袋地图）----------
+export const MOON_LOCATIONS = {
+  moon_gate: { name: '月之渡口·彼岸', emoji: '🌗', desc: '裂隙另一头的渡口，脚下是泛着微光的月砂', public: true, region: 'moonrealm' },
+  moon_plaza: { name: '暗月广场', emoji: '🌑', desc: '月井旁的小广场，影灵们提着灯在这里散步', public: true, region: 'moonrealm' },
+  moon_garden: { name: '月光花园', emoji: '🌸', desc: '只在月光下开放的花，一碰就会发光', public: true, region: 'moonrealm' },
+  moon_lookout: { name: '星坠崖', emoji: '✨', desc: '能同时看见两个月亮的崖边，据说是许愿的地方', public: true, region: 'moonrealm' },
+};
+
+export function buildMoonRealm() {
+  const W = 36, H = 26;
+  const rnd = mulberry32(19260404);
+  const tiles = new Array(W * H).fill(T.VOID);
+  const solid = new Uint8Array(W * H);
+  const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+  const get = (x, y) => (inb(x, y) ? tiles[y * W + x] : -1);
+  const set = (x, y, t) => inb(x, y) && (tiles[y * W + x] = t);
+  const objects = [];
+  const lamps = [];
+  const obj = (o) => { objects.push(o); for (let y = o.y; y < o.y + (o.h || 1); y++) for (let x = o.x; x < o.x + (o.w || 1); x++) if (inb(x, y)) solid[y * W + x] = 1; };
+  // 漂浮的月岛
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const dx = (x - 18) / 15.5, dy = (y - 12.5) / 10.8;
+    if (dx * dx + dy * dy + Math.sin(x * 0.9) * 0.05 + Math.cos(y * 1.3) * 0.05 < 1) set(x, y, T.MOON);
+  }
+  // 月光小径
+  for (let x = 5; x <= 31; x++) set(x, 13, T.MOONPATH);
+  for (let y = 4; y <= 22; y++) set(18, y, T.MOONPATH);
+  for (let x = 18; x <= 27; x++) set(x, 7, T.MOONPATH);
+  // 月井、月灯
+  obj({ type: 'moonwell', x: 17, y: 10, w: 2, h: 2 });
+  for (const [x, y] of [[15, 12], [21, 12], [17, 18], [19, 18], [10, 12], [26, 12], [24, 6]]) {
+    if (get(x, y) === T.MOON) { obj({ type: 'lamp', x, y }); lamps.push({ x, y }); }
+  }
+  // 月光花园
+  for (let i = 0; i < 16; i++) {
+    const x = 5 + Math.floor(rnd() * 8), y = 9 + Math.floor(rnd() * 9);
+    if (get(x, y) === T.MOON && !solid[y * W + x]) objects.push({ type: 'moonflower', x, y, v: rnd() });
+  }
+  // 水晶散落在岛的边缘
+  for (let i = 0; i < 40; i++) {
+    const x = Math.floor(rnd() * W), y = Math.floor(rnd() * H);
+    if (get(x, y) !== T.MOON || solid[y * W + x]) continue;
+    let edge = false;
+    for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0], [2, 0], [-2, 0], [0, 2]]) if (get(x + dx, y + dy) === T.VOID) edge = true;
+    const nearPath = [[0, 1], [0, -1], [1, 0], [-1, 0]].some(([dx, dy]) => get(x + dx, y + dy) === T.MOONPATH);
+    if (edge && !nearPath) obj({ type: 'crystal', x, y, v: rnd() });
+  }
+  const locations = {};
+  const addLoc = (id, rect, spots) => { locations[id] = { id, ...MOON_LOCATIONS[id], rect, spots: spots.map(([x, y]) => ({ x, y })) }; };
+  addLoc('moon_gate', { x: 15, y: 19, w: 7, h: 4 }, [[18, 21], [17, 21], [19, 21], [17, 20], [19, 20]]);
+  addLoc('moon_plaza', { x: 14, y: 9, w: 9, h: 7 }, [[16, 10], [20, 10], [16, 13], [20, 13], [17, 14], [19, 14], [18, 9]]);
+  addLoc('moon_garden', { x: 4, y: 8, w: 9, h: 10 }, [[7, 11], [9, 13], [6, 14], [10, 10], [8, 16], [11, 15]]);
+  addLoc('moon_lookout', { x: 24, y: 4, w: 8, h: 6 }, [[27, 6], [29, 7], [26, 8], [30, 6]]);
+  // 连通性：从渡口出发可达的格子
+  const walk = new Uint8Array(W * H);
+  const q = [[18, 21]];
+  walk[21 * W + 18] = 1;
+  while (q.length) {
+    const [x, y] = q.pop();
+    for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+      const nx = x + dx, ny = y + dy;
+      if (!inb(nx, ny) || walk[ny * W + nx] || solid[ny * W + nx] || !WALKABLE.has(get(nx, ny))) continue;
+      walk[ny * W + nx] = 1;
+      q.push([nx, ny]);
+    }
+  }
+  for (const l of Object.values(locations)) l.spots = l.spots.filter((s) => walk[s.y * W + s.x]);
+  return { id: 'moonrealm', name: '暗月界', W, H, tiles, walk, objects, buildings: [], locations, lamps, overlayErrors: {}, gate: { x: 18, y: 21 } };
 }
 
 // A* 寻路（4 邻接）

@@ -207,7 +207,10 @@ for (const [choice, check] of [
     assert.equal(t.portalState.stage, 'stable');
     assert.equal(t.portalState.name, '月之渡口');
     assert.ok(t.spec.calendar.events.some((e) => e.id === 'double_moon'), '新增双月节');
-    assert.ok(t.creatures.list.length === 1 && t.creatures.list[0].friendly, '留下一只友善的小影灵');
+    const home = t.creatures.list.filter((c) => (c.region || 'town') === 'town');
+    assert.ok(home.length === 1 && home[0].friendly, '留下一只友善的小影灵');
+    assert.ok(t.regionOpen('moonrealm'), '暗月界向小镇敞开');
+    assert.equal(t.creatures.list.filter((c) => c.region === 'moonrealm' && c.friendly).length, 3, '暗月界里有三只友善的小家伙');
   }],
   ['outwit', (t) => { assert.equal(t.threadState.balloon.status, 'resolved'); assert.ok(t.agents.some((a) => a.id === 'aying')); }],
 ]) {

@@ -27,6 +27,9 @@ export function exprText() {
 函数：${Object.values(EXPR_FN_DOCS).join('；')}`;
 }
 
+const townLocs = (spec) => Object.entries(spec.locations).filter(([, l]) => !l.region);
+const farLocs = (spec) => Object.entries(spec.locations).filter(([, l]) => l.region);
+
 /** 架构师提示词里的能力清单 */
 export function manifestText(spec, day = 1) {
   return `可用操作（ops 数组中每项为 {"op":"…","args":{…}}，只能用这些：${Object.keys(OP_DOCS).join('、')}）：
@@ -35,7 +38,8 @@ ${Object.entries(OP_DOCS).map(([k, v]) => `- ${k} ${v.replace('必须大于今�
 ${effectsText()}
 表达式：
 ${exprText()}
-现有地点：${Object.entries(spec.locations).map(([id, l]) => `${id}(${l.name})`).join('、')}
+现有地点：${townLocs(spec).map(([id, l]) => `${id}(${l.name})`).join('、')}${farLocs(spec).length ? `
+异界地点（只能作为日程/节日地点，不能在那边建房）：${farLocs(spec).map(([id, l]) => `${id}(${l.name})`).join('、')}` : ''}
 现有物品：${Object.entries(spec.items).map(([id, i]) => `${id}(${i.name})`).join('、')}
 现有构筑物：${Object.entries(spec.structures).map(([id, x]) => `${id}(${x.name})`).join('、')}
 现有能力：${spec.abilities.map((a) => `${a.id}(${a.name})`).join('、')}
@@ -70,7 +74,8 @@ ${Object.entries(EXPR_FN_DOCS).map(([k, v]) => `- \`${k}\`：${v}`).join('\n')}
 - 特效预设：${VFX.join('、')}
 - 生物体型：${BODY_PLANS.join('、')}
 - 可调参数：${Object.entries(PARAM_BOUNDS).map(([k, [a, b]]) => `\`${k}\`（${a}~${b}）`).join('、')}
-- 地点：${Object.entries(spec.locations).map(([id, l]) => `\`${id}\` ${l.name}`).join('、')}
+- 地点：${townLocs(spec).map(([id, l]) => `\`${id}\` ${l.name}`).join('、')}
+- 异界地点（不能建房）：${farLocs(spec).map(([id, l]) => `\`${id}\` ${l.name}（${l.region}）`).join('、') || '（无）'}
 - 物品：${Object.entries(spec.items).map(([id, i]) => `\`${id}\` ${i.name}`).join('、')}
 - 能力：${spec.abilities.map((a) => `\`${a.id}\` ${a.name}`).join('、')}
 

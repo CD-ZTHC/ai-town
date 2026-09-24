@@ -26,7 +26,7 @@ export function exprEnv(town, { self = null, target = null, e = null } = {}) {
     hasCondition: (v, name) => Boolean(real(v)?.body.conditions.includes(name)),
     nearStructure: (v, tag, r = 3) => {
       const p = posOf(town, real(v));
-      return Boolean(p) && town.entities.some((s) => s.tags.includes(tag) && Math.hypot(s.x - p.x, s.y - p.y) <= r);
+      return Boolean(p) && town.entities.some((s) => s.tags.includes(tag) && (s.region || 'town') === p.region && Math.hypot(s.x - p.x, s.y - p.y) <= r);
     },
     nearAgents: (v, r = 3) => { const a = real(v); return a ? agentsNear(town, posOf(town, a), r, a).length : 0; },
     min: Math.min, max: Math.max, abs: Math.abs, rand: Math.random,

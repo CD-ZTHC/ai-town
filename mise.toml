@@ -14,7 +14,7 @@ run = "node --watch-path=server server/index.js"
 
 [tasks.reset]
 description = "清空存档，小镇从第一天重新开始"
-run = "rm -f data/save.json && echo '存档已清除'"
+run = "rm -rf data/save.json data/timelines data/timelines.json && echo '存档与时间线已清除'"
 
 [tasks.public]
 description = "以公网模式启动（需在 .env 中设置 ADMIN_TOKEN）"
@@ -43,6 +43,10 @@ run = "node tools/evolve.js"
 [tasks.manifest]
 description = "重新生成能力清单 docs/capabilities.md"
 run = "node tools/manifest.js"
+
+[tasks.export-mod]
+description = "把存档里 AI 创造的内容导出成 Mod（例：mise run export-mod -- --id my-mod --name 我的小镇）"
+run = "node tools/export-mod.js"
 
 [tasks.spec]
 description = "打印当前默认世界规格（JSON）"

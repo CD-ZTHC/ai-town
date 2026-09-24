@@ -396,3 +396,14 @@ button.mini.adm { background: rgba(255, 184, 107, 0.2); color: var(--accent); }
 .gap.adopted { border-left-color: var(--good); }
 .gap.ignored { opacity: 0.55; }
 .gap .badge { margin-left: 6px; font-size: 11px; padding: 0 7px; border-radius: 8px; background: rgba(255, 255, 255, 0.08); }
+
+/* ---------- P6：异界区域 / 访客化身 / 时间线 ---------- */
+.chip.region { cursor: pointer; background: linear-gradient(90deg, rgba(123, 92, 214, 0.35), rgba(60, 40, 110, 0.35)); border: 1px solid rgba(181, 140, 255, 0.5); color: var(--text); }
+.chip.region.live { background: linear-gradient(90deg, rgba(255, 214, 102, 0.25), rgba(90, 209, 195, 0.18)); border-color: rgba(255, 214, 102, 0.5); }
+body.moon-view #minimap-wrap { box-shadow: 0 0 0 2px rgba(181, 140, 255, 0.55), 0 8px 24px rgba(0, 0, 0, 0.4); }
+.av-colors { display: flex; gap: 6px; align-items: center; }
+.av-c { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.av-c.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 214, 102, 0.7); }
+.av-locs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+#av-name, #tl-name { flex: 1; min-width: 160px; padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(0, 0, 0, 0.25); color: var(--text); font: inherit; }
+.story-body h3 { margin: 12px 0 4px; font-size: 14px; }

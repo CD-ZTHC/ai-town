@@ -19,6 +19,10 @@ const renderer = new Renderer(canvas, minimap);
 export const app = {
   ready: false,
   world: null,
+  view: 'town', // 当前查看的区域
+  regionWorlds: {},
+  regionsOpen: {},
+  avatars: [],
   meta: {},
   snap: null,
   disp: {},
@@ -59,9 +63,22 @@ export const app = {
   focusAgent(id) {
     app.follow = id;
   },
+  /** 切换查看的区域（小镇 / 暗月界） */
+  setView(id, { center = true } = {}) {
+    const w = app.regionWorlds[id];
+    if (!w || app.view === id) return;
+    app.view = id;
+    app.world = w;
+    renderer.setWorld(w);
+    app.disp = {}; app.cdisp = {}; app.vdisp = {};
+    if (center && w.gate) { app.cam.x = w.gate.x * TS; app.cam.y = w.gate.y * TS; }
+    UI.onRegions?.();
+  },
   agentWorldPos(id) {
     const a = app.snap?.agents.find((x) => x.id === id);
     if (!a) return null;
+    // 跟随的人去了别的区域：画面跟过去
+    if ((a.region || 'town') !== app.view) { app.setView(a.region || 'town', { center: false }); return null; }
     if (a.inside) {
       const b = app.world.buildings.find((b) => b.id === a.inside);
       return [(b.x + b.w / 2) * TS, (b.y + b.h / 2) * TS];
@@ -84,7 +101,11 @@ function connect() {
   es.addEventListener('init', (e) => {
     const d = JSON.parse(e.data);
     const first = !app.world;
-    app.world = d.world;
+    app.regionWorlds = { town: d.world, ...(d.regions || {}) };
+    app.regionsOpen = d.regionsOpen || {};
+    if (!app.regionWorlds[app.view] || (app.view !== 'town' && !app.regionsOpen[app.view]?.open)) app.view = 'town';
+    const viewChanged = app.world && app.world.id !== app.view;
+    app.world = app.regionWorlds[app.view];
     app.weathers = d.weathers;
     app.spec = d.spec;
     app.meta = Object.fromEntries(d.agents.map((a) => [a.id, a]));
@@ -94,9 +115,7 @@ function connect() {
     app.llm = d.llm;
     app.snap = d.state;
     app.disp = {};
-    if (first) {
-      renderer.setWorld(d.world);
-    }
+    if (first || viewChanged || app.view === 'town') renderer.setWorld(app.world);
     renderer.setAgents(d.agents);
     renderer.setCreatureTypes(d.spec?.creatures);
     for (const a of d.agents) a.portrait = renderer.portraits[a.id];
@@ -113,7 +132,12 @@ function connect() {
   es.addEventListener('log', (e) => UI.onLog(JSON.parse(e.data)));
   es.addEventListener('agent', (e) => UI.onAgentChanged(JSON.parse(e.data).id));
   es.addEventListener('newspaper', (e) => UI.onNewspaper(JSON.parse(e.data)));
-  es.addEventListener('vfx', (e) => renderer.addVfx(JSON.parse(e.data)));
+  es.addEventListener('vfx', (e) => { const v = JSON.parse(e.data); if ((v.region || 'town') === app.view) renderer.addVfx(v); });
+  es.addEventListener('regions', (e) => {
+    app.regionsOpen = JSON.parse(e.data);
+    if (app.view !== 'town' && !app.regionsOpen[app.view]?.open) app.setView('town');
+    UI.onRegions?.();
+  });
   // 角色登场 / 离场：重建精灵与名册
   es.addEventListener('agents', (e) => {
     const list = JSON.parse(e.data);
@@ -123,10 +147,14 @@ function connect() {
     UI.onAgents();
   });
   es.addEventListener('story', () => UI.onStory());
+  // 每游戏日平均用量（每分钟刷新一次）
+  const usage = () => app.api('/api/usage').then((u) => { app.usageAvg = u.avgPerDay; UI.updateBrain(); }).catch(() => {});
+  usage();
+  if (!app.usageTimer) app.usageTimer = setInterval(usage, 60_000);
   // 新建筑落地：重建地图与静态图层
   es.addEventListener('worldmap', (e) => {
-    app.world = JSON.parse(e.data);
-    renderer.setWorld(app.world);
+    app.regionWorlds.town = JSON.parse(e.data);
+    if (app.view === 'town') { app.world = app.regionWorlds.town; renderer.setWorld(app.world); }
   });
   es.addEventListener('proposals', () => UI.onProposals());
   es.addEventListener('world', (e) => {
@@ -270,7 +298,8 @@ function loop(now) {
 
     // 平滑角色位置
     // 角色登场 / 离场的瞬间，快照与角色信息可能差一帧：只画两边都有的角色
-    const agents = s.agents.filter((a) => app.meta[a.id] && renderer.meta?.[a.id]).map((a) => {
+    const here = (x) => (x.region || 'town') === app.view;
+    const agents = s.agents.filter((a) => app.meta[a.id] && renderer.meta?.[a.id] && here(a)).map((a) => {
       let d = app.disp[a.id];
       if (!d) d = app.disp[a.id] = { dx: a.x, dy: a.y, walkPhase: 0 };
       const dist = Math.hypot(a.x - d.dx, a.y - d.dy);
@@ -286,13 +315,23 @@ function loop(now) {
       return { ...a, dx: d.dx, dy: d.dy, walkPhase: d.walkPhase, moving, speaking: !!(a.convo && a.bubble && a.bubble.kind === 'say') };
     });
     // 异界生物也做平滑插值
-    const creatures = (s.creatures || []).map((c) => {
+    const creatures = (s.creatures || []).filter(here).map((c) => {
       let d = app.cdisp[c.id];
       if (!d || Math.hypot(c.x - d.dx, c.y - d.dy) > 4) d = app.cdisp[c.id] = { dx: c.x, dy: c.y };
       const k = 1 - Math.exp(-dt * 10);
       d.dx += (c.x - d.dx) * k; d.dy += (c.y - d.dy) * k;
       return { ...c, dx: d.dx, dy: d.dy };
     });
+    // 访客化身
+    const mine = app.perms.avatar;
+    const avatars = (s.avatars || []).filter(here).map((v) => {
+      const d = (app.vdisp ||= {})[v.id] ||= { dx: v.x, dy: v.y };
+      if (Math.hypot(v.x - d.dx, v.y - d.dy) > 4) { d.dx = v.x; d.dy = v.y; }
+      const k = 1 - Math.exp(-dt * 10);
+      d.dx += (v.x - d.dx) * k; d.dy += (v.y - d.dy) * k;
+      return { ...v, dx: d.dx, dy: d.dy, mine: v.id === mine };
+    });
+    app.avatars = s.avatars || [];
     const agentMap = Object.fromEntries(agents.map((a) => [a.id, a]));
     const occupancy = {};
     for (const a of agents) if (a.inside) (occupancy[a.inside] ||= []).push(a.id);
@@ -313,10 +352,12 @@ function loop(now) {
     const weatherId = app.debugWeather ?? s.weather;
     const winfo = app.weathers[weatherId] || {};
     const S = {
-      cam: app.cam, t: tt, day, weather: winfo.render?.base || weatherId, weatherId, weatherTint: winfo.render?.tint ? winfo.render : null,
-      agents, agentMap, occupancy, convos: s.convos, entities: s.entities || [], creatures,
+      // 暗月界没有小镇的天气
+      cam: app.cam, t: tt, day, region: app.view,
+      weather: app.view === 'town' ? winfo.render?.base || weatherId : 'sunny', weatherId: app.view === 'town' ? weatherId : 'sunny', weatherTint: app.view === 'town' && winfo.render?.tint ? winfo.render : null,
+      agents, agentMap, occupancy, convos: s.convos, entities: (s.entities || []).filter((e) => e.kind === 'portal' ? app.view === 'town' : here(e)), creatures, avatars,
       selected: app.selected, hover: app.hover, boardCount: app.board.length,
-      festival: app.forceFestival || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns'),
+      festival: app.view === 'town' && (app.forceFestival || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns')),
     };
     renderer.frame(S, dt);
     UI.frame(S, dt);

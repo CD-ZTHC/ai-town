@@ -15,6 +15,7 @@ export function init(a, first) {
   buildRoster();
   renderFeed();
   updateBrain();
+  onRegions();
   if (!first) { if (app.selected) openInspector(app.selected); return; }
   $$('#speed button').forEach((b) => b.addEventListener('click', () => {
     const sp = Number(b.dataset.speed);
@@ -27,6 +28,8 @@ export function init(a, first) {
   $('#btn-help').addEventListener('click', helpModal);
   $('#story-chip').addEventListener('click', () => storyModal());
   $('#btn-build').addEventListener('click', () => buildModal());
+  $('#btn-avatar').addEventListener('click', () => avatarModal());
+  $('#region-chip').addEventListener('click', () => app.setView(app.view === 'town' ? nextRegion() : 'town'));
   $('#btn-sound').addEventListener('click', (e) => { e.currentTarget.textContent = app.sound.toggle() ? '🔊' : '🔇'; });
   $('#festival-chip').addEventListener('click', () => {
     app.forceFestival = !app.forceFestival;
@@ -59,7 +62,7 @@ export function frame(S) {
   $('#clock-date').textContent = `第${S.day}天 · ${weekday(S.day)} · ${w.emoji} ${w.name}`;
   $('#clock-sky').textContent = h < 5 || h >= 20 ? '🌙' : h < 7 ? '🌅' : h >= 17 ? '🌇' : w.emoji;
   $('#clock-progress').style.width = `${(m / 1440) * 100}%`;
-  $('#clock-date').textContent += app.snap.nightSkip ? ' · 🌙 夜深了，时间加速中' : '';
+  $('#clock-date').textContent += app.snap.nightSkip ? ' · 🌙 夜深了，时间加速中' : app.snap.paced ? ' · 🧠 大家在思考，时间放慢了' : '';
   // 顶栏节日标签：显示下一个（或正在进行的）需要倒计时的日历事件
   // 故事标签：张力 + 剧情阶段；有抉择时闪烁
   const st = app.snap.story;
@@ -140,6 +143,7 @@ export function applyPerms() {
   $('#mode-chip').hidden = p.admin;
   $('#mode-chip').textContent = p.interaction ? '🌿 访客模式' : '👀 观赏模式';
   $('#btn-event').hidden = !p.interaction;
+  $('#btn-avatar').hidden = !p.interaction;
   $('#btn-weather').hidden = !p.interaction;
   if (!p.interaction && ui.tab === 'chat') ui.tab = 'sched';
 }
@@ -258,6 +262,63 @@ export function onStory() {
   storyPending = setTimeout(() => { storyPending = null; if (ui.storyOpen) renderStory(); }, 600);
 }
 
+// ---------- 区域（P6） ----------
+const nextRegion = () => Object.keys(app.regionsOpen).find((k) => k !== 'town' && app.regionsOpen[k].open);
+export function onRegions() {
+  const chip = $('#region-chip');
+  const other = nextRegion();
+  chip.hidden = !other && app.view === 'town';
+  const name = app.regionsOpen[other]?.name || '异界';
+  chip.textContent = app.view === 'town' ? `🌗 去${name}看看` : '🏘️ 回到小镇';
+  chip.classList.toggle('live', app.view !== 'town');
+  document.body.classList.toggle('moon-view', app.view !== 'town');
+}
+
+// ---------- 访客化身（P6） ----------
+const AV_COLORS = ['#e57373', '#64b5f6', '#81c784', '#ffb74d', '#ba68c8', '#4db6ac', '#f06292', '#a1887f'];
+function avatarModal() {
+  const mine = app.avatars.find((v) => v.id === app.perms.avatar);
+  if (!mine) {
+    const saved = app.storage.get('town-avatar-name') || '';
+    let color = app.storage.get('town-avatar-color') || AV_COLORS[0];
+    const card = openModal(`<h2>👣 以旅人的身份现身</h2>
+      <div class="sub">起一个名字，你会以旅人的样子出现在中央广场。居民们看得见你、会跟你打招呼，和你聊过的话也会记住是你说的。20 分钟不操作会自动离开。</div>
+      <div class="pform"><input id="av-name" maxlength="8" placeholder="你的名字（≤8 字）" value="${esc(saved)}">
+      <div class="av-colors">${AV_COLORS.map((c) => `<button class="av-c${c === color ? ' on' : ''}" data-c="${c}" style="background:${c}"></button>`).join('')}</div>
+      <button class="primary" id="av-go">现身 ✨</button><span class="quota" id="av-msg"></span></div>`);
+    $$('.av-c', card).forEach((b) => b.addEventListener('click', () => { color = b.dataset.c; $$('.av-c', card).forEach((x) => x.classList.toggle('on', x === b)); }));
+    $('#av-go', card).onclick = async () => {
+      const name = $('#av-name', card).value.trim();
+      try {
+        const r = await app.api('/api/avatar', { name, color });
+        app.storage.set('town-avatar-name', r.avatar.name); app.storage.set('town-avatar-color', r.avatar.color);
+        await app.refreshPerms();
+        app.setView('town');
+        closeModal();
+        toast(`👣 ${esc(r.avatar.name)}来到了中央广场`);
+      } catch (e) { $('#av-msg', card).innerHTML = `<span style="color:var(--bad)">⚠️ ${esc(e.message)}</span>`; }
+    };
+    return;
+  }
+  const locs = Object.entries(app.spec.locations).filter(([, l]) => l.public && (!l.region || app.regionsOpen[l.region]?.open));
+  const card = openModal(`<h2>👣 ${esc(mine.name)}</h2>
+    <div class="sub">想去哪里？点一下就会走过去。${mine.region !== 'town' ? '（你现在在异界）' : ''}走到居民身边再和他们聊天，他们会知道是「站在面前的」你。</div>
+    <div class="av-locs">${locs.map(([id, l]) => `<button class="mini" data-go="${id}">${l.region ? '🌗 ' : ''}${esc(l.name)}</button>`).join('')}</div>
+    <div class="pact"><button class="mini" id="av-find">🔍 找到我</button><button class="mini" id="av-leave">👋 离开小镇</button></div>`);
+  $$('[data-go]', card).forEach((b) => b.addEventListener('click', async () => {
+    try { await app.api('/api/avatar/move', { location: b.dataset.go }); closeModal(); toast(`👣 前往${esc(app.spec.locations[b.dataset.go].name)}`); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
+  }));
+  $('#av-find', card).onclick = () => {
+    const v = app.avatars.find((x) => x.id === app.perms.avatar);
+    if (!v) return;
+    app.follow = null;
+    app.setView(v.region, { center: false });
+    app.cam.x = v.x * 32 + 16; app.cam.y = v.y * 32 + 16;
+    closeModal();
+  };
+  $('#av-leave', card).onclick = async () => { await app.api('/api/avatar/leave', {}).catch(() => {}); await app.refreshPerms(); closeModal(); };
+}
+
 export function onWorld(w) {
   toast(`🌀 ${esc(w.desc || w.op?.op || '')}`, 5000);
 }
@@ -275,7 +336,8 @@ export function updateBrain() {
   const tk = s.tokens > 1e6 ? `${(s.tokens / 1e6).toFixed(2)}M` : `${(s.tokens / 1000).toFixed(1)}k`;
   const fmtK = (n) => (n > 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`);
   const budget = s.dailyBudget ? `<span title="今日令牌用量 / 每日预算">今日 ${fmtK(s.dayTokens)}/${fmtK(s.dailyBudget)}</span>` : `<span>令牌 ${tk}</span>`;
-  $('#brain-stats').innerHTML = `<span>调用 ${s.ok}</span>${budget}<span>均 ${(s.avgMs / 1000).toFixed(1)}s</span>${app.snap?.idle ? '<span>💤</span>' : ''}${s.queued ? `<span>排队 ${s.queued}</span>` : ''}${s.errors ? `<span style="color:var(--bad)" title="${esc(s.lastError)}">错误 ${s.errors}</span>` : ''}`;
+  const perDay = app.usageAvg ? `<span title="最近几个游戏日的平均用量">每游戏日≈${fmtK(app.usageAvg)}</span>` : '';
+  $('#brain-stats').innerHTML = `<span>调用 ${s.ok}</span>${budget}${perDay}<span>均 ${(s.avgMs / 1000).toFixed(1)}s</span>${app.snap?.idle ? '<span>💤</span>' : ''}${s.queued ? `<span>排队 ${s.queued}</span>` : ''}${s.errors ? `<span style="color:var(--bad)" title="${esc(s.lastError)}">错误 ${s.errors}</span>` : ''}`;
   $('#brain-active').innerHTML = s.active.slice(0, 6).map((x) => `<div class="bact"><b>${esc(x.agent || '')}</b> ${esc(x.label)}<span>${(x.ms / 1000).toFixed(0)}s</span></div>`).join('') || '<div style="color:var(--muted)">静候灵感中…</div>';
 }
 
@@ -566,7 +628,7 @@ const P_STATUS = {
 const P_LEVEL = { micro: '微调', minor: '小改', major: '大改' };
 function buildModal(tab) {
   ui.buildTab = tab || ui.buildTab || 'list';
-  const tabs = [['list', '🛠 提案'], ['history', '📜 编年史'], ...(app.perms.admin ? [['gaps', '🧩 AI 心愿单'], ['rollback', '⏳ 时光回溯']] : [])];
+  const tabs = [['list', '🛠 提案'], ['history', '📜 编年史'], ...(app.perms.admin ? [['gaps', '🧩 AI 心愿单'], ['rollback', '⏳ 时间线'], ['regions', '🌗 区域']] : [])];
   const card = openModal(`<h2>🛠 小镇建设</h2>
     <div class="sub">世界架构师把大家的点子变成「世界补丁」：新的建筑、节日、天气、物品、能力与法则。每份补丁都要经过校验和设定考据；${app.perms.publicMode ? '访客投票后由管理员终审' : '小改自动通过，大改需要管理员确认'}。</div>
     <div class="tabs stabs">${tabs.map(([k, l]) => `<button data-t="${k}" class="${ui.buildTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
@@ -647,9 +709,16 @@ async function renderBuild() {
         <small class="quota">${esc(g.why)}（起因：${esc(g.intent || '')}）</small>
         ${g.rfc ? `<div class="quota">📄 ${esc(g.rfc)}</div>` : `<div class="pact">${g.status !== 'adopted' ? `<button class="mini adm" data-gap="${esc(g.id)}" data-st="adopted">✅ 采纳</button>` : ''}${g.status !== 'ignored' ? `<button class="mini" data-gap="${esc(g.id)}" data-st="ignored">忽略</button>` : ''}${g.status !== 'open' ? `<button class="mini" data-gap="${esc(g.id)}" data-st="open">重新打开</button>` : ''}</div>`}
       </div>`).join('') || '<div class="empty">暂时没有能力缺口。</div>');
+    } else if (tab === 'regions') {
+      html = `<div class="sub">异界是和小镇相连的口袋地图，居民经「月之渡口」往返。通常由剧情（《镜湖裂隙》的共存结局）打开，管理员也可以手动开关；关闭时还在那边的人会被送回渡口。</div>` +
+        Object.entries(app.regionsOpen).filter(([k]) => k !== 'town').map(([k, r]) => `<div class="dec snap"><b>🌗 ${esc(r.name)}</b> <small class="quota">${r.open ? '已开放' : '未开放'}</small><button class="mini adm" data-region="${esc(k)}" data-open="${r.open ? 0 : 1}">${r.open ? '关闭通路' : '打开通路'}</button></div>`).join('');
     } else {
-      const list = await app.api('/api/snapshots');
-      html = `<div class="sub">把整个小镇恢复到某个整点的状态（居民、剧情和世界结构都会一起回去）。当前存档会先自动备份。</div>` + (list.map((s) => `<div class="dec snap"><b>第${s.day}天 ${String(s.hour).padStart(2, '0')}:00</b> <small class="quota">${Math.round(s.size / 1024)} KB</small><button class="mini adm" data-snap="${esc(s.name)}">回到这里</button></div>`).join('') || '<div class="empty">还没有快照（每个游戏小时自动保存一份，保留最近 24 份）。</div>');
+      const [list, tl] = await Promise.all([app.api('/api/snapshots'), app.api('/api/timelines')]);
+      const cur = tl.list.find((t) => t.id === tl.active);
+      html = `<h3>🌿 时间线</h3><div class="sub">从任意整点快照（或此刻）分出一条新的世界线，各自独立发展，可以随时来回切换。当前：<b>${esc(cur?.name || tl.active)}</b></div>` +
+        tl.list.map((t) => `<div class="dec snap"><b>${t.id === tl.active ? '▶ ' : ''}${esc(t.name)}</b> <small class="quota">${t.from ? `从「${esc(tl.list.find((x) => x.id === t.from.timeline)?.name || t.from.timeline)}」第${t.from.day}天 ${String(t.from.hour).padStart(2, '0')}:00 分出` : '最初的世界'}</small>${t.id === tl.active ? '' : `<button class="mini adm" data-tl="${esc(t.id)}">切换过去</button>`}</div>`).join('') +
+        `<div class="pform"><input id="tl-name" maxlength="20" placeholder="新时间线的名字，例如：如果那天没有下雨"><button class="primary" id="tl-fork">从此刻分出新时间线 🌿</button></div>` +
+        `<h3>⏳ 快照</h3><div class="sub">「回到这里」会让当前时间线回到那个时刻（当前存档先自动备份）；「分出」则保留当前时间线，从那个时刻另开一条。</div>` + (list.map((s) => `<div class="dec snap"><b>第${s.day}天 ${String(s.hour).padStart(2, '0')}:00</b> <small class="quota">${Math.round(s.size / 1024)} KB</small><button class="mini" data-fork="${esc(s.name)}">🌿 分出</button><button class="mini adm" data-snap="${esc(s.name)}">回到这里</button></div>`).join('') || '<div class="empty">还没有快照（每个游戏小时自动保存一份，保留最近 24 份）。</div>');
     }
   } catch (e) { html = `<div class="empty">⚠️ ${esc(e.message)}</div>`; }
   if (!$('#build-body')) return;
@@ -671,6 +740,20 @@ async function renderBuild() {
   $$('[data-gap]', body).forEach((b) => b.addEventListener('click', async () => {
     try { await app.api('/api/gaps/status', { id: b.dataset.gap, status: b.dataset.st }); renderBuild(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
   }));
+  $$('[data-region]', body).forEach((b) => b.addEventListener('click', async () => {
+    try { await app.api('/api/region', { id: b.dataset.region, open: b.dataset.open === '1' }); renderBuild(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
+  }));
+  $$('[data-tl]', body).forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('切换到这条时间线？当前时间线会先存档。')) return;
+    try { await app.api('/api/timelines/switch', { id: b.dataset.tl }); closeModal(); toast('🌿 已切换时间线'); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
+  }));
+  const fork = async (snapshot) => {
+    const name = $('#tl-name', body)?.value.trim() || '';
+    try { const r = await app.api('/api/timelines/fork', { name, snapshot }); closeModal(); toast(`🌿 分出了新时间线「${esc(r.timeline.name)}」并切换过去`); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
+  };
+  const tf = $('#tl-fork', body);
+  if (tf) tf.onclick = () => fork(null);
+  $$('[data-fork]', body).forEach((b) => b.addEventListener('click', () => fork(b.dataset.fork)));
   $$('[data-snap]', body).forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('确定把小镇回溯到这个时刻吗？之后发生的一切都会消失（当前存档会备份）。')) return;
     try { await app.api('/api/rollback', { name: b.dataset.snap, confirm: 'ROLLBACK' }); closeModal(); toast('⏳ 时光倒流了……'); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }

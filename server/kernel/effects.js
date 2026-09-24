@@ -36,16 +36,16 @@ export function checkTarget(a, allowed = TARGETS) {
 export function posOf(town, a) {
   if (!a) return null;
   if (a.inside) {
-    const b = town.world.buildings.find((x) => x.id === a.inside);
-    if (b) return { x: b.x + b.w / 2, y: b.y + b.h - 1, inside: a.inside };
+    const b = (town.worldOf?.(a.region) || town.world).buildings.find((x) => x.id === a.inside);
+    if (b) return { x: b.x + b.w / 2, y: b.y + b.h - 1, inside: a.inside, region: a.region || 'town' };
   }
-  return { x: a.x, y: a.y, inside: null };
+  return { x: a.x, y: a.y, inside: null, region: a.region || 'town' };
 }
 
 /** 附近的居民：同一建筑内，或都在户外且距离不超过 r 格。睡着的人不算。 */
 export function agentsNear(town, at, r = 3, except = null) {
   if (!at) return [];
-  return town.agents.filter((o) => o !== except && o.status !== 'sleeping' &&
+  return town.agents.filter((o) => o !== except && o.status !== 'sleeping' && (o.region || 'town') === (at.region || 'town') &&
     (at.inside ? o.inside === at.inside : !o.inside && Math.hypot(o.x - at.x, o.y - at.y) <= r));
 }
 
@@ -200,7 +200,7 @@ export const EFFECTS = {
     apply(town, ctx, a) {
       const who = (a.target ?? 'self') === 'target' ? ctx.target : ctx.self;
       const at = posOf(town, who) || ctx.at;
-      if (at) town.emit('vfx', { preset: a.preset, x: at.x, y: at.y, color: a.color || null, radius: a.radius ?? 2 });
+      if (at) town.emit('vfx', { preset: a.preset, x: at.x, y: at.y, color: a.color || null, radius: a.radius ?? 2, region: at.region || 'town' });
     },
   },
   say: {
