@@ -13,7 +13,7 @@ mise run reset      # 清空存档，从第一天重新开始
 mise run public     # 以公网模式启动（需要 ADMIN_TOKEN）
 mise run token      # 生成管理员令牌
 mise run check      # 语法检查
-mise run test       # 运行测试（不调用 LLM）
+mise run test       # 运行测试（不调用 LLM；含用录制回复跑 7 个游戏日的无头回放）
 mise run spec       # 打印默认世界规格
 mise run evolve     # 把 AI 心愿单里已采纳的能力缺口整理成需求文档（docs/rfcs/）
 mise run manifest   # 重新生成能力清单 docs/capabilities.md
@@ -29,6 +29,8 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 | `STORY_RATING` | 内容分级：`cozy`（默认）/ `adventure` / `epic`；决定异界生物的危险程度与审核尺度 |
 | `STORYTELLER` | 叙事者：`voyage`（默认，每季自动上演一个剧情弧）/ `gentle`（以日常为主）/ `chaos` |
 | `LLM_CONCURRENCY` | 并发请求数，默认 4；遇到限流会自动退避并降低并发 |
+| `LLM_PROVIDER` | 模型服务，默认 `openai`（OpenAI 兼容接口）；其他实现用 `registerProvider` 注册（见 `server/llm-providers.js`） |
+| `LLM_RECORD` | 设为一个文件路径时，把真实模型的回复按模块录制下来，用来更新回放测试的 `test/fixtures/llm/responses.json` |
 | `LLM_JSON_MODE` | 默认开启：请求模型以 JSON 模式输出（`response_format: json_object`），网关不支持时自动关闭；设为 `0` 手动关闭 |
 | `NODE_USE_ENV_PROXY` | 服务器需要经由 HTTPS 代理访问模型时设为 `1`（Node ≥ 22.21），否则 Node 内置的 fetch 不会读取 `HTTPS_PROXY` |
 | `PACE_WITH_LLM` / `PACE_QUEUE` | 默认开启：模型排队超过 `PACE_QUEUE`（默认 6）个请求时按比例放慢时间（最低 1/4），避免游戏时间跑在思考前面；设为 `0` 关闭 |
@@ -223,7 +225,10 @@ curl -X POST localhost:3000/api/world/op -H 'content-type: application/json' \
 server/
   index.js     HTTP + SSE 实时推送 + REST 接口（权限、限流、休眠）
   guard.js     公网防护：配置、管理员鉴权、限流器、内容审核
-  sim.js       模拟核心：时间、移动、日程执行、所有 LLM 认知模块、存档
+  sim.js       模拟核心：世界状态、主循环、天气、角色登场与离开、世界操作
+  sim/         Town 的其余职责（以 mixin 挂到 Town 上）：regions 区域与地点、movement 移动与日程执行、
+               planning 规划与约定、actions 能力与行动、cognition 独白 / 反思 / 日记 / 日报、
+               social 对话 / 信念 / 旅人 / 事件、views 前端视图、persistence 存档与快照
   kernel/spec.js  世界规格：默认规格、校验、日历与天气工具
   kernel/ops.js   WorldOp：操作定义、校验、应用、重放、审计日志
   kernel/expr.js  安全表达式（手写解析器）
@@ -238,7 +243,8 @@ server/
   ext/            扩展点：registry.js 注册表、index.js 加载器、go-to.js（RFC 0001）
   worldai/architect.js 世界架构师；worldai/proposals.js 提案与审批；worldai/canon.js 设定考据官
   story/arcs.js   剧情弧引擎；story/creatures.js 异界生物；story/content.js 默认剧情内容（线程、图鉴、《镜湖裂隙》）
-  llm.js       OpenAI 兼容客户端：并发队列、自适应限流、JSON 提取
+  llm.js       LLM 客户端：并发队列、自适应限流、重试、预算与统计、JSON 提取、回复录制
+  llm-providers.js 模型服务接口与默认的 OpenAI 兼容实现
   memory.js    记忆流与检索
   world.js     程序化地图（小镇与暗月界：瓦片、建筑、站位、A* 寻路）
   personas.js  8 位居民的人设、初始关系与记忆
@@ -254,9 +260,10 @@ public/
   style.css, modes.css  样式（modes.css 为 Dock、各模式与手机布局）
 deploy/        Caddy / Nginx / systemd 部署模板
 Dockerfile, docker-compose.yml, .env.example
-tools/         evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）
+tools/         evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查）
 spec/mods/     Mod（AI 创造的内容包）
-test/          node:test 测试（无需安装依赖）
+test/          node:test 测试（无需安装依赖）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复
+.github/       CI：Node 22 / 26 上跑语法检查、测试与 smoke --mock
 docs/design/   设计方案
 data/save.json 自动存档（每 20 秒），ops.jsonl 世界变更日志，snapshots/ 每小时快照，timelines/ 分支时间线
 ```
