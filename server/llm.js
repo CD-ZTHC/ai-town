@@ -1,4 +1,5 @@
 // OpenAI 兼容接口的 LLM 客户端：并发队列、重试、模型分档与自动校正、JSON 提取、统计
+import fs from 'node:fs';
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/+$/, '');
 const API_KEY = process.env.API_KEY || '';
 const CONCURRENCY = Number(process.env.LLM_CONCURRENCY || 4);
@@ -231,7 +232,25 @@ export function chat(messages, opts = {}) {
   if (mock) return Promise.resolve().then(() => mock(messages, opts));
   if (!stats.enabled) return Promise.reject(new Error('LLM 未配置'));
   if (budgetLeft() <= 0) return Promise.reject(new BudgetError());
-  return enqueue(() => rawChat(messages, opts), opts.priority);
+  const p = enqueue(() => rawChat(messages, opts), opts.priority);
+  return RECORD_FILE ? p.then((content) => { record(opts.label || 'llm', content); return content; }) : p;
+}
+
+// 录制真实回复，供无头回放测试使用：LLM_RECORD=test/fixtures/llm/responses.json mise run start
+// 按模块（label）分组，每个模块保留最近 RECORD_KEEP 条；能解析成 JSON 的存成对象，方便人工审阅与修改
+const RECORD_FILE = process.env.LLM_RECORD || '';
+const RECORD_KEEP = 4;
+function record(label, content) {
+  try {
+    let all = {};
+    try { all = JSON.parse(fs.readFileSync(RECORD_FILE, 'utf8')); } catch {}
+    let entry = content;
+    try { entry = extractJSON(content); } catch {}
+    all[label] = [...(all[label] || []), entry].slice(-RECORD_KEEP);
+    fs.writeFileSync(RECORD_FILE, JSON.stringify(all, null, 2) + '\n');
+  } catch (e) {
+    console.warn('[llm] 录制失败：', e.message);
+  }
 }
 
 export function extractJSON(text) {
