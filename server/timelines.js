@@ -2,8 +2,8 @@
 // 目录：主时间线 = <data>/；分支 = <data>/timelines/<id>/；登记表 = <data>/timelines.json
 import fs from 'node:fs';
 import path from 'node:path';
+import { SNAP_RE, readSnapshot } from './sim/persistence.js';
 
-const SNAP_RE = /^d\d{3}-\d{2}\.json$/;
 const ID_RE = /^(main|tl-\d{1,4})$/;
 const MAX_TIMELINES = 12;
 
@@ -44,7 +44,7 @@ export function forkTimeline(root, { fromId, snapshot = null, name = '' }) {
     src = path.join(srcDir, 'snapshots', snapshot);
   } else src = path.join(srcDir, 'save.json');
   if (!fs.existsSync(src)) throw Object.assign(new Error('来源存档不存在'), { status: 404 });
-  const save = JSON.parse(fs.readFileSync(src, 'utf8'));
+  const save = snapshot ? readSnapshot(src) : JSON.parse(fs.readFileSync(src, 'utf8'));
   const n = Math.max(0, ...r.list.map((t) => Number(/^tl-(\d+)$/.exec(t.id)?.[1] || 0))) + 1;
   const id = `tl-${n}`;
   const dir = timelineDir(root, id);

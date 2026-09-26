@@ -1,6 +1,7 @@
 // 存档：保存、每小时快照、读档与旧存档迁移
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import path from 'node:path';
 import * as llm from '../llm.js';
 import { fmtStamp } from '../memory.js';
@@ -50,9 +51,14 @@ export class Persistence {
     this.lastSnapHour = hour;
     const dir = path.join(this.dataDir, 'snapshots');
     fs.mkdirSync(dir, { recursive: true });
-    const name = `d${String(this.day).padStart(3, '0')}-${String(Math.floor(this.minute / 60)).padStart(2, '0')}.json`;
-    fs.writeFileSync(path.join(dir, name), text);
-    const files = fs.readdirSync(dir).filter((f) => /^d\d{3}-\d{2}\.json$/.test(f)).sort();
+    // 快照压缩存储（约为原来的 1/8）；每游戏小时一次，1MB 的存档压缩约 5ms，同步写即可
+    const name = `d${String(this.day).padStart(3, '0')}-${String(Math.floor(this.minute / 60)).padStart(2, '0')}.json.gz`;
+    const file = path.join(dir, name);
+    fs.writeFileSync(file + '.tmp', zlib.gzipSync(text));
+    fs.renameSync(file + '.tmp', file);
+    // 同一个整点的旧格式快照（升级前写的）被新的取代
+    fs.rmSync(file.slice(0, -3), { force: true });
+    const files = fs.readdirSync(dir).filter((f) => SNAP_RE.test(f)).sort();
     for (const f of files.slice(0, Math.max(0, files.length - SNAPSHOT_KEEP))) fs.rmSync(path.join(dir, f), { force: true });
   }
 
@@ -107,7 +113,14 @@ export class Persistence {
 }
 
 // ---------- 时光回溯（设计文档 4.3）----------
-const SNAP_RE = /^d(\d{3})-(\d{2})\.json$/;
+// 快照文件名：dNNN-HH.json.gz（新）或 dNNN-HH.json（升级前的旧快照，仍然可以回溯和分叉）
+export const SNAP_RE = /^d(\d{3})-(\d{2})\.json(?:\.gz)?$/;
+
+/** 读取一份快照（自动解压）；损坏时抛错 */
+export function readSnapshot(file) {
+  const buf = fs.readFileSync(file);
+  return JSON.parse((file.endsWith('.gz') ? zlib.gunzipSync(buf) : buf).toString('utf8'));
+}
 
 /** 列出可回溯的整点快照（新的在前） */
 export function listSnapshots(dataDir) {
@@ -125,11 +138,12 @@ export function restoreSnapshot(dataDir, name) {
   const dir = path.resolve(dataDir);
   const src = path.join(dir, 'snapshots', name);
   if (!fs.existsSync(src)) throw Object.assign(new Error('快照不存在'), { status: 404 });
-  JSON.parse(fs.readFileSync(src, 'utf8')); // 损坏的快照不允许回溯
+  const data = readSnapshot(src); // 损坏的快照不允许回溯
   const save = path.join(dir, 'save.json');
   const bak = `save-before-rollback-${new Date().toISOString().replace(/[:.]/g, '-')}.bak.json`;
   if (fs.existsSync(save)) fs.copyFileSync(save, path.join(dir, bak));
-  fs.copyFileSync(src, save);
+  fs.writeFileSync(save + '.tmp', JSON.stringify(data));
+  fs.renameSync(save + '.tmp', save);
   new OpJournal(path.join(dir, 'ops.jsonl')).append({ op: 'rollback', to: name, at: new Date().toISOString() });
   return bak;
 }

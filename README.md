@@ -267,5 +267,5 @@ spec/mods/     Mod（AI 创造的内容包）
 test/          node:test 测试（无需安装依赖）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复
 .github/       CI：Node 22 / 26 上跑语法检查、测试与 smoke --mock
 docs/design/   设计方案
-data/save.json 自动存档（每 20 秒），ops.jsonl 世界变更日志，snapshots/ 每小时快照，timelines/ 分支时间线
+data/save.json 自动存档（每 20 秒），ops.jsonl 世界变更日志，snapshots/ 每小时快照（gzip 压缩，dNNN-HH.json.gz），timelines/ 分支时间线
 ```

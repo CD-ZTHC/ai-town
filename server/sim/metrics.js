@@ -13,7 +13,14 @@ const ratio = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 1000 : null);
 export class Metrics {
   metricsDay(day = this.day) {
     const st = (this.metricsState ||= { days: {} });
-    const d = (st.days[day] ||= { commitsMade: 0, commitsKept: 0, keptKeys: [], plans: 0, planFallback: 0, convos: 0, convoFallback: 0 });
+    if (!st.days[day]) {
+      // 过去的日子只保留计数：去掉用来去重的 key 列表，控制存档体积
+      for (const old of Object.values(st.days)) { delete old.keptKeys; delete old.pending; }
+      st.days[day] = { commitsMade: 0, commitsKept: 0, keptKeys: [], pending: [], plans: 0, planFallback: 0, convos: 0, convoFallback: 0 };
+    }
+    const d = st.days[day];
+    d.keptKeys ||= [];
+    d.pending ||= [];
     const keys = Object.keys(st.days).map(Number).sort((a, b) => a - b);
     for (const k of keys.slice(0, Math.max(0, keys.length - KEEP_DAYS))) delete st.days[k];
     return d;
@@ -23,7 +30,6 @@ export class Metrics {
   noteCommitMade(a, entry) {
     const d = this.metricsDay();
     const key = `${a.id}:${this.day}-${entry.start}-${entry.location}-${entry.activity}`;
-    d.pending ||= [];
     if (d.pending.some((p) => p.key === key)) return;
     d.commitsMade++;
     d.pending.push({ key, end: entry.end });
