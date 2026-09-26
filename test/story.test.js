@@ -277,3 +277,12 @@ test('静水叙事者不会自动开启剧情弧；管理员可以手动开启�
   assert.match(town.arcs.start('rift', 'admin'), /进行中/);
   town.stop();
 });
+
+test('导演提示词：只有存在可开启的剧情弧时才列出 launchArc（否则模型会编造剧情弧 id）', () => {
+  const town = new Town({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'town-dir-')) });
+  assert.ok(town.spec.arcs.length > 0);
+  assert.match(town.director.prompt(), /launchArc/);
+  town.spec = { ...town.spec, arcs: [] };
+  assert.doesNotMatch(town.director.prompt(), /launchArc/);
+  town.stop();
+});
