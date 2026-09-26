@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # package.json 声明支持的最低版本，以及 mise.toml 使用的版本
+        node: [22, 26]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: 语法检查
+        run: node tools/check.js
+      - name: 测试（含 7 个游戏日的无头回放，不调用 LLM）
+        run: node --test test/*.test.js
+      - name: AI 模块流程检查（录制回复，不联网）
+        run: node tools/smoke-llm.js --mock

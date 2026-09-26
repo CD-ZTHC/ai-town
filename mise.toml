@@ -26,7 +26,7 @@ run = "node -e \"console.log('ADMIN_TOKEN=' + require('crypto').randomBytes(24).
 
 [tasks.check]
 description = "语法检查"
-run = "for f in server/*.js server/kernel/*.js server/story/*.js server/worldai/*.js server/ext/*.js tools/*.js public/js/*.js test/*.js; do node --check $f || exit 1; done && echo ok"
+run = "node tools/check.js"
 
 [tasks.test]
 description = "运行测试（不调用 LLM，使用临时存档目录）"
