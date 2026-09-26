@@ -51,3 +51,7 @@ run = "node tools/export-mod.js"
 [tasks.spec]
 description = "打印当前默认世界规格（JSON）"
 run = "node --input-type=module -e \"import { defaultSpec } from './server/kernel/spec.js'; console.log(JSON.stringify(defaultSpec(), null, 2))\""
+
+[tasks.browser-check]
+description = "用本机的无头 Chrome 打开页面，逐个打开主要面板与三种模式，检查控制台错误并截图（前端改动后跑）"
+run = "node tools/browser-check.js"

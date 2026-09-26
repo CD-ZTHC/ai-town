@@ -22,12 +22,8 @@ export function init(a, first) {
     const sp = Number(b.dataset.speed);
     sp === 0 ? togglePause() : setSpeed(sp);
   }));
-  $('#btn-weather').addEventListener('click', (e) => weatherMenu(e.currentTarget));
-  $('#btn-event').addEventListener('click', eventModal);
-  $('#btn-news').addEventListener('click', () => newsModal());
-  $('#btn-graph').addEventListener('click', graphModal);
+  // 底部 Dock 的按钮（天气 / 事件 / 日报 / 关系网 / 建设）由 hud.js 绑定
   $('#story-chip').addEventListener('click', () => storyModal());
-  $('#btn-build').addEventListener('click', () => buildModal());
   $('#region-chip').addEventListener('click', () => app.setView(app.view === 'town' ? nextRegion() : 'town'));
   $('#festival-chip').addEventListener('click', () => {
     app.forceFestival = !app.forceFestival;
