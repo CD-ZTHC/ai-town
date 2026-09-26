@@ -404,7 +404,7 @@ plugins/builtin/construction/
   plugin.json    { "id": "construction", "tier": "builtin", "hooks": ["proposal.approved", "hour"] }
   server.js      proposal.approved → 生成脚手架、安排工人 → 返回「已接管」
                  hour → 检查完工 → ops.apply(提案) → 写入居民记忆
-  test.js        从 test/p4.test.js 中搬过来的施工相关测试
+  test.js        从 test/worldai.test.js 中搬过来的施工相关测试
 ```
 
 内核只保留「提案被批准后，如果没有插件接管就直接落地」。这样以后 AI 想做「需要先采集木材才能开工」「建筑会慢慢破旧需要维修」之类的玩法，就是写一个新插件挂在同样的钩子上，或者给 `construction` 发新版本，都不用动内核。
