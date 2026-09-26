@@ -201,7 +201,7 @@ const KINDS = {
     check(b) { return str(b.name, 16) && inRange(b.inDays, 1, 30) ? null : 'name / inDays 不合法'; },
     run(town, b, ctx) {
       const { inDays, kind: _k, ...rest } = b;
-      town.applyWorldOp({ op: 'addCalendarEvent', args: { ...rest, day: town.day + inDays, countdown: true } }, { by: ctx.source });
+      town.applyWorldOp({ op: 'addCalendarEvent', args: { countdown: true, ...rest, day: town.day + inDays } }, { by: ctx.source });
     },
   },
   vote: {

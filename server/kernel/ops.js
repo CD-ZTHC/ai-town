@@ -75,7 +75,7 @@ export const OPS = {
       spec.calendar.events.push({
         id: a.id, name: str(a.name, 16), emoji: str(a.emoji, 4) || '🎉', day: a.day, from: a.from,
         ...(a.to ? { to: a.to } : {}), ...(a.location ? { location: a.location } : {}),
-        hint: str(a.hint, 60), countdown: Boolean(a.countdown),
+        hint: str(a.hint, 60), countdown: Boolean(a.countdown), ...(a.vfx === 'festival_lanterns' ? { vfx: a.vfx } : {}),
       });
     },
     describe: (a) => `新的节日「${str(a.name, 16)}」将在第 ${a.day} 天举行`,

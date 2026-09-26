@@ -234,7 +234,7 @@ export const EFFECTS = {
       if (!spec.abilities.some((x) => x.id === a.ability)) return `未知能力：${a.ability}`;
       return checkTarget(a);
     },
-    apply(town, ctx, a) { for (const x of resolveTargets(town, ctx, a)) town.learnAbility(x, a.ability, ctx.self ? `从${ctx.self.name}那里` : ''); },
+    apply(town, ctx, a) { for (const x of resolveTargets(town, ctx, a)) town.learnAbility(x, a.ability, ctx.self && ctx.self !== x ? `从${ctx.self.name}那里` : ''); },
   },
 };
 
