@@ -14,7 +14,7 @@ run = "node --watch-path=server server/index.js"
 
 [tasks.reset]
 description = "清空存档，小镇从第一天重新开始"
-run = "rm -rf data/save.json data/timelines data/timelines.json && echo '存档与时间线已清除'"
+run = "rm -rf data/save.json data/timelines data/timelines.json && echo '存档与时间线已清除（AI 插件与进化记录保留；清除它们请删除 data/evolution 与 plugins/evolved）'"
 
 [tasks.public]
 description = "以公网模式启动（需在 .env 中设置 ADMIN_TOKEN）"
@@ -26,7 +26,7 @@ run = "node -e \"console.log('ADMIN_TOKEN=' + require('crypto').randomBytes(24).
 
 [tasks.check]
 description = "语法检查"
-run = "for f in server/*.js server/kernel/*.js server/story/*.js server/worldai/*.js server/ext/*.js tools/*.js public/js/*.js test/*.js; do node --check $f || exit 1; done && echo ok"
+run = "for f in server/*.js server/kernel/*.js server/story/*.js server/worldai/*.js plugin-host/*.js plugin-host/sandbox/*.js plugins/builtin/*/*.js evolution/*.js tools/*.js public/js/*.js test/*.js; do node --check $f || exit 1; done && node tools/core-guard.js"
 
 [tasks.test]
 description = "运行测试（不调用 LLM，使用临时存档目录）"
@@ -37,7 +37,11 @@ description = "用真实模型对每个 AI 模块各调用一次，检查输出�
 run = "node tools/smoke-llm.js"
 
 [tasks.evolve]
-description = "把 AI 心愿单里已采纳的能力缺口整理成需求文档（docs/rfcs/）"
+description = "让进化引擎处理一个需求（写需求文档 → 评审 → 实施 → 多轮评审 → 试运行 → 提交裁决）"
+run = "node evolution/daemon.js --once"
+
+[tasks."evolve:rfc"]
+description = "把 AI 心愿单里的能力缺口整理成给人看的需求文档（docs/rfcs/，不写代码）"
 run = "node tools/evolve.js"
 
 [tasks.manifest]
@@ -51,3 +55,7 @@ run = "node tools/export-mod.js"
 [tasks.spec]
 description = "打印当前默认世界规格（JSON）"
 run = "node --input-type=module -e \"import { defaultSpec } from './server/kernel/spec.js'; console.log(JSON.stringify(defaultSpec(), null, 2))\""
+
+[tasks."core:lock"]
+description = "人工修改冻结区（server/ public/ plugin-host/ evolution/ plugins/builtin/）之后，重新生成 core.lock"
+run = "node tools/core-guard.js --lock"

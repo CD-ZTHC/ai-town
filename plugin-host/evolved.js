@@ -255,7 +255,13 @@ export class EvolvedManager {
 
   tick() {
     const now = this.now();
-    if (now - this.lastScan > 5000) { this.lastScan = now; this.scan(); this.promote(); }
+    if (now - this.lastScan > 5000) {
+      this.lastScan = now;
+      this.scan();
+      this.promote();
+      // 心跳：进化引擎据此判断小镇是否繁忙（模型排队太长时让路）
+      try { writeJSON(path.join(this.dir, 'heartbeat.json'), { at: new Date(now).toISOString(), queue: llm.queueSize(), day: this.town.day }); } catch { /* ignore */ }
+    }
     const hour = Math.floor(this.town.t / 60);
     if (hour !== this.lastSignalHour) { this.lastSignalHour = hour; this.exportSignals(); }
   }

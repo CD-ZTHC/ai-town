@@ -8,6 +8,9 @@ import { registry, activeDir, forkTimeline, setActive } from './timelines.js';
 import * as llm from './llm.js';
 import { useAbility } from './kernel/abilities.js';
 import { config, clientIp, isAdmin, visitorId, limits, sanitize, moderate } from './guard.js';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { evolveConfig } from '../plugin-host/evolved.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || undefined;
@@ -560,6 +563,41 @@ server.listen(PORT, HOST, () => {
   console.log(`\n  🌸 云溪镇已开放： http://${HOST || 'localhost'}:${PORT}\n  🔐 ${mode}\n  🧠 LLM: ${llm.stats.enabled ? `${llm.stats.model}（快：${llm.stats.models.fast} · 强：${llm.stats.models.smart}）${llm.stats.dailyBudget ? ` · 每日预算 ${llm.stats.dailyBudget.toLocaleString()} tokens` : ''}` : '未配置（使用规则兜底）'}\n`);
 });
 
-const shutdown = () => { town.save(); process.exit(0); };
+// ---------- 进化引擎（自主演化设计 §3）：独立进程，用 Node 权限模型限制为只能写 plugins/evolved/ 与 data/evolution/ ----------
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const EVOLVED_DIR = path.join(ROOT, 'plugins', 'evolved');
+let engine = null;
+let engineRestarts = 0;
+function startEngine() {
+  const cfg = evolveConfig();
+  if (cfg.mode === 'off' || process.env.EVOLVE_DAEMON === '0') return;
+  fs.mkdirSync(EVOLVED_DIR, { recursive: true });
+  fs.mkdirSync(EVO_DIR, { recursive: true });
+  const args = ['--permission', `--allow-fs-read=${ROOT}`, `--allow-fs-read=${DATA}`, `--allow-fs-write=${EVOLVED_DIR}`, `--allow-fs-write=${EVO_DIR}`, '--allow-child-process', path.join(ROOT, 'evolution', 'daemon.js')];
+  engine = spawn(process.execPath, args, { cwd: ROOT, env: { ...process.env, DATA_DIR: DATA }, stdio: ['ignore', 'inherit', 'inherit'] });
+  engine.on('exit', (code) => {
+    engine = null;
+    if (shuttingDown) return;
+    // 异常退出：指数退避后重启（最多间隔 30 分钟）
+    const wait = Math.min(30 * 60_000, 30_000 * 2 ** engineRestarts++);
+    console.warn(`[evolve] 进化引擎退出（${code}），${Math.round(wait / 1000)} 秒后重启`);
+    setTimeout(startEngine, wait).unref();
+  });
+  if (cfg.publicMode && cfg.publicDeploy === 'all' && cfg.sandboxNet !== 'isolated') {
+    console.warn('[evolve] ⚠️ 公网模式允许 AI 代码插件自动上线，但没有声明沙箱已在系统层面断网（EVOLVE_SANDBOX_NET=isolated）。沙箱已禁止导入网络模块并移除网络对象，仍建议在容器层给沙箱断网。');
+  }
+}
+function engineStatus() {
+  let st = {};
+  try { st = JSON.parse(fs.readFileSync(path.join(EVO_DIR, 'engine.json'), 'utf8')); } catch { /* 还没有运行过 */ }
+  let jobs = [];
+  try { jobs = JSON.parse(fs.readFileSync(path.join(EVO_DIR, 'jobs.json'), 'utf8')).slice(-12).reverse().map((j) => ({ id: j.id, status: j.status, stage: j.stage, need: j.need?.text, source: j.need?.source, title: j.title || null, tier: j.tier || null, key: j.key || null, reason: j.reason || null, rfc: j.rfc || null, startedAt: j.startedAt, finishedAt: j.finishedAt || null, log: (j.log || []).slice(-8) })); } catch { /* 无 */ }
+  const cfg = evolveConfig();
+  return { ...st, running: Boolean(engine), mode: cfg.mode, publicDeploy: cfg.publicDeploy, budgetLimit: Number(process.env.EVOLVE_BUDGET ?? 200_000), sandboxNet: cfg.sandboxNet, jobs };
+}
+startEngine();
+
+let shuttingDown = false;
+const shutdown = () => { shuttingDown = true; engine?.kill('SIGTERM'); town.save(); process.exit(0); };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
