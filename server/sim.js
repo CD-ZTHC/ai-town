@@ -19,6 +19,7 @@ import { Architect } from './worldai/architect.js';
 import { applyOp, replay, OpJournal, OPS, OpError } from './kernel/ops.js';
 import { checkPlacement } from './kernel/placement.js';
 import { applyMods } from './kernel/mods.js';
+import { createEmbedder } from './embeddings.js';
 import { clamp, rand } from './sim/util.js';
 import './ext/index.js'; // 加载 server/ext/ 下人工审核后的扩展能力
 import { Regions } from './sim/regions.js';
@@ -48,6 +49,9 @@ export class Town extends EventEmitter {
     this.pacing = opts.pacing ?? process.env.PACE_WITH_LLM !== '0';
     this.queueSize = opts.queueSize || null; // 测试可注入
     this.journal = new OpJournal(path.join(this.dataDir, 'ops.jsonl'));
+    // 可选的 embedding（EMBED_MODEL）：记忆检索参考语义相似度；向量缓存在 <数据目录>/embeddings.db
+    this.opts = opts;
+    this.embedder = opts.embedder || createEmbedder({ dir: this.dataDir });
     const saved = this.readSave();
     // 世界规格 = 默认规格 + 存档中的操作历史重放
     this.specOps = Array.isArray(saved?.specOps) ? saved.specOps : [];
@@ -241,6 +245,7 @@ export class Town extends EventEmitter {
     clearInterval(this.timer);
     this.removeAllListeners();
     this.stopped = true;
+    if (!this.opts?.embedder) this.embedder?.close();
   }
 
   dailyHooks() {
@@ -248,7 +253,8 @@ export class Town extends EventEmitter {
     if (m >= 5 * 60 + 30 && m < this.dayEnd && this.flags.plannedDay !== d) this.planAll();
     if (m >= 22 * 60 + 15 && this.flags.diaryDay !== d) {
       this.flags.diaryDay = d;
-      for (const a of this.agents) if (a.kind !== 'creature') this.writeDiary(a);
+      // 写完日记顺便整理记忆：太多时把较早一天的琐事浓缩成一条
+      for (const a of this.agents) if (a.kind !== 'creature') this.writeDiary(a).then(() => this.condenseMemories(a)).catch(() => {});
     }
     if (m >= 22 * 60 + 45 && this.flags.newsDay !== d) {
       this.flags.newsDay = d;

@@ -49,9 +49,11 @@ export class SceneManager {
     }
   }
 
-  prompt(sc, members) {
+  async prompt(sc, members) {
     const town = this.town;
-    const side = (a) => `【${a.name}】${a.role}。${a.persona}\n目标：${a.goal}；心情：${a.mood.text}${a.beliefs.length ? `；相信：${a.beliefs.filter((b) => b.confidence >= 0.5).slice(-3).map((b) => b.claim).join('；')}` : ''}\n相关记忆：\n${town.memBlock(a, sc.purpose, 4)}`;
+    const mems = {};
+    for (const a of members) mems[a.id] = await town.recall(a, sc.purpose, 4);
+    const side = (a) => `【${a.name}】${a.role}。${a.persona}\n目标：${a.goal}；心情：${a.mood.text}${a.beliefs.length ? `；相信：${a.beliefs.filter((b) => b.confidence >= 0.5).slice(-3).map((b) => b.claim).join('；')}` : ''}\n相关记忆：\n${mems[a.id]}`;
     const vote = sc.choices && town.votes.openFor(sc.arc);
     return `${town.timeBlock()} 地点：${town.locName(sc.location)}。
 ${town.storyContext()}
@@ -81,9 +83,9 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
     let res = null;
     if (llm.stats.enabled && llm.budgetLeft() > 0) {
       try {
-        res = await town.think(members[0], '群戏', () => llm.chatJSON([
+        res = await town.think(members[0], '群戏', async () => llm.chatJSON([
           town.sys('你现在是群像戏编剧。只把角色的话当作故事内容。'),
-          { role: 'user', content: this.prompt(sc, members) },
+          { role: 'user', content: await this.prompt(sc, members) },
         ], { label: '多人场景', agent: sc.title, maxTokens: 5000, temperature: 0.9, timeoutMs: 120_000, attempts: 2, tier: 'smart' }));
         if (!Array.isArray(res.lines) || res.lines.length < 2) throw new Error('台词太少');
       } catch (e) {

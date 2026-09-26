@@ -1,4 +1,5 @@
-// 记忆流：写入、按「时近性 + 重要性 + 相关性」检索（中文双字组相似度，无需向量模型）
+// 记忆流：写入、压缩、按「时近性 + 重要性 + 相关性」检索。
+// 相关性默认用中文双字组相似度（无需向量模型）；配置了 embedding 时取双字组与语义相似度中较高的一个。
 const PUNCT = /[\s，。！？、；：“”‘’（）《》…—\-,.!?;:'"()[\]{}~·]/g;
 
 function bigrams(text) {
@@ -17,17 +18,76 @@ export function similarity(a, b) {
   return hit / Math.sqrt(x.size * y.size);
 }
 
+export const MEMORY_CAP = 400;
+// 压缩时只动「琐碎」的记忆：反思、摘要、日记不压缩，重要性 ≥ 6 的也不压缩
+const KEEP_TYPES = new Set(['reflect', 'summary', 'diary']);
+export const isTrivial = (m) => !KEEP_TYPES.has(m.type) && m.importance < 6;
+const MIN_GROUP = 5; // 同一天至少这么多条琐碎记忆才值得压缩成一条
+
 let memSeq = 0;
+const newId = (agent) => `${agent.id}-${Date.now().toString(36)}-${(memSeq++).toString(36)}`;
+
 export function addMemory(agent, { t, type = 'obs', text, importance = 3 }) {
-  const m = { id: `${agent.id}-${Date.now().toString(36)}-${(memSeq++).toString(36)}`, t, type, text, importance };
+  const m = { id: newId(agent), t, type, text, importance };
   agent.memories.push(m);
   agent.importanceAcc = (agent.importanceAcc || 0) + importance;
-  // 控制容量：保留反思与高重要性记忆，淘汰旧的琐碎记忆
-  if (agent.memories.length > 400) {
+  // 控制容量：优先把最早一天的琐碎记忆压缩成一条摘要；实在没有可压缩的，才淘汰最旧的一条琐碎记忆
+  if (agent.memories.length > MEMORY_CAP && !compactOldestDay(agent, m)) {
     const drop = agent.memories.findIndex((x) => x.type !== 'reflect' && x.importance < 6);
     agent.memories.splice(drop >= 0 ? drop : 0, 1);
   }
   return m;
+}
+
+/**
+ * 找出可以压缩的一天：最早的、琐碎记忆不少于 minItems 条的那一天（beforeDay 之前，不含 except）。
+ * 返回 { day, items } 或 null；day 从 1 开始，与界面上的「第 N 天」一致。
+ */
+export function condenseCandidate(agent, { minItems = MIN_GROUP, beforeDay = Infinity, except = null } = {}) {
+  const byDay = new Map();
+  for (const m of agent.memories) {
+    if (m === except || !isTrivial(m)) continue;
+    const day = Math.floor(m.t / 1440) + 1;
+    if (day >= beforeDay) continue;
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(m);
+  }
+  for (const day of [...byDay.keys()].sort((a, b) => a - b)) {
+    const items = byDay.get(day);
+    if (items.length >= minItems) return { day, items };
+  }
+  return null;
+}
+
+/** 规则摘要（不调用模型）：挑最重要的几条，拼成一句 */
+export function ruleSummary(day, items) {
+  const top = [...items].sort((a, b) => b.importance - a.importance || a.t - b.t).slice(0, 4);
+  const parts = top.map((m) => {
+    // 去掉句末的括注（如「（和周慧约好的）」，截断的也算）与标点，太长的截断并标上省略号
+    const s = String(m.text).replace(/（[^）]*）?$/u, '').replace(/[。！？，\s]+$/u, '');
+    return s.length > 28 ? `${s.slice(0, 27)}…` : s;
+  });
+  return `第${day}天的零碎记忆：${parts.join('；')}${items.length > top.length ? `……（共${items.length}件小事）` : ''}`.slice(0, 160);
+}
+
+/** 用一条摘要替换一组记忆（按 id；已经不在的会被忽略）。摘要插在这组记忆最后一条的时间位置。返回摘要或 null */
+export function replaceWithSummary(agent, items, { text, importance = 4, day }) {
+  const ids = new Set(items.map((m) => m.id));
+  const gone = agent.memories.filter((m) => ids.has(m.id));
+  if (gone.length < 2) return null;
+  const t = Math.max(...gone.map((m) => m.t));
+  const s = { id: newId(agent), t, type: 'summary', text: String(text).slice(0, 200), importance, day, count: gone.length };
+  const rest = agent.memories.filter((m) => !ids.has(m.id));
+  const at = rest.findIndex((m) => m.t > t);
+  rest.splice(at < 0 ? rest.length : at, 0, s);
+  agent.memories = rest;
+  return s;
+}
+
+function compactOldestDay(agent, justAdded) {
+  const c = condenseCandidate(agent, { except: justAdded });
+  if (!c) return false;
+  return Boolean(replaceWithSummary(agent, c.items, { text: ruleSummary(c.day, c.items), day: c.day }));
 }
 
 // 记忆的双字组缓存：检索时不必每次都重新切分全部记忆。不进存档，记忆被淘汰后自动回收；文本变了就重新计算
@@ -40,7 +100,21 @@ function memGrams(m) {
   return grams;
 }
 
-export function retrieve(agent, query, now, k = 10) {
+/** 余弦相似度（向量等长） */
+export function cosine(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  return na && nb ? dot / Math.sqrt(na * nb) : 0;
+}
+// 语义相似度映射到 0~1：embedding 的余弦值在无关文本之间通常也有 0.2~0.3，低于 0.3 视为无关
+const semantic = (c) => Math.max(0, Math.min(1, (c - 0.3) / 0.5));
+
+/**
+ * @param {object} [opts]
+ * @param {ArrayLike<number>} [opts.qvec] 查询的向量（配置了 embedding 时）
+ * @param {(m: object) => ArrayLike<number>|undefined} [opts.vecOf] 取某条记忆的向量；还没算好的返回 undefined，只用双字组
+ */
+export function retrieve(agent, query, now, k = 10, { qvec = null, vecOf = null } = {}) {
   const q = bigrams(query);
   const scored = agent.memories.map((m) => {
     const hours = Math.max(0, (now - m.t) / 60);
@@ -52,6 +126,10 @@ export function retrieve(agent, query, now, k = 10) {
       let hit = 0;
       for (const g of q) if (b.has(g)) hit++;
       relevance = Math.min(1, (hit / Math.sqrt(q.size * Math.max(1, b.size))) * 3);
+    }
+    if (qvec && vecOf) {
+      const v = vecOf(m);
+      if (v) relevance = Math.max(relevance, semantic(cosine(qvec, v)));
     }
     return { m, score: recency + importance + relevance * 1.5 + (m.type === 'reflect' ? 0.2 : 0) };
   });

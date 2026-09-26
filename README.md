@@ -31,6 +31,7 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 | `LLM_CONCURRENCY` | 并发请求数，默认 4；遇到限流会自动退避并降低并发 |
 | `LLM_PROVIDER` | 模型服务：`openai`（默认，OpenAI 兼容接口，零依赖）或 `pi`（经 [pi-ai](https://github.com/earendil-works/pi) 接入 Anthropic、Gemini、DeepSeek、OpenRouter 等 40 多家，需要先 `npm install`）。`pi` 模式下模型写成 `服务商/模型`（如 `anthropic/claude-sonnet-5`，密钥读 `ANTHROPIC_API_KEY` 等），不带前缀的仍走 `BASE_URL` 网关，各档可以混用；Docker 用 `--build-arg WITH_PI=1` 构建 |
 | `LLM_RECORD` | 设为一个文件路径时，把真实模型的回复按模块录制下来，用来更新回放测试的 `test/fixtures/llm/responses.json` |
+| `EMBED_MODEL` | 可选：embedding 模型名（OpenAI 兼容的 `/embeddings`，默认沿用 `BASE_URL` / `API_KEY`，也可用 `EMBED_BASE_URL` / `EMBED_API_KEY` 单独指定）。配置后记忆检索同时参考语义相似度，向量缓存在 `data/embeddings.db`（`node:sqlite`）；`EMBED_TIMEOUT_MS`（默认 4000）内没算好就先只用双字组 |
 | `LLM_JSON_SCHEMA` | 设为 `1` 开启结构化输出：世界架构师用 `json_schema` 约束补丁格式（非严格模式），减少复杂补丁的格式错误；网关不支持时自动退回普通 JSON 模式 |
 | `LLM_JSON_MODE` | 默认开启：请求模型以 JSON 模式输出（`response_format: json_object`），网关不支持时自动关闭；设为 `0` 手动关闭 |
 | `NODE_USE_ENV_PROXY` | 服务器需要经由 HTTPS 代理访问模型时设为 `1`（Node ≥ 22.21），否则 Node 内置的 fetch 不会读取 `HTTPS_PROXY` |
@@ -111,7 +112,9 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 | 📰 日报 | 每晚 22:45 或手动 | 汇总全镇对话与事件，生成一份报纸 |
 | 🏮 能力与行动 | 规划、重新规划、内心独白时 | 居民可以使用能力、送东西、传授本事、在图书馆研究新能力（见下文） |
 
-记忆检索 = 时近性（指数衰减）+ 重要性 + 相关性（中文双字组相似度，不依赖向量模型）。
+记忆检索 = 时近性（指数衰减）+ 重要性 + 相关性（中文双字组相似度；配置了 `EMBED_MODEL` 时再取语义相似度中较高的一个）。
+
+记忆整理：每人最多 400 条。每晚写完日记后，记忆超过 300 条的居民会把前天以前最早一天的琐事交给快模型浓缩成一条第一人称的摘要；满 400 条时当场按规则把最早一天的琐事合并成一条摘要。反思、日记与重要的记忆不会被合并。
 
 ## 玩法
 

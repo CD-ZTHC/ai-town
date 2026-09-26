@@ -1,9 +1,12 @@
-// 认知：提示词片段、内心独白、反思、日记、日报
+// 认知：提示词片段、记忆检索与整理、内心独白、反思、日记、日报
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
 import * as llm from '../llm.js';
-import { addMemory, retrieve, fmtTime, fmtStamp } from '../memory.js';
+import { addMemory, retrieve, fmtTime, fmtStamp, condenseCandidate, replaceWithSummary, ruleSummary } from '../memory.js';
 import { useAbility } from '../kernel/abilities.js';
 import { clampStr } from './util.js';
+
+const CONDENSE_AT = 300; // 记忆超过这么多条时，每晚整理一天的琐事
+const CONDENSE_MIN = 8; // 一天至少这么多条琐碎记忆才整理
 
 export class Cognition {
   personaBlock(a) {
@@ -19,9 +22,42 @@ export class Cognition {
     return `姓名：${a.name}，${a.age}岁，${a.role}。\n性格：${a.persona}${growth ? `\n成长经历：${growth}` : ''}\n当前目标：${a.goal}\n心情：${a.mood.text}；状态：${status}${beliefs ? `\n相信：${beliefs}` : ''}${origin}\n人际关系：${rel || '暂无'}`;
   }
 
-  memBlock(a, query, k = 10) {
-    const ms = retrieve(a, query, this.t, k);
+  memBlock(a, query, k = 10, opts = undefined) {
+    const ms = retrieve(a, query, this.t, k, opts);
     return ms.length ? ms.map((m) => `- [${fmtStamp(m.t)}] ${m.text}`).join('\n') : '- （暂无）';
+  }
+
+  /** 提示词里的「相关记忆」：配置了 embedding 时先补齐向量（有超时），再按双字组 + 语义检索；没配置时等同 memBlock */
+  async recall(a, query, k = 10) {
+    const e = this.embedder;
+    if (!e?.enabled) return this.memBlock(a, query, k);
+    await e.ensure([query, ...a.memories.map((m) => m.text)]);
+    const qvec = e.vec(query);
+    return this.memBlock(a, query, k, qvec ? { qvec, vecOf: (m) => e.vec(m.text) } : undefined);
+  }
+
+  /**
+   * 整理记忆（每晚写完日记后）：记忆太多时，把前天以前最早的一天琐事浓缩成一条摘要。
+   * 有模型时由快模型用第一人称概括，失败或没有模型时用规则摘要。返回摘要记忆或 null。
+   */
+  async condenseMemories(a) {
+    if (a.memories.length <= CONDENSE_AT) return null;
+    const c = condenseCandidate(a, { minItems: CONDENSE_MIN, beforeDay: this.day - 1 });
+    if (!c) return null;
+    let text = '';
+    if (llm.stats.enabled && llm.budgetLeft() > 0) {
+      try {
+        const list = c.items.map((m) => `- [${fmtTime(m.t)}] ${m.text}`).join('\n');
+        const res = await this.think(a, '整理记忆', () => llm.chatJSON([
+          this.sys(),
+          { role: 'user', content: `${this.personaBlock(a)}\n${a.name}第${c.day}天经历的这些小事：\n${list}\n\n请以${a.name}的第一人称，把它们浓缩成一两句记忆（≤80字），保留人名、地点、约定和让人在意的细节，省略重复与琐碎的部分。输出 JSON：{"summary":"..."}` },
+        ], { label: '记忆整理', agent: a.name, maxTokens: 800, tier: 'fast', attempts: 1, timeoutMs: 60_000 }));
+        text = clampStr(res.summary, 120);
+      } catch (err) {
+        console.warn(`[memory] ${a.name} 整理失败，改用规则摘要：`, err.message);
+      }
+    }
+    return replaceWithSummary(a, c.items, text ? { text: `第${c.day}天：${text}`, importance: 5, day: c.day } : { text: ruleSummary(c.day, c.items), day: c.day });
   }
 
   timeBlock() {
@@ -38,7 +74,7 @@ export class Cognition {
     a.lastThoughtT = this.t;
     const key = a.curKey;
     try {
-      const res = await this.think(a, '思考中', () => llm.chatJSON([
+      const res = await this.think(a, '思考中', async () => llm.chatJSON([
         this.sys(),
         {
           role: 'user', content: `${this.timeBlock()}
@@ -46,7 +82,7 @@ ${this.personaBlock(a)}
 此刻所在：${this.locName(a.locId)}；正在：${a.action.text}
 ${this.nearbyText(a)}
 相关记忆：
-${this.memBlock(a, `${a.action.text} ${this.locName(a.locId)} ${a.goal}`, 8)}
+${await this.recall(a, `${a.action.text} ${this.locName(a.locId)} ${a.goal}`, 8)}
 
 ${this.abilityList(a)}
 请生成${a.name}此刻的状态。输出 JSON：{"thought":"内心独白（≤40字，真实细腻，可涉及目标、他人、回忆）","action":"此刻具体在做的事（≤14字）","emoji":"一个表示动作的emoji","mood":"两字心情","moodEmoji":"一个emoji"${a.abilities.length ? ',"use":null 或 {"ability":"能力id","target":"身边某人的姓名，不需要对象时为null"}（只有此刻真的合适才使用能力）' : ''}}`,

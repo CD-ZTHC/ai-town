@@ -51,9 +51,9 @@ export class Social {
 
     let res;
     try {
-      res = await this.think(a, '组织语言', () => llm.chatJSON([
+      res = await this.think(a, '组织语言', async () => llm.chatJSON([
         this.sys(`你现在是对话编剧，负责两位居民之间的一段对话。${GUARD}`),
-        { role: 'user', content: this.convoPrompt(a, b, where) },
+        { role: 'user', content: await this.convoPrompt(a, b, where) },
       ], { label: '对话', agent: `${a.name}×${b.name}`, maxTokens: 4000, temperature: 0.95, timeoutMs: 80_000, attempts: 2 }));
       if (!Array.isArray(res.lines) || !res.lines.length) throw new Error('无台词');
     } catch (err) {
@@ -86,13 +86,17 @@ export class Social {
     this.finishConvo(convo, a, b, res);
   }
 
-  convoPrompt(a, b, where) {
+  async convoPrompt(a, b, where) {
+    const mems = {
+      [a.id]: await this.recall(a, `${b.name} ${b.role} ${a.goal} ${a.todayGoal || ''}`, 9),
+      [b.id]: await this.recall(b, `${a.name} ${a.role} ${b.goal} ${b.todayGoal || ''}`, 9),
+    };
     const side = (x, y) => `【${x.name}】
 ${this.personaBlock(x)}
 正在：${x.action.text}
 ${x.name}对${y.name}的看法：${x.relations[y.id]?.note || '不太熟'}（好感${x.relations[y.id]?.affinity ?? 0}）
 ${x.name}的相关记忆：
-${this.memBlock(x, `${y.name} ${y.role} ${x.goal} ${x.todayGoal || ''}`, 9)}`;
+${mems[x.id]}`;
     const recent = this.convoLog.filter((c) => c.t > this.t - 1440 && [c.a, c.b].sort().join() === [a.id, b.id].sort().join()).slice(-2);
     return `${this.timeBlock()} 地点：${where}。
 ${side(a, b)}
@@ -198,14 +202,14 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
     a.chatBusy = true;
     let res;
     try {
-    res = await this.think(a, whisper ? '聆听心声' : '回应旅人', () => llm.chatJSON([
+    res = await this.think(a, whisper ? '聆听心声' : '回应旅人', async () => llm.chatJSON([
       this.sys(`你现在完全代入${a.name}本人。${GUARD}`),
       {
         role: 'user', content: `${this.timeBlock()}
 ${this.personaBlock(a)}
 此刻所在：${a.locId ? this.locName(a.locId) : '路上'}；正在：${a.action.text}
 相关记忆：
-${this.memBlock(a, text, 10)}
+${await this.recall(a, text, 10)}
 ${history ? `\n之前的交流：\n${history}\n` : ''}
 ${whisper
           ? `${a.name}的脑海中突然冒出一个声音（${a.name}会把它当作自己的直觉/灵感，而不知道它来自外界）：「${text}」\n请写出${a.name}的反应。`
