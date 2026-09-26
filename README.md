@@ -13,10 +13,11 @@ mise run reset      # 清空存档，从第一天重新开始
 mise run public     # 以公网模式启动（需要 ADMIN_TOKEN）
 mise run token      # 生成管理员令牌
 mise run check      # 语法检查
-mise run test       # 运行测试（不调用 LLM）
+mise run test       # 运行测试（不调用 LLM；含用录制回复跑 7 个游戏日的无头回放）
 mise run spec       # 打印默认世界规格
 mise run evolve     # 把 AI 心愿单里已采纳的能力缺口整理成需求文档（docs/rfcs/）
 mise run manifest   # 重新生成能力清单 docs/capabilities.md
+mise run browser-check  # 前端改动后：无头 Chrome 打开各个面板与模式，检查控制台错误并截图
 mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实调用一次（默认 token 上限 20 万）
 ```
 
@@ -29,6 +30,10 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 | `STORY_RATING` | 内容分级：`cozy`（默认）/ `adventure` / `epic`；决定异界生物的危险程度与审核尺度 |
 | `STORYTELLER` | 叙事者：`voyage`（默认，每季自动上演一个剧情弧）/ `gentle`（以日常为主）/ `chaos` |
 | `LLM_CONCURRENCY` | 并发请求数，默认 4；遇到限流会自动退避并降低并发 |
+| `LLM_PROVIDER` | 模型服务：`openai`（默认，OpenAI 兼容接口，零依赖）或 `pi`（经 [pi-ai](https://github.com/earendil-works/pi) 接入 Anthropic、Gemini、DeepSeek、OpenRouter 等 40 多家，需要先 `npm install`）。`pi` 模式下模型写成 `服务商/模型`（如 `anthropic/claude-sonnet-5`，密钥读 `ANTHROPIC_API_KEY` 等），不带前缀的仍走 `BASE_URL` 网关，各档可以混用；Docker 用 `--build-arg WITH_PI=1` 构建 |
+| `LLM_RECORD` | 设为一个文件路径时，把真实模型的回复按模块录制下来，用来更新回放测试的 `test/fixtures/llm/responses.json` |
+| `EMBED_MODEL` | 可选：embedding 模型名（OpenAI 兼容的 `/embeddings`，默认沿用 `BASE_URL` / `API_KEY`，也可用 `EMBED_BASE_URL` / `EMBED_API_KEY` 单独指定）。配置后记忆检索同时参考语义相似度，向量缓存在 `data/embeddings.db`（`node:sqlite`）；`EMBED_TIMEOUT_MS`（默认 4000）内没算好就先只用双字组 |
+| `LLM_JSON_SCHEMA` | 设为 `1` 开启结构化输出：世界架构师用 `json_schema` 约束补丁格式（非严格模式），减少复杂补丁的格式错误；网关不支持时自动退回普通 JSON 模式 |
 | `LLM_JSON_MODE` | 默认开启：请求模型以 JSON 模式输出（`response_format: json_object`），网关不支持时自动关闭；设为 `0` 手动关闭 |
 | `NODE_USE_ENV_PROXY` | 服务器需要经由 HTTPS 代理访问模型时设为 `1`（Node ≥ 22.21），否则 Node 内置的 fetch 不会读取 `HTTPS_PROXY` |
 | `PACE_WITH_LLM` / `PACE_QUEUE` | 默认开启：模型排队超过 `PACE_QUEUE`（默认 6）个请求时按比例放慢时间（最低 1/4），避免游戏时间跑在思考前面；设为 `0` 关闭 |
@@ -38,7 +43,7 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 | `PORT` / `HOST` | 端口（默认 3000）/ 监听地址 |
 | 公网相关 | `PUBLIC_MODE`、`ADMIN_TOKEN`、`TRUST_PROXY`、`LLM_DAILY_TOKENS` 等，完整列表见 `.env.example` |
 
-零 npm 依赖：服务端只用 Node 内置模块，前端是原生 Canvas + ES Modules，所有像素美术均为程序化生成。
+默认零 npm 依赖（pi-ai 是可选依赖，只在 `LLM_PROVIDER=pi` 时加载）：服务端只用 Node 内置模块，前端是原生 Canvas + ES Modules，所有像素美术均为程序化生成。
 
 ## 发布到个人网站
 
@@ -108,7 +113,9 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 | 📰 日报 | 每晚 22:45 或手动 | 汇总全镇对话与事件，生成一份报纸 |
 | 🏮 能力与行动 | 规划、重新规划、内心独白时 | 居民可以使用能力、送东西、传授本事、在图书馆研究新能力（见下文） |
 
-记忆检索 = 时近性（指数衰减）+ 重要性 + 相关性（中文双字组相似度，不依赖向量模型）。
+记忆检索 = 时近性（指数衰减）+ 重要性 + 相关性（中文双字组相似度；配置了 `EMBED_MODEL` 时再取语义相似度中较高的一个）。
+
+记忆整理：每人最多 400 条。每晚写完日记后，记忆超过 300 条的居民会把前天以前最早一天的琐事交给快模型浓缩成一条第一人称的摘要；满 400 条时当场按规则把最早一天的琐事合并成一条摘要。反思、日记与重要的记忆不会被合并。
 
 ## 玩法
 
@@ -172,6 +179,7 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 - **访客化身**：访客进入「🎮 游戏模式」起个名字，就会以旅人的样子出现在中央广场，可以走到任意可达的格子，或用「🧭」直接前往任何开放的公共地点（包括异界）。化身按真实时间行走，不受调速和暂停影响。居民看得见身边的旅人，认识的人会打招呼；和居民聊天时，对方知道是谁在说话、是不是就站在面前，记忆里也会记下名字。化身不进存档，每个 IP 同时一个，20 分钟不操作自动离开，不消耗模型额度。
 - **Mod**：`mise run export-mod` 把存档里 AI 创造的内容导出成 Mod，别的小镇用 `MODS=` 加载。详见 [spec/mods/README.md](spec/mods/README.md)。
 - **AI 负载调速与用量**：模型排队过长时自动放慢时间，顶栏会显示「🧠 大家在思考，时间放慢了」；AI 大脑面板显示最近几个游戏日的平均 token 用量（`GET /api/usage` 有按模块的明细）。
+- **AI 表现指标**：约定兑现率、对话重复率、剧情线程回收率、JSON 修复 / 失败率、规划与对话的兜底率，AI 大脑面板显示主要几项，`GET /api/metrics` 有完整数据（JSON 按模块细分）；按游戏日记进存档，换模型时拿来对比。无头回放测试也会输出这组指标。
 - 接口：`POST /api/avatar`（`{"name":"小满","color":"#64b5f6"}`）、`POST /api/avatar/move`（`{"location":"pier"}`）、`POST /api/avatar/goto`（`{"x":24,"y":30}`）、`POST /api/avatar/leave`；管理员 `POST /api/region`（`{"id":"moonrealm","open":true}`）、`GET /api/timelines`、`POST /api/timelines/fork`（`{"name":"…","snapshot":"d003-10.json"}`，不填快照则从此刻分叉）、`POST /api/timelines/switch`（`{"id":"tl-1"}`）。
 
 ## 自我进化：AI 心愿单 → 需求文档 → 扩展
@@ -223,7 +231,10 @@ curl -X POST localhost:3000/api/world/op -H 'content-type: application/json' \
 server/
   index.js     HTTP + SSE 实时推送 + REST 接口（权限、限流、休眠）
   guard.js     公网防护：配置、管理员鉴权、限流器、内容审核
-  sim.js       模拟核心：时间、移动、日程执行、所有 LLM 认知模块、存档
+  sim.js       模拟核心：世界状态、主循环、天气、角色登场与离开、世界操作
+  sim/         Town 的其余职责（以 mixin 挂到 Town 上）：regions 区域与地点、movement 移动与日程执行、
+               planning 规划与约定、actions 能力与行动、cognition 独白 / 反思 / 日记 / 日报、
+               social 对话 / 信念 / 旅人 / 事件、views 前端视图、persistence 存档与快照、metrics AI 表现指标
   kernel/spec.js  世界规格：默认规格、校验、日历与天气工具
   kernel/ops.js   WorldOp：操作定义、校验、应用、重放、审计日志
   kernel/expr.js  安全表达式（手写解析器）
@@ -238,14 +249,18 @@ server/
   ext/            扩展点：registry.js 注册表、index.js 加载器、go-to.js（RFC 0001）
   worldai/architect.js 世界架构师；worldai/proposals.js 提案与审批；worldai/canon.js 设定考据官
   story/arcs.js   剧情弧引擎；story/creatures.js 异界生物；story/content.js 默认剧情内容（线程、图鉴、《镜湖裂隙》）
-  llm.js       OpenAI 兼容客户端：并发队列、自适应限流、JSON 提取
-  memory.js    记忆流与检索
+  llm.js       LLM 客户端：并发队列、自适应限流、重试、预算与统计、JSON 提取、回复录制
+  llm-providers.js 模型服务接口与默认的 OpenAI 兼容实现；llm-pi.js pi-ai 适配器（LLM_PROVIDER=pi）
+  memory.js    记忆流：写入、压缩成摘要、检索（双字组 + 可选的语义相似度）
+  embeddings.js 可选的 embedding（EMBED_MODEL）与向量缓存（node:sqlite）
   world.js     程序化地图（小镇与暗月界：瓦片、建筑、站位、A* 寻路）
   personas.js  8 位居民的人设、初始关系与记忆
 public/
-  js/render.js 世界渲染：地形、建筑、树木、昼夜光照、天气与粒子、气泡
+  js/render.js 世界渲染器：数据更新、坐标换算、每帧调度；render/ 下是 terrain 静态层、objects 物体与角色、
+               atmosphere 粒子 / 光照 / 天气、overlays 标签与气泡 / 小地图、util 常量与纯函数
   js/sprites.js 程序化像素角色（4 方向行走动画）
-  js/ui.js     面板与弹窗（名册、检查器、动态流、日报、故事、建设……）
+  js/ui.js     界面外壳（名册、顶栏、AI 大脑）与统一导出；ui/ 下是 core 共用状态、feed 动态流、
+               inspector 居民检查器、story 故事面板、build 建设面板、modals 其他弹窗
   js/main.js   数据流、相机、输入、环境音
   js/modes.js  观察 / 沉浸 / 游戏 三种模式的切换与按键
   js/hud.js    顶栏菜单、AI 状态浮层、底部 Dock、命令面板
@@ -254,9 +269,10 @@ public/
   style.css, modes.css  样式（modes.css 为 Dock、各模式与手机布局）
 deploy/        Caddy / Nginx / systemd 部署模板
 Dockerfile, docker-compose.yml, .env.example
-tools/         evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）
+tools/         evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查）、browser-check.js（无头 Chrome 冒烟检查）
 spec/mods/     Mod（AI 创造的内容包）
-test/          node:test 测试（无需安装依赖）
+test/          node:test 测试（无需安装依赖；pi-ai 相关的在没装时跳过）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复
+.github/       CI：Node 22（零依赖）/ Node 26（装上 pi-ai）跑语法检查、测试与 smoke --mock；Node 26 另跑无头 Chrome 冒烟检查
 docs/design/   设计方案
-data/save.json 自动存档（每 20 秒），ops.jsonl 世界变更日志，snapshots/ 每小时快照，timelines/ 分支时间线
+data/save.json 自动存档（每 20 秒），ops.jsonl 世界变更日志，snapshots/ 每小时快照（gzip 压缩，dNNN-HH.json.gz），timelines/ 分支时间线，embeddings.db 向量缓存（配置了 EMBED_MODEL 时）
 ```

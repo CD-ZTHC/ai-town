@@ -6,6 +6,26 @@ import { ARCHITECT_OPS } from './proposals.js';
 import { manifestText } from './manifest.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
+
+/** 架构师输出的结构（LLM_JSON_SCHEMA=1 时作为 json_schema 发给支持的网关）：要么是补丁，要么是能力缺口 */
+export const ARCHITECT_SCHEMA = {
+  name: 'world_patch',
+  schema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', maxLength: 20 },
+      motive: { type: 'string', maxLength: 60 },
+      ops: {
+        type: 'array', minItems: 1, maxItems: 4,
+        items: { type: 'object', properties: { op: { type: 'string', enum: ARCHITECT_OPS }, args: { type: 'object' } }, required: ['op', 'args'] },
+      },
+      construction: {
+        anyOf: [{ type: 'null' }, { type: 'object', properties: { by: { type: 'array', items: { type: 'string' } }, hours: { type: 'number', minimum: 1, maximum: 12 } }, required: ['by', 'hours'] }],
+      },
+      gap: { type: 'object', properties: { need: { type: 'string' }, why: { type: 'string' } }, required: ['need', 'why'] },
+    },
+  },
+};
 const MAX_QUEUE = 5;
 // 每个游戏日各来源最多交给架构师的意图数（管理员不限）
 const DAILY = { agent: 1, director: 3, visitor: 4 };
@@ -66,7 +86,7 @@ ${this.manifest()}
   }
 
   async ask(messages) {
-    return llm.chatJSON(messages, { label: '世界架构师', agent: '架构师', maxTokens: 4000, temperature: 0.7, tier: 'smart', attempts: 2, timeoutMs: 120_000 });
+    return llm.chatJSON(messages, { label: '世界架构师', agent: '架构师', maxTokens: 4000, temperature: 0.7, tier: 'smart', attempts: 2, timeoutMs: 120_000, schema: ARCHITECT_SCHEMA });
   }
 
   async process(item) {

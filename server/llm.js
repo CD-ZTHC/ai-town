@@ -1,6 +1,8 @@
-// OpenAI 兼容接口的 LLM 客户端：并发队列、重试、模型分档与自动校正、JSON 提取、统计
-const BASE_URL = (process.env.BASE_URL || '').replace(/\/+$/, '');
-const API_KEY = process.env.API_KEY || '';
+// LLM 客户端：并发队列、重试、模型分档与自动校正、JSON 提取、统计。发请求交给 provider（见 llm-providers.js）
+import fs from 'node:fs';
+import { createProvider } from './llm-providers.js';
+
+let provider = createProvider(process.env.LLM_PROVIDER || 'openai');
 const CONCURRENCY = Number(process.env.LLM_CONCURRENCY || 4);
 const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 150_000);
 
@@ -19,11 +21,16 @@ const modelFor = (tier) => models[tier] || models.default;
 // JSON 模式（response_format: json_object）：大幅减少模型输出不合法 JSON 的情况。
 // 网关不支持时会报错，此时自动关闭并重试；也可以用 LLM_JSON_MODE=0 手动关闭。
 let jsonMode = process.env.LLM_JSON_MODE !== '0';
+export function setJsonMode(on) { jsonMode = Boolean(on); }
+// 结构化输出（response_format: json_schema）：调用方给了 schema 且 LLM_JSON_SCHEMA=1 时使用；
+// 网关不支持时自动退回普通 JSON 模式
+let schemaMode = process.env.LLM_JSON_SCHEMA === '1';
+export function setJsonSchema(on) { schemaMode = Boolean(on); }
 let modelChecked = false;
 const listeners = new Set();
 
 export const stats = {
-  enabled: Boolean(BASE_URL && API_KEY),
+  enabled: provider.enabled,
   model: models.default,
   models: { fast: modelFor('fast'), smart: modelFor('smart') },
   calls: 0,
@@ -52,8 +59,12 @@ const notify = () => listeners.forEach((fn) => fn(stats));
 export class BudgetError extends Error {
   constructor() { super('今日 AI 额度已用完'); this.code = 'BUDGET'; }
 }
+/** 本地日期（YYYY-MM-DD）：每日额度按服务器所在时区的午夜重置，而不是 UTC 午夜 */
+export function localDayKey(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function rollDay() {
-  const k = new Date().toISOString().slice(0, 10);
+  const k = localDayKey();
   if (stats.dayKey !== k) { stats.dayKey = k; stats.dayTokens = 0; }
 }
 export function budgetLeft() {
@@ -66,9 +77,7 @@ async function ensureModel() {
   if (modelChecked || !stats.enabled) return;
   modelChecked = true;
   try {
-    const res = await fetch(`${BASE_URL}/models`, { headers: { Authorization: `Bearer ${API_KEY}` } });
-    const data = await res.json();
-    const ids = (data.data || []).map((m) => m.id);
+    const ids = provider.listModels ? await provider.listModels() : [];
     for (const tier of Object.keys(models)) {
       const want = models[tier];
       if (!want || !ids.length || ids.includes(want)) continue;
@@ -128,7 +137,7 @@ function enqueue(fn, priority = false) {
 }
 
 let seq = 0;
-async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = TIMEOUT_MS, attempts = 3, tier = 'default', json = false }) {
+async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = TIMEOUT_MS, attempts = 3, tier = 'default', json = false, schema = null }) {
   await ensureModel();
   const model = modelFor(tier);
   const id = ++seq;
@@ -144,37 +153,17 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
-        const res = await fetch(`${BASE_URL}/chat/completions`, {
-          method: 'POST',
-          signal: ctrl.signal,
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${API_KEY}` },
-          body: JSON.stringify({
-            model,
-            messages,
-            temperature,
-            max_tokens: maxTokens,
-            reasoning_effort: 'low',
-            ...(json && jsonMode ? { response_format: { type: 'json_object' } } : {}),
-          }),
-        });
-        const text = await res.text();
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch {
-          throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-        }
-        if (!res.ok || data.error) throw new Error(data.error?.message || `HTTP ${res.status}`);
-        const content = data.choices?.[0]?.message?.content ?? '';
-        stats.promptTokens += data.usage?.prompt_tokens || 0;
-        stats.completionTokens += data.usage?.completion_tokens || 0;
+        const withSchema = Boolean(schema && json && jsonMode && schemaMode);
+        const { content, usage, finishReason } = await provider.complete({ model, messages, temperature, maxTokens, json: json && jsonMode, ...(withSchema ? { schema } : {}), signal: ctrl.signal });
+        stats.promptTokens += usage.prompt;
+        stats.completionTokens += usage.completion;
         rollDay();
-        stats.dayTokens += (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
-        const u = (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0 });
+        stats.dayTokens += usage.prompt + usage.completion;
+        const u = labelStats(label);
         u.calls++;
-        u.tokens += (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
+        u.tokens += usage.prompt + usage.completion;
         u.ms += Date.now() - started;
-        if (!content.trim()) throw new Error(`空回复 (finish_reason=${data.choices?.[0]?.finish_reason})`);
+        if (!content.trim()) throw new Error(`空回复 (finish_reason=${finishReason})`);
         const ms = Date.now() - started;
         backoff = Math.max(0, backoff - 1);
         if (stats.ok % 5 === 0 && penalty > 0) penalty--;
@@ -185,6 +174,11 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
       } catch (e) {
         lastErr = e;
         if (/no access|invalid.*key|unauthori/i.test(e.message)) break;
+        if (schema && json && jsonMode && schemaMode && /json_schema|response_format|schema/i.test(e.message)) {
+          schemaMode = false;
+          console.warn('[llm] 网关不支持结构化输出（json_schema），已退回普通 JSON 模式');
+          continue;
+        }
         if (json && jsonMode && /response_format|json_object|json mode/i.test(e.message)) {
           jsonMode = false;
           console.warn('[llm] 网关不支持 JSON 模式，已自动关闭');
@@ -207,11 +201,16 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
     stats.errors++;
     stats.lastError = String(lastErr?.message || lastErr).slice(0, 200);
     pushRecent({ label, agent, ms: Date.now() - started, ok: false });
-    (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0 }).fails++;
+    labelStats(label).fails++;
     throw lastErr;
   } finally {
     stats.active = stats.active.filter((a) => a.id !== id);
   }
+}
+
+/** 按模块的统计：请求次数、失败、token、耗时；json / repairs / badJson 是 chatJSON 的解析情况 */
+function labelStats(label) {
+  return (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0, json: 0, repairs: 0, badJson: 0 });
 }
 
 function pushRecent(r) {
@@ -221,17 +220,41 @@ function pushRecent(r) {
 
 // 测试用：注入一个假的模型（fn(messages, opts) => 回复文本），不发出任何网络请求
 let mock = null;
-const realEnabled = stats.enabled;
 export function setMock(fn) {
   mock = fn || null;
-  stats.enabled = Boolean(mock) || realEnabled;
+  stats.enabled = Boolean(mock) || provider.enabled;
+}
+
+/** 换用另一个 provider（测试，或在启动时接入其他 SDK）；模型名会重新校验 */
+export function setProvider(p) {
+  provider = p;
+  modelChecked = false;
+  stats.enabled = Boolean(mock) || provider.enabled;
 }
 
 export function chat(messages, opts = {}) {
   if (mock) return Promise.resolve().then(() => mock(messages, opts));
   if (!stats.enabled) return Promise.reject(new Error('LLM 未配置'));
   if (budgetLeft() <= 0) return Promise.reject(new BudgetError());
-  return enqueue(() => rawChat(messages, opts), opts.priority);
+  const p = enqueue(() => rawChat(messages, opts), opts.priority);
+  return RECORD_FILE ? p.then((content) => { record(opts.label || 'llm', content); return content; }) : p;
+}
+
+// 录制真实回复，供无头回放测试使用：LLM_RECORD=test/fixtures/llm/responses.json mise run start
+// 按模块（label）分组，每个模块保留最近 RECORD_KEEP 条；能解析成 JSON 的存成对象，方便人工审阅与修改
+const RECORD_FILE = process.env.LLM_RECORD || '';
+const RECORD_KEEP = 4;
+function record(label, content) {
+  try {
+    let all = {};
+    try { all = JSON.parse(fs.readFileSync(RECORD_FILE, 'utf8')); } catch {}
+    let entry = content;
+    try { entry = extractJSON(content); } catch {}
+    all[label] = [...(all[label] || []), entry].slice(-RECORD_KEEP);
+    fs.writeFileSync(RECORD_FILE, JSON.stringify(all, null, 2) + '\n');
+  } catch (e) {
+    console.warn('[llm] 录制失败：', e.message);
+  }
 }
 
 export function extractJSON(text) {
@@ -260,13 +283,22 @@ export function extractJSON(text) {
 export async function chatJSON(messages, opts = {}) {
   opts = { json: true, ...opts };
   let content = await chat(messages, opts);
+  const s = labelStats(opts.label || 'llm');
+  s.json++;
   try {
     return extractJSON(content);
   } catch {
+    // 输出不是合法 JSON：让模型改一次（计入 repairs），还不行计入 badJson
+    s.repairs++;
     content = await chat(
       [...messages, { role: 'assistant', content }, { role: 'user', content: '上面的输出不是合法 JSON。请只输出合法的 JSON，不要任何其他文字。' }],
       opts,
     );
-    return extractJSON(content);
+    try {
+      return extractJSON(content);
+    } catch (e) {
+      s.badJson++;
+      throw e;
+    }
   }
 }

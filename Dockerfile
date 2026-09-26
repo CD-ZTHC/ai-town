@@ -5,7 +5,10 @@ ENV NODE_ENV=production \
     PORT=3000 \
     PUBLIC_MODE=1
 WORKDIR /app
-COPY package.json ./
+# WITH_PI=1 时安装可选依赖 pi-ai（LLM_PROVIDER=pi 需要）：docker compose build --build-arg WITH_PI=1
+ARG WITH_PI=0
+COPY package.json package-lock.json ./
+RUN if [ "$WITH_PI" = "1" ]; then npm ci --omit=dev --no-audit --no-fund && npm cache clean --force; fi
 COPY server ./server
 COPY public ./public
 COPY spec ./spec

@@ -24,17 +24,9 @@ const llm = await import('../server/llm.js');
 const { useAbility } = await import('../server/kernel/abilities.js');
 
 if (MOCK) {
-  llm.setMock((messages, opts) => JSON.stringify({
-    规划一天: { mood: '期待', moodEmoji: '😊', goal: '办好音乐会', schedule: [{ start: '09:30', end: '12:00', location: 'cafe', activity: '开店', emoji: '☕' }, { start: '12:00', end: '14:00', location: 'square', activity: '找乐手', emoji: '🎸' }, { start: '14:00', end: '18:00', location: 'cafe', activity: '看店', emoji: '☕' }] },
-    内心独白: { thought: '天黑了，点盏灯吧', action: '点灯', emoji: '🏮', mood: '安心', moodEmoji: '😊', use: { ability: 'firefly_ward', target: null } },
-    对话: { lines: [{ speaker: '林晓雨', text: '早呀' }, { speaker: '苏墨', text: '早。' }], summary: '打招呼', memoryA: '和苏墨打了招呼', memoryB: '和晓雨打了招呼', affinityA: 1, affinityB: 2, noteA: '安静', noteB: '温柔', importance: 3, commitments: [], idea: null },
-    叙事导演: { decision: 'foreshadow', reason: '测试', beats: [{ kind: 'omen', who: ['王小乐'], text: '湖面闪了一下' }] },
-    多人场景: { lines: [{ speaker: '何月', text: '人齐了' }, { speaker: '赵铁柱', text: '说吧' }], summary: '商量', memories: {}, affinity: [], assignments: [] },
-    世界架构师: { title: '观星塔', motive: '看星星', ops: [{ op: 'addBuilding', args: { id: 'star_tower', name: '观星塔', kind: 'tower', w: 3, h: 3, place: { near: 'pier' }, sign: '🔭', desc: '看星星' } }], construction: { by: ['赵铁柱'], hours: 2 } },
-    设定考据: { severity: 'none', issues: [] },
-    撰写日报: { headline: '测试', subhead: '测试', lead: '测试', articles: [], gossip: '', quote: { who: '林晓雨', text: '你好' }, forecast: '晴' },
-    撰写需求文档: { title: '测试', slug: 'test', summary: 's', motivation: 'm', design: 'd', schema: '{}', example: 'e', tests: [], risks: [], alternatives: [], effort: 'S' },
-  }[opts.label] || {}));
+  // 与无头回放测试共用同一份录制回复
+  const { fixtureMock } = await import('../test/fixtures/llm/index.js');
+  llm.setMock(fixtureMock());
 }
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-smoke-'));

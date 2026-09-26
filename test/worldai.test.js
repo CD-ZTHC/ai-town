@@ -263,3 +263,20 @@ test('时光回溯：列出快照、恢复前备份当前存档、恢复后回�
   assert.throws(() => restoreSnapshot(dir, '../save.json'), /不合法/);
   assert.throws(() => restoreSnapshot(dir, 'd999-23.json'), /不存在/);
 });
+
+test('选址的简写：模型把 place 写扁（args.near / within）或写成字符串时照样选址', () => {
+  const town = newTown();
+  const ps = town.proposalSystem;
+  const { place, ...tower } = TOWER;
+  const flat = ps.prepare([{ op: 'addBuilding', args: { ...tower, near: 'pier', within: 10 } }]);
+  assert.ok(!flat.error, flat.error);
+  const str = ps.prepare([{ op: 'addBuilding', args: { ...tower, place: 'pier' } }]);
+  assert.ok(!str.error, str.error);
+  const full = ps.prepare([{ op: 'addBuilding', args: TOWER }]);
+  for (const r of [flat, str]) {
+    assert.equal(r.ops[0].args.near, 'pier');
+    assert.deepEqual([r.ops[0].args.x, r.ops[0].args.y], [full.ops[0].args.x, full.ops[0].args.y], '与完整写法选到同一个位置');
+  }
+  assert.match(ps.prepare([{ op: 'addBuilding', args: { ...tower, near: 'observatory_lab' } }]).error, /未知地点：observatory_lab/);
+  town.stop();
+});
