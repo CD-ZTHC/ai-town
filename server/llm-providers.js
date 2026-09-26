@@ -9,6 +9,7 @@
 //   complete    ({ model, messages, temperature, maxTokens, json, signal }) =>
 //                 Promise<{ content: string, usage: { prompt: number, completion: number }, finishReason?: string }>
 //   失败时抛出 Error，message 带上上游的原始错误信息：llm.js 据此识别限流、鉴权失败、不支持 JSON 模式。
+import { piProvider } from './llm-pi.js';
 
 export function openaiCompatible({ baseUrl = '', apiKey = '' } = {}) {
   const base = baseUrl.replace(/\/+$/, '');
@@ -54,6 +55,8 @@ export function openaiCompatible({ baseUrl = '', apiKey = '' } = {}) {
 
 const factories = {
   openai: (env) => openaiCompatible({ baseUrl: env.BASE_URL || '', apiKey: env.API_KEY || '' }),
+  // pi-ai（可选依赖，第一次请求时才加载）
+  pi: (env) => piProvider(env),
 };
 
 /** 注册一个 provider 工厂：factory(env) => provider */

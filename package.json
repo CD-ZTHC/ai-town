@@ -10,5 +10,10 @@
     "test": "node --test test/*.test.js",
     "check": "node tools/check.js"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  },
+  "optionalDependencies": {
+    "@earendil-works/pi-ai": "0.87.1"
+  }
 }

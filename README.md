@@ -29,7 +29,7 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 | `STORY_RATING` | 内容分级：`cozy`（默认）/ `adventure` / `epic`；决定异界生物的危险程度与审核尺度 |
 | `STORYTELLER` | 叙事者：`voyage`（默认，每季自动上演一个剧情弧）/ `gentle`（以日常为主）/ `chaos` |
 | `LLM_CONCURRENCY` | 并发请求数，默认 4；遇到限流会自动退避并降低并发 |
-| `LLM_PROVIDER` | 模型服务，默认 `openai`（OpenAI 兼容接口）；其他实现用 `registerProvider` 注册（见 `server/llm-providers.js`） |
+| `LLM_PROVIDER` | 模型服务：`openai`（默认，OpenAI 兼容接口，零依赖）或 `pi`（经 [pi-ai](https://github.com/earendil-works/pi) 接入 Anthropic、Gemini、DeepSeek、OpenRouter 等 40 多家，需要先 `npm install`）。`pi` 模式下模型写成 `服务商/模型`（如 `anthropic/claude-sonnet-5`，密钥读 `ANTHROPIC_API_KEY` 等），不带前缀的仍走 `BASE_URL` 网关，各档可以混用；Docker 用 `--build-arg WITH_PI=1` 构建 |
 | `LLM_RECORD` | 设为一个文件路径时，把真实模型的回复按模块录制下来，用来更新回放测试的 `test/fixtures/llm/responses.json` |
 | `LLM_JSON_MODE` | 默认开启：请求模型以 JSON 模式输出（`response_format: json_object`），网关不支持时自动关闭；设为 `0` 手动关闭 |
 | `NODE_USE_ENV_PROXY` | 服务器需要经由 HTTPS 代理访问模型时设为 `1`（Node ≥ 22.21），否则 Node 内置的 fetch 不会读取 `HTTPS_PROXY` |
@@ -40,7 +40,7 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 | `PORT` / `HOST` | 端口（默认 3000）/ 监听地址 |
 | 公网相关 | `PUBLIC_MODE`、`ADMIN_TOKEN`、`TRUST_PROXY`、`LLM_DAILY_TOKENS` 等，完整列表见 `.env.example` |
 
-零 npm 依赖：服务端只用 Node 内置模块，前端是原生 Canvas + ES Modules，所有像素美术均为程序化生成。
+默认零 npm 依赖（pi-ai 是可选依赖，只在 `LLM_PROVIDER=pi` 时加载）：服务端只用 Node 内置模块，前端是原生 Canvas + ES Modules，所有像素美术均为程序化生成。
 
 ## 发布到个人网站
 
