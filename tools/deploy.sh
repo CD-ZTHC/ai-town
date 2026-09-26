@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 git fetch -q origin
 REV=$(git rev-parse --short "$REF")
 TS=$(date +%Y%m%d-%H%M%S)
-echo "▶ 部署 $REV（$REF）到 $HOST:$DIR"
+echo "▶ 部署 ${REV}（${REF}）到 $HOST:$DIR"
 
 ssh "$HOST" "rm -rf '$DIR.new' && mkdir -p '$DIR.new'"
 git archive "$REF" | ssh "$HOST" "tar -x -C '$DIR.new'"
@@ -70,7 +70,7 @@ mv "$NEW" "$DIR"
 
 echo "▶ 启动新版本"
 if start "$DIR"; then
-  echo "✔ 已上线 $REV（端口 $PORT）"
+  echo "✔ 已上线 ${REV}（端口 ${PORT}）"
   ls -dt "$DIR".old-* 2>/dev/null | tail -n +4 | xargs -r rm -rf
 else
   echo "✖ 新版本没有正常响应，切回旧版本"
