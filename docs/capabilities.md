@@ -63,6 +63,6 @@
 - 物品：`lantern` 萤火灯、`wood` 木材、`herb` 草药、`melon` 西瓜、`county_record` 县志残页、`moonstone` 月石
 - 能力：`firefly_ward` 萤火结界、`warm_coffee` 暖心咖啡、`checkup` 问诊、`moon_song` 月光之歌、`craft_lantern` 扎萤火灯、`old_tale` 讲古、`pick_melon` 摘西瓜
 
-## 已加载的扩展（server/ext/）
+## 已加载的扩展（插件）
 
-- 效果 `goTo`：{"op":"goTo","location":"地点id","activity":"≤14字","minutes":30~180,"target":"self/target/e/nearby/all","radius":1~6} 让对象立刻动身前往某地（插入一段即时日程；睡着或正在交谈的人不受影响）
+- 效果 `goTo`（go-to）：{"op":"goTo","location":"地点id","activity":"≤14字","minutes":30~180,"target":"self/target/e/nearby/all","radius":1~6} 让对象立刻动身前往某地（插入一段即时日程；睡着或正在交谈的人不受影响）

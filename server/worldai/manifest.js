@@ -1,10 +1,10 @@
 // 能力清单（设计文档第 7 节）：从代码自动生成「AI 现在能做什么」。
 // 架构师的提示词、`mise run manifest` 生成的 docs/capabilities.md、`mise run evolve` 的需求文档都用它，
-// 因此新能力（包括 server/ext/ 里的扩展）一旦合并，就会自动出现在 AI 的视野里。
+// 因此新能力（包括插件注册的扩展）一旦加载，就会自动出现在 AI 的视野里。
 import { EFFECTS, EXPR_FN_DOCS, VFX } from '../kernel/effects.js';
 import { OPS } from '../kernel/ops.js';
 import { PARAM_BOUNDS, BODY_PLANS } from '../kernel/spec.js';
-import { extensions } from '../ext/registry.js';
+import { extensions } from '../../plugin-host/registry.js';
 
 // 世界架构师可以使用的操作及参数格式
 export const OP_DOCS = {
@@ -79,8 +79,8 @@ ${Object.entries(EXPR_FN_DOCS).map(([k, v]) => `- \`${k}\`：${v}`).join('\n')}
 - 物品：${Object.entries(spec.items).map(([id, i]) => `\`${id}\` ${i.name}`).join('、')}
 - 能力：${spec.abilities.map((a) => `\`${a.id}\` ${a.name}`).join('、')}
 
-## 已加载的扩展（server/ext/）
+## 已加载的扩展（插件）
 
-${ext.length ? ext.map((e) => `- ${e.kind === 'effect' ? '效果' : '表达式函数'} \`${e.name}\`：${e.doc}`).join('\n') : '（无）'}
+${ext.length ? ext.map((e) => `- ${e.kind === 'effect' ? '效果' : '表达式函数'} \`${e.name}\`（${e.source}）：${e.doc}`).join('\n') : '（无）'}
 `;
 }

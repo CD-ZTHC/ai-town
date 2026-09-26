@@ -1,0 +1,8 @@
+{
+  "id": "architect",
+  "version": "1.0.0",
+  "tier": "builtin",
+  "title": "世界架构师",
+  "summary": "把导演、居民、访客的建设意图变成世界补丁；做不到的记进 AI 心愿单（进化引擎的需求来源）",
+  "hooks": ["tick", "conversation.end"]
+}

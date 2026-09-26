@@ -156,7 +156,7 @@ export async function evolve(opts = {}) {
   // 用存档里的世界（默认规格 + 操作历史）生成当时的能力清单
   const { defaultSpec } = await import('../server/kernel/spec.js');
   const { replay } = await import('../server/kernel/ops.js');
-  await import('../server/ext/index.js');
+  await import('../plugin-host/builtin.js');
   const { manifestText, effectsText } = await import('../server/worldai/manifest.js');
   const spec = replay(defaultSpec(), save.specOps || []).spec;
   const context = { manifest: manifestText(spec), effects: effectsText() };

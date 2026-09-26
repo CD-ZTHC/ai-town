@@ -136,7 +136,7 @@ const KINDS = {
   propose: {
     check(b) { return String(b.intent || '').trim().length >= 4 ? null : 'intent 太短'; },
     run(town, b) {
-      const err = town.architect.enqueue(b.intent, 'director');
+      const err = town.architect ? town.architect.enqueue(b.intent, 'director') : '世界架构师插件未启用';
       if (err) console.warn('[beat] propose：', err);
     },
   },
@@ -236,7 +236,7 @@ export function runBeats(town, list, { privileged = false, ctx = {} } = {}) {
   for (const b of Array.isArray(list) ? list : []) {
     const err = checkBeat(town, b, { privileged, ctx });
     if (err) { skipped.push({ kind: b?.kind, error: err }); continue; }
-    try { KINDS[b.kind].run(town, b, ctx); done++; } catch (e) {
+    try { KINDS[b.kind].run(town, b, ctx); done++; town.hooks?.emit('story.beat', { beat: b }); } catch (e) {
       console.warn(`[beat] ${b.kind} 执行失败：`, e.message);
       skipped.push({ kind: b.kind, error: e.message });
     }

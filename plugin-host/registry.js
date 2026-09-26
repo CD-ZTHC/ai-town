@@ -1,10 +1,11 @@
-// 扩展点注册表（设计文档第 7 节）：人工审核后的新能力放在 server/ext/*.js，通过这里接入内核。
-// 约束：只能新增、不能覆盖内核已有的能力；每项都必须带说明文字（会进入能力清单，AI 据此使用它）。
-import { EFFECTS, EXPR_FNS, EXPR_FN_DOCS, EXT_FNS } from '../kernel/effects.js';
+// 扩展注册表（自主演化设计 §5.3）：插件通过这里向内核注册新的效果原语与表达式函数。
+// 约束：只能新增、不能覆盖内核或其他插件已有的能力；每项都必须带说明文字（会进入能力清单，AI 据此使用它）。
+// AI 插件被停用或回滚时，它注册的能力会被注销。
+import { EFFECTS, EXPR_FNS, EXPR_FN_DOCS, EXT_FNS } from '../server/kernel/effects.js';
 
 const NAME = /^[a-z][a-zA-Z0-9]{1,23}$/;
 const RESERVED = new Set(Object.getOwnPropertyNames(Object.prototype));
-const loaded = [];
+let loaded = [];
 
 function checkName(name, taken) {
   if (!NAME.test(name) || RESERVED.has(name)) throw new Error(`扩展名称不合法：${name}（小写字母开头，只含字母数字，2~24 位）`);
@@ -21,7 +22,7 @@ export function registerEffect(name, def, source = 'ext') {
   checkName(name, Object.hasOwn(EFFECTS, name));
   if (typeof def?.check !== 'function' || typeof def?.apply !== 'function') throw new Error(`效果 ${name} 缺少 check / apply`);
   if (!String(def.doc || '').trim()) throw new Error(`效果 ${name} 缺少 doc 说明`);
-  EFFECTS[name] = { ...def, ext: true };
+  EFFECTS[name] = { ...def, ext: true, source };
   loaded.push({ kind: 'effect', name, doc: def.doc, source });
 }
 
@@ -37,6 +38,15 @@ export function registerExprFn(name, impl, doc, source = 'ext') {
   EXPR_FN_DOCS[name] = doc;
   EXT_FNS[name] = impl;
   loaded.push({ kind: 'exprFn', name, doc, source });
+}
+
+/** 注销某个来源注册的全部能力（插件停用 / 回滚时使用） */
+export function unregisterSource(source) {
+  for (const e of loaded.filter((x) => x.source === source)) {
+    if (e.kind === 'effect' && EFFECTS[e.name]?.source === source) delete EFFECTS[e.name];
+    if (e.kind === 'exprFn') { EXPR_FNS.delete(e.name); delete EXPR_FN_DOCS[e.name]; delete EXT_FNS[e.name]; }
+  }
+  loaded = loaded.filter((x) => x.source !== source);
 }
 
 /** 已加载的扩展（用于能力清单、启动日志与管理面板） */

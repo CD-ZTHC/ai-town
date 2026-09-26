@@ -47,6 +47,8 @@ function wire(t) {
   t.proposalSystem.requireAdmin = config.publicMode && Boolean(config.adminToken);
   t.on('worldmap', (w) => broadcast('worldmap', w));
   t.on('regions', (r) => broadcast('regions', r));
+  let decTimer = null;
+  t.on('decisions', () => { if (!decTimer) decTimer = setTimeout(() => { decTimer = null; broadcast('decisions', { t: t.t }); }, 800); });
   let propTimer = null;
   t.on('proposals', () => { if (!propTimer) propTimer = setTimeout(() => { propTimer = null; broadcast('proposals', { t: t.t }); }, 800); });
   t.start();
@@ -150,6 +152,7 @@ async function handleApi(req, res, url, ip) {
     if (p === '/api/world/history') return json(res, 200, town.worldHistory().slice(-200));
     if (p === '/api/story') return json(res, 200, { ...town.storyView(ip), admin });
     if (p === '/api/proposals') return json(res, 200, { ...town.proposalsView(ip, admin), admin });
+    if (p === '/api/decisions') return json(res, 200, { ...town.decisions.view(admin), admin });
     if (p === '/api/snapshots') { requireAdmin(req); return json(res, 200, listSnapshots(town.dataDir)); }
     if (p === '/api/timelines') { requireAdmin(req); return json(res, 200, registry(DATA)); }
     throw new HttpError(404, '不存在');
@@ -250,7 +253,7 @@ async function handleApi(req, res, url, ip) {
     if (!admin) take(limits.proposal, ip, '提建议');
     const m = await moderate(text, 'event', town.spec.meta.rating);
     if (!m.ok) throw new HttpError(422, m.reason);
-    const err = town.architect.enqueue(text, admin ? 'admin' : 'visitor');
+    const err = town.architect ? town.architect.enqueue(text, admin ? 'admin' : 'visitor') : '世界架构师插件未启用';
     if (err) throw new HttpError(409, err);
     return json(res, 200, { ok: true });
   }
@@ -274,7 +277,7 @@ async function handleApi(req, res, url, ip) {
   // 管理员处理 AI 心愿单
   if (p === '/api/gaps/status') {
     requireAdmin(req);
-    const err = town.architect.setGapStatus(String(b.id || ''), String(b.status || ''));
+    const err = !town.architect ? '世界架构师插件未启用' : town.architect.setGapStatus(String(b.id || ''), String(b.status || ''));
     if (err) throw new HttpError(409, err);
     return json(res, 200, { ok: true });
   }
@@ -282,6 +285,25 @@ async function handleApi(req, res, url, ip) {
   if (p === '/api/proposals/decide') {
     requireAdmin(req);
     const err = town.proposalSystem.decide(String(b.id || ''), Boolean(b.approve), 'admin');
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+
+  // 统一决策队列：管理员直接拍板 / 撤销 AI 的裁决
+  if (p === '/api/decisions/decide') {
+    requireAdmin(req);
+    const d = town.decisions.get(String(b.id || ''));
+    if (!d) throw new HttpError(404, '决策项不存在');
+    // 提案与剧情抉择走原来的终审入口（会同时关闭决策项）
+    const err = d.kind === 'proposal' ? town.proposalSystem.decide(d.ref, Boolean(b.adopt), 'admin')
+      : d.kind === 'vote' ? town.votes.decide(d.ref, String(b.option || ''), 'admin')
+        : town.decisions.decide(d.id, { adopt: Boolean(b.adopt) }, 'admin');
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+  if (p === '/api/decisions/undo') {
+    requireAdmin(req);
+    const err = town.decisions.undo(String(b.id || ''));
     if (err) throw new HttpError(409, err);
     return json(res, 200, { ok: true });
   }

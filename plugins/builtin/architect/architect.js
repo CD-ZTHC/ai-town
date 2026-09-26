@@ -1,9 +1,8 @@
-// 世界架构师（设计文档 5.3）：把「世界需要改变」的意图（来自导演、居民、访客、管理员）变成 WorldPatch。
+// 世界架构师（设计文档 5.3；自主演化 E0 起作为内置插件运行）：把「世界需要改变」的意图（来自导演、居民、访客、管理员）变成 WorldPatch。
 // 提示词里带着自动生成的能力清单；补丁校验失败时带着错误修一轮；清单里没有的能力记为「能力缺口」（P5 使用）。
-import * as llm from '../llm.js';
-import { similarity } from '../memory.js';
-import { ARCHITECT_OPS } from './proposals.js';
-import { manifestText } from './manifest.js';
+import * as llm from '../../../server/llm.js';
+import { similarity } from '../../../server/memory.js';
+import { manifestText } from '../../../server/worldai/manifest.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const MAX_QUEUE = 5;
@@ -104,7 +103,7 @@ ${this.manifest()}
     this.town.emit('proposals');
   }
 
-  /** 管理员处理心愿单：采纳（会被 mise run evolve 整理成需求文档）/ 忽略 / 重新打开 */
+  /** 管理员处理心愿单：采纳（进化引擎优先处理）/ 忽略（进化引擎不再处理）/ 重新打开 */
   setGapStatus(id, status) {
     const g = this.gaps.find((x) => x.id === id);
     if (!g) return '没有这个心愿';
