@@ -11,6 +11,7 @@ import { config, clientIp, isAdmin, visitorId, limits, sanitize, moderate } from
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { evolveConfig } from '../plugin-host/evolved.js';
+import { engineArgs } from '../evolution/common.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || undefined;
@@ -581,7 +582,7 @@ function startEngine() {
   if (cfg.mode === 'off' || process.env.EVOLVE_DAEMON === '0') return;
   fs.mkdirSync(EVOLVED_DIR, { recursive: true });
   fs.mkdirSync(EVO_DIR, { recursive: true });
-  const args = ['--permission', `--allow-fs-read=${ROOT}`, `--allow-fs-read=${DATA}`, `--allow-fs-write=${EVOLVED_DIR}`, `--allow-fs-write=${EVO_DIR}`, '--allow-child-process', path.join(ROOT, 'evolution', 'daemon.js')];
+  const args = [...engineArgs({ root: ROOT, data: DATA, evolvedDir: EVOLVED_DIR, evoDir: EVO_DIR }), path.join(ROOT, 'evolution', 'daemon.js')];
   engine = spawn(process.execPath, args, { cwd: ROOT, env: { ...process.env, DATA_DIR: DATA }, stdio: ['ignore', 'inherit', 'inherit'] });
   engine.on('exit', (code) => {
     engine = null;
