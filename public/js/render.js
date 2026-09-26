@@ -143,6 +143,7 @@ export class Renderer {
     items.sort((p, q) => p.y - q.y);
     for (const it of items) it.v ? this.drawAvatar(ctx, it.v, S) : it.o ? this.drawObject(ctx, it.o, S) : it.e ? (it.e.kind === 'portal' ? this.drawPortal(ctx, it.e) : this.drawEntity(ctx, it.e)) : it.c ? this.drawCreature(ctx, it.c) : this.drawAgent(ctx, it.a, S);
     this.drawVfx(ctx);
+    this.drawPluginOverlay(ctx, S);
 
     this.updateParticles(dt, S, sky);
     this.drawWorldParticles(ctx, S, sky);

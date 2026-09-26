@@ -110,7 +110,7 @@ test('多人场景：安排 → 到齐 → 模拟模型写群戏 → 记忆、�
   town.stop();
 });
 
-test('投票：每人一票、选项校验、管理员终审；需要终审时截止后先等待，再按多数', () => {
+test('投票：每人一票、选项校验、管理员终审；需要终审时截止后先等待，票数清楚按多数，否则交给 AI 裁决官', async () => {
   const town = adventureTown();
   const opts = [{ id: 'x', label: 'X' }, { id: 'y', label: 'Y' }];
   const v = town.votes.open({ question: 'Q', options: opts, minutes: 60 });
@@ -125,12 +125,24 @@ test('投票：每人一票、选项校验、管理员终审；需要终审时�
 
   town.votes.requireAdmin = true;
   const w = town.votes.open({ question: 'Q2', options: opts, minutes: 60 });
-  town.votes.cast(w.id, 'ip1', 'y');
+  for (const ip of ['ip1', 'ip2', 'ip3']) town.votes.cast(w.id, ip, 'y');
   town.t += 61; town.votes.tick();
   assert.equal(w.status, 'awaiting');
-  town.t += 121; town.votes.tick();
+  town.t += 31; town.votes.tick();
   assert.equal(w.status, 'closed');
   assert.deepEqual([w.result.option, w.result.by], ['y', 'majority']);
+
+  // 只有 1 票：交给 AI 裁决官（测试里没有模型 → 兜底按多数），裁决公示在动态栏
+  const u = town.votes.open({ question: 'Q3', options: opts, minutes: 60 });
+  town.votes.cast(u.id, 'ip1', 'y');
+  town.t += 61; town.votes.tick();
+  town.t += 31; town.votes.tick();
+  assert.equal(u.status, 'awaiting');
+  town.decisions.tick();
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(u.status, 'closed');
+  assert.deepEqual([u.result.option, u.result.by], ['y', 'fallback']);
+  assert.ok(town.logs.some((l) => l.type === 'decision' && l.text.includes('兜底')));
   town.stop();
 });
 

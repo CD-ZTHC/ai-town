@@ -15,13 +15,16 @@ import { VoteSystem } from './story/votes.js';
 import { CreatureSystem } from './story/creatures.js';
 import { AvatarSystem } from './avatars.js';
 import { ProposalSystem } from './worldai/proposals.js';
-import { Architect } from './worldai/architect.js';
+import { HookBus } from './kernel/hooks.js';
+import { DecisionQueue } from './kernel/decisions.js';
+import { PluginHost } from '../plugin-host/index.js';
+import { EvolvedManager } from '../plugin-host/evolved.js';
+import { findAbility } from './kernel/abilities.js';
 import { applyOp, replay, OpJournal, OPS, OpError } from './kernel/ops.js';
 import { checkPlacement } from './kernel/placement.js';
 import { applyMods } from './kernel/mods.js';
 import { createEmbedder } from './embeddings.js';
 import { clamp, rand } from './sim/util.js';
-import './ext/index.js'; // 加载 server/ext/ 下人工审核后的扩展能力
 import { Regions } from './sim/regions.js';
 import { Movement } from './sim/movement.js';
 import { Planning } from './sim/planning.js';
@@ -63,7 +66,12 @@ export class Town extends EventEmitter {
     for (const k of m.skipped) console.warn(`[mod] ${k.mod}${k.op ? ` / ${k.op}` : ''}：${k.error}`);
     if (m.loaded.length) console.log(`[mod] 已加载：${m.loaded.map((x) => `${x.name}（${x.ops} 项）`).join('、')}`);
     this.mods = m.loaded;
-    const base = m.spec;
+    this.baseSpec = m.spec; // 默认规格 + Mod：之后叠加插件内容与存档中的操作历史
+    // 自主演化：AI 插件在重放操作历史之前加载（T2 的效果要先注册，T0 / T1 的内容作为覆盖层）
+    this.evolved = new EvolvedManager(this, opts.evolution);
+    this.overlays = this.evolved.preload(); // 插件带来的数据内容 [{ id, ops }]（自主演化 §5.2 T0/T1）
+    let base = m.spec;
+    for (const o of this.overlays) base = replay(base, o.ops.map((x, i) => ({ seq: i + 1, ...x }))).spec;
     const { spec, skipped } = replay(base, this.specOps);
     for (const k of skipped) console.warn(`[spec] 跳过无法重放的操作 #${k.seq} ${k.op}：${k.error}`);
     this.spec = spec;
@@ -99,15 +107,21 @@ export class Town extends EventEmitter {
     this.crisis = { morale: 70, supplies: 80 };
     this.discovered = [];
     this.encounterCd = {};
+    // 自主演化 E1：统一决策队列（管理员终审窗口超时后由 AI 裁决官决定）
+    this.decisions = new DecisionQueue(this, { now: opts.now });
     this.director = new Director(this);
     this.arcs = new ArcEngine(this);
     this.scenes = new SceneManager(this);
     this.votes = new VoteSystem(this);
     this.creatures = new CreatureSystem(this);
     this.avatars = new AvatarSystem(this);
-    // P4：世界架构师与提案
+    // P4：建设提案（世界架构师、施工等功能由 plugins/builtin/ 下的插件提供）
     this.proposalSystem = new ProposalSystem(this);
-    this.architect = new Architect(this);
+    this.architect = null;
+    // 自主演化 E0：钩子总线 + 插件宿主
+    this.hooks = new HookBus();
+    this.plugins = new PluginHost(this, { disable: opts.disablePlugins });
+    this.evolved.init();
     this.load(saved);
     this.syncAgents(false);
   }
@@ -226,7 +240,10 @@ export class Town extends EventEmitter {
       this.arcs.tick();
       this.director.tick();
       this.proposalSystem.tick();
-      this.architect.tick();
+      this.decisions.tick();
+      this.evolved.tick();
+      this.hooks.emit('tick', dtGame);
+      this.hourHooks();
       this.crisisTick();
       this.dailyHooks();
       this.autoWeather();
@@ -241,7 +258,20 @@ export class Town extends EventEmitter {
     if (acc.save > 20) { acc.save = 0; this.save(); }
   }
 
+  /** 整点与新一天的钩子 */
+  hourHooks() {
+    const hour = Math.floor(this.t / 60);
+    if (this.hookHour === hour) return;
+    const first = this.hookHour == null;
+    this.hookHour = hour;
+    if (first) return; // 启动（或读档）后的第一个整点不补发
+    if (hour % 24 === 0) this.hooks.emit('dayStart', { day: this.day });
+    this.hooks.emit('hour', { day: this.day, hour: hour % 24 });
+  }
+
   stop() {
+    this.plugins?.stop();
+    this.evolved?.stop();
     clearInterval(this.timer);
     this.removeAllListeners();
     this.stopped = true;
@@ -432,6 +462,43 @@ export class Town extends EventEmitter {
     if (!quiet) this.log('world', `🌀 世界发生了变化：${desc}`, { op: rec.op, seq: rec.seq });
     this.emit('world', { spec: publicSpec(this.spec), op: rec, desc });
     return rec;
+  }
+
+  /**
+   * 重新计算世界规格：默认规格 + Mod + 插件内容覆盖层 + 操作历史。
+   * 插件被停用 / 回滚、或撤销某个提案时使用；返回重放时被跳过的操作数。
+   */
+  rebuildSpec() {
+    let spec = this.baseSpec;
+    for (const o of this.overlays) {
+      const r = replay(spec, o.ops.map((x, i) => ({ seq: i + 1, op: x.op, args: x.args })));
+      spec = r.spec;
+      for (const k of r.skipped) console.warn(`[plugin] ${o.id} 的内容 ${k.op} 无法应用：${k.error}`);
+    }
+    const r = replay(spec, this.specOps);
+    const hadBuildings = JSON.stringify(this.spec.buildings);
+    this.spec = r.spec;
+    if (JSON.stringify(this.spec.buildings) !== hadBuildings) this.rebuildWorld();
+    for (const a of this.agents) a.abilities = a.abilities.filter((id) => findAbility(this.spec, id));
+    this.emit('world', { spec: publicSpec(this.spec), op: null, desc: '世界规格已重新计算' });
+    return r.skipped.length;
+  }
+
+  /** 撤销满足条件的世界操作（从操作历史中移除后重算规格）；返回撤销的数量 */
+  revertOps(pred) {
+    const before = this.specOps.length;
+    const removed = this.specOps.filter(pred);
+    this.specOps = this.specOps.filter((r) => !pred(r));
+    for (const r of removed) this.journal.append({ op: 'revert', seq: r.seq, cause: r.cause, at: new Date().toISOString() });
+    if (removed.length) this.rebuildSpec();
+    return before - this.specOps.length;
+  }
+
+  /** 设置插件内容覆盖层（null 表示移除）并重算规格 */
+  setOverlay(id, ops) {
+    this.overlays = this.overlays.filter((o) => o.id !== id);
+    if (ops) this.overlays.push({ id, ops });
+    this.rebuildSpec();
   }
 
   /** 世界结构变化（新增建筑）后重建地图；正在走路的角色与生物重新寻路 */

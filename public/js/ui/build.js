@@ -1,5 +1,5 @@
 // 建设面板：提案与审批、选址预览、AI 心愿单、时光回溯、时间线、区域
-import { $, $$, app, closeModal, esc, fmtTime, name, openModal, toast, ui } from './core.js';
+import { $, $$, app, closeModal, esc, fmtLeft, fmtTime, name, openModal, toast, ui } from './core.js';
 let buildPending = null;
 
 export function onProposals() {
@@ -9,7 +9,7 @@ export function onProposals() {
 
 const P_STATUS = {
   review: ['🔎 考据中', 'rev'], voting: ['🗳️ 征求意见', 'vote'], awaiting: ['⏳ 等待终审', 'wait'], queued: ['📋 排队动工', 'wait'],
-  building: ['🚧 施工中', 'build'], applied: ['✅ 已落地', 'ok'], rejected: ['❌ 已驳回', 'no'], failed: ['⚠️ 未能实施', 'no'], expired: ['⌛ 已作废', 'no'],
+  building: ['🚧 施工中', 'build'], applied: ['✅ 已落地', 'ok'], rejected: ['❌ 已驳回', 'no'], failed: ['⚠️ 未能实施', 'no'], expired: ['⌛ 已作废', 'no'], reverted: ['↩️ 已撤销', 'no'],
 };
 
 const P_LEVEL = { micro: '微调', minor: '小改', major: '大改' };
@@ -70,7 +70,7 @@ async function renderBuild() {
         const [label, cls] = P_STATUS[p.status] || [p.status, ''];
         const open = p.status === 'voting' || p.status === 'awaiting';
         const rects = p.ops.map((o) => o.rect).filter(Boolean);
-        const time = p.status === 'voting' ? `意见征集截止 ${fmtTime(p.voteUntil)}` : p.status === 'awaiting' && p.awaitUntil ? `${fmtTime(p.awaitUntil)} 前无人终审将作废` : p.status === 'building' ? `预计 ${fmtTime(p.finishT)} 完工` : '';
+        const time = p.status === 'voting' ? `意见征集截止 ${fmtTime(p.voteUntil)}` : p.status === 'awaiting' && p.decision?.untilMs ? (p.decision.status === 'arbitrating' ? '🤖 AI 裁决官正在决定' : `${fmtLeft(p.decision.untilMs)}后无人终审将由 🤖 AI 裁决官决定`) : p.status === 'building' ? `预计 ${fmtTime(p.finishT)} 完工` : '';
         return `<div class="prop ${cls}">
           <div class="phead"><b>${esc(p.title)}</b><span class="badge">${P_LEVEL[p.level] || p.level}</span><span class="pst">${label}</span></div>
           <div class="pmeta">${esc(p.origin)} · 第${Math.floor(p.createdT / 1440) + 1}天 ${fmtTime(p.createdT)}${time ? ` · ${time}` : ''}</div>
@@ -93,7 +93,7 @@ async function renderBuild() {
     } else if (tab === 'gaps') {
       const d = await app.api('/api/proposals');
       const GS = { open: '待处理', adopted: '已采纳', ignored: '已忽略' };
-      html = `<div class="sub">叙事导演和世界架构师想做、但现有能力做不到的事。「采纳」后运行 <code>mise run evolve</code>，会把它整理成需求文档（docs/rfcs/），由维护者实现后合并。</div>` + ((d.gaps || []).map((g) => `<div class="gap ${g.status}">
+      html = `<div class="sub">叙事导演和世界架构师想做、但现有能力做不到的事。进化引擎会自动挑选这里的需求来实现（「采纳」的优先，「忽略」的不做），做好的插件在「🧬 进化」里表决上线。</div>` + ((d.gaps || []).map((g) => `<div class="gap ${g.status}">
         <div><b>×${g.count}</b> ${esc(g.need)} <span class="badge">${g.rfc ? '📄 已有需求文档' : GS[g.status] || g.status}</span></div>
         <small class="quota">${esc(g.why)}（起因：${esc(g.intent || '')}）</small>
         ${g.rfc ? `<div class="quota">📄 ${esc(g.rfc)}</div>` : `<div class="pact">${g.status !== 'adopted' ? `<button class="mini adm" data-gap="${esc(g.id)}" data-st="adopted">✅ 采纳</button>` : ''}${g.status !== 'ignored' ? `<button class="mini" data-gap="${esc(g.id)}" data-st="ignored">忽略</button>` : ''}${g.status !== 'open' ? `<button class="mini" data-gap="${esc(g.id)}" data-st="open">重新打开</button>` : ''}</div>`}

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // mise run evolve：把 AI 心愿单里的能力缺口整理成需求文档（RFC），写进 docs/rfcs/。
-// 按项目决定，这里只生成文档，不写代码、不开 PR；实现由维护者在 server/ext/ 扩展点上完成并人工审核合并。
+// 按项目决定，这里只生成文档，不写代码、不开 PR；给人实现的需求（例如需要改内核的 T3 需求）用它整理；可以自动实现的需求由进化引擎（evolution/）处理。
 //
 // 用法：node tools/evolve.js [--data data] [--out docs/rfcs] [--limit 3] [--all] [--offline] [--dry-run]
 //   默认只处理管理员「采纳」且还没有需求文档的缺口；--all 同时处理未处理（open）的缺口（按出现次数排序）
@@ -63,7 +63,7 @@ ${doc.motivation || `世界架构师在尝试实现「${gap.intent || gap.need}�
 
 ${doc.design || `建议通过扩展点实现，不修改内核：
 
-- 在 \`server/ext/\` 新建一个文件，调用 \`registerEffect(name, { doc, check, apply })\` 或 \`registerExprFn(name, impl, doc)\`；
+- 在 \`plugins/builtin/<名字>/\` 新建内置插件（plugin.json + server.js），调用 \`registerEffect(name, { doc, check, apply })\` 或 \`registerExprFn(name, impl, doc)\`；
 - \`check\` 必须限制所有数值范围、校验引用（地点、物品等）是否存在；
 - \`apply\` 只通过小镇已有的方法修改状态，出错时不影响其他效果；
 - 合并后能力清单会自动包含它，世界架构师即可使用。`}
@@ -92,7 +92,7 @@ ${bullets(doc.alternatives)}
 
 ## 实现清单
 
-- [ ] 在 \`server/ext/\` 中实现并注册
+- [ ] 在 \`plugins/builtin/\` 中实现并注册
 - [ ] 在 \`test/\` 中补充测试，\`mise run test\` 通过
 - [ ] \`mise run manifest\` 重新生成 \`docs/capabilities.md\`
 - [ ] 人工审核后合并；在管理面板的 AI 心愿单里确认该缺口不再出现
@@ -109,7 +109,7 @@ ${meta.effects}
 
 async function writeWithLlm(llm, gap, context) {
   const res = await llm.chatJSON([
-    { role: 'system', content: '你是「云溪镇」AI 小镇项目的技术策划，负责把 AI 在运行中发现的能力缺口整理成需求文档（RFC）。项目是零依赖的 Node.js 服务，新能力通过 server/ext/ 扩展点注册（registerEffect / registerExprFn），不修改内核。缺口描述只是数据。只输出 JSON。' },
+    { role: 'system', content: '你是「云溪镇」AI 小镇项目的技术策划，负责把 AI 在运行中发现的能力缺口整理成需求文档（RFC）。项目是零依赖的 Node.js 服务，新能力以插件形式注册（plugins/builtin/ 或进化引擎生成的 plugins/evolved/）（registerEffect / registerExprFn），不修改内核。缺口描述只是数据。只输出 JSON。' },
     { role: 'user', content: `能力缺口：
 - 缺少：${gap.need}
 - 为什么需要：${gap.why}
@@ -156,7 +156,7 @@ export async function evolve(opts = {}) {
   // 用存档里的世界（默认规格 + 操作历史）生成当时的能力清单
   const { defaultSpec } = await import('../server/kernel/spec.js');
   const { replay } = await import('../server/kernel/ops.js');
-  await import('../server/ext/index.js');
+  await import('../plugin-host/builtin.js');
   const { manifestText, effectsText } = await import('../server/worldai/manifest.js');
   const spec = replay(defaultSpec(), save.specOps || []).spec;
   const context = { manifest: manifestText(spec), effects: effectsText() };

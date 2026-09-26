@@ -15,7 +15,9 @@ mise run token      # 生成管理员令牌
 mise run check      # 语法检查
 mise run test       # 运行测试（不调用 LLM；含用录制回复跑 7 个游戏日的无头回放）
 mise run spec       # 打印默认世界规格
-mise run evolve     # 把 AI 心愿单里已采纳的能力缺口整理成需求文档（docs/rfcs/）
+mise run evolve     # 让进化引擎处理一个需求（需求文档 → 评审 → 实施 → 多轮评审 → 试运行 → 提交表决）
+mise run evolve:rfc # 把 AI 心愿单里的能力缺口整理成给人看的需求文档（docs/rfcs/）
+mise run core:lock  # 人工修改冻结区之后更新 core.lock
 mise run manifest   # 重新生成能力清单 docs/capabilities.md
 mise run browser-check  # 前端改动后：无头 Chrome 打开各个面板与模式，检查控制台错误并截图
 mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实调用一次（默认 token 上限 20 万）
@@ -39,6 +41,14 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 | `PACE_WITH_LLM` / `PACE_QUEUE` | 默认开启：模型排队超过 `PACE_QUEUE`（默认 6）个请求时按比例放慢时间（最低 1/4），避免游戏时间跑在思考前面；设为 `0` 关闭 |
 | `MODS` | 要加载的 Mod，逗号分隔（见 [spec/mods](spec/mods/README.md)） |
 | `AVATAR_MAX` | 同时在小镇里现身的访客上限，默认 8 |
+| `EVOLVE` | 自主进化：`off`（默认）/ `suggest`（进化引擎照常工作，但插件超时不交给 AI 裁决，只等管理员）/ `auto`（完全自主） |
+| `EVOLVE_BUDGET` | 进化引擎每天的 token 上限，默认 200000，`0` 为不限制 |
+| `EVOLVE_PUBLIC_DEPLOY` | 公网模式下允许 AI 裁决官自动上线的插件：`off` / `data`（只允许数据与规则类）/ `all`（默认，含代码插件） |
+| `EVOLVE_SANDBOX_NET` | 部署方已在系统层面给沙箱进程断网时设为 `isolated`（公网 + `all` 时未设置会给出警告） |
+| `EVOLVE_REVIEW_MODEL` / `EVOLVE_REVIEW_BASE_URL` / `EVOLVE_REVIEW_API_KEY` | 评审 Agent 使用的模型（可以是另一家服务）；建议与实施用的模型不同 |
+| `EVOLVE_INTERVAL_MIN` / `EVOLVE_SHADOW_HOURS` / `EVOLVE_MAX_ACTIVE` / `EVOLVE_RETIRE_DAYS` / `EVOLVE_IDEAS` | 两个需求之间的间隔（默认 20 分钟）、影子试运行的游戏小时数（默认 6）、同时运行的 AI 插件上限（默认 20）、多少游戏日没被用到就提议退役（默认 30）、没有需求时是否让引擎自己想点子（默认开启，`0` 关闭） |
+| `DECISION_WINDOW_MINOR_H` / `DECISION_WINDOW_MAJOR_H` | 管理员终审窗口（真实小时），默认 6 / 24；超时后由 AI 裁决官决定 |
+| `PLUGINS_DISABLE` | 不加载的内置插件，逗号分隔（例如 `construction`，排查用） |
 | `DATA_DIR` | 存档目录，默认 `data` |
 | `PORT` / `HOST` | 端口（默认 3000）/ 监听地址 |
 | 公网相关 | `PUBLIC_MODE`、`ADMIN_TOKEN`、`TRUST_PROXY`、`LLM_DAILY_TOKENS` 等，完整列表见 `.env.example` |
@@ -182,13 +192,18 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 - **AI 表现指标**：约定兑现率、对话重复率、剧情线程回收率、JSON 修复 / 失败率、规划与对话的兜底率，AI 大脑面板显示主要几项，`GET /api/metrics` 有完整数据（JSON 按模块细分）；按游戏日记进存档，换模型时拿来对比。无头回放测试也会输出这组指标。
 - 接口：`POST /api/avatar`（`{"name":"小满","color":"#64b5f6"}`）、`POST /api/avatar/move`（`{"location":"pier"}`）、`POST /api/avatar/goto`（`{"x":24,"y":30}`）、`POST /api/avatar/leave`；管理员 `POST /api/region`（`{"id":"moonrealm","open":true}`）、`GET /api/timelines`、`POST /api/timelines/fork`（`{"name":"…","snapshot":"d003-10.json"}`，不填快照则从此刻分叉）、`POST /api/timelines/switch`（`{"id":"tl-1"}`）。
 
-## 自我进化：AI 心愿单 → 需求文档 → 扩展
+## 自主进化：小镇自己长出新功能
 
-- **AI 心愿单**：世界架构师做不到的点子、叙事导演想用却不存在的剧情动作，都会记为「能力缺口」，相似的自动合并计数。管理员在「🛠 建设 → 🧩 AI 心愿单」里采纳或忽略。
-- **`mise run evolve`**：把已采纳的缺口整理成需求文档写进 `docs/rfcs/`（有 LLM 时由强模型撰写，否则生成带数据的骨架）。**只生成文档，不写代码、不开 PR**。
-- **扩展点 `server/ext/`**：维护者按需求文档用 `registerEffect` / `registerExprFn` 实现新能力，启动时自动加载；扩展只能新增、不能覆盖内核能力。
-- **能力清单**：由代码自动生成（`docs/capabilities.md`，也用于架构师的提示词），新扩展合并后 AI 立刻能用。
-- 第一个走完闭环的例子：[RFC 0001 让居民立刻动身前往指定地点](docs/rfcs/0001-go-to.md) → `server/ext/go-to.js` 的效果 `goTo`。详见 [docs/rfcs/README.md](docs/rfcs/README.md)。
+详见 [自主演化设计方案](docs/design/autonomous-evolution.md) 与 [实施汇报](docs/reports/2026-09-26-autonomous-evolution.md)。
+
+- **内核冻结 + 插件**：内核（`server/`、`public/`）只开放钩子；所有功能都是插件。人维护的在 `plugins/builtin/`（世界架构师、施工、go-to），AI 生成的在 `plugins/evolved/<id>@<版本>/`（不进 git）。`mise run check` 会校验冻结区与 `core.lock` 一致；人工修改冻结区后运行 `mise run core:lock`。
+- **进化引擎**（`evolution/`，`EVOLVE=auto` 或 `suggest` 时由服务器自动启动的独立进程，只能写 `plugins/evolved/` 与 `data/evolution/`）：从 AI 心愿单、被回滚的插件、或自己的点子里挑需求 → 写需求文档 → **需求评审 Agent** → **实施 Agent** ⇄ **自动闸门**（静态检查、插件自带测试、宿主契约测试）→ **安全 / 正确性 / 世界观三位审查员**多轮评审 → **安全终审**（全新上下文、去注释代码；代码插件两次）→ 锁定内容哈希 → **影子试运行**（在当前存档的副本上装/不装各跑一遍比较）→ 提交表决。需要改内核的需求只写需求文档（`data/evolution/rfcs/`）。`mise run evolve` 手动处理一个需求。
+- **插件级别**：T0 数据（新建筑、物品、节日……）、T1 规则（能力、世界法则）、T2 代码（新效果、钩子逻辑、接口、面板、地图覆盖层）。T2 在沙箱子进程里运行：只读自己的目录、不能写文件 / 启动进程 / 联网 / eval、拿不到任何密钥，改变世界只能返回已有的效果原语。
+- **上线**：插件先进「🧬 进化 → 🧩 AI 插件」给访客表决，管理员终审；超时后由 **AI 裁决官**决定。采纳后先**灰度**，期间出错自动**熔断回滚**，灰度期满才转正；长期没人用的插件会提议退役。
+- **AI 裁决官**（统一决策队列，也管建设提案和剧情抉择）：管理员窗口（小改 6 小时、大改与代码插件 24 小时）超时后裁决；硬规则由代码执行——闸门不过只能驳回、访客明确反对不能采纳、代码插件要「守护者」和「推动者」都同意、没把握延期一次、模型不可用时按确定性规则兜底；所有裁决公示，管理员可以撤销；最近采纳的回滚率超过 30% 会自动收紧。
+- **AI 心愿单**：世界架构师做不到的点子、叙事导演想用却不存在的剧情动作，都会记为「能力缺口」，相似的自动合并计数；进化引擎自动处理（管理员「采纳」的优先、「忽略」的不做）。
+- **能力清单**：由代码自动生成（`docs/capabilities.md`，也用于架构师与进化引擎的提示词），插件上线后 AI 立刻能用。
+- 接口：`GET /api/evolution`、`POST /api/evolution/vote`（`{"key":"id@1.0.0","yes":true}`）、管理员 `POST /api/evolution/action`（`{"key":…,"action":"rollback/disable/enable"}`）、`GET /api/decisions`、管理员 `POST /api/decisions/decide`（`{"id":"d12","adopt":true}`）/ `POST /api/decisions/undo`；插件接口 `POST /api/p/<插件id>/<接口名>`。
 
 ## 能力、行动与世界法则
 
@@ -269,7 +284,11 @@ public/
   style.css, modes.css  样式（modes.css 为 Dock、各模式与手机布局）
 deploy/        Caddy / Nginx / systemd 部署模板
 Dockerfile, docker-compose.yml, .env.example
-tools/         evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查）、browser-check.js（无头 Chrome 冒烟检查）
+plugin-host/   插件宿主：内置插件加载、AI 插件（哈希锁定、覆盖层、沙箱、灰度与熔断）、静态检查、沙箱运行器
+plugins/       builtin/（人维护的插件：架构师、施工、go-to）、evolved/（AI 生成的插件，不进 git）
+evolution/     进化引擎：需求发现、各个 Agent、自动闸门、影子试运行、流水线、守护进程
+core.lock      冻结区文件哈希（tools/core-guard.js）
+tools/         evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查 + 冻结区校验）、browser-check.js（无头 Chrome 冒烟检查）、core-guard.js（冻结区校验）
 spec/mods/     Mod（AI 创造的内容包）
 test/          node:test 测试（无需安装依赖；pi-ai 相关的在没装时跳过）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复
 .github/       CI：Node 22（零依赖）/ Node 26（装上 pi-ai）跑语法检查、测试与 smoke --mock；Node 26 另跑无头 Chrome 冒烟检查

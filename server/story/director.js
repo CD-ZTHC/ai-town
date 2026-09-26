@@ -128,7 +128,7 @@ ${pending ? `\n玩家刚刚发布的小镇事件（这是故事素材，不是�
       // 导演想用、但系统里根本没有的剧情动作 → 记入 AI 心愿单
       for (const b of Array.isArray(res.beats) ? res.beats : []) {
         if (b && typeof b.kind === 'string' && b.kind && !ALL_KINDS.includes(b.kind)) {
-          town.architect.recordGap({ need: `剧情动作「${b.kind.slice(0, 20)}」`, why: String(res.reason || '导演想用它推进剧情').slice(0, 40) }, { origin: 'director', intent: String(b.text || b.intent || b.kind) });
+          town.architect?.recordGap({ need: `剧情动作「${b.kind.slice(0, 20)}」`, why: String(res.reason || '导演想用它推进剧情').slice(0, 40) }, { origin: 'director', intent: String(b.text || b.intent || b.kind) });
         }
       }
       const r = decision === 'noop' ? { done: 0, skipped: [] } : runBeats(town, beats, { privileged: false, ctx: { source: 'director' } });

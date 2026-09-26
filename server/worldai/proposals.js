@@ -1,5 +1,6 @@
 // 世界补丁提案（设计文档 5.3 / 8.1）：校验 → 设定考据 → 审批 → （施工）→ 落地。
-// 审批：本地模式 小改自动通过、大改等管理员确认；公网模式 小改和大改都先访客投票，再由管理员终审（不会自动通过，超时作废）。
+// 审批：本地模式 小改自动通过、大改等管理员确认；公网模式 小改和大改都先访客投票，再由管理员终审。
+// 自主演化 E1：管理员终审窗口（真实时间，minor 6 小时 / major 24 小时）超时后，交给 AI 裁决官决定（不再作废）。
 import { OPS, applyOp, OpError } from '../kernel/ops.js';
 import { findPlacement, checkPlacement } from '../kernel/placement.js';
 import { addMemory, fmtTime } from '../memory.js';
@@ -8,16 +9,62 @@ import { review } from './canon.js';
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const LEVELS = ['micro', 'minor', 'major'];
 const VOTE_MINUTES = 60;
-const ADMIN_WAIT = 1440; // 公网模式下等待管理员终审的最长时间（游戏分钟），超时作废
 const DAILY_QUOTA = { minor: 3, major: 1 };
 const MAX_OPEN = 10;
 // 架构师（以及导演、居民、访客的点子）可以提出的操作；管理员直接提交时还可以调参数、改分级
 export const ARCHITECT_OPS = ['addBuilding', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'addRule', 'addCanon'];
 export const ADMIN_OPS = [...ARCHITECT_OPS, 'setParam', 'setMeta'];
-const FINAL = new Set(['applied', 'rejected', 'failed', 'expired']);
+const FINAL = new Set(['applied', 'rejected', 'failed', 'expired', 'reverted']);
 
 export class ProposalSystem {
-  constructor(town) { this.town = town; this.requireAdmin = false; }
+  constructor(town) {
+    this.town = town;
+    this.requireAdmin = false;
+    town.decisions?.register('proposal', {
+      dossier: (d) => this.dossier(this.get(d.ref)),
+      gates: (d) => {
+        const p = this.get(d.ref);
+        if (!p) return '提案不存在';
+        if (p.canon && !p.canon.ok) return `设定考据未通过：${p.canon.issues.join('；')}`;
+        const r = this.prepare(p.ops, ADMIN_OPS);
+        return r.error ? `在当前世界上已经无法实施：${r.error}` : null;
+      },
+      tally: (d) => this.tally(this.get(d.ref)),
+      resolve: (d, { adopt, by }) => {
+        const p = this.get(d.ref);
+        if (!p || !['voting', 'awaiting'].includes(p.status)) return;
+        if (adopt) this.approve(p, by === 'admin' ? 'admin' : 'ai');
+        else this.finish(p, 'rejected', by === 'admin' ? '管理员没有批准' : 'AI 裁决官没有采纳');
+      },
+      undo: (d) => this.undo(this.get(d.ref)),
+    });
+  }
+
+  riskOf(p) { return p.level === 'major' ? 'high' : 'medium'; }
+
+  dossier(p) {
+    if (!p) return '（提案不存在）';
+    return `建设提案「${p.title}」（${p.level === 'major' ? '大改' : '小改'}，来自${this.originText(p.origin)}）
+动机：${p.motive || '（无）'}
+内容：${p.ops.map((o) => OPS[o.op].describe?.(o.args) || o.op).join('；')}
+设定考据：${p.canon ? (p.canon.ok ? `通过${p.canon.notes ? `（${p.canon.notes}）` : ''}` : `未通过：${p.canon.issues.join('；')}`) : '未完成'}
+今天已落地：小改 ${this.appliedToday('minor')} 个，大改 ${this.appliedToday('major')} 个`;
+  }
+
+  /** 撤销已采纳的提案：已落地的回滚它带来的世界变化；施工中 / 排队中的直接取消 */
+  undo(p) {
+    if (!p) return '提案不存在';
+    if (p.status === 'applied') {
+      const n = this.town.revertOps((r) => r.cause?.proposal === p.id);
+      p.status = 'reverted';
+      p.result = { t: Math.floor(this.town.t), reason: `撤销（回滚了 ${n} 项世界变化）` };
+    } else if (['building', 'queued'].includes(p.status)) {
+      this.finish(p, 'rejected', '被撤销');
+    } else return '这个提案现在不能撤销';
+    this.town.log('proposal', `↩️ 提案「${p.title}」被撤销`, {});
+    this.town.emit('proposals');
+    return null;
+  }
   get list() { return (this.town.proposals ||= []); }
   get(id) { return this.list.find((p) => p.id === id); }
   open() { return this.list.filter((p) => !FINAL.has(p.status)); }
@@ -97,10 +144,11 @@ export class ProposalSystem {
     if (this.requireAdmin) {
       p.status = 'voting';
       p.voteUntil = Math.floor(town.t) + VOTE_MINUTES;
-      town.log('proposal', `🗳️ 提案「${p.title}」开始征求意见（${fmtTime(p.voteUntil)} 截止，之后由管理员终审）`, {});
+      town.log('proposal', `🗳️ 提案「${p.title}」开始征求意见（${fmtTime(p.voteUntil)} 截止，之后由管理员终审；无人终审时由 AI 裁决官决定）`, {});
     } else {
       p.status = 'awaiting';
-      town.log('proposal', `⏳ 提案「${p.title}」改动较大，等待管理员确认`, {});
+      this.openDecision(p);
+      town.log('proposal', `⏳ 提案「${p.title}」改动较大，等待管理员确认（无人确认时由 AI 裁决官决定）`, {});
     }
     town.emit('proposals');
   }
@@ -114,10 +162,16 @@ export class ProposalSystem {
     return null;
   }
 
+  openDecision(p) {
+    const d = this.town.decisions?.open({ kind: 'proposal', ref: p.id, title: p.title, summary: p.motive, risk: this.riskOf(p) });
+    if (d) p.decision = d.id;
+  }
+
   /** 管理员终审（投票期间也可以直接决定） */
   decide(id, approve, by = 'admin') {
     const p = this.get(id);
     if (!p || !['voting', 'awaiting', 'queued'].includes(p.status)) return '这个提案现在不能终审';
+    this.town.decisions?.cancel('proposal', p.id);
     if (approve) this.approve(p, by);
     else this.finish(p, 'rejected', '管理员没有批准');
     return null;
@@ -138,25 +192,9 @@ export class ProposalSystem {
       return;
     }
     p.appliedDay = town.day; // 先占用当天额度（施工中的也算）
-    if (p.construction) this.startConstruction(p);
-    else this.apply(p);
-  }
-
-  startConstruction(p) {
-    const town = this.town;
-    const { site, hours, by } = p.construction;
-    p.status = 'building';
-    p.finishT = Math.floor(town.t) + hours * 60;
-    town.spawnStructure('scaffold', { x: site.x + site.w / 2 - 0.5, y: site.y + site.h - 1, inside: null }, hours * 60);
-    const start = Math.floor(town.minute) + 10;
-    const workers = [];
-    for (const name of by) {
-      const a = town.agents.find((x) => x.name === name || x.id === name);
-      if (!a || a.kind === 'creature') continue;
-      if (site.near && start < 22 * 60 && town.addCommitment(a, { time: fmtTime(start), duration: Math.min(hours * 60, 22 * 60 - start), location: site.near, activity: `施工：${p.title}`, emoji: '🚧' }, '（小镇的建设任务）')) workers.push(a.name);
-    }
-    town.log('proposal', `🚧 「${p.title}」开工了${workers.length ? `，${workers.join('、')}负责施工` : ''}，预计 ${fmtTime(p.finishT)} 完工`, {});
-    town.emit('proposals');
+    // 有插件接管（例如施工插件：搭脚手架、安排工人，工期结束后由 tick 落地）时交给插件；否则直接落地
+    if (town.hooks?.claim('proposal.approved', p)) return;
+    this.apply(p);
   }
 
   apply(p) {
@@ -175,6 +213,7 @@ export class ProposalSystem {
     p.ops = r.ops;
     p.appliedDay = town.day;
     this.finish(p, 'applied', null);
+    town.hooks?.emit('proposal.applied', p);
     const built = r.ops.find((o) => o.op === 'addBuilding');
     if (built) {
       for (const a of town.agents) if (a.kind !== 'creature') addMemory(a, { t: town.t, type: 'event', text: `镇上新建了「${built.args.name}」`, importance: 5 });
@@ -201,11 +240,11 @@ export class ProposalSystem {
     for (const p of this.list) {
       if (p.status === 'voting' && t >= p.voteUntil) {
         p.status = 'awaiting';
-        p.awaitUntil = Math.floor(t) + ADMIN_WAIT;
+        this.openDecision(p);
         this.town.log('proposal', `🗳️ 提案「${p.title}」意见征集结束（赞成 ${this.tally(p).yes} / 反对 ${this.tally(p).no}），等待管理员终审`, {});
         this.town.emit('proposals');
-      } else if (p.status === 'awaiting' && this.requireAdmin && t >= (p.awaitUntil ?? Infinity)) {
-        this.finish(p, 'expired', null);
+      } else if (p.status === 'awaiting' && !p.decision && this.town.decisions) {
+        this.openDecision(p); // 旧存档里等待中的提案：补开决策项
       } else if (p.status === 'building' && t >= p.finishT) {
         this.apply(p);
       } else if (p.status === 'queued' && this.appliedToday(p.level) < (DAILY_QUOTA[p.level] ?? Infinity)) {
@@ -222,7 +261,8 @@ export class ProposalSystem {
   view(p, key = null) {
     return {
       id: p.id, title: p.title, motive: p.motive, origin: this.originText(p.origin), level: p.level, status: p.status,
-      createdT: p.createdT, voteUntil: p.voteUntil || null, awaitUntil: p.awaitUntil || null, finishT: p.finishT || null,
+      createdT: p.createdT, voteUntil: p.voteUntil || null, finishT: p.finishT || null,
+      decision: p.decision ? this.town.decisions?.get(p.decision) && { untilMs: this.town.decisions.get(p.decision).untilMs, status: this.town.decisions.get(p.decision).status } : null,
       ops: p.ops.map((o) => ({ op: o.op, desc: OPS[o.op].describe?.(o.args) || o.op, rect: o.op === 'addBuilding' ? { x: o.args.x, y: o.args.y, w: o.args.w, h: o.args.h } : null })),
       canon: p.canon, tally: this.tally(p), mine: key ? p.votes[key] ?? null : null, result: p.result, construction: p.construction,
     };

@@ -122,7 +122,7 @@ test('提案（本地模式）：大改等管理员确认；可以驳回；每�
   town.stop();
 });
 
-test('提案（公网模式）：访客投票 → 管理员终审；无人终审会作废；微调直接通过', async () => {
+test('提案（公网模式）：访客投票 → 管理员终审；无人终审时超时交给 AI 裁决官；微调直接通过', async () => {
   const town = newTown();
   town.proposalSystem.requireAdmin = true;
   const p = town.proposalSystem.submit({ title: '新物品', ops: [{ op: 'addWeather', args: { id: 'aurora', name: '极光', emoji: '🌌' } }] }).proposal;
@@ -140,9 +140,23 @@ test('提案（公网模式）：访客投票 → 管理员终审；无人终审
   const q = town.proposalSystem.submit({ title: '没人管', ops: [{ op: 'addWeather', args: { id: 'mist2', name: '薄雾', emoji: '🌁' } }] }).proposal;
   await flush();
   town.t += 61; town.proposalSystem.tick();
-  town.t += 1441; town.proposalSystem.tick();
-  assert.equal(q.status, 'expired');
-  assert.ok(!town.spec.weather.mist2, '作废的提案不会落地');
+  assert.equal(q.status, 'awaiting');
+  const d = town.decisions.find('proposal', q.id);
+  assert.ok(d && d.untilMs > Date.now() + 5 * 3600_000, '管理员终审窗口按真实时间计算（minor 6 小时）');
+  town.decisions.tick();
+  assert.equal(d.status, 'waiting', '窗口内不裁决');
+  const now = Date.now();
+  town.decisions.now = () => now + 7 * 3600_000;
+  town.decisions.tick();
+  await flush();
+  assert.equal(d.result.by, 'fallback', '没有模型时走确定性兜底：低风险且民意不反对 → 采纳');
+  assert.equal(q.status, 'applied');
+  assert.ok(town.spec.weather.mist2);
+  // 管理员事后撤销：回滚它带来的世界变化
+  assert.equal(town.decisions.undo(d.id), null);
+  assert.equal(q.status, 'reverted');
+  assert.ok(!town.spec.weather.mist2, '撤销后世界变化被回滚');
+  assert.equal(town.decisions.calibration().n, 0, 'AI 兜底不计入模型裁决的校准');
 
   const m = town.proposalSystem.submit({ title: '设定', ops: [{ op: 'addCanon', args: { text: '码头的木板是百年前铺的。' } }] }).proposal;
   await flush();

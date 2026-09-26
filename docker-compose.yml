@@ -11,6 +11,7 @@ services:
       - "127.0.0.1:3000:3000"   # 只暴露给本机的反向代理
     volumes:
       - town-data:/app/data
+      - town-plugins:/app/plugins/evolved   # AI 生成的插件（EVOLVE=auto 时）
     read_only: true
     tmpfs:
       - /tmp
@@ -22,3 +23,4 @@ services:
 
 volumes:
   town-data:
+  town-plugins:

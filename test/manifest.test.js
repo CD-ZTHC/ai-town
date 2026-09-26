@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const { defaultSpec } = await import('../server/kernel/spec.js');
-await import('../server/ext/index.js');
+await import('../plugin-host/builtin.js');
 const { manifestMarkdown } = await import('../server/worldai/manifest.js');
 
 test('docs/capabilities.md 与代码一致（不一致时运行 mise run manifest）', () => {

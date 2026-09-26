@@ -1,0 +1,8 @@
+{
+  "id": "construction",
+  "version": "1.0.0",
+  "tier": "builtin",
+  "title": "施工",
+  "summary": "带新建筑的提案获批后：搭脚手架、安排居民施工，工期结束后落地（没有这个插件时提案获批即落地）",
+  "hooks": ["proposal.approved"]
+}

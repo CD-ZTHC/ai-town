@@ -249,6 +249,30 @@ export class Objects {
     }
   }
 
+  /** AI 插件的覆盖层：插件只能给出声明式的绘制指令（emoji / text / ring / sparkle），由这里统一绘制 */
+  drawPluginOverlay(ctx, S) {
+    if (!S.overlay?.length) return;
+    const t = this.time;
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const o of S.overlay) {
+      const X = o.x * TS + TS / 2, Y = o.y * TS + TS / 2;
+      const bob = Math.sin(t * 2 + o.x) * 2;
+      if (o.kind === 'emoji') { ctx.font = '18px sans-serif'; ctx.fillText(o.text, X, Y + bob); }
+      else if (o.kind === 'text') {
+        ctx.font = 'bold 12px sans-serif'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.fillStyle = o.color;
+        ctx.strokeText(o.text, X, Y); ctx.fillText(o.text, X, Y);
+      } else if (o.kind === 'ring') {
+        ctx.strokeStyle = o.color; ctx.globalAlpha = 0.5 + Math.sin(t * 3) * 0.2; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(X, Y + 8, o.r * TS, o.r * TS * 0.45, 0, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
+      } else if (o.kind === 'sparkle') {
+        ctx.fillStyle = o.color; ctx.font = 'bold 13px sans-serif';
+        for (let i = 0; i < 3; i++) ctx.fillText('✦', X + Math.sin(t * 2 + i * 2.1) * o.r * TS * 0.5, Y - 6 - ((t * 20 + i * 12) % 24));
+      }
+    }
+    ctx.restore();
+  }
+
   drawVfx(ctx) {
     const t = this.time;
     this.vfx = this.vfx.filter((v) => t - v.born < v.life);
