@@ -28,6 +28,12 @@ const SNAPSHOT_KEEP = 24; // 保留最近 24 个游戏小时的快照
 const PACE_QUEUE = Number(process.env.PACE_QUEUE || 6); // 模型排队超过这个数时开始放慢时间
 const MAX_STRUCTURES = 30;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// 兜底日程里去暗月界时可做的事
+const MOON_OUTINGS = [
+  { location: 'moon_garden', activity: '去月光花园看发光的花', emoji: '🌸' },
+  { location: 'moon_lookout', activity: '到星坠崖看双月许愿', emoji: '✨' },
+  { location: 'moon_plaza', activity: '去暗月广场看影灵提灯', emoji: '🏮' },
+];
 
 const rand = (a) => a[Math.floor(Math.random() * a.length)];
 const clampStr = (s, n) => String(s ?? '').trim().slice(0, n);
@@ -148,9 +154,11 @@ export class Town extends EventEmitter {
   regionOpen(id) { return id === 'town' || this.worldFlags[`region_${id}`] === true; }
   openRegion(id, open = true) {
     if (!Object.hasOwn(this.regions, id) || id === 'town') return false;
+    const was = this.regionOpen(id);
     this.worldFlags[`region_${id}`] = Boolean(open);
     const name = this.regions[id].name;
     this.log('region', open ? `🌗 月之渡口那头的「${name}」向小镇敞开了` : `「${name}」的通路关闭了`, {});
+    if (open && !was && id === 'moonrealm') this.seedMoonRumors();
     if (open && id === 'moonrealm' && !this.creatures.list.some((c) => c.region === 'moonrealm')) {
       for (const n of ['月月', '萤萤', '朦朦']) this.creatures.addFriend({ type: 'shade_wisp', name: n, near: 'moon_plaza', region: 'moonrealm' });
     }
@@ -163,6 +171,20 @@ export class Town extends EventEmitter {
     this.emit('regions', this.regionsView());
     this.emit('story');
     return true;
+  }
+  /** 暗月界刚打开：让居民听说那边有什么，给他们一个过去看看的理由 */
+  seedMoonRumors() {
+    const rumors = [
+      '听说月之渡口那头的暗月界能去了：月光花园的花一碰就会发光，影灵们晚上提着灯在广场散步',
+      '听说暗月界有个星坠崖，站在崖边能同时看见两个月亮，对着双月许愿特别灵',
+      '听说暗月界的月井水凉丝丝的，月光花采回来能泡茶，影灵们还挺欢迎客人的',
+    ];
+    const who = this.agents.filter((a) => a.kind !== 'creature');
+    who.forEach((a, i) => {
+      addMemory(a, { t: this.t, type: 'event', text: rumors[i % rumors.length], importance: 6 });
+      this.setBelief(a, { about: '暗月界', claim: '渡口那头的暗月界很美，可以过去逛逛', confidence: 0.7, source: 'news' });
+    });
+    this.log('news_spread', `🗞️ ${rumors[0]}`, { agents: who.slice(0, 4).map((a) => a.id) });
   }
   regionsView() {
     return Object.fromEntries(Object.values(this.regions).map((w) => [w.id, { name: w.name || '小镇', open: this.regionOpen(w.id) }]));
@@ -528,13 +550,39 @@ export class Town extends EventEmitter {
 
   fallbackSchedule(a) {
     const w = a.work === a.home ? 'park' : a.work;
+    // 暗月界开放时，傍晚的散步有机会改成去渡口那头逛逛
+    const moon = this.moonOuting(a);
+    const walk = moon ? [moon.location, moon.activity, moon.emoji] : [rand(['square', 'park', 'pier']), '散步透气', '🚶'];
     const raw = [
       ['06:30', '07:30', 'home', '起床吃早饭', '🍳'], ['07:30', '11:30', w, '忙自己的事', '💼'],
       ['11:30', '12:30', 'cafe', '吃午饭', '🍱'], ['12:30', '17:00', w, '继续忙', '💼'],
-      ['17:00', '18:30', rand(['square', 'park', 'pier']), '散步透气', '🚶'], ['18:30', '20:30', rand(['tavern', 'home']), '吃晚饭', '🍲'],
+      ['17:00', '18:30', ...walk], ['18:30', '20:30', rand(['tavern', 'home']), '吃晚饭', '🍲'],
       ['20:30', '22:30', 'home', '看书休息', '📖'],
     ];
     return raw.map(([s, e, l, act, em]) => ({ start: parseHM(s), end: parseHM(e), location: l, activity: act, emoji: em, src: 'plan' }));
+  }
+
+  /**
+   * 今天要不要去暗月界逛逛（没有 LLM 时的兜底日程用）。
+   * 按「角色 + 日期」取固定的伪随机数，同一天的结果稳定；听说过、去过的人更想去。
+   */
+  moonOuting(a) {
+    if (!this.regionOpen('moonrealm') || a.kind === 'creature') return null;
+    const belief = a.beliefs.find((b) => b.about === '暗月界');
+    const chance = 0.25 + (belief ? 0.2 * belief.confidence : 0) + (a.visited?.includes('moonrealm') ? 0.1 : 0);
+    let h = 2166136261;
+    for (const ch of `${a.id}:${this.day}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+    const r = (h >>> 0) / 2 ** 32;
+    if (r >= chance) return null;
+    return MOON_OUTINGS[Math.floor((r / chance) * MOON_OUTINGS.length) % MOON_OUTINGS.length];
+  }
+
+  /** 规划提示里的「去暗月界的理由」：区域关闭时为空 */
+  moonHint(a) {
+    if (!this.regionOpen('moonrealm')) return '';
+    const been = a.visited?.includes('moonrealm');
+    return `【暗月界】码头的月之渡口现在通向暗月界，可以随时过去再回来。${been ? `${a.name}去过那边，还惦记着那里。` : `${a.name}还没去过，镇上都在聊那边的事。`}那里有一碰就发光的月光花（moon_garden）、能同时看见两个月亮的许愿崖（moon_lookout）、影灵们提灯散步的暗月广场（moon_plaza）。如果符合${a.name}的性格和目标（采风、找灵感、拍视频、找草药、交朋友、许愿……），今天可以安排一段时间去那边，location 填上面的 id。\n`;
   }
 
   normalizeSchedule(a, list, minStart = 0) {
@@ -570,7 +618,7 @@ ${this.memBlock(a, `今天 计划 约定 ${a.goal}`, 12)}
 ${keepCommits.length ? `今天已有的约定（必须保留）：${keepCommits.map((c) => `${fmtTime(c.start)} 在${this.locName(this.resolveLoc(a, c.location))}${c.activity}`).join('；')}\n` : ''}
 可去的地点（location 字段只能填这些 id）：
 ${this.locListText()}
-${this.actionBlock(a)}
+${this.moonHint(a)}${this.actionBlock(a)}
 请为${a.name}安排今天的日程（从起床到22:30），8~13项，时间连续不重叠，符合职业与性格，并包含推进目标、与特定的人见面的安排（写进 activity）。输出 JSON：
 {"mood":"两字心情","moodEmoji":"一个emoji","goal":"今天最想做成的一件事（≤30字）","schedule":[{"start":"06:30","end":"07:15","location":"home","activity":"≤14字具体活动","emoji":"一个emoji"}]}`,
         },
