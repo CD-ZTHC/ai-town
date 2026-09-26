@@ -10,6 +10,8 @@ const name = (id) => app.meta[id]?.name || id;
 
 const ui = { tab: 'sched', memFilter: 'all', chatMode: 'visitor', feedFilter: 'all', detail: null, rosterT: 0, refreshT: 0, pending: false };
 export { esc, fmtTime, face, name, weekday };
+// 供测试使用的纯函数（不碰 DOM）
+export { sparkline, bodyHTML };
 
 export function init(a, first) {
   app = a;

@@ -7,26 +7,26 @@ const SCALE = 2; // 角色精灵放大倍数
 const STATIC_OBJECTS = new Set(['fence', 'crop', 'bench', 'rock', 'stage', 'hay', 'anvil', 'woodpile']);
 
 // ---------- 工具 ----------
-function h2(x, y, s = 0) {
+export function h2(x, y, s = 0) {
   let h = (x * 374761393 + y * 668265263 + s * 982451653) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
-function vnoise(x, y, s = 0) {
+export function vnoise(x, y, s = 0) {
   const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
   const sm = (t) => t * t * (3 - 2 * t);
   const a = h2(xi, yi, s), b = h2(xi + 1, yi, s), c = h2(xi, yi + 1, s), d = h2(xi + 1, yi + 1, s);
   const u = sm(xf), v = sm(yf);
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
-function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
-function mix(c1, c2, t) {
+export function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+export function mix(c1, c2, t) {
   t = Math.max(0, Math.min(1, t));
   const a = hexToRgb(c1), b = hexToRgb(c2);
   return `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)},${Math.round(a[1] + (b[1] - a[1]) * t)},${Math.round(a[2] + (b[2] - a[2]) * t)})`;
 }
-const lerp = (a, b, t) => a + (b - a) * t;
-const clamp01 = (t) => Math.max(0, Math.min(1, t));
+export const lerp = (a, b, t) => a + (b - a) * t;
+export const clamp01 = (t) => Math.max(0, Math.min(1, t));
 
 function roundRect(c, x, y, w, h, r) {
   c.beginPath();
