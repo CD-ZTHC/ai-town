@@ -138,7 +138,14 @@ await step('05-news', async () => { await closeModal(); await click('#btn-news')
 await step('06-graph', async () => { await closeModal(); await click('#btn-graph'); await waitFor(() => modalHas(4), 8000, '关系网'); });
 await step('07-event', async () => { await closeModal(); await click('#btn-event'); await waitFor(() => modalHas(), 8000, '发布事件'); });
 await step('08-help', async () => { await closeModal(); await click('#more-menu [data-cmd="help"]'); await waitFor(() => modalHas(), 8000, '说明'); });
-await step('09-weather', async () => { await closeModal(); await click('#btn-weather'); await waitFor(() => evaluate(`!document.querySelector('#weather-menu').hidden && document.querySelectorAll('#weather-menu button').length > 3`), 5000, '天气菜单'); });
+await step('09-weather', async () => {
+  await closeModal();
+  await click('#btn-weather');
+  await waitFor(() => evaluate(`!document.querySelector('#weather-menu').hidden && document.querySelectorAll('#weather-menu button').length > 3`), 5000, '天气菜单');
+  // 菜单要完整地出现在屏幕里（按钮在底部 Dock 时应向上展开）
+  const box = await evaluate(`(() => { const r = document.querySelector('#weather-menu').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, vh: innerHeight, vw: innerWidth }; })()`);
+  if (box.top < 0 || box.bottom > box.vh || box.left < 0 || box.right > box.vw) throw new Error(`天气菜单超出屏幕：${JSON.stringify(box)}`);
+});
 await step('10-brain', async () => { await evaluate(`document.querySelector('#weather-menu').hidden = true`); await click('#brain-btn'); await waitFor(() => evaluate(`document.querySelector('#brain-stats').textContent.length > 0`), 5000, 'AI 大脑'); });
 await step('11-immerse', async () => {
   await send('Page.navigate', { url: `${base}/?mode=immerse` });

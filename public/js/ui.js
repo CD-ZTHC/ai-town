@@ -159,6 +159,8 @@ export function weatherMenu(btn) {
   m.style.left = `${Math.min(innerWidth - 256, r.left)}px`; m.style.top = `${r.bottom + 8}px`;
   m.innerHTML = `<button data-w="auto">🔄 自动变化</button>` + Object.entries(app.weathers).map(([k, w]) => `<button data-w="${esc(k)}" class="${app.snap.weather === k ? 'on' : ''}">${esc(w.emoji)} ${esc(w.name)}</button>`).join('');
   m.hidden = false;
+  // 按钮在底部 Dock 时下方放不下：改为在按钮上方展开
+  if (r.bottom + 8 + m.offsetHeight > innerHeight) m.style.top = `${Math.max(8, r.top - m.offsetHeight - 8)}px`;
   $$('button', m).forEach((b) => b.addEventListener('click', guarded(async () => {
     m.hidden = true;
     await app.api('/api/control', { weather: b.dataset.w });
