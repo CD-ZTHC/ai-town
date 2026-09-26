@@ -36,3 +36,13 @@ jobs:
         run: node --test test/*.test.js
       - name: AI 模块流程检查（录制回复，不联网）
         run: node tools/smoke-llm.js --mock
+      - name: 前端冒烟检查（无头 Chrome：各个面板与三种模式没有控制台错误）
+        if: matrix.pi
+        run: node tools/browser-check.js --out shots
+      - name: 保存截图
+        if: matrix.pi && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-check-shots
+          path: shots/
+          if-no-files-found: ignore

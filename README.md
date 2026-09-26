@@ -17,6 +17,7 @@ mise run test       # 运行测试（不调用 LLM；含用录制回复跑 7 个
 mise run spec       # 打印默认世界规格
 mise run evolve     # 把 AI 心愿单里已采纳的能力缺口整理成需求文档（docs/rfcs/）
 mise run manifest   # 重新生成能力清单 docs/capabilities.md
+mise run browser-check  # 前端改动后：无头 Chrome 打开各个面板与模式，检查控制台错误并截图
 mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实调用一次（默认 token 上限 20 万）
 ```
 
@@ -233,7 +234,7 @@ server/
   sim.js       模拟核心：世界状态、主循环、天气、角色登场与离开、世界操作
   sim/         Town 的其余职责（以 mixin 挂到 Town 上）：regions 区域与地点、movement 移动与日程执行、
                planning 规划与约定、actions 能力与行动、cognition 独白 / 反思 / 日记 / 日报、
-               social 对话 / 信念 / 旅人 / 事件、views 前端视图、persistence 存档与快照
+               social 对话 / 信念 / 旅人 / 事件、views 前端视图、persistence 存档与快照、metrics AI 表现指标
   kernel/spec.js  世界规格：默认规格、校验、日历与天气工具
   kernel/ops.js   WorldOp：操作定义、校验、应用、重放、审计日志
   kernel/expr.js  安全表达式（手写解析器）
@@ -249,14 +250,17 @@ server/
   worldai/architect.js 世界架构师；worldai/proposals.js 提案与审批；worldai/canon.js 设定考据官
   story/arcs.js   剧情弧引擎；story/creatures.js 异界生物；story/content.js 默认剧情内容（线程、图鉴、《镜湖裂隙》）
   llm.js       LLM 客户端：并发队列、自适应限流、重试、预算与统计、JSON 提取、回复录制
-  llm-providers.js 模型服务接口与默认的 OpenAI 兼容实现
-  memory.js    记忆流与检索
+  llm-providers.js 模型服务接口与默认的 OpenAI 兼容实现；llm-pi.js pi-ai 适配器（LLM_PROVIDER=pi）
+  memory.js    记忆流：写入、压缩成摘要、检索（双字组 + 可选的语义相似度）
+  embeddings.js 可选的 embedding（EMBED_MODEL）与向量缓存（node:sqlite）
   world.js     程序化地图（小镇与暗月界：瓦片、建筑、站位、A* 寻路）
   personas.js  8 位居民的人设、初始关系与记忆
 public/
-  js/render.js 世界渲染：地形、建筑、树木、昼夜光照、天气与粒子、气泡
+  js/render.js 世界渲染器：数据更新、坐标换算、每帧调度；render/ 下是 terrain 静态层、objects 物体与角色、
+               atmosphere 粒子 / 光照 / 天气、overlays 标签与气泡 / 小地图、util 常量与纯函数
   js/sprites.js 程序化像素角色（4 方向行走动画）
-  js/ui.js     面板与弹窗（名册、检查器、动态流、日报、故事、建设……）
+  js/ui.js     界面外壳（名册、顶栏、AI 大脑）与统一导出；ui/ 下是 core 共用状态、feed 动态流、
+               inspector 居民检查器、story 故事面板、build 建设面板、modals 其他弹窗
   js/main.js   数据流、相机、输入、环境音
   js/modes.js  观察 / 沉浸 / 游戏 三种模式的切换与按键
   js/hud.js    顶栏菜单、AI 状态浮层、底部 Dock、命令面板
@@ -265,10 +269,10 @@ public/
   style.css, modes.css  样式（modes.css 为 Dock、各模式与手机布局）
 deploy/        Caddy / Nginx / systemd 部署模板
 Dockerfile, docker-compose.yml, .env.example
-tools/         evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查）
+tools/         evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查）、browser-check.js（无头 Chrome 冒烟检查）
 spec/mods/     Mod（AI 创造的内容包）
-test/          node:test 测试（无需安装依赖）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复
-.github/       CI：Node 22 / 26 上跑语法检查、测试与 smoke --mock
+test/          node:test 测试（无需安装依赖；pi-ai 相关的在没装时跳过）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复
+.github/       CI：Node 22（零依赖）/ Node 26（装上 pi-ai）跑语法检查、测试与 smoke --mock；Node 26 另跑无头 Chrome 冒烟检查
 docs/design/   设计方案
-data/save.json 自动存档（每 20 秒），ops.jsonl 世界变更日志，snapshots/ 每小时快照（gzip 压缩，dNNN-HH.json.gz），timelines/ 分支时间线
+data/save.json 自动存档（每 20 秒），ops.jsonl 世界变更日志，snapshots/ 每小时快照（gzip 压缩，dNNN-HH.json.gz），timelines/ 分支时间线，embeddings.db 向量缓存（配置了 EMBED_MODEL 时）
 ```
