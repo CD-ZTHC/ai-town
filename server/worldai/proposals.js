@@ -37,8 +37,10 @@ export class ProposalSystem {
       const args = raw.args && typeof raw.args === 'object' ? structuredClone(raw.args) : {};
       if (name === 'addBuilding') {
         if (args.x == null || args.y == null) {
-          const near = args.place?.near;
-          const within = Math.max(4, Math.min(16, Number(args.place?.within) || 12));
+          // 模型常把 place 写扁（args.near / args.within）或写成字符串：意思明确，照样接受
+          const place = typeof args.place === 'string' ? { near: args.place } : args.place || {};
+          const near = place.near ?? args.near;
+          const within = Math.max(4, Math.min(16, Number(place.within ?? args.within) || 12));
           const w = Math.round(Number(args.w) || 4), h = Math.round(Number(args.h) || 4);
           const r = findPlacement(spec, { id: args.id, name: args.name, w, h, near, within });
           if (r.error) return { error: `第 ${i + 1} 个操作（${args.name || args.id}）：${r.error}` };
