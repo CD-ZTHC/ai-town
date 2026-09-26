@@ -78,7 +78,7 @@ export class Views {
   usageView() {
     const days = Object.entries(this.usage?.days || {}).map(([d, v]) => ({ day: Number(d), ...v })).sort((a, b) => a.day - b.day);
     const avg = days.length ? Math.round(days.reduce((s, d) => s + d.tokens, 0) / days.length) : null;
-    return { days, avgPerDay: avg, byLabel: llm.stats.byLabel };
+    return { days, avgPerDay: avg, byLabel: llm.stats.byLabel, metrics: this.metricsView() };
   }
 
   /** 心愿单 + 已生成的需求文档（mise run evolve 写在 data/evolve.json 里） */

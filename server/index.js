@@ -146,6 +146,7 @@ async function handleApi(req, res, url, ip) {
     }
     if (p === '/api/relations') return json(res, 200, town.relationsGraph());
     if (p === '/api/usage') return json(res, 200, town.usageView());
+    if (p === '/api/metrics') return json(res, 200, town.metricsView());
     if (p === '/api/newspapers') return json(res, 200, town.newspapers);
     if (p === '/api/world/history') return json(res, 200, town.worldHistory().slice(-200));
     if (p === '/api/story') return json(res, 200, { ...town.storyView(ip), admin });

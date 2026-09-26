@@ -29,6 +29,7 @@ import { Cognition } from './sim/cognition.js';
 import { Social } from './sim/social.js';
 import { Views } from './sim/views.js';
 import { Persistence } from './sim/persistence.js';
+import { Metrics } from './sim/metrics.js';
 
 const PACE_QUEUE = Number(process.env.PACE_QUEUE || 6); // 模型排队超过这个数时开始放慢时间
 const MAX_STRUCTURES = 30;
@@ -442,7 +443,7 @@ export class Town extends EventEmitter {
 }
 
 // 把各职责模块的方法挂到 Town 上；重名直接报错，避免悄悄覆盖
-for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence]) {
+for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics]) {
   for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) {
     if (name === 'constructor') continue;
     if (Object.hasOwn(Town.prototype, name)) throw new Error(`Town.${name} 重复定义（${part.name}）`);

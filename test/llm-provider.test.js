@@ -45,7 +45,7 @@ test('请求走 provider，并统计按模块的用量', async () => {
   assert.equal(p.reqs[0].temperature, 0.3);
   assert.ok(p.reqs[0].signal instanceof AbortSignal);
   assert.equal(llm.stats.dayTokens - before, 42);
-  assert.deepEqual({ ...llm.stats.byLabel['测试模块'], ms: 0 }, { calls: 1, fails: 0, tokens: 42, ms: 0 });
+  assert.deepEqual({ ...llm.stats.byLabel['测试模块'], ms: 0 }, { calls: 1, fails: 0, tokens: 42, ms: 0, json: 1, repairs: 0, badJson: 0 });
 });
 
 test('网关不支持 JSON 模式：自动关闭后重试，之后的请求也不再带', async () => {
@@ -143,4 +143,12 @@ test('OpenAI 兼容 provider：有 schema 时发送非严格的 json_schema', as
   const { Architect } = await import('../server/worldai/architect.js');
   await new Architect({}).ask([{ role: 'user', content: 'x' }]);
   assert.equal(seen.schema, ARCHITECT_SCHEMA);
+});
+
+test('JSON 解析统计：一次修好计入 repairs，修不好计入 badJson', async () => {
+  llm.setProvider(fake([ok('不是 JSON'), ok('{"fixed":true}'), ok('还不是'), ok('仍然不是')]));
+  assert.deepEqual(await llm.chatJSON([{ role: 'user', content: 'x' }], { label: '解析' }), { fixed: true });
+  await assert.rejects(llm.chatJSON([{ role: 'user', content: 'x' }], { label: '解析' }));
+  const s = llm.stats.byLabel['解析'];
+  assert.deepEqual([s.json, s.repairs, s.badJson], [2, 2, 1]);
 });

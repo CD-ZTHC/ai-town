@@ -102,11 +102,12 @@ ${this.moonHint(a)}${this.actionBlock(a)}
       for (const c of keepCommits) this.insertEntry(a, c);
       a.mood = { text: clampStr(res.mood, 6) || a.mood.text, emoji: clampStr(res.moodEmoji, 4) || a.mood.emoji };
       if (res.goal) a.todayGoal = clampStr(res.goal, 40);
+      this.noteRun('plan', false);
       addMemory(a, { t: this.t, type: 'plan', text: `今天的打算：${a.todayGoal || ''}（${sched.map((e) => `${fmtTime(e.start)}${e.activity}`).join('，')}）`, importance: 3 });
       this.log('plan', `${a.name} 制定了今天的计划：${a.todayGoal || sched.map((e) => e.activity).slice(0, 3).join('、')}`, { agents: [a.id] });
     } catch (err) {
       console.warn(`[plan] ${a.name} 失败：`, err.message);
-      if (a.scheduleDay !== day) { a.schedule = this.fallbackSchedule(a); a.scheduleDay = day; }
+      if (a.scheduleDay !== day) { a.schedule = this.fallbackSchedule(a); a.scheduleDay = day; this.noteRun('plan', true); }
     }
     a.curKey = null;
     this.emit('agent', a.id);
@@ -134,6 +135,7 @@ ${this.moonHint(a)}${this.actionBlock(a)}
     const act = this.normalizeAct(c.act);
     const entry = { start, end, location: location === a.home ? 'home' : location, activity: clampStr(c.activity, 24), emoji: clampStr(c.emoji, 4) || '📌', src: 'commit', ...(act ? { act } : {}) };
     this.insertEntry(a, entry);
+    this.noteCommitMade(a, entry);
     addMemory(a, { t: this.t, type: 'plan', text: `我打算${fmtTime(start)}去${this.locName(location)}${entry.activity}${why}`, importance: 5 });
     return true;
   }

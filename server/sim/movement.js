@@ -68,6 +68,7 @@ export class Movement {
     a.moving = false;
     a.status = e.sleep ? 'sleeping' : 'acting';
     a.action = { text: e.activity, emoji: e.emoji || '🙂' };
+    this.noteSettle(a, e);
     if (e.sleep) {
       const home = this.world.locations[a.home];
       a.inside = home.indoor;

@@ -175,6 +175,7 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 - **访客化身**：访客进入「🎮 游戏模式」起个名字，就会以旅人的样子出现在中央广场，可以走到任意可达的格子，或用「🧭」直接前往任何开放的公共地点（包括异界）。化身按真实时间行走，不受调速和暂停影响。居民看得见身边的旅人，认识的人会打招呼；和居民聊天时，对方知道是谁在说话、是不是就站在面前，记忆里也会记下名字。化身不进存档，每个 IP 同时一个，20 分钟不操作自动离开，不消耗模型额度。
 - **Mod**：`mise run export-mod` 把存档里 AI 创造的内容导出成 Mod，别的小镇用 `MODS=` 加载。详见 [spec/mods/README.md](spec/mods/README.md)。
 - **AI 负载调速与用量**：模型排队过长时自动放慢时间，顶栏会显示「🧠 大家在思考，时间放慢了」；AI 大脑面板显示最近几个游戏日的平均 token 用量（`GET /api/usage` 有按模块的明细）。
+- **AI 表现指标**：约定兑现率、对话重复率、剧情线程回收率、JSON 修复 / 失败率、规划与对话的兜底率，AI 大脑面板显示主要几项，`GET /api/metrics` 有完整数据（JSON 按模块细分）；按游戏日记进存档，换模型时拿来对比。无头回放测试也会输出这组指标。
 - 接口：`POST /api/avatar`（`{"name":"小满","color":"#64b5f6"}`）、`POST /api/avatar/move`（`{"location":"pier"}`）、`POST /api/avatar/goto`（`{"x":24,"y":30}`）、`POST /api/avatar/leave`；管理员 `POST /api/region`（`{"id":"moonrealm","open":true}`）、`GET /api/timelines`、`POST /api/timelines/fork`（`{"name":"…","snapshot":"d003-10.json"}`，不填快照则从此刻分叉）、`POST /api/timelines/switch`（`{"id":"tl-1"}`）。
 
 ## 自我进化：AI 心愿单 → 需求文档 → 扩展

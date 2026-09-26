@@ -117,6 +117,8 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
     this.convos.delete(convo.id);
     convo.state = 'done';
     convo.summary = clampStr(res.summary, 60) || `${a.name}和${b.name}聊了聊`;
+    if (res.fallback) convo.fallback = true;
+    this.noteRun('convo', Boolean(res.fallback));
     const imp = Math.max(1, Math.min(10, Number(res.importance) || 4));
     const transcript = convo.lines.map((l) => `${this.byId[l.speaker].name}：${l.text}`).join(' / ');
     for (const [x, y, mem, aff, note] of [[a, b, res.memoryA, res.affinityA, res.noteA], [b, a, res.memoryB, res.affinityB, res.noteB]]) {

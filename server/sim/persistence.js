@@ -33,7 +33,7 @@ export class Persistence {
         threadState: this.threadState, crisis: this.crisis, discovered: this.discovered, story: this.story, arcRuns: this.arcRuns, voteState: this.voteState,
         pendingScenes: this.pendingScenes, creatureList: this.creatureList, portalState: this.portalState, swarmGoal: this.swarmGoal || null,
         proposals: this.proposals, architectQueue: this.architectQueue, gaps: this.gaps, architectUsage: this.architectUsage,
-        usage: this.usage ? { days: this.usage.days } : undefined, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens } };
+        usage: this.usage ? { days: this.usage.days } : undefined, metricsState: this.metricsState, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens } };
       const text = JSON.stringify(data);
       fs.writeFileSync(this.saveFile + '.tmp', text);
       fs.renameSync(this.saveFile + '.tmp', this.saveFile);
@@ -73,6 +73,7 @@ export class Persistence {
         arcRuns: d.arcRuns || [], voteState: d.voteState || [], pendingScenes: d.pendingScenes || [], creatureList: d.creatureList || [], portalState: d.portalState || null, swarmGoal: d.swarmGoal || null,
         proposals: d.proposals || [], architectQueue: d.architectQueue || [], gaps: d.gaps || [], architectUsage: d.architectUsage || undefined,
         usage: { days: d.usage?.days || {}, mark: null }, // 进程内计数重启后归零，重新开始标记
+        metricsState: d.metricsState || { days: {} },
       });
       if (this.story) this.story.lastHour = -1;
       // 恢复当日令牌用量，避免重启后预算被重置

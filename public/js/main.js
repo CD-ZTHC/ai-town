@@ -153,7 +153,7 @@ function connect() {
   });
   es.addEventListener('story', () => UI.onStory());
   // 每游戏日平均用量（每分钟刷新一次）
-  const usage = () => app.api('/api/usage').then((u) => { app.usageAvg = u.avgPerDay; UI.updateBrain(); }).catch(() => {});
+  const usage = () => app.api('/api/usage').then((u) => { app.usageAvg = u.avgPerDay; app.metrics = u.metrics; UI.updateBrain(); }).catch(() => {});
   usage();
   if (!app.usageTimer) app.usageTimer = setInterval(usage, 60_000);
   // 新建筑落地：重建地图与静态图层

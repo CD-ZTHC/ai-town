@@ -159,7 +159,7 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
         stats.completionTokens += usage.completion;
         rollDay();
         stats.dayTokens += usage.prompt + usage.completion;
-        const u = (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0 });
+        const u = labelStats(label);
         u.calls++;
         u.tokens += usage.prompt + usage.completion;
         u.ms += Date.now() - started;
@@ -201,11 +201,16 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
     stats.errors++;
     stats.lastError = String(lastErr?.message || lastErr).slice(0, 200);
     pushRecent({ label, agent, ms: Date.now() - started, ok: false });
-    (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0 }).fails++;
+    labelStats(label).fails++;
     throw lastErr;
   } finally {
     stats.active = stats.active.filter((a) => a.id !== id);
   }
+}
+
+/** 按模块的统计：请求次数、失败、token、耗时；json / repairs / badJson 是 chatJSON 的解析情况 */
+function labelStats(label) {
+  return (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0, json: 0, repairs: 0, badJson: 0 });
 }
 
 function pushRecent(r) {
@@ -278,13 +283,22 @@ export function extractJSON(text) {
 export async function chatJSON(messages, opts = {}) {
   opts = { json: true, ...opts };
   let content = await chat(messages, opts);
+  const s = labelStats(opts.label || 'llm');
+  s.json++;
   try {
     return extractJSON(content);
   } catch {
+    // 输出不是合法 JSON：让模型改一次（计入 repairs），还不行计入 badJson
+    s.repairs++;
     content = await chat(
       [...messages, { role: 'assistant', content }, { role: 'user', content: '上面的输出不是合法 JSON。请只输出合法的 JSON，不要任何其他文字。' }],
       opts,
     );
-    return extractJSON(content);
+    try {
+      return extractJSON(content);
+    } catch (e) {
+      s.badJson++;
+      throw e;
+    }
   }
 }

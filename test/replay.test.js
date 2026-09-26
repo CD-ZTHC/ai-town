@@ -101,5 +101,14 @@ test(`回放 ${DAYS} 个游戏日：没有居民卡住、上限生效、世界�
   assert.deepEqual(again.spec, town.spec);
   assert.deepEqual(again.agents.map((a) => a.id).sort(), town.agents.map((a) => a.id).sort());
   for (const a of again.agents) assert.equal(a.memories.length, town.byId[a.id].memories.length, `${a.name} 的记忆没有完整恢复`);
+  // AI 表现指标：数值合法，且用录制回复时有真实的约定、对话和线程数据
+  const m = town.metricsView();
+  t.diagnostic(`指标：${JSON.stringify({ commitments: m.commitments, convos: m.convos, plans: m.plans, threads: m.threads, json: { ...m.json, byLabel: undefined } })}`);
+  for (const r of [m.commitments.keptRate, m.convos.repeatRate, m.convos.fallbackRate, m.plans.fallbackRate, m.threads.resolvedRate, m.json.failRate]) assert.ok(r === null || (r >= 0 && r <= 1), `比例越界：${r}`);
+  assert.ok(m.commitments.made > 0 && m.commitments.kept > 0, '应该有约定，并且有人赴约');
+  assert.ok(m.convos.total > 0 && m.convos.compared > 0, '应该有可比较的对话');
+  assert.ok(m.plans.total >= 8 * DAYS * 0.9, '每人每天都有规划记录');
+  assert.equal(m.json.failed, 0, '录制回复都是合法 JSON');
+  assert.deepEqual(again.metricsView().commitments, m.commitments, '指标随存档恢复');
   t.diagnostic(`调用：${Object.entries(mock.calls).map(([k, n]) => `${k}×${n}`).join('，')}；世界操作 ${town.specOps.length} 条`);
 });

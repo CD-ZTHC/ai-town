@@ -360,7 +360,10 @@ export function updateBrain() {
   const fmtK = (n) => (n > 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`);
   const budget = s.dailyBudget ? `<span title="今日令牌用量 / 每日预算">今日 ${fmtK(s.dayTokens)}/${fmtK(s.dailyBudget)}</span>` : `<span>令牌 ${tk}</span>`;
   const perDay = app.usageAvg ? `<span title="最近几个游戏日的平均用量">每游戏日≈${fmtK(app.usageAvg)}</span>` : '';
-  $('#brain-stats').innerHTML = `<span>调用 ${s.ok}</span>${budget}${perDay}<span>均 ${(s.avgMs / 1000).toFixed(1)}s</span>${app.snap?.idle ? '<span>💤</span>' : ''}${s.queued ? `<span>排队 ${s.queued}</span>` : ''}${s.errors ? `<span style="color:var(--bad)" title="${esc(s.lastError)}">错误 ${s.errors}</span>` : ''}`;
+  // AI 表现指标（/api/metrics 有完整明细）：换模型时对比用
+  const m = app.metrics, pct = (r) => (r == null ? '—' : `${Math.round(r * 100)}%`);
+  const quality = m ? `<span title="约定兑现率：约好的事到点真的去了">赴约 ${pct(m.commitments.keptRate)}</span><span title="对话重复率：同一对人两天内聊的内容相近">重复 ${pct(m.convos.repeatRate)}</span><span title="JSON 需要让模型重写一次的比例 / 重写后仍失败的比例">JSON 修 ${pct(m.json.repairRate)}·败 ${pct(m.json.failRate)}</span>` : '';
+  $('#brain-stats').innerHTML = `<span>调用 ${s.ok}</span>${budget}${perDay}${quality}<span>均 ${(s.avgMs / 1000).toFixed(1)}s</span>${app.snap?.idle ? '<span>💤</span>' : ''}${s.queued ? `<span>排队 ${s.queued}</span>` : ''}${s.errors ? `<span style="color:var(--bad)" title="${esc(s.lastError)}">错误 ${s.errors}</span>` : ''}`;
   $('#brain-active').innerHTML = s.active.slice(0, 6).map((x) => `<div class="bact"><b>${esc(x.agent || '')}</b> ${esc(x.label)}<span>${(x.ms / 1000).toFixed(0)}s</span></div>`).join('') || '<div style="color:var(--muted)">静候灵感中…</div>';
 }
 
