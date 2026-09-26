@@ -23,7 +23,7 @@ export function effectsText() {
 }
 
 export function exprText() {
-  return `变量：e.loc e.inside e.stamina e.courage e.status e.name（规则中的居民；能力里用 self / target）、weather hour minute day flags.标记名
+  return `变量：e.loc e.region e.inside e.stamina e.courage e.status e.name（规则中的居民；能力里用 self / target）、weather hour minute day flags.标记名
 函数：${Object.values(EXPR_FN_DOCS).join('；')}`;
 }
 

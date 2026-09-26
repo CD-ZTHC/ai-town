@@ -11,7 +11,7 @@ const MAX_MATCHES = 12; // 一次触发最多影响的实体数，防止「雪�
 export function agentView(a) {
   if (!a) return null;
   return {
-    id: a.id, name: a.name, kind: a.kind, role: a.role, loc: a.locId || '', status: a.status, inside: Boolean(a.inside),
+    id: a.id, name: a.name, kind: a.kind, role: a.role, loc: a.locId || '', region: a.region || 'town', status: a.status, inside: Boolean(a.inside),
     hp: a.body.hp, stamina: a.body.stamina, courage: a.body.courage, mood: a.mood.text,
   };
 }

@@ -6,6 +6,7 @@ import { parseHM } from '../memory.js';
 import { validateAbility } from './abilities.js';
 import { validateRule } from './rules.js';
 import { DEFAULT_THREADS, DEFAULT_CREATURES, STORY_ITEMS, STORY_STRUCTURES, RIFT_ARC } from '../story/content.js';
+import { MOON_ITEMS, MOON_STRUCTURES, MOON_ABILITIES, MOON_RULES } from '../story/moonrealm.js';
 
 export const SPEC_VERSION = 2;
 export const RATINGS = ['cozy', 'adventure', 'epic'];
@@ -180,10 +181,10 @@ export function defaultSpec(env = process.env) {
     personas: clone(PERSONAS),
     creatures: DEFAULT_CREATURES(),
     threads: DEFAULT_THREADS(),
-    items: { ...DEFAULT_ITEMS(), ...STORY_ITEMS() },
-    structures: { ...DEFAULT_STRUCTURES(), ...STORY_STRUCTURES() },
-    abilities: DEFAULT_ABILITIES(),
-    rules: DEFAULT_RULES(),
+    items: { ...DEFAULT_ITEMS(), ...STORY_ITEMS(), ...MOON_ITEMS() },
+    structures: { ...DEFAULT_STRUCTURES(), ...STORY_STRUCTURES(), ...MOON_STRUCTURES() },
+    abilities: [...DEFAULT_ABILITIES(), ...MOON_ABILITIES()],
+    rules: [...DEFAULT_RULES(), ...MOON_RULES()],
     factions: [],
     arcs: [RIFT_ARC()],
     params: { walkSpeed: 3.2, maxConvos: 3, convoBaseProb: 0.22, reflectThreshold: 40, dayEnd: 22 * 60 + 30 },

@@ -206,7 +206,13 @@ for (const [choice, check] of [
     assert.ok(t.agents.some((a) => a.id === 'aying'), '阿萤留下了');
     assert.equal(t.portalState.stage, 'stable');
     assert.equal(t.portalState.name, '月之渡口');
-    assert.ok(t.spec.calendar.events.some((e) => e.id === 'double_moon'), '新增双月节');
+    const fest = t.spec.calendar.events.find((e) => e.id === 'double_moon');
+    assert.ok(fest, '新增双月节');
+    assert.equal(fest.vfx, 'festival_lanterns', '码头挂上节日灯笼');
+    const night = t.spec.calendar.events.find((e) => e.id === 'double_moon_night');
+    assert.equal(night.location, 'moon_lookout', '放完灯去暗月界的星坠崖');
+    assert.equal(night.day, fest.day);
+    assert.equal(night.countdown, false, '同一天的活动只倒计时一次');
     const home = t.creatures.list.filter((c) => (c.region || 'town') === 'town');
     assert.ok(home.length === 1 && home[0].friendly, '留下一只友善的小影灵');
     assert.ok(t.regionOpen('moonrealm'), '暗月界向小镇敞开');
