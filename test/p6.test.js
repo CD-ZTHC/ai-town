@@ -190,6 +190,41 @@ test('区域：关闭时不能去；打开后居民经渡口走到异界地点�
   town.stop();
 });
 
+test('暗月界开放：居民听说了那边的事，规划提示里有去的理由；关闭时都没有', () => {
+  const town = new Town({ dataDir: tmp() });
+  const a = town.byId.su;
+  assert.equal(town.moonHint(a), '');
+  assert.equal(town.moonOuting(a), null);
+  town.openRegion('moonrealm', true);
+  for (const x of town.agents.filter((x) => x.kind !== 'creature')) {
+    assert.ok(x.memories.some((m) => m.text.includes('暗月界')), `${x.name}听说了暗月界`);
+    assert.ok(x.beliefs.some((b) => b.about === '暗月界'));
+  }
+  assert.match(town.moonHint(a), /moon_garden/);
+  const n = a.memories.length;
+  town.openRegion('moonrealm', true);
+  assert.equal(a.memories.length, n, '重复打开不再重复散播');
+  town.stop();
+});
+
+test('暗月界开放后，没有模型的两天里也有居民去那边逛，晚上都回家', async () => {
+  const town = new Town({ dataDir: tmp(), instantTalk: true });
+  town.pacing = false;
+  town.speed = 10;
+  town.openRegion('moonrealm', true);
+  const seen = {};
+  while (town.t < 1440 + 23 * 60) {
+    town.advance(0.5);
+    await new Promise((r) => setImmediate(r)); // 让规划失败后的兜底日程生效
+    for (const a of town.agents) if (a.region === 'moonrealm' && a.locId?.startsWith('moon_')) (seen[town.day] ||= new Set()).add(a.id);
+  }
+  assert.ok(seen[1]?.size >= 1, '第 1 天有人去暗月界');
+  assert.ok(seen[2]?.size >= 1, '第 2 天有人去暗月界');
+  assert.ok(town.logs.some((l) => l.type === 'region' && l.text.includes('第一次踏进')));
+  assert.deepEqual(town.agents.filter((a) => a.region === 'moonrealm').map((a) => a.name), [], '23:00 都回到了小镇');
+  town.stop();
+});
+
 test('区域：导演不能开区域，剧情弧可以；存档保留开放状态', async () => {
   const { checkBeat } = await import('../server/story/beats.js');
   const dir = tmp();
