@@ -268,16 +268,61 @@ export function extractJSON(text) {
   try {
     return JSON.parse(s);
   } catch {
-    // 常见修复：中文引号、尾逗号
-    const fixed = s
-      .replace(/[“”]/g, '"')
-      .replace(/"\s*：\s*/g, '":') // 键后面的全角冒号
-      .replace(/"\s*，\s*"/g, '","') // 字符串之间的全角逗号
-      .replace(/([:[,]\s*)\+(\d)/g, '$1$2') // 数字前的 + 号
-      .replace(/,\s*([}\]])/g, '$1')
-      .replace(/\n/g, ' ');
-    return JSON.parse(fixed);
+    const fixed = repairJSON(s);
+    try {
+      return JSON.parse(fixed);
+    } catch (e) {
+      // 附上出错位置附近的原文，日志里能直接看出模型写错了什么
+      const at = Number(/position (\d+)/.exec(e.message)?.[1]);
+      throw new Error(Number.isFinite(at) ? `${e.message}（附近：${fixed.slice(Math.max(0, at - 60), at + 40)}）` : e.message);
+    }
   }
+}
+
+// 值可以从这些字符开始（用来判断字符串里的引号后面跟着的 , 或 : 是不是 JSON 结构）
+const VALUE_START = /["“{[+\-\d]|true|false|null/y;
+const skipWs = (s, i) => { while (i < s.length && /\s/.test(s[i])) i++; return i; };
+
+/** 引号 s[i] 是不是在结束字符串：后面（跳过空白）是 } ] 或结尾，或者是 , : 且再后面是一个值（逗号后面也可以是尾逗号的 } ]） */
+function closesString(s, i) {
+  let j = skipWs(s, i + 1);
+  if (j >= s.length || s[j] === '}' || s[j] === ']') return true;
+  if (!',:，：'.includes(s[j])) return false;
+  const comma = s[j] === ',' || s[j] === '，';
+  j = skipWs(s, j + 1);
+  if (comma && (s[j] === '}' || s[j] === ']')) return true;
+  VALUE_START.lastIndex = j;
+  return VALUE_START.test(s);
+}
+
+/**
+ * 修复模型常见的格式错误。逐字符扫描、区分字符串内外，只改 JSON 结构，不动台词内容：
+ * 结构位置的中文引号 / 全角冒号 / 全角逗号、数字前的 + 号、尾逗号；
+ * 字符串里没转义的英文引号（如 "text":"桩上刻着"第三根桩"几个字"）与换行。
+ */
+export function repairJSON(s) {
+  let out = '';
+  let inStr = false;
+  let curly = false; // 这个字符串是不是用中文引号开头的（是的话 ” 才可能是结束引号）
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (c === '\\') { out += c + (s[++i] ?? ''); continue; }
+      if (c === '\n') { out += '\\n'; continue; }
+      if (c === '\r' || c === '\t') { out += c === '\t' ? '\\t' : ''; continue; }
+      const quote = c === '"' || (curly && c === '”');
+      if (quote && closesString(s, i)) { out += '"'; inStr = false; continue; }
+      out += c === '"' ? '\\"' : c;
+      continue;
+    }
+    if (c === '"' || c === '“' || c === '”') { out += '"'; inStr = true; curly = c !== '"'; continue; }
+    if (c === '：') { out += ':'; continue; }
+    if (c === '，') { out += ','; continue; }
+    if (c === '+' && /\d/.test(s[i + 1] || '') && /[:[,]\s*$/.test(out)) continue;
+    if (c === '}' || c === ']') { out = out.replace(/,\s*$/, ''); }
+    out += c;
+  }
+  return out;
 }
 
 export async function chatJSON(messages, opts = {}) {
