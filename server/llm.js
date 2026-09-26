@@ -1,7 +1,8 @@
-// OpenAI 兼容接口的 LLM 客户端：并发队列、重试、模型分档与自动校正、JSON 提取、统计
+// LLM 客户端：并发队列、重试、模型分档与自动校正、JSON 提取、统计。发请求交给 provider（见 llm-providers.js）
 import fs from 'node:fs';
-const BASE_URL = (process.env.BASE_URL || '').replace(/\/+$/, '');
-const API_KEY = process.env.API_KEY || '';
+import { createProvider } from './llm-providers.js';
+
+let provider = createProvider(process.env.LLM_PROVIDER || 'openai');
 const CONCURRENCY = Number(process.env.LLM_CONCURRENCY || 4);
 const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 150_000);
 
@@ -24,7 +25,7 @@ let modelChecked = false;
 const listeners = new Set();
 
 export const stats = {
-  enabled: Boolean(BASE_URL && API_KEY),
+  enabled: provider.enabled,
   model: models.default,
   models: { fast: modelFor('fast'), smart: modelFor('smart') },
   calls: 0,
@@ -67,9 +68,7 @@ async function ensureModel() {
   if (modelChecked || !stats.enabled) return;
   modelChecked = true;
   try {
-    const res = await fetch(`${BASE_URL}/models`, { headers: { Authorization: `Bearer ${API_KEY}` } });
-    const data = await res.json();
-    const ids = (data.data || []).map((m) => m.id);
+    const ids = provider.listModels ? await provider.listModels() : [];
     for (const tier of Object.keys(models)) {
       const want = models[tier];
       if (!want || !ids.length || ids.includes(want)) continue;
@@ -145,37 +144,16 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
-        const res = await fetch(`${BASE_URL}/chat/completions`, {
-          method: 'POST',
-          signal: ctrl.signal,
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${API_KEY}` },
-          body: JSON.stringify({
-            model,
-            messages,
-            temperature,
-            max_tokens: maxTokens,
-            reasoning_effort: 'low',
-            ...(json && jsonMode ? { response_format: { type: 'json_object' } } : {}),
-          }),
-        });
-        const text = await res.text();
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch {
-          throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-        }
-        if (!res.ok || data.error) throw new Error(data.error?.message || `HTTP ${res.status}`);
-        const content = data.choices?.[0]?.message?.content ?? '';
-        stats.promptTokens += data.usage?.prompt_tokens || 0;
-        stats.completionTokens += data.usage?.completion_tokens || 0;
+        const { content, usage, finishReason } = await provider.complete({ model, messages, temperature, maxTokens, json: json && jsonMode, signal: ctrl.signal });
+        stats.promptTokens += usage.prompt;
+        stats.completionTokens += usage.completion;
         rollDay();
-        stats.dayTokens += (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
+        stats.dayTokens += usage.prompt + usage.completion;
         const u = (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0 });
         u.calls++;
-        u.tokens += (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
+        u.tokens += usage.prompt + usage.completion;
         u.ms += Date.now() - started;
-        if (!content.trim()) throw new Error(`空回复 (finish_reason=${data.choices?.[0]?.finish_reason})`);
+        if (!content.trim()) throw new Error(`空回复 (finish_reason=${finishReason})`);
         const ms = Date.now() - started;
         backoff = Math.max(0, backoff - 1);
         if (stats.ok % 5 === 0 && penalty > 0) penalty--;
@@ -222,10 +200,16 @@ function pushRecent(r) {
 
 // 测试用：注入一个假的模型（fn(messages, opts) => 回复文本），不发出任何网络请求
 let mock = null;
-const realEnabled = stats.enabled;
 export function setMock(fn) {
   mock = fn || null;
-  stats.enabled = Boolean(mock) || realEnabled;
+  stats.enabled = Boolean(mock) || provider.enabled;
+}
+
+/** 换用另一个 provider（测试，或在启动时接入其他 SDK）；模型名会重新校验 */
+export function setProvider(p) {
+  provider = p;
+  modelChecked = false;
+  stats.enabled = Boolean(mock) || provider.enabled;
 }
 
 export function chat(messages, opts = {}) {
