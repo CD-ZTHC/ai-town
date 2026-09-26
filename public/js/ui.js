@@ -837,7 +837,7 @@ async function renderEvolve() {
             ${p.status === 'pending' && app.perms.interaction ? `<button class="mini" data-ev="${esc(p.key)}" data-yes="1">👍 赞成上线</button><button class="mini" data-ev="${esc(p.key)}" data-yes="0">👎 反对</button>` : ''}
             ${d.admin && p.status === 'pending' && dec ? `<button class="mini adm" data-dd="${dec.id}" data-ok="1">✅ 批准</button><button class="mini adm" data-dd="${dec.id}" data-ok="0">✖ 驳回</button>` : ''}
             ${d.admin && ['canary', 'active'].includes(p.status) ? `<button class="mini adm" data-act="rollback" data-key="${esc(p.key)}">⏪ 回滚</button><button class="mini adm" data-act="disable" data-key="${esc(p.key)}">⏸ 停用</button>` : ''}
-            ${d.admin && ['disabled', 'rolledBack', 'superseded', 'rejected'].includes(p.status) ? `<button class="mini adm" data-act="enable" data-key="${esc(p.key)}">▶ 启用</button>` : ''}
+            ${d.admin && ['disabled', 'rolledBack', 'superseded', 'rejected', 'retired'].includes(p.status) ? `<button class="mini adm" data-act="enable" data-key="${esc(p.key)}">▶ 启用</button>` : ''}
           </div>
           ${d.admin && p.lastError ? `<small class="quota">最近的错误：${esc(p.lastError)}</small>` : ''}
         </div>`;

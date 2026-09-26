@@ -11,7 +11,7 @@ import { manifestText } from '../server/worldai/manifest.js';
 import { activeDir } from '../server/timelines.js';
 import { runGate } from './gate.js';
 import { runShadow } from './shadow.js';
-import { hostApiDoc } from './prompts.js';
+import { hostApiDoc, pluginCapabilities } from './prompts.js';
 import { writeRfc, reviewRfc, implement, review, finalSecurity } from './agents.js';
 import { reviewInfo } from './llm.js';
 import { readJSON, writeJSON, ledger, loadJobs, saveJobs, str, setEngine } from './common.js';
@@ -106,7 +106,7 @@ export async function runJob(ctx, need) {
 
   try {
     const spec = currentSpec(P);
-    const capabilities = manifestText(spec, 1);
+    const capabilities = `${manifestText(spec, 1)}\n\n${pluginCapabilities()}`;
     const hostDoc = hostApiDoc(spec);
 
     // ① 需求文档 + ② 需求评审
@@ -129,6 +129,7 @@ export async function runJob(ctx, need) {
       if (rv.suggestedTier && TIER_RANK[rv.suggestedTier] < TIER_RANK[rfc.tier]) rfc.tier = rv.suggestedTier;
     }
     const rfcMd = rfcMarkdown(rfc, need, rfcReviews);
+    job.rfcText = rfcMd.slice(0, 4000);
     job.title = rfc.title;
     job.tier = rfc.tier;
     if (rfc.tier === 'T3') {
@@ -159,7 +160,12 @@ export async function runJob(ctx, need) {
         for (let i = 0; i <= GATE_FIXES; i++) {
           stage(i || files ? 'fix' : 'implement');
           const out = await implement(llm, { rfc, key, hostDoc, previousFiles: files, problems });
-          if (!out.files['plugin.json']) { problems = ['没有输出 plugin.json']; files = files || {}; continue; }
+          if (!out.files['plugin.json']) {
+            note(`实施 Agent 没有给出 plugin.json（返回的键：${out.keys.join('、') || '无'}）`);
+            problems = ['没有输出 plugin.json：请在 files 里用完整的文件名（plugin.json、content.json、server.js、test.js）作为键'];
+            gate = { issues: problems };
+            continue;
+          }
           files = out.files;
           writeFiles(dir, files, { 'RFC.md': rfcMd });
           stage('gate');

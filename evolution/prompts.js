@@ -46,6 +46,17 @@ export default function (t) {
 }`,
 };
 
+/** 给「需求文档」「需求评审」看的插件能力摘要：让它们知道 T2 插件能做到什么，不至于把能做的事误判为 T3 */
+export function pluginCapabilities() {
+  return `插件能力（不修改内核就能做到的事）：
+- T0 数据 / T1 规则：content.json 里的 ${CONTENT_OPS.T1.join('、')}
+- T2 代码（沙箱）：新效果原语（参数按声明校验，执行时只能返回已有效果）；订阅钩子 ${SANDBOX_HOOKS.join('、')}，返回效果或更新地图覆盖层；
+  读取只读的世界快照（时间、天气、世界标记、每位居民的位置/状态/心情/体力/勇气/状态/物品、公共地点、访客化身的名字与位置）；
+  自己的 JSON 接口 POST /api/p/<id>/<接口名>；前端面板（隔离 iframe，可以显示快照里的公开信息、调用自己的接口）；地图覆盖层（emoji/文字/光圈/闪光）；
+  私有存储 ≤64KB（可以记录历史、统计）；少量文字生成（api.llm，受额度限制）
+- 做不到（属于 T3）：新增钩子、改寻路/移动、改渲染器本身、改存档格式、改居民的思考提示词、改审批与安全模块`;
+}
+
 export function hostApiDoc(spec) {
   const locs = Object.entries(spec.locations).filter(([, l]) => l.public !== false).map(([id, l]) => `${id}(${l.name})`).join('、');
   return `# 云溪镇插件宿主接口（插件能做的全部事情）
@@ -89,7 +100,7 @@ export default function setup(api) { … }
 - api.store.get(key) / api.store.set(key, value)：插件私有存储（总共 ≤64KB）
 - api.log(text)：在动态栏记一笔（≤60 字，每小时最多 4 条）
 - await api.llm(prompt)：请宿主写一小段文字（≤120 字），受额度限制；只在确实需要时使用
-- world：{ day, minute, hour, weekday, weather, flags, width, height, agents:[{id,name,role,kind,loc,status,region,x,y,mood,stamina,courage,conditions,inventory}], locations:[{id,name,center}], items:[id], avatars:[{name,loc,region}] }
+- world：{ day, minute, hour, weekday, weather, flags, width, height, agents:[{id,name,role,kind,loc:'地点id',status:'acting/walking/sleeping/chatting',region,x,y,mood:'心情文字',moodEmoji:'😊',stamina:0~100,courage:0~100,conditions:['状态'],inventory:{物品id:数量}}], locations:[{id,name,center}], items:[id], avatars:[{name,loc,region}] }
 - 处理函数可以是 async；每次调用 500ms 内必须返回（用了 llm 为 30s）；每个游戏小时最多 40 次调用、40 个效果
 - 地点 id：${locs}
 
@@ -98,7 +109,8 @@ export default function (t) { t.test('名字', () => { … }) }
 - t.api() 返回一个记录注册结果的假 api：api.registered.effects / hooks / routes 可以直接调用
 - t.assert 是 node:assert/strict；测试要覆盖 RFC 的验收标准，不能是空测试
 
-## ui.js（可选，运行在隔离的 iframe 里）
+## ui.js（可选，运行在隔离的 iframe 里，以 ES 模块加载）
+- 可以直接写顶层代码，也可以 export default function () { … }（加载后会被调用）；不要 import 任何东西
 - document.getElementById('app') 是容器；用 textContent / createElement 构建界面，不要用 innerHTML
 - window.town.onState((state) => …)：每隔几秒收到 { day, hour, weather, agents:[{id,name,loc,mood}] }
 - await window.town.call('接口名', body)：调用自己的接口

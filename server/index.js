@@ -503,13 +503,16 @@ function openStream(req, res, ip) {
 // AI 插件的前端面板：在 sandbox iframe（没有 allow-same-origin）里运行，CSP 禁止一切网络请求，只能通过 postMessage 与页面通信
 const PLUGIN_UI_CSP = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
 function servePluginUi(req, res, url) {
-  const m = /^\/plugin-ui\/([a-z][a-z0-9-]{2,31})\/(ui\.js)?$/.exec(url.pathname);
+  const m = /^\/plugin-ui\/([a-z][a-z0-9-]{2,31})\/(ui\.js|boot\.js)?$/.exec(url.pathname);
   const file = m && town.evolved.uiFile(m[1]);
   const headers = { ...SECURITY_HEADERS, 'Content-Security-Policy': PLUGIN_UI_CSP, 'X-Frame-Options': 'SAMEORIGIN', 'Cache-Control': 'no-store' };
   if (!file) { res.writeHead(404, headers); return res.end('not found'); }
-  if (m[2]) { res.writeHead(200, { ...headers, 'Content-Type': MIME['.js'] }); return fs.createReadStream(file).pipe(res); }
+  // 面板以模块方式加载（iframe 是 opaque origin，模块请求走 CORS）；ui.js 可以是普通脚本，也可以 export default 一个初始化函数
+  const js = { ...headers, 'Content-Type': MIME['.js'], 'Access-Control-Allow-Origin': '*' };
+  if (m[2] === 'ui.js') { res.writeHead(200, js); return fs.createReadStream(file).pipe(res); }
+  if (m[2] === 'boot.js') { res.writeHead(200, js); return res.end("import * as ui from './ui.js';\nif (typeof ui.default === 'function') ui.default();\n"); }
   res.writeHead(200, { ...headers, 'Content-Type': MIME['.html'] });
-  res.end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:14px/1.6 system-ui,sans-serif;margin:10px;color:#3a3226;background:#fffaf0}button{font:inherit;cursor:pointer}</style></head><body><div id="app"></div><script src="/js/plugin-bridge.js"></script><script src="/plugin-ui/${m[1]}/ui.js"></script></body></html>`);
+  res.end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:14px/1.6 system-ui,sans-serif;margin:10px;color:#3a3226;background:#fffaf0}button{font:inherit;cursor:pointer}</style></head><body><div id="app"></div><script src="/js/plugin-bridge.js"></script><script type="module" src="/plugin-ui/${m[1]}/boot.js"></script></body></html>`);
 }
 
 function serveStatic(req, res, url) {

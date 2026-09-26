@@ -29,7 +29,7 @@ export function sampleArgs(schema, spec) {
 
 export function sampleWorld(spec) {
   const agents = spec.personas.filter((p) => !p.kind || p.kind === 'resident').slice(0, 6).map((p, i) => ({
-    id: p.id, name: p.name, role: p.role, kind: 'resident', loc: p.work, status: 'acting', region: 'town', x: 20 + i * 3, y: 20, mood: '平静', stamina: 80, courage: 50, conditions: [], inventory: {},
+    id: p.id, name: p.name, role: p.role, kind: 'resident', loc: p.work, status: 'acting', region: 'town', x: 20 + i * 3, y: 20, mood: i % 2 ? '开心' : '平静', moodEmoji: i % 2 ? '😊' : '🙂', stamina: 80, courage: 50, conditions: [], inventory: {},
   }));
   return {
     day: 3, minute: 18 * 60, hour: 18, weekday: '周三', weather: 'sunny', flags: {}, width: 64, height: 44, agents,
@@ -122,7 +122,7 @@ export async function runGate(dir, spec) {
     return { ok: !issues.length, issues, report, stripped: sc.stripped, manifest };
   }
   if (!sc.ok) return { ok: false, issues, report, stripped: sc.stripped, manifest };
-  for (const f of sc.files.filter((x) => x.endsWith('.js') && x !== 'ui.js')) {
+  for (const f of sc.files.filter((x) => x.endsWith('.js'))) {
     const r = spawnSync(process.execPath, ['--check', path.join(dir, f)], { encoding: 'utf8', timeout: 10_000 });
     if (r.status !== 0) issues.push(`${f} 语法错误：${String(r.stderr).trim().split('\n').filter((l) => /Error/.test(l))[0] || '无法解析'}`);
   }

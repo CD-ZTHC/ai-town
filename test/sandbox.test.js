@@ -218,3 +218,25 @@ test('上线开关：EVOLVE=suggest 时超时也不交给 AI；公网 + EVOLVE_P
   assert.equal(c.evolved.autoAllowed('lantern-glow@1.0.0'), true);
   c.stop();
 });
+
+test('长期没人用的代码插件：提议退役 → 采纳后停用 → 撤销即重新启用', async () => {
+  const { root } = pluginDir('lantern-glow@1.0.0');
+  const evoDir = tmp('evo-');
+  lock(evoDir, root, 'lantern-glow@1.0.0');
+  const town = newTown({ root, evoDir, config: { retireDays: 3 } });
+  scan(town);
+  town.decisions.decide(town.decisions.find('plugin', 'lantern-glow@1.0.0').id, { adopt: true });
+  town.t += 61; scan(town);
+  assert.equal(town.evolved.entry('lantern-glow@1.0.0').status, 'active');
+  town.t += 4 * 1440; town.evolved.checkRetire();
+  const d = town.decisions.find('retire', 'lantern-glow@1.0.0');
+  assert.ok(d, '提议退役');
+  assert.equal(d.risk, 'low');
+  town.decisions.decide(d.id, { adopt: true });
+  assert.equal(town.evolved.entry('lantern-glow@1.0.0').status, 'retired');
+  assert.ok(!EFFECTS.glowUp);
+  assert.equal(town.decisions.undo(d.id), null);
+  assert.equal(town.evolved.entry('lantern-glow@1.0.0').status, 'active');
+  assert.ok(EFFECTS.glowUp);
+  town.stop();
+});

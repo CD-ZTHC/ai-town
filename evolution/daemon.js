@@ -30,7 +30,7 @@ function townBusy() {
 
 async function cycle() {
   if (!llm.enabled()) { setEngine(P, { state: 'no-llm' }); return 'no-llm'; }
-  if (budget.left() <= 0) { setEngine(P, { state: 'waiting-budget', budget: { used: budget.used(), limit: budget.limit } }); return 'budget'; }
+  if (budget.left() <= 0) { setEngine(P, { state: 'waiting-budget', budgetLimit: budget.limit }); return 'budget'; }
   if (townBusy()) { setEngine(P, { state: 'waiting-town' }); return 'busy'; }
   // 上次异常退出时遗留的「进行中」任务
   const jobs = readJSON(P.jobs, []);
@@ -50,7 +50,7 @@ async function main() {
   if (MODE === 'off') { console.log('[evolve] EVOLVE=off，进化引擎不启动'); return; }
   fs.mkdirSync(P.evo, { recursive: true });
   const info = reviewInfo();
-  setEngine(P, { state: 'starting', pid: process.pid, mode: MODE, budget: { limit: budget.limit }, reviewModel: info.model, sameModel: info.sameModel, startedAt: new Date().toISOString() });
+  setEngine(P, { state: 'starting', pid: process.pid, mode: MODE, budgetLimit: budget.limit, reviewModel: info.model, sameModel: info.sameModel, startedAt: new Date().toISOString() });
   ledger(P, 'engine-start', { mode: MODE, pid: process.pid, reviewModel: info.model });
   console.log(`[evolve] 进化引擎已启动（${MODE}，预算 ${budget.limit || '不限'} tokens/天，评审模型 ${info.model}${info.sameModel ? '，与实施相同' : ''}）`);
   if (once) { await cycle(); return; }

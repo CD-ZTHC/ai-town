@@ -45,13 +45,26 @@ ${rfc.rfc}
   return { verdict, suggestedTier: ['T0', 'T1', 'T2'].includes(res?.suggestedTier) ? res.suggestedTier : null, issues: list(res?.issues, 8, 80) };
 }
 
-/** 把模型给的文件对象整理成 { 文件名: 文本 } */
-function normalizeFiles(files) {
+/**
+ * 把模型给的文件整理成 { 文件名: 文本 }。
+ * 容错：有的模型会把键名写成 "plugin." / "plugin"（丢掉扩展名），或者给出 [{ name, content }] 数组。
+ */
+const BASE_EXT = { plugin: 'json', content: 'json', server: 'js', ui: 'js', test: 'js' };
+export function normalizeFiles(files) {
   const out = {};
-  if (!files || typeof files !== 'object') return out;
-  for (const [name, v] of Object.entries(files)) {
-    if (!/^(plugin\.json|content\.json|server\.js|ui\.js|test\.js|lib\/[a-z0-9-]{1,24}\.js)$/.test(name)) continue;
-    out[name] = typeof v === 'string' ? v : JSON.stringify(v, null, 1);
+  const entries = Array.isArray(files)
+    ? files.map((f) => [f?.name ?? f?.path ?? f?.file, f?.content ?? f?.text ?? f?.code])
+    : files && typeof files === 'object' ? Object.entries(files) : [];
+  for (let [name, v] of entries) {
+    name = String(name || '').trim().replace(/^\.\//, '').replace(/\.$/, '');
+    const bare = name.replace(/\.(json|js)$/, '');
+    if (BASE_EXT[bare]) name = `${bare}.${BASE_EXT[bare]}`;
+    else if (/^lib\/[a-z0-9-]{1,24}$/.test(bare)) name = `${bare}.js`;
+    if (!/^(plugin\.json|content\.json|server\.js|ui\.js|test\.js|lib\/[a-z0-9-]{1,24}\.js)$/.test(name) || v == null) continue;
+    let text = typeof v === 'string' ? v : JSON.stringify(v, null, 1);
+    // 同样的毛病也会出现在导入路径里：'./server.' → './server.js'
+    if (name.endsWith('.js')) text = text.replace(/(['"]\.\/(?:lib\/)?[a-z0-9-]{1,24})\.?(['"])/g, '$1.js$2');
+    out[name] = text;
   }
   return out;
 }
@@ -70,7 +83,9 @@ ${rfc.rfc}${fixing}
 
 输出 JSON：{"files":{"plugin.json":{…},${rfc.tier === 'T2' ? '"server.js":"…","test.js":"…"（可选 "ui.js"）' : '"content.json":{"ops":[…]}'}},"notes":"≤80字"}
 plugin.json 里 id 必须是 ${id}，version 必须是 ${version}，tier 必须是 ${rfc.tier}。` }], { maxTokens: 7000, temperature: 0.3 });
-  return { files: normalizeFiles(res?.files), notes: str(res?.notes, 80) };
+  // 有的模型不把文件包在 files 里，而是直接放在顶层
+  const files = normalizeFiles(res?.files ?? res);
+  return { files, notes: str(res?.notes, 80), keys: Object.keys(res?.files ?? res ?? {}).slice(0, 8) };
 }
 
 const FINDINGS = '输出 JSON：{"verdict":"pass / fail","findings":[{"severity":"blocker / major / minor","file":"文件名","issue":"问题（≤80字）","fix":"建议（≤80字）"}]}。有 blocker 或 major 时 verdict 必须是 fail。';

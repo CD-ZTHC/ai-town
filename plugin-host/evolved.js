@@ -31,6 +31,7 @@ export function evolveConfig(env = process.env) {
     canaryDataMin: Number(env.EVOLVE_CANARY_DATA_MIN || 360),
     canaryCodeMin: Number(env.EVOLVE_CANARY_CODE_MIN || 1440),
     canaryCodeRealMs: Number(env.EVOLVE_CANARY_CODE_REAL_H || 2) * 3600_000,
+    retireDays: Number(env.EVOLVE_RETIRE_DAYS || 30),
   };
 }
 
@@ -91,6 +92,7 @@ export class EvolvedManager {
   /** 钩子总线、决策队列就绪之后调用 */
   init() {
     this.town.decisions.register('plugin', this.decisionHandler());
+    this.town.decisions.register('retire', this.retireHandler());
     for (const [key, r] of this.loaded) if (r.manifest.tier === 'T2') this.startSandbox(key, r);
   }
 
@@ -199,7 +201,7 @@ export class EvolvedManager {
       const [id] = key.split('@');
       this.state.plugins[key] = { votes: {}, history: [], tier: info.tier, title: str(info.title, 16), summary: str(info.summary, 80), upgradeFrom: this.liveOf(id) };
       this.setStatus(key, 'pending', '进化引擎提交');
-      const d = this.town.decisions.open({ kind: 'plugin', ref: key, title: `上线插件「${info.title}」`, summary: info.summary, risk: info.tier === 'T2' ? 'high' : 'medium' });
+      const d = this.town.decisions.open({ kind: 'plugin', ref: key, title: str(info.title, 16), summary: info.summary, risk: info.tier === 'T2' ? 'high' : 'medium' });
       this.entry(key).decision = d.id;
       this.town.log('evolution', `🧬 进化引擎做好了新功能「${info.title}」（${info.tier}），等待表决：${str(info.summary, 40)}`, {});
     }
@@ -263,7 +265,7 @@ export class EvolvedManager {
       try { writeJSON(path.join(this.dir, 'heartbeat.json'), { at: new Date(now).toISOString(), queue: llm.queueSize(), day: this.town.day }); } catch { /* ignore */ }
     }
     const hour = Math.floor(this.town.t / 60);
-    if (hour !== this.lastSignalHour) { this.lastSignalHour = hour; this.exportSignals(); }
+    if (hour !== this.lastSignalHour) { this.lastSignalHour = hour; this.exportSignals(); this.checkRetire(); }
   }
 
   /** 灰度期满且没有出错 → 转正；前一个插件转正后，排队中的下一个开始灰度 */
@@ -272,6 +274,7 @@ export class EvolvedManager {
       if (e.status !== 'canary') continue;
       const w = this.canaryWindow(e);
       if (this.town.t - e.sinceT >= w.min && this.now() - e.since >= w.ms) {
+        e.activeDay = this.town.day;
         this.setStatus(key, 'active', '灰度期无异常');
         if (e.upgradeFrom) this.setStatus(e.upgradeFrom, 'superseded', `被 ${key} 取代`);
         this.town.log('evolution', `✅ 新功能「${e.title}」灰度期无异常，正式上线`, {});
@@ -293,7 +296,7 @@ export class EvolvedManager {
 
   agentView(a) {
     if (!a) return null;
-    return { id: a.id, name: a.name, role: a.role, kind: a.kind, loc: a.locId, status: a.status, region: a.region || 'town', x: +a.x.toFixed(1), y: +a.y.toFixed(1), mood: a.mood?.text, stamina: Math.round(a.body.stamina), courage: Math.round(a.body.courage), conditions: [...a.body.conditions], inventory: { ...a.inventory } };
+    return { id: a.id, name: a.name, role: a.role, kind: a.kind, loc: a.locId, status: a.status, region: a.region || 'town', x: +a.x.toFixed(1), y: +a.y.toFixed(1), mood: a.mood?.text, moodEmoji: a.mood?.emoji, stamina: Math.round(a.body.stamina), courage: Math.round(a.body.courage), conditions: [...a.body.conditions], inventory: { ...a.inventory } };
   }
 
   /** 插件看到的世界（只读快照，不含访客的 IP / 身份） */
@@ -381,6 +384,37 @@ export class EvolvedManager {
       try { writeJSON(path.join(this.dir, 'plugins', `${id}.json`), side.store); } catch { /* ignore */ }
     }
     this.usageOf(id).total++;
+    const e = this.entry(key);
+    if (e && e.lastUsedDay !== town.day) { e.lastUsedDay = town.day; this.save(); }
+  }
+
+  /** 长期没人用的代码插件：提议退役（走决策队列，低风险；撤销即重新启用） */
+  checkRetire() {
+    for (const [key, e] of Object.entries(this.state.plugins)) {
+      if (e.status !== 'active' || e.tier !== 'T2' || e.retireAsked) continue;
+      const since = e.lastUsedDay ?? e.activeDay ?? this.town.day;
+      if (this.town.day - since < this.cfg.retireDays) continue;
+      e.retireAsked = true;
+      this.save();
+      this.town.decisions.open({ kind: 'retire', ref: key, title: e.title, summary: `已经 ${this.town.day - since} 天没有被用到`, risk: 'low' });
+    }
+  }
+
+  retireHandler() {
+    return {
+      autoAllowed: () => this.cfg.mode === 'auto',
+      tally: () => ({ yes: 0, no: 0 }),
+      gates: () => null,
+      dossier: (d) => { const e = this.entry(d.ref); return `插件「${e?.title}」（${e?.summary}）已经 ${this.town.day - (e?.lastUsedDay ?? e?.activeDay ?? this.town.day)} 个游戏日没有被用到，提议退役（停用，之后可以重新启用）。`; },
+      resolve: (d, { adopt }) => {
+        const e = this.entry(d.ref);
+        if (!e || e.status !== 'active') return;
+        if (!adopt) { e.lastUsedDay = this.town.day; e.retireAsked = false; this.save(); return; }
+        this.unload(d.ref);
+        this.setStatus(d.ref, 'retired', '长期没有被用到');
+      },
+      undo: (d) => this.adminAction(d.ref, 'enable'),
+    };
   }
 
   isEvolvedSource(source) { return [...this.loaded.values()].some((x) => x.id === source) || Object.keys(this.state.plugins).some((k) => k.startsWith(`${source}@`)); }
@@ -482,7 +516,9 @@ export class EvolvedManager {
       return null;
     }
     if (action === 'enable') {
-      if (!['disabled', 'rolledBack', 'superseded', 'rejected'].includes(e.status)) return '插件现在不能启用';
+      if (!['disabled', 'rolledBack', 'superseded', 'rejected', 'retired'].includes(e.status)) return '插件现在不能启用';
+      e.retireAsked = false;
+      e.lastUsedDay = this.town.day;
       const [id] = key.split('@');
       const live = this.liveOf(id);
       if (live) { this.unload(live); this.setStatus(live, 'superseded', `管理员改用 ${key}`); }
