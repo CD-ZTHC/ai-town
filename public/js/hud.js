@@ -93,7 +93,7 @@ function commands() {
   for (const [rid, w] of Object.entries(app.regionWorlds)) if (rid !== 'town' && app.regionsOpen[rid]?.open) for (const [k, l] of Object.entries(w.locations)) locs[k] = { ...l, region: rid };
   for (const l of Object.values(locs)) {
     if (!l.rect) continue;
-    list.push({ icon: l.emoji || '📍', label: l.name, hint: l.region ? '异界 · 镜头飞过去' : '地点 · 镜头飞过去', keys: `${l.name} ${l.id}`, run: flyTo(l) });
+    list.push({ icon: esc(l.emoji || '📍'), label: l.name, hint: l.region ? '异界 · 镜头飞过去' : '地点 · 镜头飞过去', keys: `${l.name} ${l.id}`, run: flyTo(l) });
   }
   const tools = [
     ['🔭', '观察模式', () => app.setMode('observe')],

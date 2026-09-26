@@ -76,7 +76,7 @@ export class Persistence {
       });
       if (this.story) this.story.lastHour = -1;
       // 恢复当日令牌用量，避免重启后预算被重置
-      if (d.llmDay?.key === new Date().toISOString().slice(0, 10)) { llm.stats.dayKey = d.llmDay.key; llm.stats.dayTokens = Math.max(llm.stats.dayTokens, d.llmDay.tokens || 0); }
+      if (d.llmDay?.key === llm.localDayKey()) { llm.stats.dayKey = d.llmDay.key; llm.stats.dayTokens = Math.max(llm.stats.dayTokens, d.llmDay.tokens || 0); }
       const personas = Object.fromEntries(this.spec.personas.map((p) => [p.id, p]));
       for (const saved of d.agents || []) {
         const a = this.byId[saved.id];

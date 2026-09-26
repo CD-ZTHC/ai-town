@@ -174,7 +174,7 @@ export function weatherMenu(btn) {
   if (!m.hidden) { m.hidden = true; return; }
   const r = btn.getBoundingClientRect();
   m.style.left = `${Math.min(innerWidth - 256, r.left)}px`; m.style.top = `${r.bottom + 8}px`;
-  m.innerHTML = `<button data-w="auto">🔄 自动变化</button>` + Object.entries(app.weathers).map(([k, w]) => `<button data-w="${k}" class="${app.snap.weather === k ? 'on' : ''}">${w.emoji} ${w.name}</button>`).join('');
+  m.innerHTML = `<button data-w="auto">🔄 自动变化</button>` + Object.entries(app.weathers).map(([k, w]) => `<button data-w="${esc(k)}" class="${app.snap.weather === k ? 'on' : ''}">${esc(w.emoji)} ${esc(w.name)}</button>`).join('');
   m.hidden = false;
   $$('button', m).forEach((b) => b.addEventListener('click', guarded(async () => {
     m.hidden = true;

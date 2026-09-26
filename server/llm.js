@@ -54,8 +54,12 @@ const notify = () => listeners.forEach((fn) => fn(stats));
 export class BudgetError extends Error {
   constructor() { super('今日 AI 额度已用完'); this.code = 'BUDGET'; }
 }
+/** 本地日期（YYYY-MM-DD）：每日额度按服务器所在时区的午夜重置，而不是 UTC 午夜 */
+export function localDayKey(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function rollDay() {
-  const k = new Date().toISOString().slice(0, 10);
+  const k = localDayKey();
   if (stats.dayKey !== k) { stats.dayKey = k; stats.dayTokens = 0; }
 }
 export function budgetLeft() {

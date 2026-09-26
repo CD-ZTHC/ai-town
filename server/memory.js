@@ -30,6 +30,16 @@ export function addMemory(agent, { t, type = 'obs', text, importance = 3 }) {
   return m;
 }
 
+// 记忆的双字组缓存：检索时不必每次都重新切分全部记忆。不进存档，记忆被淘汰后自动回收；文本变了就重新计算
+const gramCache = new WeakMap();
+function memGrams(m) {
+  const c = gramCache.get(m);
+  if (c && c.text === m.text) return c.grams;
+  const grams = bigrams(m.text);
+  gramCache.set(m, { text: m.text, grams });
+  return grams;
+}
+
 export function retrieve(agent, query, now, k = 10) {
   const q = bigrams(query);
   const scored = agent.memories.map((m) => {
@@ -38,7 +48,7 @@ export function retrieve(agent, query, now, k = 10) {
     const importance = m.importance / 10;
     let relevance = 0;
     if (q.size) {
-      const b = bigrams(m.text);
+      const b = memGrams(m);
       let hit = 0;
       for (const g of q) if (b.has(g)) hit++;
       relevance = Math.min(1, (hit / Math.sqrt(q.size * Math.max(1, b.size))) * 3);
