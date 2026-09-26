@@ -333,9 +333,10 @@ export async function chatJSON(messages, opts = {}) {
   s.json++;
   try {
     return extractJSON(content);
-  } catch {
+  } catch (e) {
     // 输出不是合法 JSON：让模型改一次（计入 repairs），还不行计入 badJson
     s.repairs++;
+    console.warn(`[llm] ${opts.label || 'llm'} 的回复不是合法 JSON，让模型重写：${String(e.message).slice(0, 240)}`);
     content = await chat(
       [...messages, { role: 'assistant', content }, { role: 'user', content: '上面的输出不是合法 JSON。请只输出合法的 JSON，不要任何其他文字。' }],
       opts,

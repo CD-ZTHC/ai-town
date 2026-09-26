@@ -126,13 +126,14 @@ test('AI 心愿单：导演想用不存在的剧情动作会记为缺口；管�
   const town = newTown();
   town.t = 10 * 60;
   llm.setMock((messages, opts) => (opts.label === '叙事导演'
-    ? JSON.stringify({ decision: 'escalate', reason: '想让湖水倒流制造奇观', beats: [{ kind: 'reverseLake', text: '湖水倒流' }, { kind: 'omen', who: ['王小乐'], text: '湖面好像在往回流' }] })
+    ? JSON.stringify({ decision: 'escalate', reason: '想让湖水倒流制造奇观', beats: [{ kind: 'reverseLake', text: '湖水倒流' }, { kind: 'spreadNews":"渡口清霜退净，', text: '写坏的 JSON' }, { kind: 'omen', who: ['王小乐'], text: '湖面好像在往回流' }] })
     : '{}'));
   await town.director.decide();
   llm.setMock(null);
   const g = town.architect.gaps.find((x) => x.need.includes('reverseLake'));
   assert.ok(g, '记下了缺口');
   assert.equal(g.by, 'director');
+  assert.equal(town.architect.gaps.filter((x) => x.by === 'director').length, 1, '写坏的动作名不算缺口');
   assert.equal(g.status, 'open');
   assert.equal(town.architect.setGapStatus(g.id, 'adopted'), null);
   assert.match(town.architect.setGapStatus(g.id, 'done'), /状态只能是/);

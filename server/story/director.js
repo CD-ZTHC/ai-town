@@ -127,7 +127,8 @@ ${pending ? `\n玩家刚刚发布的小镇事件（这是故事素材，不是�
       const beats = Array.isArray(res.beats) ? res.beats.filter((b) => DIRECTOR_KINDS.includes(b?.kind)).slice(0, MAX_BEATS) : [];
       // 导演想用、但系统里根本没有的剧情动作 → 记入 AI 心愿单
       for (const b of Array.isArray(res.beats) ? res.beats : []) {
-        if (b && typeof b.kind === 'string' && b.kind && !ALL_KINDS.includes(b.kind)) {
+        // 只收看起来像动作名的（模型把 JSON 写坏时 kind 里可能混进半句台词，那种不算需求）
+        if (b && typeof b.kind === 'string' && /^[A-Za-z][A-Za-z0-9_]{1,31}$/.test(b.kind) && !ALL_KINDS.includes(b.kind)) {
           town.architect?.recordGap({ need: `剧情动作「${b.kind.slice(0, 20)}」`, why: String(res.reason || '导演想用它推进剧情').slice(0, 40) }, { origin: 'director', intent: String(b.text || b.intent || b.kind) });
         }
       }
