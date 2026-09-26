@@ -46,7 +46,7 @@ stop() {
     timeout 30 bash -c "while kill -0 $p 2>/dev/null; do sleep 0.5; done" || kill -KILL "$p"
   done
 }
-start() { (cd "$1" && setsid nohup "$MISE" run start > server.log 2>&1 < /dev/null &); timeout 40 bash -c "until curl -sf -o /dev/null --max-time 3 http://127.0.0.1:$PORT/; do sleep 1; done"; }
+start() { (cd "$1" && exec setsid nohup "$MISE" run start > server.log 2>&1 < /dev/null) > /dev/null 2>&1 < /dev/null & timeout 40 bash -c "until curl -sf -o /dev/null --max-time 3 http://127.0.0.1:$PORT/; do sleep 1; done"; }
 
 echo "▶ 停止旧版本（会先存档）"
 stop "$DIR"
