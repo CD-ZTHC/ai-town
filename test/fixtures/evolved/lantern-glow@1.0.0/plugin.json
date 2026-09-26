@@ -1,0 +1,11 @@
+{
+  "id": "lantern-glow",
+  "version": "1.0.0",
+  "tier": "T2",
+  "title": "码头灯语",
+  "summary": "傍晚到码头的居民会看灯、心情变暖；新增效果 glowUp",
+  "permissions": ["world.read", "effects", "store", "routes", "ui.overlay"],
+  "provides": { "effects": [{ "name": "glowUp", "doc": "{\"op\":\"glowUp\",\"warmth\":1~3,\"target\":\"self/target/nearby\"} 让对象周围亮起暖光、心情变暖", "args": { "warmth": { "type": "int", "min": 1, "max": 3, "required": true } } }] },
+  "hooks": ["agent.arrive"],
+  "routes": ["stats"]
+}

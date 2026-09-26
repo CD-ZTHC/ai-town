@@ -23,7 +23,9 @@ const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
 };
 
-const makeTown = () => new Town({ dataDir: activeDir(DATA) });
+// AI 插件与进化引擎的状态放在数据根目录（所有时间线共用）
+const EVO_DIR = path.join(DATA, 'evolution');
+const makeTown = () => new Town({ dataDir: activeDir(DATA), evolution: { dir: EVO_DIR, config: { publicMode: config.publicMode } } });
 let town = makeTown();
 const clients = new Set();
 const clientsPerIp = new Map();
@@ -47,6 +49,8 @@ function wire(t) {
   t.proposalSystem.requireAdmin = config.publicMode && Boolean(config.adminToken);
   t.on('worldmap', (w) => broadcast('worldmap', w));
   t.on('regions', (r) => broadcast('regions', r));
+  let evoTimer = null;
+  t.on('evolution', () => { if (!evoTimer) evoTimer = setTimeout(() => { evoTimer = null; broadcast('evolution', { t: t.t }); }, 800); });
   let decTimer = null;
   t.on('decisions', () => { if (!decTimer) decTimer = setTimeout(() => { decTimer = null; broadcast('decisions', { t: t.t }); }, 800); });
   let propTimer = null;
@@ -152,6 +156,7 @@ async function handleApi(req, res, url, ip) {
     if (p === '/api/world/history') return json(res, 200, town.worldHistory().slice(-200));
     if (p === '/api/story') return json(res, 200, { ...town.storyView(ip), admin });
     if (p === '/api/proposals') return json(res, 200, { ...town.proposalsView(ip, admin), admin });
+    if (p === '/api/evolution') return json(res, 200, { ...town.evolved.view(admin), builtin: town.plugins.view(), decisions: town.decisions.view(admin), engine: admin ? engineStatus() : undefined, admin });
     if (p === '/api/decisions') return json(res, 200, { ...town.decisions.view(admin), admin });
     if (p === '/api/snapshots') { requireAdmin(req); return json(res, 200, listSnapshots(town.dataDir)); }
     if (p === '/api/timelines') { requireAdmin(req); return json(res, 200, registry(DATA)); }
@@ -287,6 +292,29 @@ async function handleApi(req, res, url, ip) {
     const err = town.proposalSystem.decide(String(b.id || ''), Boolean(b.approve), 'admin');
     if (err) throw new HttpError(409, err);
     return json(res, 200, { ok: true });
+  }
+
+  // AI 插件：访客投票（每人一票）、管理员停用 / 回滚 / 启用
+  if (p === '/api/evolution/vote') {
+    if (!config.allowInteraction && !admin) throw new HttpError(403, '当前为只读观赏模式');
+    if (!admin) take(limits.vote, ip, '投票');
+    const err = town.evolved.vote(String(b.key || ''), ip, Boolean(b.yes));
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+  if (p === '/api/evolution/action') {
+    requireAdmin(req);
+    const err = town.evolved.adminAction(String(b.key || ''), String(b.action || ''));
+    if (err) throw new HttpError(409, err);
+    return json(res, 200, { ok: true });
+  }
+  // AI 插件自己的接口：/api/p/<插件id>/<接口名>
+  if (p.startsWith('/api/p/')) {
+    const [, id, name] = /^\/api\/p\/([a-z][a-z0-9-]{2,31})\/([a-z][a-z0-9-]{1,23})$/.exec(p) || [];
+    if (!id) throw new HttpError(404, '不存在');
+    if (!admin) take(limits.plugin, ip, '使用插件');
+    const result = await town.evolved.route(id, name, b.body ?? null);
+    return json(res, 200, { ok: true, result });
   }
 
   // 统一决策队列：管理员直接拍板 / 撤销 AI 的裁决
@@ -469,6 +497,18 @@ function openStream(req, res, ip) {
   });
 }
 
+// AI 插件的前端面板：在 sandbox iframe（没有 allow-same-origin）里运行，CSP 禁止一切网络请求，只能通过 postMessage 与页面通信
+const PLUGIN_UI_CSP = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+function servePluginUi(req, res, url) {
+  const m = /^\/plugin-ui\/([a-z][a-z0-9-]{2,31})\/(ui\.js)?$/.exec(url.pathname);
+  const file = m && town.evolved.uiFile(m[1]);
+  const headers = { ...SECURITY_HEADERS, 'Content-Security-Policy': PLUGIN_UI_CSP, 'X-Frame-Options': 'SAMEORIGIN', 'Cache-Control': 'no-store' };
+  if (!file) { res.writeHead(404, headers); return res.end('not found'); }
+  if (m[2]) { res.writeHead(200, { ...headers, 'Content-Type': MIME['.js'] }); return fs.createReadStream(file).pipe(res); }
+  res.writeHead(200, { ...headers, 'Content-Type': MIME['.html'] });
+  res.end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:14px/1.6 system-ui,sans-serif;margin:10px;color:#3a3226;background:#fffaf0}button{font:inherit;cursor:pointer}</style></head><body><div id="app"></div><script src="/js/plugin-bridge.js"></script><script src="/plugin-ui/${m[1]}/ui.js"></script></body></html>`);
+}
+
 function serveStatic(req, res, url) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: '不支持的方法' });
   let rel;
@@ -494,6 +534,7 @@ const server = http.createServer(async (req, res) => {
   try { url = new URL(req.url, 'http://x'); } catch { res.writeHead(400); return res.end(); }
   const ip = clientIp(req);
   if (url.pathname === '/healthz') return json(res, 200, { ok: true, day: town.day, clients: clients.size, idle: !!town.idle });
+  if (url.pathname.startsWith('/plugin-ui/')) return servePluginUi(req, res, url);
   if (!url.pathname.startsWith('/api/')) return serveStatic(req, res, url);
   try {
     const r = limits.api.check(ip);

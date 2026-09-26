@@ -20,6 +20,7 @@ import { ProposalSystem } from './worldai/proposals.js';
 import { HookBus } from './kernel/hooks.js';
 import { DecisionQueue } from './kernel/decisions.js';
 import { PluginHost } from '../plugin-host/index.js';
+import { EvolvedManager } from '../plugin-host/evolved.js';
 import { applyOp, replay, OpJournal, OPS, OpError } from './kernel/ops.js';
 import { checkPlacement } from './kernel/placement.js';
 import { applyMods } from './kernel/mods.js';
@@ -62,8 +63,11 @@ export class Town extends EventEmitter {
     if (m.loaded.length) console.log(`[mod] 已加载：${m.loaded.map((x) => `${x.name}（${x.ops} 项）`).join('、')}`);
     this.mods = m.loaded;
     this.baseSpec = m.spec; // 默认规格 + Mod：之后叠加插件内容与存档中的操作历史
-    this.overlays = []; // 插件带来的数据内容 [{ id, ops }]（自主演化 §5.2 T0/T1）
-    const base = m.spec;
+    // 自主演化：AI 插件在重放操作历史之前加载（T2 的效果要先注册，T0 / T1 的内容作为覆盖层）
+    this.evolved = new EvolvedManager(this, opts.evolution);
+    this.overlays = this.evolved.preload(); // 插件带来的数据内容 [{ id, ops }]（自主演化 §5.2 T0/T1）
+    let base = m.spec;
+    for (const o of this.overlays) base = replay(base, o.ops.map((x, i) => ({ seq: i + 1, ...x }))).spec;
     const { spec, skipped } = replay(base, this.specOps);
     for (const k of skipped) console.warn(`[spec] 跳过无法重放的操作 #${k.seq} ${k.op}：${k.error}`);
     this.spec = spec;
@@ -113,6 +117,7 @@ export class Town extends EventEmitter {
     // 自主演化 E0：钩子总线 + 插件宿主
     this.hooks = new HookBus();
     this.plugins = new PluginHost(this, { disable: opts.disablePlugins });
+    this.evolved.init();
     this.load(saved);
     this.syncAgents(false);
   }
@@ -291,6 +296,7 @@ export class Town extends EventEmitter {
       this.director.tick();
       this.proposalSystem.tick();
       this.decisions.tick();
+      this.evolved.tick();
       this.hooks.emit('tick', dtGame);
       this.hourHooks();
       this.crisisTick();
@@ -318,6 +324,7 @@ export class Town extends EventEmitter {
 
   stop() {
     this.plugins?.stop();
+    this.evolved?.stop();
     clearInterval(this.timer);
     this.removeAllListeners();
     this.stopped = true;
@@ -340,6 +347,7 @@ export class Town extends EventEmitter {
       ],
       creatures: this.creatures.view(),
       avatars: this.avatars.view(),
+      overlay: this.evolved.snapshotExtra(),
       story: { tension: this.story?.now?.value ?? null, arc: this.arcs.active()?.phase || null, vote: this.votes.list.some((v) => v.status !== 'closed') },
     };
   }
