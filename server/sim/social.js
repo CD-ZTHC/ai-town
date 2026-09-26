@@ -150,8 +150,7 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
     this.emit('agent', a.id); this.emit('agent', b.id);
     this.shareBeliefs(a, b);
     this.shareBeliefs(b, a);
-    // 居民聊出来的建设点子交给世界架构师（每天最多一个）
-    if (typeof res.idea === 'string' && res.idea.trim().length >= 4) this.architect.enqueue(res.idea, `agent:${a.id}`);
+    this.hooks.emit('conversation.end', { a, b, res, convo });
     this.maybeReflect(a); this.maybeReflect(b);
   }
 

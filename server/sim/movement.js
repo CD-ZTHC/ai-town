@@ -158,6 +158,7 @@ export class Movement {
     this.settle(a, e);
     if (!e.sleep) this.rules.onEnter(a, a.locId);
     this.runAct(a, e);
+    if (!e.sleep) this.hooks.emit('agent.arrive', { agent: a, locId: a.locId });
     if (!e.sleep) {
       if (a.dest.indoor) a.dir = 'up';
       else a.dir = rand(['down', 'left', 'right', 'down']);

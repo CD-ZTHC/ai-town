@@ -1,7 +1,8 @@
-// RFC 0001：让居民立刻动身前往指定地点（docs/rfcs/0001-go-to.md）
+// 内置插件 go-to（RFC 0001，docs/rfcs/0001-go-to.md）：让居民立刻动身前往指定地点。
 // 来源：AI 心愿单 —— 叙事导演想「萤火节傍晚，把镇上的人都召集到码头一起放灯」，但没有对应的能力。
-import { registerEffect } from './registry.js';
-import { checkTarget, resolveTargets } from '../kernel/effects.js';
+// 效果是进程级的全局注册，所以在模块加载时注册一次；setup 不需要做任何事。
+import { registerEffect } from '../../../plugin-host/registry.js';
+import { checkTarget, resolveTargets } from '../../../server/kernel/effects.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 
@@ -23,4 +24,6 @@ registerEffect('goTo', {
       town.insertEntry(x, { start, end, location: a.location, activity, emoji: '🏃', src: 'commit' });
     }
   },
-}, 'go-to.js');
+}, 'go-to');
+
+export default { setup() {} };

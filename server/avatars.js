@@ -130,6 +130,7 @@ export class AvatarSystem {
       return;
     }
     v.locId = v.target || null;
+    town.hooks?.emit('avatar.arrive', { avatar: v });
     // 认识的居民会打招呼（不调用模型）
     for (const a of town.agents) {
       if (a.kind === 'creature' || a.status !== 'acting' || a.convoId || a.bubble || !this.near(a, 4).includes(v)) continue;

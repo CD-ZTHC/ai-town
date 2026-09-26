@@ -21,7 +21,7 @@
 
 建议通过扩展点实现，不修改内核：
 
-- 在 `server/ext/` 新建一个文件，调用 `registerEffect(name, { doc, check, apply })` 或 `registerExprFn(name, impl, doc)`；
+- 在 `plugins/builtin/<名字>/` 新建内置插件（plugin.json + server.js），调用 `registerEffect(name, { doc, check, apply })` 或 `registerExprFn(name, impl, doc)`；
 - `check` 必须限制所有数值范围、校验引用（地点、物品等）是否存在；
 - `apply` 只通过小镇已有的方法修改状态，出错时不影响其他效果；
 - 合并后能力清单会自动包含它，世界架构师即可使用。
@@ -50,7 +50,7 @@
 
 ## 实现清单
 
-- [ ] 在 `server/ext/` 中实现并注册
+- [ ] 在 `plugins/builtin/` 中实现并注册
 - [ ] 在 `test/` 中补充测试，`mise run test` 通过
 - [ ] `mise run manifest` 重新生成 `docs/capabilities.md`
 - [ ] 人工审核后合并；在管理面板的 AI 心愿单里确认该缺口不再出现

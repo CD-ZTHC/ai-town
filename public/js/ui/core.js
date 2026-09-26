@@ -29,6 +29,12 @@ export function toast(html, ms = 4200) {
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, ms);
 }
 
+/** 距离某个真实时间点还有多久（「3 小时5 分」/「12 分钟」） */
+export const fmtLeft = (ms) => {
+  const s = Math.max(0, (ms - Date.now()) / 1000);
+  return s >= 3600 ? `${Math.floor(s / 3600)} 小时${Math.round((s % 3600) / 60)} 分` : `${Math.ceil(s / 60)} 分钟`;
+};
+
 export const guarded = (fn) => async (...args) => {
   try { return await fn(...args); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
 };
@@ -42,4 +48,4 @@ export function openModal(html, cls = '') {
   return card;
 }
 
-export function closeModal() { $('#modal').hidden = true; $('#modal-card').innerHTML = ''; ui.storyOpen = false; ui.buildOpen = false; }
+export function closeModal() { $('#modal').hidden = true; $('#modal-card').innerHTML = ''; ui.storyOpen = false; ui.buildOpen = false; ui.evoOpen = false; ui.panelOpen = false; }

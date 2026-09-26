@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const ROOTS = ['server', 'public/js', 'tools', 'test'];
+const ROOTS = ['server', 'plugin-host', 'plugins/builtin', 'evolution', 'public/js', 'tools', 'test'];
 
 function* walk(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -24,4 +24,6 @@ for (const root of ROOTS) {
   }
 }
 console.log(bad ? `✖ ${bad}/${n} 个文件有语法错误` : `ok（${n} 个文件）`);
-process.exit(bad ? 1 : 0);
+if (bad) process.exit(1);
+// 冻结区（server/ public/ plugin-host/ evolution/ plugins/builtin/）的哈希锁：人工改动后要 mise run core:lock
+process.exit(spawnSync(process.execPath, ['tools/core-guard.js'], { stdio: 'inherit' }).status ?? 1);

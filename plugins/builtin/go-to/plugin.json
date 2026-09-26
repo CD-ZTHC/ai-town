@@ -1,0 +1,9 @@
+{
+  "id": "go-to",
+  "version": "1.0.0",
+  "tier": "builtin",
+  "title": "立刻动身",
+  "summary": "效果原语 goTo：让居民立刻前往指定地点（RFC 0001）",
+  "provides": { "effects": ["goTo"] },
+  "hooks": []
+}

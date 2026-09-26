@@ -21,6 +21,7 @@ export function init(a) {
   $('#btn-news').addEventListener('click', () => UI.newsModal());
   $('#btn-graph').addEventListener('click', UI.graphModal);
   $('#btn-build').addEventListener('click', () => UI.buildModal());
+  $('#btn-evolve').addEventListener('click', () => UI.evolveModal());
   // 点击空白处关闭浮层
   document.addEventListener('pointerdown', (e) => {
     if (!e.target.closest('#more-menu, #btn-more')) $('#more-menu').hidden = true;
@@ -103,6 +104,7 @@ function commands() {
     ['🕸️', '关系网络', UI.graphModal],
     ['🎭', '故事面板', () => UI.storyModal()],
     ['🛠', '建设与编年史', () => UI.buildModal()],
+    ['🧬', '小镇的进化（AI 插件与决策队列）', () => UI.evolveModal()],
     ...(app.perms.interaction ? [['📢', '发布事件', UI.eventModal], ['⛅', '天气', () => UI.weatherMenu($('#btn-weather'))]] : []),
     ['🔊', '环境音开关', toggleSound],
     ['🗺', '小地图开关', () => run('minimap')],

@@ -134,6 +134,7 @@ await step('02-inspector', async () => {
 });
 await step('03-story', async () => { await click('#story-chip'); await waitFor(() => modalHas(), 8000, '故事面板'); });
 await step('04-build', async () => { await closeModal(); await click('#btn-build'); await waitFor(() => modalHas(), 8000, '建设面板'); });
+await step('04b-evolve', async () => { await closeModal(); await click('#btn-evolve'); await waitFor(() => evaluate(`!document.querySelector('#modal').hidden && !document.querySelector('#evo-body')?.textContent.includes('正在读取')`), 8000, '进化面板'); });
 await step('05-news', async () => { await closeModal(); await click('#btn-news'); await waitFor(() => modalHas(4), 8000, '日报'); });
 await step('06-graph', async () => { await closeModal(); await click('#btn-graph'); await waitFor(() => modalHas(4), 8000, '关系网'); });
 await step('07-event', async () => { await closeModal(); await click('#btn-event'); await waitFor(() => modalHas(), 8000, '发布事件'); });

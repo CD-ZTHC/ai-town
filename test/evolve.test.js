@@ -8,7 +8,7 @@ import path from 'node:path';
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER']) delete process.env[k];
 const { Town } = await import('../server/sim.js');
 const llm = await import('../server/llm.js');
-const { registerEffect, registerExprFn, extensions } = await import('../server/ext/registry.js');
+const { registerEffect, registerExprFn, extensions } = await import('../plugin-host/registry.js');
 const { EFFECTS, checkEffects } = await import('../server/kernel/effects.js');
 const { manifestText, manifestMarkdown } = await import('../server/worldai/manifest.js');
 const { defaultSpec } = await import('../server/kernel/spec.js');
@@ -40,7 +40,7 @@ test('扩展注册表：只能新增、名字要合法、必须带说明', () =>
   assert.throws(() => registerEffect('noDoc', { check: () => null, apply: () => {} }), /doc/);
   assert.throws(() => registerEffect('noApply', { doc: 'x', check: () => null }), /check \/ apply/);
   assert.throws(() => registerExprFn('has', () => 1, 'x'), /冲突/);
-  assert.ok(extensions().some((e) => e.name === 'goTo' && e.source === 'go-to.js'), 'go-to.js 已在启动时加载');
+  assert.ok(extensions().some((e) => e.name === 'goTo' && e.source === 'go-to'), 'go-to 已在启动时加载');
 });
 
 test('扩展的表达式函数可以在规则里使用', () => {

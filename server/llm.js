@@ -137,9 +137,10 @@ function enqueue(fn, priority = false) {
 }
 
 let seq = 0;
-async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = TIMEOUT_MS, attempts = 3, tier = 'default', json = false, schema = null }) {
+async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = TIMEOUT_MS, attempts = 3, tier = 'default', json = false, schema = null, model: override = '' }) {
   await ensureModel();
-  const model = modelFor(tier);
+  // override：进化引擎的评审 Agent 可以指定另一个模型（EVOLVE_REVIEW_MODEL）
+  const model = override || modelFor(tier);
   const id = ++seq;
   const started = Date.now();
   stats.active.push({ id, label, agent, since: started, model });

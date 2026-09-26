@@ -12,9 +12,14 @@ RUN if [ "$WITH_PI" = "1" ]; then npm ci --omit=dev --no-audit --no-fund && npm 
 COPY server ./server
 COPY public ./public
 COPY spec ./spec
-RUN mkdir -p /app/data && chown -R node:node /app/data
+COPY plugin-host ./plugin-host
+COPY plugins/builtin ./plugins/builtin
+COPY evolution ./evolution
+COPY core.lock ./
+# data/：存档与进化状态；plugins/evolved/：AI 生成的插件（进化引擎只能写这两处）
+RUN mkdir -p /app/data /app/plugins/evolved && chown -R node:node /app/data /app/plugins/evolved
 USER node
-VOLUME ["/app/data"]
+VOLUME ["/app/data", "/app/plugins/evolved"]
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD wget -qO- http://127.0.0.1:3000/healthz >/dev/null || exit 1

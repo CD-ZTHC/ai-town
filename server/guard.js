@@ -78,6 +78,7 @@ export const limits = {
   vote: new Limiter(20, 3600_000),
   proposal: new Limiter(2, 3600_000),
   avatar: new Limiter(6, 3600_000), // 现身（改名、重新现身）
+  plugin: new Limiter(30, 60_000), // 调用 AI 插件的接口
   api: new Limiter(240, 60_000), // 所有请求的兜底限流
 };
 setInterval(() => Object.values(limits).forEach((l) => l.sweep()), 300_000).unref();

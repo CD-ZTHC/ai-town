@@ -26,6 +26,7 @@ export class Views {
       ],
       creatures: this.creatures.view(),
       avatars: this.avatars.view(),
+      overlay: this.evolved.snapshotExtra(),
       story: { tension: this.story?.now?.value ?? null, arc: this.arcs.active()?.phase || null, vote: this.votes.list.some((v) => v.status !== 'closed') },
     };
   }
@@ -85,15 +86,15 @@ export class Views {
   gapsWithRfc() {
     let rfcs = {};
     try { rfcs = JSON.parse(fs.readFileSync(path.join(this.dataDir, 'evolve.json'), 'utf8')).gaps || {}; } catch {}
-    return [...this.architect.gaps].sort((a, b) => b.count - a.count).map((g) => ({ ...g, status: g.status || 'open', rfc: rfcs[g.id]?.file || null }));
+    return [...(this.gaps || [])].sort((a, b) => b.count - a.count).map((g) => ({ ...g, status: g.status || 'open', rfc: rfcs[g.id]?.file || null }));
   }
 
   proposalsView(key = null, admin = false) {
     const ps = this.proposalSystem;
     return {
       proposals: ps.list.slice(-20).reverse().map((p) => ps.view(p, key)),
-      queue: this.architect.queue.map((q) => ({ intent: q.intent, origin: ps.originText(q.origin) })),
-      thinking: this.architect.busy,
+      queue: (this.architectQueue || []).map((q) => ({ intent: q.intent, origin: ps.originText(q.origin) })),
+      thinking: Boolean(this.architect?.busy),
       gaps: admin ? this.gapsWithRfc() : undefined,
       requireAdmin: ps.requireAdmin,
     };

@@ -162,6 +162,8 @@ function connect() {
     if (app.view === 'town') { app.world = app.regionWorlds.town; renderer.setWorld(app.world); }
   });
   es.addEventListener('proposals', () => UI.onProposals());
+  es.addEventListener('evolution', () => UI.onEvolution());
+  es.addEventListener('decisions', () => { UI.onEvolution(); UI.onProposals(); });
   es.addEventListener('world', (e) => {
     const w = JSON.parse(e.data);
     app.spec = w.spec;
@@ -380,6 +382,7 @@ function loop(now) {
       // 暗月界没有小镇的天气
       cam: app.cam, t: tt, day, region: app.view,
       weather: app.view === 'town' ? winfo.render?.base || weatherId : 'sunny', weatherId: app.view === 'town' ? weatherId : 'sunny', weatherTint: app.view === 'town' && winfo.render?.tint ? winfo.render : null,
+      overlay: (s.overlay || []).filter((o) => (o.region || 'town') === app.view),
       agents, agentMap, occupancy, convos: s.convos, entities: (s.entities || []).filter((e) => e.kind === 'portal' ? app.view === 'town' : here(e)), creatures, avatars,
       selected: app.selected, hover: app.hover, boardCount: app.board.length,
       festival: app.view === 'town' && (app.forceFestival || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns')),

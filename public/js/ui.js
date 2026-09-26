@@ -10,6 +10,7 @@ export { onLog } from './ui/feed.js';
 export { openInspector, closeInspector, onAgentChanged, bodyHTML } from './ui/inspector.js';
 export { onStory, storyModal, sparkline } from './ui/story.js';
 export { onProposals, buildModal } from './ui/build.js';
+export { onEvolution, evolveModal } from './ui/evolve.js';
 export { avatarModal, eventModal, newsModal, graphModal, helpModal, adminModal } from './ui/modals.js';
 
 export function init(a, first) {

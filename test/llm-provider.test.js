@@ -130,7 +130,7 @@ test('结构化输出：开启后把 schema 交给 provider；网关不支持时
 test('OpenAI 兼容 provider：有 schema 时发送非严格的 json_schema', async (t) => {
   const { responseFormat } = await import('../server/llm-providers.js');
   assert.deepEqual(responseFormat(null), { type: 'json_object' });
-  const { ARCHITECT_SCHEMA } = await import('../server/worldai/architect.js');
+  const { ARCHITECT_SCHEMA } = await import('../plugins/builtin/architect/architect.js');
   const rf = responseFormat(ARCHITECT_SCHEMA);
   assert.equal(rf.type, 'json_schema');
   assert.equal(rf.json_schema.name, 'world_patch');
@@ -140,7 +140,7 @@ test('OpenAI 兼容 provider：有 schema 时发送非严格的 json_schema', as
   let seen = null;
   llm.setMock((_m, opts) => { seen = opts; return '{"gap":{"need":"n","why":"w"}}'; });
   t.after(() => llm.setMock(null));
-  const { Architect } = await import('../server/worldai/architect.js');
+  const { Architect } = await import('../plugins/builtin/architect/architect.js');
   await new Architect({}).ask([{ role: 'user', content: 'x' }]);
   assert.equal(seen.schema, ARCHITECT_SCHEMA);
 });

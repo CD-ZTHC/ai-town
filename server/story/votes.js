@@ -1,10 +1,44 @@
 // 抉择投票：访客投票（每个 IP 一票）+ 居民在场景中表达的立场 → 管理员终审。
-// 截止时若管理员还没裁决：需要管理员终审时（公网 + 设置了令牌）再等 ADMIN_WAIT 分钟，仍无人裁决则按多数决定，
+// 截止时若管理员还没裁决：需要管理员终审时（公网 + 设置了令牌）再等 ADMIN_WAIT 游戏分钟。
+// 之后（或不需要管理员时）：有效票 ≥ 3 且不平票按多数决定，否则交给 AI 裁决官（自主演化 E1），
 // 保证无人值守时剧情也能继续。
-const ADMIN_WAIT = 120;
+const ADMIN_WAIT = 30;
+const MIN_VOTES = 3;
 
 export class VoteSystem {
-  constructor(town) { this.town = town; this.requireAdmin = false; }
+  constructor(town) {
+    this.town = town;
+    this.requireAdmin = false;
+    town.decisions?.register('vote', {
+      options: (d) => this.get(d.ref)?.options || [],
+      majority: (d) => this.majority(this.get(d.ref)),
+      preempt: (d) => {
+        const v = this.get(d.ref);
+        return v && this.clear(v) ? { decision: 'adopt', option: this.majority(v), by: 'majority', reasons: [], confidence: null } : null;
+      },
+      dossier: (d) => {
+        const v = this.get(d.ref);
+        const t = this.tally(v);
+        const stance = Object.entries(v.residents).map(([id, o]) => `${this.town.byId[id]?.name || id}支持${o}`).join('、') || '（无）';
+        return `剧情抉择：${v.question}\n票数：${v.options.map((o) => `${o.label} ${t[o.id].total}`).join('，')}（票数太少或平票，需要你来选）\n居民的立场：${stance}`;
+      },
+      resolve: (d, { option, by }) => { const v = this.get(d.ref); if (v && v.status !== 'closed') this.resolve(v, option, by); },
+    });
+  }
+
+  /** 票数是否足够且没有平票 */
+  clear(v) {
+    const t = this.tally(v);
+    const totals = v.options.map((o) => t[o.id].total).sort((a, b) => b - a);
+    return totals.reduce((s, x) => s + x, 0) >= MIN_VOTES && totals[0] > (totals[1] ?? -1);
+  }
+
+  /** 截止后没有管理员裁决：票数清楚就按多数，否则交给 AI 裁决官（立即裁决） */
+  settle(v) {
+    if (this.clear(v) || !this.town.decisions) return this.resolve(v, this.majority(v), 'majority');
+    v.status = 'awaiting';
+    this.town.decisions.open({ kind: 'vote', ref: v.id, title: v.question, risk: 'low', window: { game: 0 } });
+  }
   get list() { return (this.town.voteState ||= []); }
 
   open({ question, options, minutes = 90, arc = null }) {
@@ -63,6 +97,7 @@ export class VoteSystem {
     const v = this.get(id);
     if (!v || v.status === 'closed') return '这次抉择已经结束了';
     if (!v.options.some((o) => o.id === option)) return '没有这个选项';
+    this.town.decisions?.cancel('vote', v.id);
     this.resolve(v, option, by);
     return null;
   }
@@ -76,9 +111,10 @@ export class VoteSystem {
           v.awaitUntil = v.closesT + ADMIN_WAIT;
           this.town.log('vote', `🗳️ 「${v.question}」投票截止，等待管理员终审`, {});
           this.town.emit('story');
-        } else this.resolve(v, this.majority(v), 'majority');
-      } else if (v.status === 'awaiting' && t >= v.awaitUntil) {
-        this.resolve(v, this.majority(v), 'majority');
+        } else this.settle(v);
+      } else if (v.status === 'awaiting' && v.awaitUntil != null && t >= v.awaitUntil) {
+        v.awaitUntil = null;
+        this.settle(v);
       }
     }
   }
@@ -87,7 +123,7 @@ export class VoteSystem {
     v.status = 'closed';
     v.result = { option, by, t: Math.floor(this.town.t) };
     const o = v.options.find((x) => x.id === option);
-    this.town.log('vote', `🗳️ 抉择揭晓：${o.label}（${by === 'admin' ? '管理员终审' : '多数决定'}）`, {});
+    this.town.log('vote', `🗳️ 抉择揭晓：${o.label}（${{ admin: '管理员终审', majority: '多数决定', ai: 'AI 裁决官', fallback: '多数决定' }[by] || by}）`, {});
     if (v.arc) this.town.arcs.onVoteResult(v.arc, option);
     this.town.emit('story');
   }
