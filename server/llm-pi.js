@@ -8,6 +8,8 @@
 //
 // 重试、限流、预算都由 llm.js 负责，所以关掉 pi-ai / SDK 自带的重试（maxRetries: 0）。
 
+import { responseFormat } from './llm-providers.js';
+
 const PKG = '@earendil-works/pi-ai';
 const CUSTOM = 'custom';
 const ZERO_USAGE = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -83,14 +85,14 @@ export function piProvider(env = process.env, inject = {}) {
       }
       return ids;
     },
-    async complete({ model: name, messages, temperature, maxTokens, json, signal }) {
+    async complete({ model: name, messages, temperature, maxTokens, json, schema, signal }) {
       const { models } = await load();
       const model = resolve(models, name);
       // 只有 Chat Completions 风格的接口认这些字段；其他服务商靠提示词约束 JSON
       const extra = {
         // 自定义网关与默认的 OpenAI 兼容实现保持一致：少思考、快回复（GLM 等默认会长时间思考）
         ...(model.provider === CUSTOM ? { reasoning_effort: 'low' } : {}),
-        ...(json && model.api === 'openai-completions' ? { response_format: { type: 'json_object' } } : {}),
+        ...(json && model.api === 'openai-completions' ? { response_format: responseFormat(schema) } : {}),
       };
       const opts = {
         signal, temperature, maxTokens, maxRetries: 0,

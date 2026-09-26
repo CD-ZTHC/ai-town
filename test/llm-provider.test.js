@@ -111,3 +111,36 @@ test('OpenAI 兼容 provider：请求体与回复解析', async (t) => {
   assert.deepEqual(JSON.parse(req.init.body), { model: 'm1', messages: [{ role: 'user', content: 'x' }], temperature: 0.5, max_tokens: 10, reasoning_effort: 'low', response_format: { type: 'json_object' } });
   await assert.rejects(p.complete({ model: 'bad', messages: [] }), /HTTP 502: <html>502/);
 });
+
+test('结构化输出：开启后把 schema 交给 provider；网关不支持时退回普通 JSON 模式', async () => {
+  const schema = { name: 'x', schema: { type: 'object', properties: { a: { type: 'number' } } } };
+  const p = fake([(req) => { if (req.schema) throw new Error("Invalid value for 'response_format.type': json_schema is not supported"); return ok('{"a":1}'); }]);
+  llm.setProvider(p);
+  llm.setJsonMode(true); // 前面的测试把 JSON 模式关掉了
+  llm.setJsonSchema(false);
+  await llm.chatJSON([{ role: 'user', content: 'x' }], { label: 'schema', schema });
+  assert.equal(p.reqs.at(-1).schema, undefined, '没开启时不传 schema');
+  llm.setJsonSchema(true);
+  assert.deepEqual(await llm.chatJSON([{ role: 'user', content: 'x' }], { label: 'schema', schema }), { a: 1 });
+  assert.deepEqual(p.reqs.slice(-2).map((r) => [Boolean(r.schema), r.json]), [[true, true], [false, true]], '退回 json_object，仍然是 JSON 模式');
+  await llm.chatJSON([{ role: 'user', content: 'x' }], { label: 'schema', schema });
+  assert.equal(p.reqs.at(-1).schema, undefined, '之后不再发送 schema');
+});
+
+test('OpenAI 兼容 provider：有 schema 时发送非严格的 json_schema', async (t) => {
+  const { responseFormat } = await import('../server/llm-providers.js');
+  assert.deepEqual(responseFormat(null), { type: 'json_object' });
+  const { ARCHITECT_SCHEMA } = await import('../server/worldai/architect.js');
+  const rf = responseFormat(ARCHITECT_SCHEMA);
+  assert.equal(rf.type, 'json_schema');
+  assert.equal(rf.json_schema.name, 'world_patch');
+  assert.equal(rf.json_schema.strict, false);
+  assert.ok(rf.json_schema.schema.properties.ops.items.properties.op.enum.includes('addBuilding'));
+  // 架构师确实带着 schema 调用
+  let seen = null;
+  llm.setMock((_m, opts) => { seen = opts; return '{"gap":{"need":"n","why":"w"}}'; });
+  t.after(() => llm.setMock(null));
+  const { Architect } = await import('../server/worldai/architect.js');
+  await new Architect({}).ask([{ role: 'user', content: 'x' }]);
+  assert.equal(seen.schema, ARCHITECT_SCHEMA);
+});

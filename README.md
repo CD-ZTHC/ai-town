@@ -31,6 +31,7 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 | `LLM_CONCURRENCY` | 并发请求数，默认 4；遇到限流会自动退避并降低并发 |
 | `LLM_PROVIDER` | 模型服务：`openai`（默认，OpenAI 兼容接口，零依赖）或 `pi`（经 [pi-ai](https://github.com/earendil-works/pi) 接入 Anthropic、Gemini、DeepSeek、OpenRouter 等 40 多家，需要先 `npm install`）。`pi` 模式下模型写成 `服务商/模型`（如 `anthropic/claude-sonnet-5`，密钥读 `ANTHROPIC_API_KEY` 等），不带前缀的仍走 `BASE_URL` 网关，各档可以混用；Docker 用 `--build-arg WITH_PI=1` 构建 |
 | `LLM_RECORD` | 设为一个文件路径时，把真实模型的回复按模块录制下来，用来更新回放测试的 `test/fixtures/llm/responses.json` |
+| `LLM_JSON_SCHEMA` | 设为 `1` 开启结构化输出：世界架构师用 `json_schema` 约束补丁格式（非严格模式），减少复杂补丁的格式错误；网关不支持时自动退回普通 JSON 模式 |
 | `LLM_JSON_MODE` | 默认开启：请求模型以 JSON 模式输出（`response_format: json_object`），网关不支持时自动关闭；设为 `0` 手动关闭 |
 | `NODE_USE_ENV_PROXY` | 服务器需要经由 HTTPS 代理访问模型时设为 `1`（Node ≥ 22.21），否则 Node 内置的 fetch 不会读取 `HTTPS_PROXY` |
 | `PACE_WITH_LLM` / `PACE_QUEUE` | 默认开启：模型排队超过 `PACE_QUEUE`（默认 6）个请求时按比例放慢时间（最低 1/4），避免游戏时间跑在思考前面；设为 `0` 关闭 |

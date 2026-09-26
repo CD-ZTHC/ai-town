@@ -75,6 +75,9 @@ test('自定义网关：请求体、鉴权、流式回复与用量', { skip }, a
   await p.complete({ model: 'glm-test', messages: [{ role: 'user', content: 'x' }], json: false });
   assert.equal(gw.reqs.at(-1).body.response_format, undefined, '不要 JSON 时不带 response_format');
   assert.deepEqual(await p.listModels(), ['glm-test']);
+  const schema = { name: 's', schema: { type: 'object' } };
+  await p.complete({ model: 'glm-test', messages: [{ role: 'user', content: 'x' }], json: true, schema });
+  assert.deepEqual(gw.reqs.at(-1).body.response_format, { type: 'json_schema', json_schema: { name: 's', schema: { type: 'object' }, strict: false } });
 });
 
 test('自定义网关：错误信息保留上游状态码与原文，llm.js 才能识别限流 / 鉴权 / JSON 模式', { skip }, async (t) => {

@@ -6,8 +6,9 @@
 //   name        名字
 //   enabled     是否已配置（未配置时小镇走规则兜底）
 //   listModels  可选：() => Promise<string[]>，用于模型名自动纠正
-//   complete    ({ model, messages, temperature, maxTokens, json, signal }) =>
+//   complete    ({ model, messages, temperature, maxTokens, json, schema?, signal }) =>
 //                 Promise<{ content: string, usage: { prompt: number, completion: number }, finishReason?: string }>
+//               schema：{ name, schema }（JSON Schema），只在开启结构化输出时传入；不支持的实现可以忽略
 //   失败时抛出 Error，message 带上上游的原始错误信息：llm.js 据此识别限流、鉴权失败、不支持 JSON 模式。
 import { piProvider } from './llm-pi.js';
 
@@ -22,7 +23,7 @@ export function openaiCompatible({ baseUrl = '', apiKey = '' } = {}) {
       const data = await res.json();
       return (data.data || []).map((m) => m.id);
     },
-    async complete({ model, messages, temperature, maxTokens, json, signal }) {
+    async complete({ model, messages, temperature, maxTokens, json, schema, signal }) {
       const res = await fetch(`${base}/chat/completions`, {
         method: 'POST',
         signal,
@@ -33,7 +34,7 @@ export function openaiCompatible({ baseUrl = '', apiKey = '' } = {}) {
           temperature,
           max_tokens: maxTokens,
           reasoning_effort: 'low',
-          ...(json ? { response_format: { type: 'json_object' } } : {}),
+          ...(json ? { response_format: responseFormat(schema) } : {}),
         }),
       });
       const text = await res.text();
@@ -51,6 +52,11 @@ export function openaiCompatible({ baseUrl = '', apiKey = '' } = {}) {
       };
     },
   };
+}
+
+/** Chat Completions 的 response_format：有 schema 时用 json_schema（非严格模式，兼容性更好） */
+export function responseFormat(schema) {
+  return schema ? { type: 'json_schema', json_schema: { name: schema.name, schema: schema.schema, strict: false } } : { type: 'json_object' };
 }
 
 const factories = {

@@ -21,6 +21,11 @@ const modelFor = (tier) => models[tier] || models.default;
 // JSON 模式（response_format: json_object）：大幅减少模型输出不合法 JSON 的情况。
 // 网关不支持时会报错，此时自动关闭并重试；也可以用 LLM_JSON_MODE=0 手动关闭。
 let jsonMode = process.env.LLM_JSON_MODE !== '0';
+export function setJsonMode(on) { jsonMode = Boolean(on); }
+// 结构化输出（response_format: json_schema）：调用方给了 schema 且 LLM_JSON_SCHEMA=1 时使用；
+// 网关不支持时自动退回普通 JSON 模式
+let schemaMode = process.env.LLM_JSON_SCHEMA === '1';
+export function setJsonSchema(on) { schemaMode = Boolean(on); }
 let modelChecked = false;
 const listeners = new Set();
 
@@ -132,7 +137,7 @@ function enqueue(fn, priority = false) {
 }
 
 let seq = 0;
-async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = TIMEOUT_MS, attempts = 3, tier = 'default', json = false }) {
+async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = TIMEOUT_MS, attempts = 3, tier = 'default', json = false, schema = null }) {
   await ensureModel();
   const model = modelFor(tier);
   const id = ++seq;
@@ -148,7 +153,8 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
-        const { content, usage, finishReason } = await provider.complete({ model, messages, temperature, maxTokens, json: json && jsonMode, signal: ctrl.signal });
+        const withSchema = Boolean(schema && json && jsonMode && schemaMode);
+        const { content, usage, finishReason } = await provider.complete({ model, messages, temperature, maxTokens, json: json && jsonMode, ...(withSchema ? { schema } : {}), signal: ctrl.signal });
         stats.promptTokens += usage.prompt;
         stats.completionTokens += usage.completion;
         rollDay();
@@ -168,6 +174,11 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
       } catch (e) {
         lastErr = e;
         if (/no access|invalid.*key|unauthori/i.test(e.message)) break;
+        if (schema && json && jsonMode && schemaMode && /json_schema|response_format|schema/i.test(e.message)) {
+          schemaMode = false;
+          console.warn('[llm] 网关不支持结构化输出（json_schema），已退回普通 JSON 模式');
+          continue;
+        }
         if (json && jsonMode && /response_format|json_object|json mode/i.test(e.message)) {
           jsonMode = false;
           console.warn('[llm] 网关不支持 JSON 模式，已自动关闭');
