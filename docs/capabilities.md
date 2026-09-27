@@ -20,6 +20,11 @@
 | `renovateBuilding` | minor | ✅ | {"id":"现有建筑id","name":"新名字≤10字(可选)","kind":"新类型(可选)","desc":"≤60字(可选)","sign":"emoji(可选)","roof":"#rrggbb(可选)","public":true/false(可选)} —— 改建 / 换用途：占地不变，住户与所有引用照旧；闲置或不合用的建筑优先改建而不是拆 |
 | `removeBuilding` | major | ✅ | {"id":"现有建筑id","remap":{"residents":"住户搬去的建筑id","workers":"在这里工作的人改去的地点id","location":"节日、规则等引用的替代地点id"}} —— 拆除，原址变成空地；remap 不写时系统就近安排；要经过居民议事（住户不同意时需要其他居民全票同意） |
 | `restoreBuilding` | minor | ✅ | {"id":"停业、受损或成了废墟的建筑id"} —— 修好、重新开门 |
+| `addPath` | minor | ✅ | {"from":"地点id","to":"地点id","surface":"path 石板 / dirt 泥路（可选）"} —— 修一条路：系统找最省事的路线（砍掉挡路的树丛，窄水面顺带架桥）；居民往返变近时用 |
+| `addBridge` | major | ✅ | {"near":"地点id"} —— 在附近最窄的水面上架桥（大改） |
+| `clearArea` | minor | ✅ | {"near":"地点id","w":3~10,"h":3~10} —— 清理附近的树丛石头，腾出空地（为以后建房） |
+| `plantGrove` | minor | ✅ | {"near":"地点id","w":2~8,"h":2~8,"trees":"oak/pine/sakura（可选）"} —— 在附近的空草地上种一片树 |
+| `addOutdoorPlace` | minor | ✅ | {"id":"英文小写id","kind":"garden/orchard/market/plaza/field/pond/well/camp/shrine/clearing/grove/meadow","name":"≤16字","emoji","desc":"≤60字","near":"地点id"} —— 新的户外去处，系统在附近找空地画出来 |
 | `addRegion` | major | — | 仅管理员 / 剧情弧使用 |
 | `linkRegions` | minor | — | 仅管理员 / 剧情弧使用 |
 | `addPersona` | major | — | 仅管理员 / 剧情弧使用 |

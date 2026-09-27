@@ -2,9 +2,21 @@
 //   拆除（removed）→ 新增建筑（added）→ 建筑状态（停业 / 受损 / 废墟）→ 连通性过滤
 // 基础生成一行不动，所以云溪镇的基础瓦片与随机序列永远不变；两个生成器（yunxi-v1、layout-v1）共用这一段。
 import { T, WALKABLE } from './tiles.js';
+import { paintOutdoor } from './brush.js';
 
 const REMOVABLE = new Set(['tree', 'bush', 'rock']);
 const BUILDABLE = new Set([T.GRASS, T.FLOWER, T.DIRT, T.SAND]);
+const SOFT = new Set([T.GRASS, T.FLOWER, T.SAND, T.DIRT, T.SOIL]); // 可以铺成路的地面
+const SURFACE = { path: T.PATH, dirt: T.DIRT, plaza: T.PLAZA };
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const cellHash = (x, y) => (((x * 73856093) ^ (y * 19349663)) >>> 0) / 4294967296;
 export const BUILDING_STATES = ['open', 'closed', 'damaged', 'ruin'];
 
 /**
@@ -38,6 +50,66 @@ export function finishRegion(c, region, spec) {
     }
     for (const [id, l] of Object.entries(locations)) if (id === b.id || l.indoor === b.id) delete locations[id];
     lots.push({ id: b.id, name: b.name, x: b.x, y: b.y, w: b.w, h: b.h });
+  }
+
+  // ---- 地形编辑（地图演变 §4）：按操作顺序；保存的是求解后的结果（具体格子），重放时不再求解 ----
+  const clearAt = (x, y) => {
+    for (let i = objects.length - 1; i >= 0; i--) {
+      const o = objects[i];
+      if (REMOVABLE.has(o.type) && o.x === x && o.y === y) { objects.splice(i, 1); solid[y * W + x] = 0; }
+    }
+  };
+  const carveLater = [];
+  for (const e of region.edits || []) {
+    if (e.kind === 'path' || e.kind === 'bridge') {
+      for (const [x, y] of e.cells || []) {
+        if (!inb(x, y)) continue;
+        clearAt(x, y);
+        if (solid[y * W + x]) continue;
+        const t = get(x, y);
+        if (t === T.WATER || t === T.DEEP) set(x, y, T.BRIDGE);
+        else if (e.kind === 'path' && SOFT.has(t)) set(x, y, SURFACE[e.surface] ?? T.PATH);
+      }
+    } else if (e.kind === 'clear') {
+      const r = e.rect;
+      for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) if (inb(x, y)) clearAt(x, y);
+    } else if (e.kind === 'grove') {
+      for (const [x, y, kind] of e.trees || []) {
+        if (!inb(x, y) || solid[y * W + x] || ![T.GRASS, T.FLOWER].includes(get(x, y))) continue;
+        objects.push({ type: 'tree', x, y, kind: ['oak', 'pine', 'sakura'].includes(kind) ? kind : 'oak', v: cellHash(x, y) });
+        block(x, y);
+      }
+    } else if (e.kind === 'place') {
+      const r = e.rect;
+      for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) if (inb(x, y)) { clearAt(x, y); if (get(x, y) === T.FLOWER) set(x, y, T.GRASS); }
+      paintOutdoor({ set, get, block, objects, rnd: mulberry32(e.seed || 1), H }, { rect: r, kind: e.placeKind });
+      const spots = [];
+      for (let y = r.y; y < r.y + r.h && spots.length < 12; y += 2) for (let x = r.x + (y % 2); x < r.x + r.w && spots.length < 12; x += 2) if (!isSolid(x, y)) spots.push({ x, y });
+      locations[e.id] = { id: e.id, name: info[e.id]?.name || e.id, emoji: info[e.id]?.emoji || '📍', desc: info[e.id]?.desc || '', spots, rect: { ...r } };
+      carveLater.push(r);
+    }
+  }
+  // 新的户外地点：从它的边缘出发，找最近的一段路，用泥路接上
+  const ROAD = new Set([T.PATH, T.PLAZA, T.BRIDGE, T.WOOD, T.DIRT]);
+  const inside = (x, y, r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+  for (const r of carveLater) {
+    const prev = new Map();
+    const q = [];
+    for (let x = r.x - 1; x <= r.x + r.w; x++) for (const y of [r.y - 1, r.y + r.h]) if (!isSolid(x, y)) { prev.set(y * W + x, null); q.push([x, y]); }
+    for (let y = r.y; y < r.y + r.h; y++) for (const x of [r.x - 1, r.x + r.w]) if (!isSolid(x, y)) { prev.set(y * W + x, null); q.push([x, y]); }
+    for (let i = 0; i < q.length; i++) {
+      const [x, y] = q[i];
+      if (ROAD.has(get(x, y))) {
+        for (let k = y * W + x; k != null; k = prev.get(k)) { const px = k % W, py = Math.floor(k / W); if ([T.GRASS, T.FLOWER, T.SAND].includes(get(px, py))) set(px, py, T.DIRT); }
+        break;
+      }
+      for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+        const nx = x + dx, ny = y + dy, k = ny * W + nx;
+        if (isSolid(nx, ny) || prev.has(k) || inside(nx, ny, r)) continue;
+        prev.set(k, y * W + x);
+        q.push([nx, ny]);
+      }
+    }
   }
 
   // ---- 运行中新增的建筑：清理占地及周围一格的树木 / 灌木 / 石头，开辟连到道路的小路 ----

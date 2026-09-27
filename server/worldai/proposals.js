@@ -2,7 +2,7 @@
 // 审批：本地模式 小改自动通过、大改等管理员确认；公网模式 小改和大改都先访客投票，再由管理员终审。
 // 自主演化 E1：管理员终审窗口（真实时间，minor 6 小时 / major 24 小时）超时后，交给 AI 裁决官决定（不再作废）。
 import { OPS, applyOp, OpError } from '../kernel/ops.js';
-import { findPlacement, checkPlacement } from '../kernel/placement.js';
+import { findPlacement, checkPlacement, solvePath, solveBridge, solveRect, checkEdit, outdoorSize } from '../kernel/placement.js';
 import { addMemory, fmtTime } from '../memory.js';
 import { review } from './canon.js';
 import { impactOf } from '../kernel/impact.js';
@@ -20,7 +20,7 @@ export const levelOf = (o) => OPS[o.op].levelOf?.(o.args) || OPS[o.op].level;
 /** 会让建筑消失（或变成废墟）的操作：需要搬迁去处、施工、居民议事 */
 export const isDemolition = (o) => o.op === 'removeBuilding' || (o.op === 'setBuildingState' && o.args?.state === 'ruin');
 // 架构师（以及导演、居民、访客的点子）可以提出的操作；管理员直接提交时还可以调参数、改分级
-export const ARCHITECT_OPS = ['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'addRule', 'addCanon'];
+export const ARCHITECT_OPS = ['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'addRule', 'addCanon'];
 export const ADMIN_OPS = [...ARCHITECT_OPS, 'setParam', 'setMeta'];
 const FINAL = new Set(['applied', 'rejected', 'failed', 'expired', 'reverted']);
 
@@ -106,6 +106,8 @@ export class ProposalSystem {
         const e = OPS.addBuilding.check(spec, args) || checkPlacement(spec, args);
         if (e) return { error: `第 ${i + 1} 个操作（${args.name || args.id}）：${e}` };
       }
+      const solved = this.solveTerrain(spec, name, args);
+      if (solved) return { error: `第 ${i + 1} 个操作（${name}）：${solved}` };
       if (isDemolition({ op: name, args })) {
         const err = this.demolitionProblem(spec, args.id);
         if (err) return { error: `第 ${i + 1} 个操作：${err}` };
@@ -273,6 +275,41 @@ export class ProposalSystem {
         this.approve(p, p.approvedBy || 'auto');
       }
     }
+  }
+
+  /** 地形操作：模型只给意图（from / to / near / 大小），这里求出具体的格子；返回错误或 null（结果写回 args） */
+  solveTerrain(spec, name, args) {
+    const seed = (this.town.seq + 1) % 100000;
+    if (name === 'addPath' && !Array.isArray(args.cells)) {
+      const r = solvePath(spec, args.from, args.to);
+      if (r.error) return r.error;
+      args.cells = r.cells;
+    } else if (name === 'addBridge' && !Array.isArray(args.cells)) {
+      const r = solveBridge(spec, args.near ?? args.place?.near);
+      if (r.error) return r.error;
+      args.cells = r.cells;
+    } else if (name === 'clearArea' && !args.rect) {
+      const r = solveRect(spec, { mode: 'clear', w: Math.max(3, Math.min(10, Math.round(Number(args.w) || 6))), h: Math.max(3, Math.min(10, Math.round(Number(args.h) || 5))), near: args.near ?? args.place?.near });
+      if (r.error) return r.error;
+      args.rect = r.rect;
+    } else if (name === 'plantGrove' && !Array.isArray(args.trees)) {
+      const r = solveRect(spec, { mode: 'grove', w: Math.max(2, Math.min(8, Math.round(Number(args.w) || 5))), h: Math.max(2, Math.min(8, Math.round(Number(args.h) || 4))), near: args.near ?? args.place?.near, seed });
+      if (r.error) return r.error;
+      args.trees = r.trees.map(([x, y, k]) => [x, y, ['oak', 'pine', 'sakura'].includes(args.trees) ? args.trees : k]);
+    } else if (name === 'addOutdoorPlace' && !args.rect) {
+      const size = outdoorSize(args.kind);
+      if (!size) return `kind 未知：${args.kind}`;
+      const r = solveRect(spec, { mode: 'place', w: size[0], h: size[1], near: args.near ?? args.place?.near, id: args.id, placeKind: args.kind, seed });
+      if (r.error) return r.error;
+      Object.assign(args, { rect: r.rect, seed });
+    } else if (name === 'plantGrove' || name === 'addOutdoorPlace') {
+      // 坐标是现成的（落地前按原位置再校验一次）
+      const edit = name === 'plantGrove' ? { kind: 'grove', trees: args.trees } : { kind: 'place', id: args.id, placeKind: args.kind, rect: args.rect, seed: args.seed };
+      const e = checkEdit(spec, edit);
+      if (e) return e;
+    }
+    delete args.place;
+    return null;
   }
 
   /** 施工队：没指定时找两位在场、不是生物的居民（优先在工坊一类地方工作的人） */

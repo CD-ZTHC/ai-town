@@ -19,6 +19,21 @@ const building = (spec, id) => (spec.buildings || []).find((b) => b.id === id &&
 const bName = (spec, id) => (spec?.buildings || []).find((b) => b.id === id)?.name || id;
 const pName = (spec, id) => spec?.personas?.find((p) => p.id === id)?.name || id;
 
+// 地形编辑的公共检查
+const MAX_EDITS = 40;
+const townOf = (spec) => spec.regions.find((r) => r.id === 'town') || spec.regions[0];
+const editsProblem = (spec) => ((townOf(spec).edits || []).length >= MAX_EDITS ? `这张地图上的地形改动已经够多了（最多 ${MAX_EDITS} 处）` : null);
+const cellsOk = (spec, cells, max) => {
+  const [W, H] = regionSize(townOf(spec));
+  return Array.isArray(cells) && cells.length > 0 && cells.length <= max && cells.every((c) => Array.isArray(c) && Number.isInteger(c[0]) && Number.isInteger(c[1]) && c[0] >= 0 && c[1] >= 0 && c[0] < W && c[1] < H);
+};
+const rectOk = (spec, r, max) => {
+  const [W, H] = regionSize(townOf(spec));
+  return r && [r.x, r.y, r.w, r.h].every(Number.isInteger) && r.w >= 1 && r.h >= 1 && r.w <= max && r.h <= max && r.x >= 0 && r.y >= 0 && r.x + r.w <= W && r.y + r.h <= H;
+};
+const pushEdit = (spec, e) => { const r = townOf(spec); (r.edits ||= []).push(e); };
+const locName = (spec, id) => spec?.locations?.[id]?.name || (spec?.buildings || []).find((b) => b.id === id)?.name || id || '那里';
+
 // 每个操作：level 决定审批等级（micro / minor / major），check 返回错误文本或 null，
 // apply 修改规格（传入的是副本），describe 生成给玩家看的一句话
 export const OPS = {
@@ -273,6 +288,69 @@ export const OPS = {
     },
     apply(spec, a) { delete building(spec, a.id).state; },
     describe: (a, spec) => `「${bName(spec, a.id)}」修好了，重新开门`,
+  },
+  // ---------- 地形（地图演变设计 §4）：保存求解后的格子，重放时不再求解；叠加在基础地图上（worldgen/finish.js） ----------
+  addPath: {
+    level: 'minor',
+    check(spec, a) {
+      const e = editsProblem(spec);
+      if (e) return e;
+      if (!cellsOk(spec, a.cells, 400)) return '路线（cells）不合法：让系统按 from / to 求解';
+      if (a.surface != null && !['path', 'dirt', 'plaza'].includes(a.surface)) return 'surface 只能是 path / dirt / plaza';
+      return null;
+    },
+    apply(spec, a) { pushEdit(spec, { kind: 'path', cells: a.cells.map(([x, y]) => [x, y]), surface: a.surface || 'path', from: a.from || null, to: a.to || null }); },
+    describe: (a, spec) => `修了一条从「${locName(spec, a.from)}」到「${locName(spec, a.to)}」的路`,
+  },
+  addBridge: {
+    level: 'major',
+    check(spec, a) {
+      const e = editsProblem(spec);
+      if (e) return e;
+      return cellsOk(spec, a.cells, 8) ? null : '桥（cells）不合法：让系统按 near 求解';
+    },
+    apply(spec, a) { pushEdit(spec, { kind: 'bridge', cells: a.cells.map(([x, y]) => [x, y]), near: a.near || null }); },
+    describe: (a, spec) => `在「${locName(spec, a.near)}」附近架起了一座桥`,
+  },
+  clearArea: {
+    level: 'minor',
+    check(spec, a) {
+      const e = editsProblem(spec);
+      if (e) return e;
+      return rectOk(spec, a.rect, 10) ? null : '范围（rect）不合法：让系统按 near 求解';
+    },
+    apply(spec, a) { pushEdit(spec, { kind: 'clear', rect: { ...a.rect }, near: a.near || null }); },
+    describe: (a, spec) => `清理了「${locName(spec, a.near)}」附近的树丛，腾出一片空地`,
+  },
+  plantGrove: {
+    level: 'minor',
+    check(spec, a) {
+      const e = editsProblem(spec);
+      if (e) return e;
+      if (!Array.isArray(a.trees) || !a.trees.length || a.trees.length > 40) return '树（trees）不合法：让系统按 near 求解';
+      return cellsOk(spec, a.trees, 40) ? null : '树的位置超出地图';
+    },
+    apply(spec, a) { pushEdit(spec, { kind: 'grove', trees: a.trees.map(([x, y, k]) => [x, y, ['oak', 'pine', 'sakura'].includes(k) ? k : 'oak']), near: a.near || null }); },
+    describe: (a, spec) => `在「${locName(spec, a.near)}」附近种了一片树`,
+  },
+  addOutdoorPlace: {
+    level: 'minor',
+    check(spec, a) {
+      const e = editsProblem(spec);
+      if (e) return e;
+      if (!validId(a.id)) return 'id 不合法';
+      if (Object.hasOwn(spec.locations, a.id) || spec.buildings.some((b) => b.id === a.id)) return `地点已存在：${a.id}`;
+      if (!Object.hasOwn(OUTDOOR_KINDS, a.kind || '')) return `kind 只能是 ${Object.keys(OUTDOOR_KINDS).join('/')}`;
+      if (!str(a.name, 16)) return 'name 不能为空（≤16字）';
+      const [w, h] = OUTDOOR_KINDS[a.kind];
+      if (!rectOk(spec, a.rect, 12) || a.rect.w !== w || a.rect.h !== h) return '位置（rect）不合法：让系统按 near 求解';
+      return null;
+    },
+    apply(spec, a) {
+      spec.locations[a.id] = { name: str(a.name, 16), emoji: str(a.emoji, 4) || '📍', desc: str(a.desc, 60) || str(a.name, 16), public: a.public !== false };
+      pushEdit(spec, { kind: 'place', id: a.id, placeKind: a.kind, rect: { ...a.rect }, seed: Number(a.seed) || 1 });
+    },
+    describe: (a) => `多了一个新去处：${str(a.emoji, 4)}「${str(a.name, 16)}」`,
   },
   // 开辟一个新区域（多世界设计 §3.2）：只描述语义布局，由生成器 layout-v1 落地；默认关闭，linkRegions 之后才能过去
   addRegion: {

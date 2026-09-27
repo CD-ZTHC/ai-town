@@ -248,3 +248,54 @@ test('议事否决：差一票不拆；10 天之内不能再提；终审人不�
   town.t += 10 * 1440;
   assert.ok(!ps.prepare([{ op: 'removeBuilding', args: { id: 'red_house' } }]).error);
 });
+
+// ---------- E4 地形 ----------
+const { findPath } = await import('../server/world.js');
+const { locationCenter } = await import('../server/kernel/placement.js');
+
+test('修路：穿过树林的新路让往返变近；入口与站位都还在；跨太宽的水面要先架桥', (t) => {
+  const town = redTown();
+  t.after(() => town.stop());
+  const w0 = town.world;
+  const a = locationCenter(w0, 'village_square'), b = locationCenter(w0, 'wolf_den');
+  const before = findPath(w0, a.x, a.y, b.x, b.y).length;
+  const r = town.proposalSystem.prepare([{ op: 'addPath', args: { from: 'village_square', to: 'wolf_den', surface: 'dirt' } }]);
+  assert.ok(!r.error, r.error);
+  town.applyWorldOp(r.ops[0]);
+  const w = town.world;
+  const after = findPath(w, a.x, a.y, b.x, b.y).length;
+  assert.ok(after < before, `${before} → ${after}`);
+  for (const bd of w.buildings) assert.equal(w.walk[bd.entrance.y * w.W + bd.entrance.x], 1);
+  for (const [id, l] of Object.entries(w0.locations)) assert.ok(w.locations[id].spots.length >= l.spots.length, id);
+  assert.ok(town.worldHistory().at(-1).desc.includes('修了一条从「村口广场」到「狼窝」的路'));
+  assert.equal(town.proposalSystem.prepare([{ op: 'addPath', args: { from: 'village_square', to: 'wolf_den' } }]).error?.includes('已经有路了'), true);
+});
+
+test('架桥、清地、种树、新的户外地点：求解后落地，读档重放得到同样的地图', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-map-'));
+  const town = new Town({ dataDir: dir, instantTalk: true });
+  t.after(() => town.stop());
+  const ps = town.proposalSystem;
+  const r = ps.prepare([
+    { op: 'addBridge', args: { near: 'home_chen' } },
+    { op: 'clearArea', args: { near: 'home_chen', w: 6, h: 5 } },
+    { op: 'addOutdoorPlace', args: { id: 'melon_garden', kind: 'garden', name: '瓜棚花园', emoji: '🌻', desc: '农场边新辟的小花园', near: 'home_chen' } },
+    { op: 'plantGrove', args: { near: 'park', w: 5, h: 4, trees: 'sakura' } },
+  ]);
+  assert.ok(!r.error, r.error);
+  const trees0 = town.world.objects.filter((o) => o.type === 'tree').length;
+  for (const o of r.ops) town.applyWorldOp(o);
+  const w = town.world;
+  const bridge = r.ops[0].args.cells;
+  for (const [x, y] of bridge) assert.equal(w.tiles[y * w.W + x], T.BRIDGE);
+  const rect = r.ops[1].args.rect;
+  assert.ok(!w.objects.some((o) => ['tree', 'bush', 'rock'].includes(o.type) && o.x >= rect.x && o.x < rect.x + rect.w && o.y >= rect.y && o.y < rect.y + rect.h && !r.ops[3].args.trees.some(([x, y]) => x === o.x && y === o.y)), '清干净了');
+  assert.ok(w.objects.filter((o) => o.type === 'tree' && o.kind === 'sakura').length >= r.ops[3].args.trees.length);
+  assert.ok(w.locations.melon_garden.spots.length > 0, '新地点走得进去');
+  assert.ok(town.publicLocs().includes('melon_garden'), '居民可以去');
+  assert.ok(trees0 > 0);
+  town.save();
+  const again = new Town({ dataDir: dir, instantTalk: true });
+  t.after(() => again.stop());
+  assert.equal(fingerprint(again.world), fingerprint(w), '重放得到同样的地图');
+});

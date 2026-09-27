@@ -76,3 +76,157 @@ export function findPlacement(spec, { id, name = '', w, h, near, within = 12 }) 
   }
   return { error: `在「${base.locations[near].name}」附近找不到合适的位置（${lastErr}）` };
 }
+
+// ---------- 地形编辑的求解（地图演变 §4）：AI 只说意图，这里给出具体的格子，并在应用前完整校验 ----------
+import { OUTDOOR_KINDS } from '../worldgen/layout.js';
+
+const ROADS = new Set([T.PATH, T.PLAZA, T.BRIDGE, T.WOOD, T.DIRT]);
+const SOFT = new Set([T.GRASS, T.FLOWER, T.SAND, T.SOIL]);
+const WATERS = new Set([T.WATER, T.DEEP]);
+const MAX_BRIDGE = 4; // 修路时能顺带架桥的最宽水面
+const townRegion = (spec) => spec.regions.find((r) => r.id === 'town');
+const withEdit = (spec, edit) => ({ ...spec, regions: spec.regions.map((r) => (r.id === 'town' ? { ...r, edits: [...(r.edits || []), edit] } : r)) });
+
+/** 以一条地形编辑重建主地图并校验：入口都走得到、原有地点的站位不减少、新地点至少有一个站位 */
+export function checkEdit(spec, edit, base = worldOf(spec)) {
+  const w = buildRegion(townRegion(withEdit(spec, edit)), withEdit(spec, edit));
+  for (const b of w.buildings) if (!w.walk[b.entrance.y * w.W + b.entrance.x]) return `会挡住「${b.name}」的入口`;
+  for (const [id, l] of Object.entries(base.locations)) {
+    if ((w.locations[id]?.spots.length ?? 0) < l.spots.length) return `会挡住「${l.name}」的站位`;
+  }
+  if (edit.kind === 'place' && !w.locations[edit.id]?.spots.length) return '新地点走不进去';
+  return null;
+}
+
+/** 修路：两地点之间代价最低的一条路（已有的路最便宜，草地其次，树丛要砍，窄水面架桥），只返回需要铺的格子 */
+export function solvePath(spec, from, to) {
+  const w = worldOf(spec);
+  const a = locationCenter(w, from), b = locationCenter(w, to);
+  if (!a) return { error: `未知地点：${from}` };
+  if (!b) return { error: `未知地点：${to}` };
+  const { W, H, tiles, walk, objects } = w;
+  const removable = new Set(objects.filter((o) => ['tree', 'bush', 'rock'].includes(o.type)).map((o) => o.y * W + o.x));
+  const cost = (i) => {
+    const t = tiles[i];
+    if (WATERS.has(t)) return 6;
+    if (walk[i]) return ROADS.has(t) ? 1 : 1.4;
+    if (removable.has(i) && SOFT.has(t)) return 2.5;
+    return Infinity;
+  };
+  const dist = new Float64Array(W * H).fill(Infinity);
+  const prev = new Int32Array(W * H).fill(-1);
+  const start = a.y * W + a.x, goal = b.y * W + b.x;
+  dist[start] = 0;
+  // 二叉堆
+  const heap = [[0, start]];
+  const push = (d, i) => { heap.push([d, i]); let k = heap.length - 1; while (k > 0) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+  const pop = () => { const top = heap[0]; const last = heap.pop(); if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+  while (heap.length) {
+    const [d, i] = pop();
+    if (d > dist[i]) continue;
+    if (i === goal) break;
+    const x = i % W, y = Math.floor(i / W);
+    for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const j = ny * W + nx;
+      const c = j === goal ? 1 : cost(j);
+      if (d + c < dist[j]) { dist[j] = d + c; prev[j] = i; push(d + c, j); }
+    }
+  }
+  if (!Number.isFinite(dist[goal])) return { error: `「${w.locations[from].name}」和「${w.locations[to].name}」之间找不到可以修路的地方` };
+  const cells = [];
+  let run = 0;
+  for (let i = goal; i !== -1; i = prev[i]) {
+    run = WATERS.has(tiles[i]) ? run + 1 : 0;
+    if (run > MAX_BRIDGE) return { error: `路上要跨过超过 ${MAX_BRIDGE} 格宽的水面，需要先架桥（addBridge）` };
+    if (!ROADS.has(tiles[i])) cells.push([i % W, Math.floor(i / W)]);
+  }
+  if (!cells.length) return { error: '这两个地方之间已经有路了' };
+  return { cells: cells.reverse() };
+}
+
+/** 架桥：地点附近最窄的一段水面（横着或竖着），两头都是能走的地 */
+export function solveBridge(spec, near, within = 12) {
+  const w = worldOf(spec);
+  const c = locationCenter(w, near);
+  if (!c) return { error: `未知地点：${near}` };
+  const { W, H, tiles, walk } = w;
+  let best = null;
+  for (let y = Math.max(1, c.y - within); y <= Math.min(H - 2, c.y + within); y++) {
+    for (let x = Math.max(1, c.x - within); x <= Math.min(W - 2, c.x + within); x++) {
+      const i = y * W + x;
+      if (!walk[i] || WATERS.has(tiles[i])) continue;
+      for (const [dx, dy] of [[1, 0], [0, 1]]) {
+        const cells = [];
+        let nx = x + dx, ny = y + dy;
+        while (nx < W && ny < H && WATERS.has(tiles[ny * W + nx]) && cells.length <= 6) { cells.push([nx, ny]); nx += dx; ny += dy; }
+        if (!cells.length || cells.length > 6 || nx >= W || ny >= H || !walk[ny * W + nx]) continue;
+        const d = Math.hypot(x - c.x, y - c.y);
+        if (!best || cells.length < best.cells.length || (cells.length === best.cells.length && d < best.d)) best = { cells, d };
+      }
+    }
+  }
+  return best ? { cells: best.cells } : { error: `「${w.locations[near].name}」附近没有适合架桥的水面` };
+}
+
+/**
+ * 在地点附近找一块 w×h 的地：
+ *   clear 清地（里面至少有 3 棵树 / 灌木 / 石头）；grove 种树（空草地）；place 新户外地点（可以建房的空地）
+ */
+export function solveRect(spec, { mode, w: rw, h: rh, near, within = 14, id = null, placeKind = null, seed = 1 }) {
+  const w = worldOf(spec);
+  const c = locationCenter(w, near);
+  if (!c) return { error: `未知地点：${near}` };
+  const { W, H, tiles, walk, objects, buildings } = w;
+  const removable = new Map(objects.filter((o) => ['tree', 'bush', 'rock'].includes(o.type)).map((o) => [o.y * W + o.x, o]));
+  const occupied = new Set(objects.map((o) => o.y * W + o.x));
+  const reserved = new Set();
+  for (const l of Object.values(w.locations)) {
+    for (const s of l.spots) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) reserved.add((s.y + dy) * W + s.x + dx);
+    if (l.rect && !l.indoor) for (let y = l.rect.y; y < l.rect.y + l.rect.h; y++) for (let x = l.rect.x; x < l.rect.x + l.rect.w; x++) reserved.add(y * W + x);
+  }
+  for (const b of buildings) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) reserved.add((b.entrance.y + dy) * W + b.entrance.x + dx);
+  const quick = (x, y) => {
+    if (x < 1 || y < 1 || x + rw > W - 1 || y + rh > H - 2) return false;
+    if (buildings.some((b) => b.x < x + rw + 1 && b.x + b.w + 1 > x && b.y < y + rh + 1 && b.y + b.h + 1 > y)) return false;
+    let n = 0;
+    for (let yy = y; yy < y + rh; yy++) for (let xx = x; xx < x + rw; xx++) {
+      const i = yy * W + xx;
+      if (mode === 'clear') { if (removable.has(i)) n++; continue; }
+      if (reserved.has(i)) return false;
+      if (mode === 'grove') { if (![T.GRASS, T.FLOWER].includes(tiles[i]) || (occupied.has(i) && !removable.has(i))) return false; if (!occupied.has(i)) n++; continue; }
+      if (mode === 'place' && (!BUILDABLE.has(tiles[i]) || (!walk[i] && !removable.has(i)))) return false;
+    }
+    return mode === 'clear' ? n >= 3 : mode === 'grove' ? n * 2 >= rw * rh : true;
+  };
+  const cands = [];
+  for (let y = c.y - within - rh; y <= c.y + within; y++) for (let x = c.x - within - rw; x <= c.x + within; x++) {
+    const d = Math.hypot(x + rw / 2 - c.x, y + rh / 2 - c.y);
+    if (d <= within && quick(x, y)) cands.push({ x, y, d });
+  }
+  cands.sort((p, q) => p.d - q.d);
+  let lastErr = mode === 'clear' ? '附近没有需要清理的树丛' : '附近没有足够大的空地';
+  for (const cand of cands.slice(0, MAX_FULL_CHECKS)) {
+    const rect = { x: cand.x, y: cand.y, w: rw, h: rh };
+    const edit = mode === 'clear' ? { kind: 'clear', rect }
+      : mode === 'grove' ? { kind: 'grove', trees: groveTrees(rect, seed).filter(([x, y]) => !occupied.has(y * W + x)) }
+        : { kind: 'place', id, placeKind, rect, seed };
+    const err = mode === 'clear' ? null : checkEdit(spec, edit, w);
+    if (!err) return { rect, ...(edit.trees ? { trees: edit.trees } : {}) };
+    lastErr = err;
+  }
+  return { error: `在「${w.locations[near].name}」附近找不到合适的地方（${lastErr}）` };
+}
+
+/** 树林：隔一格种一棵，品种按位置稳定地挑 */
+export function groveTrees(rect, seed = 1, kinds = ['oak', 'pine']) {
+  const out = [];
+  for (let y = rect.y; y < rect.y + rect.h; y++) for (let x = rect.x; x < rect.x + rect.w; x++) {
+    if ((x + y) % 2) continue;
+    out.push([x, y, kinds[(x * 7 + y * 13 + seed) % kinds.length]]);
+  }
+  return out;
+}
+
+export const outdoorSize = (kind) => OUTDOOR_KINDS[kind] || null;

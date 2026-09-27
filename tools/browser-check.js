@@ -198,6 +198,12 @@ await step('18c-buildings', async () => {
     app.api('/api/world/op', { op: 'setBuildingState', args: { id: 'wolf_den', state: 'ruin', remap: { residents: 'hunter_cabin' } } }),
   ]).then(() => true)`);
   await waitFor(() => evaluate(`app.world.buildings.find((b) => b.id === 'wolf_den')?.state === 'ruin' && app.world.buildings.find((b) => b.id === 'bakery')?.state === 'closed'`), 8000, '地图重建');
+  // 地形：新的户外地点与一条穿过树林的路（管理员直接提交提案，由系统求解位置）
+  await evaluate(`app.api('/api/proposals/direct', { title: '花园与小路', ops: [
+    { op: 'addOutdoorPlace', args: { id: 'honey_garden', kind: 'garden', name: '蜂蜜花园', emoji: '🌼', desc: '村口新辟的小花园', near: 'village_square' } },
+    { op: 'addPath', args: { from: 'village_square', to: 'hunter_cabin', surface: 'dirt' } } ] }).then(() => true)`);
+  await waitFor(() => evaluate(`Boolean(app.world.locations.honey_garden)`), 8000, '新地点');
+  await evaluate(`(() => { const r = app.world.locations.honey_garden.rect; app.follow = null; app.cam.x = (r.x + r.w / 2) * 32; app.cam.y = (r.y + r.h / 2) * 32; return true; })()`);
 }, { wait: 1200 });
 await step('19-genesis', async () => {
   await send('Page.navigate', { url: `${base}/genesis.html` });

@@ -41,7 +41,7 @@ import { get as setting } from './settings/index.js';
 
 const MAX_STRUCTURES = 30;
 // 改变地图上建筑的世界操作：落地后重建地图（syncMap）
-const MAP_OPS = new Set(['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding']);
+const MAP_OPS = new Set(['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace']);
 
 export class Town extends EventEmitter {
   /**
