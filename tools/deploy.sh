@@ -35,6 +35,8 @@ else
   "$MISE" exec -- npm ci --omit=dev --no-audit --no-fund --loglevel=error
 fi
 "$MISE" exec -- node tools/check.js >/dev/null
+# 新版本会校验环境变量（写错就拒绝启动）：在停掉旧版本之前先用线上的 .env 检查一遍，不通过就放弃部署
+"$MISE" exec -- node --input-type=module -e "import('./server/settings/index.js').then((s) => { const p = s.envProblems(); if (p.length) { console.error('✖ 线上 .env 有不合法的设置：\\n  ' + p.join('\\n  ')); process.exit(1); } })"
 
 PORT=${PORT_OVERRIDE:-$(grep -E '^PORT=' .env | head -1 | sed -E 's/^PORT=([0-9]+).*/\1/')}
 PORT=${PORT:-3000}
@@ -55,7 +57,9 @@ echo "▶ 停止旧版本（会先存档）"
 stop "$DIR"
 # 存档备份（只保留最近 5 份）
 mkdir -p "$(dirname "$DIR")/ai-town-backups"
-tar -czf "$(dirname "$DIR")/ai-town-backups/data-$TS.tgz" -C "$DIR" data
+# 连同 AI 插件一起备份：新版本首次启动会把旧目录迁移到 data/worlds/<世界>/，回滚时要从这份备份恢复
+BACKUP="$(dirname "$DIR")/ai-town-backups/data-$TS.tgz"
+tar -czf "$BACKUP" -C "$DIR" data $( [ -d "$DIR/plugins/evolved" ] && echo plugins/evolved )
 ls -t "$(dirname "$DIR")"/ai-town-backups/data-*.tgz | tail -n +6 | xargs -r rm -f
 # 运行时产生、不在 git 里的东西：挪进新目录
 for f in data data.* plugins/evolved spec/mods/local .env.bak-* server.log*; do
@@ -79,7 +83,10 @@ else
   echo "✖ 新版本没有正常响应，切回旧版本"
   tail -30 "$DIR/server.log" || true
   stop "$DIR"
-  for f in data data.* plugins/evolved spec/mods/local .env.bak-*; do
+  # 存档与插件从部署前的备份恢复（新版本可能已经把它们迁移成了新的目录结构）
+  rm -rf "$DIR/data" "$DIR/plugins/evolved"
+  tar -xzf "$BACKUP" -C "$OLD"
+  for f in data.* spec/mods/local .env.bak-*; do
     for src in "$DIR"/$f; do
       [ -e "$src" ] || continue
       rel=${src#"$DIR"/}
