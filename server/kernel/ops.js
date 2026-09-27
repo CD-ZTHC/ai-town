@@ -14,6 +14,7 @@ const ID_RE = /^[a-z][a-z0-9_]{1,23}$/;
 const RESERVED = new Set(Object.getOwnPropertyNames(Object.prototype));
 const validId = (id) => ID_RE.test(id || '') && !RESERVED.has(id);
 const COLOR_RE = /^#[0-9a-f]{6}$/i;
+const pName = (spec, id) => spec?.personas?.find((p) => p.id === id)?.name || id;
 
 // 每个操作：level 决定审批等级（micro / minor / major），check 返回错误文本或 null，
 // apply 修改规格（传入的是副本），describe 生成给玩家看的一句话
@@ -232,7 +233,7 @@ export const OPS = {
     apply(spec, a) {
       const p = structuredClone(a);
       spec.personas.push({
-        id: p.id, name: str(p.name, 12), age: Math.max(1, Math.min(999, Number(p.age) || 20)), role: str(p.role, 30), kind: p.kind || 'traveller',
+        id: p.id, name: str(p.name, 12), age: Math.max(1, Math.min(999, Number(p.age) || 20)), role: str(p.role, 30), kind: p.kind || 'traveller', ...(p.tier === 'support' ? { tier: 'support' } : {}),
         home: p.home, work: p.work, persona: str(p.persona, 400), goal: str(p.goal, 120), look: p.look, relations: {},
         memories: (Array.isArray(p.memories) ? p.memories : []).map((m) => str(m, 80)).slice(0, 5),
         ...(p.idle ? { idle: str(p.idle, 24) } : {}), ...(p.creature ? { creature: p.creature } : {}),
@@ -252,7 +253,23 @@ export const OPS = {
       return null;
     },
     apply(spec, a) { spec.personas.find((x) => x.id === a.id).status = a.status; },
-    describe: (a) => (a.status === 'departed' ? `${a.id} 离开了小镇` : `${a.id} 回到了小镇`),
+    describe: (a, spec) => { const n = pName(spec, a.id); const place = spec?.voice?.place || '小镇'; return a.status === 'departed' ? `${n}离开了${place}` : `${n}回到了${place}`; },
+  },
+  // 外来者定居，成为常住居民（人员流动）；来历保留在 origin
+  settlePersona: {
+    level: 'major',
+    check(spec, a) {
+      const p = spec.personas.find((x) => x.id === a.id);
+      if (!p) return `未知角色：${a.id}`;
+      return p.kind === 'traveller' ? null : '只有外来者可以定居';
+    },
+    apply(spec, a) {
+      const p = spec.personas.find((x) => x.id === a.id);
+      p.kind = 'resident';
+      if (p.traveller?.origin) p.origin = p.traveller.origin;
+      delete p.traveller;
+    },
+    describe: (a, spec) => `${pName(spec, a.id)}定居下来`,
   },
   addRule: {
     level: 'major',

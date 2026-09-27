@@ -14,6 +14,7 @@ import { ArcEngine } from './story/arcs.js';
 import { SceneManager } from './story/scene.js';
 import { VoteSystem } from './story/votes.js';
 import { CreatureSystem } from './story/creatures.js';
+import { MigrationSystem } from './story/migration.js';
 import { AvatarSystem } from './avatars.js';
 import { ProposalSystem } from './worldai/proposals.js';
 import { HookBus } from './kernel/hooks.js';
@@ -63,6 +64,7 @@ export class Town extends EventEmitter {
     this.worldId = opts.worldId || 'yunxi';
     this.pack = opts.pack || null;
     const ws = opts.worldSettings || null;
+    this.worldSettings = ws || {};
     const base = () => (this.pack ? packSpec(this.pack, ws || {}) : defaultSpec(ws ? { STORY_RATING: ws.rating, STORYTELLER: ws.storyteller } : process.env));
     this.packHash = (this.pack || officialPack('yunxi')).hash;
     const baseErrs = validateSpec(base());
@@ -122,6 +124,7 @@ export class Town extends EventEmitter {
     this.scenes = new SceneManager(this);
     this.votes = new VoteSystem(this);
     this.creatures = new CreatureSystem(this);
+    this.migration = new MigrationSystem(this, { random: opts.random });
     this.avatars = new AvatarSystem(this);
     // P4：建设提案（世界架构师、施工等功能由 plugins/builtin/ 下的插件提供）
     this.proposalSystem = new ProposalSystem(this);
@@ -248,6 +251,7 @@ export class Town extends EventEmitter {
       this.votes.tick();
       this.arcs.tick();
       this.director.tick();
+      this.migration.tick();
       this.proposalSystem.tick();
       this.decisions.tick();
       this.evolved.tick();
@@ -398,13 +402,13 @@ export class Town extends EventEmitter {
     return a;
   }
 
-  depart(id, source = 'arc') {
+  depart(id, source = 'arc', text = null) {
     const p = this.spec.personas.find((x) => x.id === id);
     if (!p || p.status === 'departed') return false;
     const a = this.byId[id];
     this.applyWorldOp({ op: 'setPersonaStatus', args: { id, status: 'departed' } }, { by: source }, { quiet: true });
     this.syncAgents();
-    if (a) this.log('depart', `👋 ${a.name}离开了小镇`, { agents: [id] });
+    if (a) this.log('depart', text || `👋 ${a.name}离开了${this.spec.voice?.place || '小镇'}`, { agents: [id] });
     return true;
   }
 
@@ -477,9 +481,9 @@ export class Town extends EventEmitter {
     if (rec.op === 'addRegion' || rec.op === 'linkRegions') this.rebuildRegions();
     this.specOps.push(rec);
     this.journal.append(rec);
-    const desc = OPS[rec.op].describe?.(rec.args) || rec.op;
+    const desc = OPS[rec.op].describe?.(rec.args, this.spec) || rec.op;
     if (!quiet) this.log('world', `🌀 世界发生了变化：${desc}`, { op: rec.op, seq: rec.seq });
-    this.emit('world', { spec: publicSpec(this.spec), op: rec, desc });
+    this.emit('world', { spec: publicSpec(this.spec), op: rec, desc, ...(quiet ? { quiet: true } : {}) });
     return rec;
   }
 
@@ -545,7 +549,7 @@ export class Town extends EventEmitter {
   }
 
   worldHistory() {
-    return this.specOps.map((r) => ({ ...r, desc: OPS[r.op]?.describe?.(r.args) || r.op }));
+    return this.specOps.map((r) => ({ ...r, desc: OPS[r.op]?.describe?.(r.args, this.spec) || r.op }));
   }
 }
 

@@ -10,7 +10,7 @@ export const RATINGS = ['cozy', 'adventure', 'epic', 'tragic'];
 export const STORYTELLERS = ['gentle', 'voyage', 'chaos'];
 export const PERSONA_KINDS = ['resident', 'traveller', 'creature'];
 export const BODY_PLANS = ['wisp', 'hound', 'warden'];
-export const MAX_PERSONAS = 16;
+export const MAX_PERSONAS = 24; // 含离开的人与剧情角色；世界包发布时另有 16 位的上限，余量留给人员流动
 
 // 内核参数：AI 只能在上下限之内调节（见设计文档 4.6）
 export const PARAM_BOUNDS = {

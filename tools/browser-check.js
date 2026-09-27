@@ -176,6 +176,19 @@ await step('18-little-red', async () => {
   const tip = await evaluate(`document.querySelector('#toasts').lastElementChild?.textContent || ''`);
   if (!tip.includes('外婆生日') || tip.includes('萤火')) throw new Error(`活动提示不对：${tip}`);
 }, { wait: 1500 });
+await step('18b-people', async () => {
+  // 故事面板的「人来人往」：请一个人离开，再召回（本地模式即管理员；confirm 直接放行）
+  await evaluate(`window.confirm = () => true`);
+  await click('#story-chip');
+  await waitFor(() => evaluate(`Boolean(document.querySelector('.stabs [data-t="people"]'))`), 8000, '故事面板');
+  await click('.stabs [data-t="people"]');
+  await waitFor(() => evaluate(`document.querySelectorAll('[data-pdep]').length >= 5`), 8000, '在场的人');
+  if (await evaluate(`Boolean(document.querySelector('#story-body').textContent.includes('镜湖裂隙'))`)) throw new Error('小红帽的故事面板里出现了云溪镇的剧情弧');
+  await click('[data-pdep="hunter"]');
+  await waitFor(() => evaluate(`Boolean(document.querySelector('[data-prec="hunter"]'))`), 8000, '出门在外');
+  await click('[data-prec="hunter"]');
+  await waitFor(() => evaluate(`Boolean(document.querySelector('[data-pdep="hunter"]'))`), 8000, '召回');
+}, { wait: 800 });
 await step('19-genesis', async () => {
   await send('Page.navigate', { url: `${base}/genesis.html` });
   await waitFor(() => evaluate(`Boolean(document.querySelector('#go'))`), 10000, '创世向导');

@@ -75,7 +75,7 @@ function makeTown(world, root) {
     dataDir: activeDir(root),
     worldId: world.id,
     pack,
-    worldSettings: { rating: s.rating, storyteller: s.storyteller, mods: s.mods || [] },
+    worldSettings: { rating: s.rating, storyteller: s.storyteller, mods: s.mods || [], migration: s.migration !== false },
     // 每个世界的 AI 插件只在自己的目录里（为 A 世界生成的插件不会被 B 世界加载）；
     // 官方世界的进化开关是 EVOLVE，用户世界是创世时（或之后在设置里）打开的开关，超时交给 AI 裁决官
     evolution: { dir: path.join(root, 'evolution'), pluginsDir: path.join(root, 'plugins'), config: { publicMode: config.publicMode, mode: evolutionMode(world) } },
@@ -117,7 +117,7 @@ function myWorlds(user) {
     const grant = accounts.grant(user.id, 'genesis');
     const limit = budget.worldLimit(w);
     return {
-      id: w.id, title: w.title, status: w.status, statusReason: w.statusReason, evolution: w.evolution, running: Boolean(h), viewers: h ? h.clients.size : 0,
+      id: w.id, title: w.title, status: w.status, statusReason: w.statusReason, evolution: w.evolution, migration: w.settings?.migration !== false, running: Boolean(h), viewers: h ? h.clients.size : 0,
       usage: ledger.world(w.id), dailyLimit: Number.isFinite(limit) ? limit : null, level: budget.level(w.id), levelName: LEVEL_NAMES[budget.level(w.id)],
       diskBytes: w.diskBytes, diskLimitMB: w.quota?.diskMB ?? grant?.quota?.diskMB ?? settings.get('WORLD_DISK_MB'),
       pendingDecisions: h ? h.town.decisions.list?.filter?.((d) => d.status === 'waiting').length || 0 : 0,

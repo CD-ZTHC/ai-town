@@ -71,6 +71,15 @@ export function assembleMap(raw, { worldName, homesNeeded = 0 }) {
   return { regions: [{ id: 'town', generator: 'layout-v1', name: str(worldName, 16) || '新世界', seed: hashStr(worldName) % 100000, biome: areas[0].biome, gate, areas, ...(links.length ? { links } : {}) }] };
 }
 
+/** 外观：只接受合法的颜色与部件，缺的按 id 稳定地挑一个 */
+export function normalizeLook(raw, id) {
+  const look = raw && typeof raw === 'object' ? raw : {};
+  return {
+    skin: hex(look.skin, pick(SKIN, `${id}s`)), hair: hex(look.hair, '#3a2a1a'), hairStyle: HAIR.includes(look.hairStyle) ? look.hairStyle : pick(HAIR, id),
+    shirt: hex(look.shirt, pick(CLOTH, `${id}c`)), pants: hex(look.pants, '#5a5a7a'), acc: (Array.isArray(look.acc) ? look.acc : []).filter((a) => ACC.includes(a)).slice(0, 2),
+  };
+}
+
 /** 居民：映射到内核规格的人物格式；家必须是建筑，工作地是任意地点 */
 export function assemblePersonas(raw, map, { maxPersonas = 12 } = {}) {
   const places = map.regions[0].areas.flatMap((a) => a.places);
@@ -85,15 +94,11 @@ export function assemblePersonas(raw, map, { maxPersonas = 12 } = {}) {
     let home = placeId(p.home);
     if (!buildings.some((b) => b.id === home)) home = buildings[i % Math.max(1, buildings.length)]?.id;
     const work = placeId(p.work) || publicPlaces[i % Math.max(1, publicPlaces.length)]?.id || home;
-    const look = p.look || {};
     return {
       id, name: str(p.name, 12) || `居民${i + 1}`, age: Math.max(3, Math.min(120, Math.round(Number(p.age) || 30))), role: str(p.role, 30) || '居民',
       home, work, persona: str(p.persona, 380) || str(p.role, 30), goal: str(p.goal, 120) || '好好过日子',
       tier: p.tier === 'support' ? 'support' : 'lead',
-      look: {
-        skin: hex(look.skin, pick(SKIN, `${id}s`)), hair: hex(look.hair, '#3a2a1a'), hairStyle: HAIR.includes(look.hairStyle) ? look.hairStyle : pick(HAIR, id),
-        shirt: hex(look.shirt, pick(CLOTH, `${id}c`)), pants: hex(look.pants, '#5a5a7a'), acc: (Array.isArray(look.acc) ? look.acc : []).filter((a) => ACC.includes(a)).slice(0, 2),
-      },
+      look: normalizeLook(p.look, id),
       start: { abilities: [], inventory: {} },
       relations: {}, _relations: p.relations,
       memories: (Array.isArray(p.memories) ? p.memories : []).map((m) => str(m, 80)).filter(Boolean).slice(0, 5),

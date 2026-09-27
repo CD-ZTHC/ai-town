@@ -19,6 +19,7 @@
 | `linkRegions` | minor | — | 仅管理员 / 剧情弧使用 |
 | `addPersona` | major | — | 仅管理员 / 剧情弧使用 |
 | `setPersonaStatus` | major | — | 仅管理员 / 剧情弧使用 |
+| `settlePersona` | major | — | 仅管理员 / 剧情弧使用 |
 | `addRule` | major | ✅ | {"id","name":"≤16字","when":{"every":10~1440} 或 {"at":"HH:MM"} 或 {"weather":"天气id"} 或 {"enter":"地点id"},"forEach":"agent"(可选),"if":"表达式(可选)","then":[效果]} |
 
 ## 效果原语

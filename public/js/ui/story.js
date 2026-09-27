@@ -1,5 +1,5 @@
-// 故事面板：张力曲线、剧情弧、导演笔记、抉择投票、伏笔、危机、生物图鉴
-import { $, $$, app, esc, fmtTime, openModal, toast, ui } from './core.js';
+// 故事面板：张力曲线、剧情弧、导演笔记、抉择投票、伏笔、人来人往、危机、生物图鉴
+import { $, $$, app, esc, fmtTime, openModal, toast, ui, voice } from './core.js';
 let storyPending = null;
 
 export function onStory() {
@@ -13,9 +13,9 @@ const TH_STATUS = { open: ['未展开', 'open'], advanced: ['进行中', 'adv'],
 
 export function storyModal(tab) {
   ui.storyTab = tab || ui.storyTab || 'story';
-  const card = openModal(`<h2>🎭 小镇的故事</h2>
+  const card = openModal(`<h2>🎭 ${esc(voice().place || '小镇')}的故事</h2>
     <div class="sub">叙事导演根据小镇的「张力」安排伏笔、冲突与喘息；剧情弧在关键时刻交给小镇（和你）来抉择。</div>
-    <div class="tabs stabs">${[['story', '📖 剧情'], ['vote', '🗳️ 抉择'], ['threads', '🧵 伏笔'], ['crisis', '⚔️ 危机'], ['bestiary', '👾 图鉴']].map(([k, l]) => `<button data-t="${k}" class="${ui.storyTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div class="tabs stabs">${[['story', '📖 剧情'], ['vote', '🗳️ 抉择'], ['threads', '🧵 伏笔'], ['people', '🧳 人来人往'], ['crisis', '⚔️ 危机'], ['bestiary', '👾 图鉴']].map(([k, l]) => `<button data-t="${k}" class="${ui.storyTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div id="story-body" class="story-body"><div class="empty">正在翻开故事书……</div></div>`, 'story-wrap');
   card.style.width = 'min(760px, 94vw)';
   $$('.stabs button', card).forEach((b) => b.addEventListener('click', () => {
@@ -57,7 +57,7 @@ async function renderStory() {
       <span>当前张力 <b>${d.tension?.value ?? '—'}</b> / 目标 ${d.tension?.target ?? '—'}</span></div>
       ${sparkline(d.history)}
       <h3>剧情弧</h3>${arcs || '<div class="empty">还没有剧情弧开启。远航 / 掷骰叙事者会在夜里自动开启，管理员也可以手动开启。</div>'}
-      ${d.admin && !d.arcs.some((a) => a.status === 'active') ? '<button class="primary" id="arc-start">🌀 开启《镜湖裂隙》</button>' : ''}
+      ${d.admin && !d.arcs.some((a) => a.status === 'active') ? (d.arcTemplates || []).map((a) => `<button class="primary" data-arc="${esc(a.id)}">🌀 开启《${esc(a.title)}》</button>`).join(' ') : ''}
       ${d.scenes.length ? `<h3>即将上演</h3>${d.scenes.map((s) => `<div class="dec">🎭 ${fmtTime(s.time)} · ${esc(s.location)} · ${esc(s.title)}</div>`).join('')}` : ''}
       <h3>导演笔记 ${d.admin ? '<button class="mini" id="dir-go">让导演现在想一想</button>' : ''}</h3>
       ${d.decisions.map((x) => `<div class="dec"><b>${fmtTime(x.t)}</b> ${esc({ noop: '按兵不动', foreshadow: '埋伏笔', complicate: '添麻烦', escalate: '升级', relief: '喘息', resolve: '收束', launchArc: '开启剧情弧' }[x.decision] || x.decision)} — ${esc(x.reason)}${x.external ? '（回应了玩家事件）' : ''}</div>`).join('') || '<div class="empty">导演还没有出手（需要配置 LLM）。</div>'}`;
@@ -77,6 +77,19 @@ async function renderStory() {
   } else if (tab === 'threads') {
     html = d.threads.map((t) => `<div class="thread ${TH_STATUS[t.status][1]}"><div><b>${esc(t.title)}</b><span class="badge">${TH_STATUS[t.status][0]}</span></div>
       <small>${esc(t.hook)}</small>${t.notes.length ? `<div class="tnotes">${t.notes.map((n) => `<div>· ${fmtTime(n.t)} ${esc(n.text)}</div>`).join('')}</div>` : ''}</div>`).join('');
+  } else if (tab === 'people') {
+    const m = d.migration;
+    const KIND = { arrive: '到来', leave: '出门', return: '回来', settle: '定居' };
+    const BY = { owner: '（创建者）', admin: '（管理员）' };
+    const here = m.people.filter((p) => p.status !== 'departed');
+    const gone = m.people.filter((p) => p.status === 'departed');
+    html = `<div class="srow"><span>在场 <b>${m.count}</b> / 上限 ${m.cap}</span><span>人员流动 <b>${m.enabled ? '开启' : '关闭'}</b></span>
+      ${d.admin && m.enabled ? '<button class="mini" id="mig-go">让导演现在安排一次</button>' : ''}</div>
+      <div class="sub">会有人慕名而来、投亲靠友，也会有人出门远行、过些日子再回来。新来的人和大家熟悉之后会定居下来。没有人会永远消失。</div>
+      <h3>最近的人来人往</h3>${m.history.map((h) => `<div class="dec"><b>第${h.day}天</b> ${esc(h.text)}${BY[h.by] || ''}</div>`).join('') || '<div class="empty">还没有人来去。</div>'}
+      ${gone.length ? `<h3>出门在外</h3>${gone.map((p) => { const a = m.away.find((x) => x.id === p.id); return `<div class="dec">🧳 <b>${esc(p.name)}</b> · ${esc(p.role)}${a?.where ? ` · 在${esc(a.where)}` : ''}${a?.returnDay ? ` · 约好第${a.returnDay}天回来` : ''}${d.admin ? ` <button class="mini adm" data-prec="${esc(p.id)}">召回</button>` : ''}</div>`; }).join('')}` : ''}
+      ${d.admin ? `<h3>在场的人</h3>${here.map((p) => `<div class="dec">${p.kind === 'traveller' ? '🧳' : '🏠'} <b>${esc(p.name)}</b> · ${esc(p.role)}${p.arrivedDay ? ` · 第${p.arrivedDay}天从${esc(p.from || '远方')}来` : ''} <button class="mini adm" data-pdep="${esc(p.id)}">请离</button></div>`).join('')}
+        <div class="sub">「请离」和「召回」互为撤销；剧情弧里的角色由剧情安排，不在这里。</div>` : ''}`;
   } else if (tab === 'crisis') {
     const c = d.crisis;
     const meter = (label, v, cls) => `<div class="cmeter ${cls}"><span>${label}</span><i><b style="width:${v}%"></b></i><em>${v}</em></div>`;
@@ -96,8 +109,22 @@ async function renderStory() {
     if (!confirm('确定以管理员身份终审这个选项吗？')) return;
     try { await app.api('/api/vote/decide', { id: b.dataset.decide, option: b.dataset.opt }); renderStory(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
   }));
-  const as = $('#arc-start', body);
-  if (as) as.onclick = async () => { try { await app.api('/api/arc/start', { template: 'rift' }); renderStory(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); } };
+  $$('[data-arc]', body).forEach((b) => b.addEventListener('click', async () => {
+    try { await app.api('/api/arc/start', { template: b.dataset.arc }); renderStory(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
+  }));
+  $$('[data-pdep]', body).forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('让这个人暂时离开吗？之后可以在这里召回。')) return;
+    try { await app.api('/api/people/depart', { id: b.dataset.pdep }); renderStory(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
+  }));
+  $$('[data-prec]', body).forEach((b) => b.addEventListener('click', async () => {
+    try { await app.api('/api/people/recall', { id: b.dataset.prec }); renderStory(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
+  }));
+  const mg = $('#mig-go', body);
+  if (mg) mg.onclick = async () => {
+    mg.disabled = true; mg.textContent = '导演思考中…';
+    try { const r = await app.api('/api/people/run', {}); toast(r.change === 'none' ? `🤔 导演觉得现在没有合适的变动${r.reason ? `：${esc(r.reason)}` : ''}` : `🧳 ${esc(r.name || '')} ${{ arrive: '来了', leave: '出门了', return: '回来了' }[r.change] || ''}`); } catch (e) { toast(`⚠️ ${esc(e.message)}`); }
+    renderStory();
+  };
   const dg = $('#dir-go', body);
   if (dg) dg.onclick = async () => { dg.disabled = true; dg.textContent = '导演思考中…'; try { await app.api('/api/director/decide', {}); } catch (e) { toast(`⚠️ ${esc(e.message)}`); } renderStory(); };
 }

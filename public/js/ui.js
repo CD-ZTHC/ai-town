@@ -238,6 +238,7 @@ export function onRegions() {
 }
 
 export function onWorld(w) {
+  if (w.quiet) return; // 剧情与人员流动自己会在动态里讲这件事
   toast(`🌀 ${esc(w.desc || w.op?.op || '')}`, 5000);
 }
 

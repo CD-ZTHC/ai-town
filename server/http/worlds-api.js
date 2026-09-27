@@ -174,7 +174,7 @@ export function worldsApi(deps) {
     return c.json({ ok: true });
   });
 
-  // 世界设置：标题、简介、自主进化开关、可见性（owner 可以改自己的世界，管理员可以改任何世界）
+  // 世界设置：标题、简介、自主进化开关、人员流动开关、可见性（owner 可以改自己的世界，管理员可以改任何世界）
   api.patch('/:id/settings', (c) => {
     const w = owned(c);
     const b = c.get('body');
@@ -185,14 +185,18 @@ export function worldsApi(deps) {
     if (b.evolution !== undefined) patch.evolution = Boolean(b.evolution);
     const settings = {};
     // 世界级设置（§14.8）：叙事者、Mod；分级改动要在授予范围内（管理员可以改任何世界）
+    if (b.migration !== undefined) settings.migration = Boolean(b.migration);
     if (b.storyteller !== undefined) { if (!['gentle', 'voyage', 'chaos'].includes(b.storyteller)) throw new HttpError(400, '未知叙事者'); settings.storyteller = b.storyteller; }
     if (b.rating !== undefined && c.get('admin')) settings.rating = String(b.rating);
     if (b.mods !== undefined && c.get('admin')) settings.mods = (Array.isArray(b.mods) ? b.mods : []).map(String).slice(0, 12);
     if (Object.keys(settings).length) patch.settings = settings;
     const next = registry.update(w.id, patch);
     act(c, w, 'world.settings', patch);
-    // 叙事者、Mod、进化开关要重新加载世界才生效
-    if (patch.settings || patch.evolution !== undefined) manager.close(w.id, '世界设置已修改');
+    // 叙事者、Mod、进化开关要重新加载世界才生效；人员流动开关直接生效
+    const running = manager.get(w.id);
+    if (running && settings.migration !== undefined) running.town.worldSettings.migration = settings.migration;
+    const reload = Object.keys(settings).some((k) => k !== 'migration');
+    if (reload || patch.evolution !== undefined) manager.close(w.id, '世界设置已修改');
     return c.json({ ok: true, world: next });
   });
 

@@ -112,6 +112,8 @@ export class Views {
       storyteller: this.spec.meta.storyteller, rating: this.spec.meta.rating,
       tension: st.now || null, history: (st.history || []).slice(-72), decisions: (st.decisions || []).slice(-8).reverse(),
       arcs: this.arcs.view(), threads: threadList(this),
+      arcTemplates: this.spec.arcs.filter((a) => !this.arcs.runs.some((r) => r.template === a.id)).map((a) => ({ id: a.id, title: a.title })),
+      migration: this.migration.view(),
       votes: this.votes.list.slice(-5).reverse().map((v) => this.votes.view(v, key)),
       scenes: (this.pendingScenes || []).map((s) => ({ title: s.title, time: s.time, location: this.locName(s.location) })),
       crisis: {

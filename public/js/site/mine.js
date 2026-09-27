@@ -24,6 +24,7 @@ async function render() {
       <div class="stats">
         <div class="stat"><span class="muted small">今日用量</span><b>${fmtNum(w.usage?.total || 0)}</b><span class="small muted">${w.dailyLimit ? `额度 ${fmtNum(Math.round(w.dailyLimit))}` : '不限'} · ${esc(w.levelName || '')}</span></div>
         <div class="stat"><span class="muted small">磁盘</span><b>${fmtBytes(w.diskBytes)}</b><span class="small ${pct > 100 ? 'bad' : pct > 80 ? 'warn' : 'muted'}">${pct != null ? `上限 ${w.diskLimitMB} MB（${pct}%）` : ''}${pct > 80 ? ' · 快满了，可以删掉一些时间线' : ''}</span></div>
+        <div class="stat"><span class="muted small">人员流动</span><b>${w.migration ? '开启' : '关闭'}</b>${['public', 'paused', 'preview', 'unlisted'].includes(w.status) ? `<button class="small" data-mig="${esc(w.id)}" data-on="${w.migration ? 0 : 1}">${w.migration ? '关闭' : '开启'}</button>` : ''}<span class="small muted">会有新人到来、有人出门再回来</span></div>
         <div class="stat"><span class="muted small">自主进化</span><b>${w.evolution ? '开启' : '关闭'}</b>${['public', 'paused', 'preview', 'unlisted'].includes(w.status) ? `<button class="small" data-evo="${esc(w.id)}" data-on="${w.evolution ? 0 : 1}">${w.evolution ? '关闭' : '开启'}</button>` : ''}</div>
       </div>
       <div class="row">
@@ -43,6 +44,9 @@ async function render() {
       try { await api(`api/worlds/${b.dataset.id}/${b.dataset.act}`, {}); toast('✅ 完成'); } catch (e) { toast(`⚠️ ${esc(e.message)}`, 8000); }
       render();
     };
+  }
+  for (const b of $$('[data-mig]')) {
+    b.onclick = async () => { try { await api(`api/worlds/${b.dataset.mig}/settings`, { migration: b.dataset.on === '1' }, 'PATCH'); render(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); } };
   }
   for (const b of $$('[data-evo]')) {
     b.onclick = async () => { try { await api(`api/worlds/${b.dataset.evo}/settings`, { evolution: b.dataset.on === '1' }, 'PATCH'); render(); } catch (e) { toast(`⚠️ ${esc(e.message)}`); } };

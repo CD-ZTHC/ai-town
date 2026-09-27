@@ -368,6 +368,28 @@ export function worldApi(deps) {
     return c.json({ ok: true });
   });
 
+  // 人员流动：owner / 管理员可以撤销（请人离开、召回出门的人），也可以让导演立即安排一次
+  api.post('/people/depart', (c) => {
+    requireReviewer(c);
+    const r = town(c).migration.leave({ who: String(c.get('body').id || ''), why: '' }, { by: reviewer(c) });
+    if (r.error) throw new HttpError(409, r.error);
+    return c.json({ ok: true, ...r });
+  });
+  api.post('/people/recall', (c) => {
+    requireReviewer(c);
+    const r = town(c).migration.recall(String(c.get('body').id || ''), reviewer(c));
+    if (r.error) throw new HttpError(409, r.error);
+    return c.json({ ok: true, ...r });
+  });
+  api.post('/people/run', async (c) => {
+    requireReviewer(c);
+    if (!llm.stats.enabled) throw new HttpError(503, 'AI 尚未配置');
+    const kind = String(c.get('body').kind || '');
+    const r = await town(c).migration.decide(['arrive', 'leave', 'return'].includes(kind) ? kind : null);
+    if (r.error) throw new HttpError(409, r.error);
+    return c.json({ ok: true, ...r });
+  });
+
   // 手动开启剧情弧（管理员）
   api.post('/arc/start', (c) => {
     requireAdmin(c);
