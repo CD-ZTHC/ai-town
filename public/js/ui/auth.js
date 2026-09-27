@@ -1,5 +1,6 @@
 // 登录 / 注册（多世界设计 §5.4、§12）：游客点击任何互动入口时弹出，完成后自动继续刚才的操作。注册只要用户名、昵称和密码。
 import { $, app, closeModal, esc, openModal, toast } from './core.js';
+import { mountCaptcha } from '../site/captcha.js';
 
 let waiting = null; // 正在等待登录完成的操作：{ promise, resolve, reject }
 
@@ -26,6 +27,7 @@ function showForm(tab, reason) {
       <label>用户名<input name="username" autocomplete="username" maxlength="20" placeholder="字母、数字或下划线，3~20 位" required></label>
       ${reg ? '<label>昵称<input name="nickname" maxlength="8" placeholder="1~8 个字，全站唯一" required><span class="hint" id="nick-hint"></span></label>' : ''}
       <label>密码<input name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" placeholder="${reg ? '至少 10 位' : ''}" required></label>
+      ${reg ? '<div id="auth-captcha"></div>' : ''}
       <div class="row"><button class="primary" type="submit">${reg ? '注册并登录' : '登录'}</button><span class="quota" id="auth-msg"></span></div>
     </form>
     <div class="sub">${reg ? '已经有账号了？<a href="#" id="auth-switch">登录</a>' : '还没有账号？<a href="#" id="auth-switch">注册一个</a>（只要三项）'}</div>`, 'help auth');
@@ -39,20 +41,23 @@ function showForm(tab, reason) {
         const v = nick.value.trim();
         if (!v) { $('#nick-hint', card).textContent = ''; return; }
         try {
-          const r = await app.api(`/api/auth/nickname-available?nickname=${encodeURIComponent(v)}`);
+          const r = await app.api(`../../api/auth/nickname-available?nickname=${encodeURIComponent(v)}`);
           $('#nick-hint', card).innerHTML = r.ok ? '<span style="color:var(--good)">✓ 可以用</span>' : `<span style="color:var(--bad)">${esc(r.reason)}</span>`;
         } catch { /* 忽略 */ }
       }, 350);
     });
   }
+  const captcha = reg ? mountCaptcha($('#auth-captcha', card), () => app.api('../../api/auth/captcha')) : Promise.resolve(() => null);
   $('#auth-form', card).addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
     const body = Object.fromEntries(f.entries());
+    const token = (await captcha)();
+    if (token) body.captcha = token;
     const btn = e.target.querySelector('button[type="submit"]');
     btn.disabled = true;
     try {
-      const r = await app.api(reg ? '/api/auth/register' : '/api/auth/login', body);
+      const r = await app.api(reg ? '../../api/auth/register' : '../../api/auth/login', body);
       await app.refreshPerms();
       const w = waiting;
       waiting = null;
@@ -91,13 +96,13 @@ export function accountModal() {
     </div>`, 'help auth');
   $('#acc-nick', card).addEventListener('submit', async (e) => {
     e.preventDefault();
-    try { const r = await app.api('/api/auth/nickname', { nickname: e.target.nickname.value.trim() }); await app.refreshPerms(); toast(`✅ 以后大家会叫你「${esc(r.user.nickname)}」`); closeModal(); } catch (err) { toast(`⚠️ ${esc(err.message)}`); }
+    try { const r = await app.api('../../api/auth/nickname', { nickname: e.target.nickname.value.trim() }); await app.refreshPerms(); toast(`✅ 以后大家会叫你「${esc(r.user.nickname)}」`); closeModal(); } catch (err) { toast(`⚠️ ${esc(err.message)}`); }
   });
   $('#acc-pw', card).addEventListener('submit', async (e) => {
     e.preventDefault();
-    try { await app.api('/api/auth/password', { old: e.target.old.value, password: e.target.password.value }); toast('✅ 密码已修改，其他设备已登出'); closeModal(); } catch (err) { toast(`⚠️ ${esc(err.message)}`); }
+    try { await app.api('../../api/auth/password', { old: e.target.old.value, password: e.target.password.value }); toast('✅ 密码已修改，其他设备已登出'); closeModal(); } catch (err) { toast(`⚠️ ${esc(err.message)}`); }
   });
-  const out = (all) => async () => { await app.api('/api/auth/logout', { all }).catch(() => {}); await app.refreshPerms(); closeModal(); toast(all ? '已登出所有设备' : '已退出登录'); };
+  const out = (all) => async () => { await app.api('../../api/auth/logout', { all }).catch(() => {}); await app.refreshPerms(); closeModal(); toast(all ? '已登出所有设备' : '已退出登录'); };
   $('#acc-out', card).onclick = out(false);
   $('#acc-out-all', card).onclick = out(true);
 }

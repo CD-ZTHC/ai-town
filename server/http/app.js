@@ -10,6 +10,7 @@ import { adminApi } from './admin-api.js';
 import { authApi } from './auth-api.js';
 import { identity } from './identity.js';
 import { withContext } from '../scheduler/context.js';
+import { get as setting } from '../settings/index.js';
 
 export const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 // 冻结：@hono/node-server 的轻量 Response 会往传入的 headers 对象里写 content-length，
@@ -72,6 +73,14 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
     console.warn('[api]', c.req.path, e.message);
     // 不向客户端暴露上游错误细节
     return withHeaders(c.json({ error: '居民们一时没反应过来，请稍后再试' }, 502), { ...SECURITY_HEADERS });
+  });
+
+  // 配置了人机验证时，页面的 CSP 放行 Turnstile 的脚本与 iframe（没配置时保持最严格的 CSP）
+  app.use('*', async (c, next) => {
+    await next();
+    if (setting('CAPTCHA_SITEKEY') && /text\/html/.test(c.res.headers.get('content-type') || '')) {
+      c.res.headers.set('Content-Security-Policy', SECURITY_HEADERS['Content-Security-Policy'].replace("script-src 'self'", "script-src 'self' https://challenges.cloudflare.com").replace("frame-ancestors", "frame-src https://challenges.cloudflare.com; frame-ancestors").replace("connect-src 'self'", "connect-src 'self' https://challenges.cloudflare.com"));
+    }
   });
 
   app.get('/healthz', (c) => c.json({ ok: true, ...worlds.health() }));

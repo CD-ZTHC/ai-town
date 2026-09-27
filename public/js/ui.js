@@ -170,6 +170,7 @@ export function applyPerms() {
   $('#more-account').hidden = !p.accounts;
   $('#more-account').textContent = p.user ? `👤 ${p.user.nickname}` : '👤 登录 / 注册';
   $('#more-report').hidden = !p.accounts || p.owner;
+  $('#more-manage').hidden = !p.owner;
   document.body.classList.toggle('world-preview', p.worldStatus === 'preview');
   $('#btn-weather').hidden = !canTry;
   if (!canTry && ui.tab === 'chat') ui.tab = 'sched';

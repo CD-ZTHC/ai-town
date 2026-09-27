@@ -67,6 +67,7 @@ export function run(cmd) {
   if (cmd === 'admin') return UI.adminModal();
   if (cmd === 'account') return UI.accountModal();
   if (cmd === 'report') return UI.reportModal();
+  if (cmd === 'manage') { location.href = app.perms.worldStatus === 'preview' ? `../../draft.html#${encodeURIComponent(app.perms.world)}` : '../../mine.html'; return; }
 }
 
 // ---------- 命令面板 ----------

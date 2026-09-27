@@ -80,7 +80,8 @@ ws.onmessage = (ev) => {
   } else if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') {
     const e = msg.params.entry;
     // favicon 之类的 404 与本次检查无关
-    if (!/favicon/.test(e.url || '')) problems.push(`日志：${e.text}${e.url ? `（${e.url}）` : ''}`);
+    // 游客调用互动接口的 401 是设计好的流程（弹出登录框），不算错误
+    if (!/favicon/.test(e.url || '') && !/status of 401/.test(e.text)) problems.push(`日志：${e.text}${e.url ? `（${e.url}）` : ''}`);
   }
 };
 const send = (method, params = {}) => new Promise((resolve, reject) => {
@@ -209,6 +210,26 @@ await step('22-admin-reports', async () => {
 await step('23-admin-evolution', async () => {
   await send('Page.navigate', { url: `${base}/admin/#evolution` });
   await waitFor(() => evaluate(`document.querySelector('#page')?.textContent.includes('进化引擎')`), 10000, '管理面板 · 进化');
+});
+// 公网模式：游客点互动入口 → 弹出登录框 → 注册 → 自动继续刚才的操作（现身）
+const pubPort = port + 100;
+const pub = spawn(process.execPath, ['server/index.js'], { env: { ...env, PORT: String(pubPort), PUBLIC_MODE: '1', DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'town-bc-pub-')) }, stdio: ['ignore', 'pipe', 'pipe'] });
+procs.push(pub);
+pub.stdout.on('data', (d) => (serverLog += d));
+pub.stderr.on('data', (d) => (serverLog += d));
+const pubBase = `http://127.0.0.1:${pubPort}`;
+await waitFor(() => fetch(`${pubBase}/w/yunxi/`).then((r) => r.ok), 15000, '公网模式服务器启动');
+await step('24-public-login', async () => {
+  await send('Page.navigate', { url: `${pubBase}/w/yunxi/?mode=observe` });
+  await waitFor(() => evaluate(`Boolean(window.app?.perms?.loginToInteract)`), 15000, '游客身份');
+  // 游客现身：先弹出登录框
+  await evaluate(`(window.__av = app.api('/api/avatar', { color: '#64b5f6' }).then((r) => r.avatar.name, (e) => 'ERR ' + e.message), true)`);
+  await waitFor(() => evaluate(`Boolean(document.querySelector('#auth-form'))`), 5000, '登录框');
+  await evaluate(`document.querySelector('#auth-switch').click(), true`);
+  await waitFor(() => evaluate(`Boolean(document.querySelector('#auth-form input[name="nickname"]'))`), 5000, '注册表单');
+  await evaluate(`(() => { const f = document.querySelector('#auth-form'); f.username.value = 'browser_check'; f.nickname.value = '巡检员'; f.password.value = 'correct-horse-9'; f.requestSubmit(); return true; })()`);
+  const name = await waitFor(() => evaluate(`window.__av instanceof Promise ? window.__av.then((x) => x) : null`), 10000, '注册后自动继续现身');
+  if (name !== '巡检员') throw new Error(`现身结果：${name}`);
 });
 
 ws.close();
