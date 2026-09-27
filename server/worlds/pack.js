@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { solveLayout } from '../worldgen/layout.js';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const OFFICIAL_DIR = path.join(ROOT, 'worlds');
@@ -24,6 +25,7 @@ export const VoiceSchema = z.object({
   name: text(16), // 世界名（界面标题）
   emoji: text(8).default('🌸'),
   place: text(8).default('小镇'), // 提示词与文案里对这个地方的称呼：小镇 / 森林 / 王国……
+  spawn: z.string().max(32).optional(), // 旅人现身的地点
   resident: text(8).default('居民'),
   chronicle: z.object({
     name: text(16), // 《云溪日报》
@@ -47,8 +49,22 @@ export const PackMetaSchema = z.object({
   source: z.object({ title: z.string().max(60), author: z.string().max(40).default(''), license: z.string().max(80).default('') }).optional(),
 }).passthrough();
 
+const PlaceSchema = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9_]{1,31}$/), kind: z.string().regex(/^[a-z_]{2,16}$/), name: text(16),
+  emoji: z.string().max(8).optional(), desc: z.string().max(120).optional(), public: z.boolean().optional(), outdoor: z.boolean().optional(),
+  size: z.tuple([z.number().int(), z.number().int()]).optional(),
+  style: z.object({ roof: z.string().regex(/^#[0-9a-f]{6}$/i).optional(), wall: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
+    roofShape: z.enum(['gable', 'thatch', 'flat', 'spire', 'dome']).optional(), material: z.enum(['plaster', 'wood', 'stone', 'brick']).optional(),
+    decor: z.array(z.enum(['chimney', 'flowers', 'awning', 'lantern', 'ivy', 'sign', 'bell', 'banner'])).max(6).optional(), sign: z.string().max(4).optional() }).optional(),
+});
+const AreaSchema = z.object({ id: z.string().regex(/^[a-z][a-z0-9_]{1,23}$/), name: z.string().max(16).optional(), biome: z.string().max(16).optional(), size: z.enum(['small', 'medium', 'large']).optional(), places: z.array(PlaceSchema).max(16) });
 export const MapSchema = z.object({
-  regions: z.array(z.object({ id: z.string().regex(/^[a-z][a-z0-9_]{1,23}$/), generator: z.string().min(1).max(32), name: text(16) }).passthrough()).min(1).max(12),
+  regions: z.array(z.object({
+    id: z.string().regex(/^[a-z][a-z0-9_]{1,23}$/), generator: z.string().min(1).max(32), name: text(16),
+    areas: z.array(AreaSchema).max(9).optional(), links: z.array(z.object({ from: z.string(), to: z.string(), via: z.enum(['path', 'trail', 'bridge']).optional() })).max(16).optional(),
+  }).passthrough()).min(1).max(12)
+    .refine((rs) => rs[0].id === 'town', { message: '第一个区域是主地图，id 必须是 town' })
+    .refine((rs) => new Set(rs.map((r) => r.id)).size === rs.length, { message: '区域 id 重复' }),
 });
 
 const readJSON = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
@@ -110,6 +126,15 @@ export function writePack(dir, { world, map, arcs = [], bible = null }) {
 export function packSpec(pack, overrides = {}) {
   const w = structuredClone(pack.world);
   const spec = { ...w, regions: structuredClone(pack.map.regions), arcs: structuredClone(pack.arcs) };
+  // 语义布局的区域：由布局求解器给出建筑坐标与地点（确定性），叠在世界包自己写的建筑与地点之前
+  spec.buildings = spec.buildings || [];
+  spec.locations = spec.locations || {};
+  for (const r of spec.regions) {
+    if (r.generator !== 'layout-v1') continue;
+    const solved = solveLayout(r);
+    spec.buildings = [...solved.buildings, ...spec.buildings.filter((b) => !solved.buildings.some((x) => x.id === b.id))];
+    spec.locations = { ...solved.locations, ...spec.locations };
+  }
   spec.meta = { ...spec.meta, ...(overrides.rating ? { rating: overrides.rating } : {}), ...(overrides.storyteller ? { storyteller: overrides.storyteller } : {}) };
   return spec;
 }

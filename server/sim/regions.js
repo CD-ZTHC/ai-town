@@ -20,7 +20,13 @@ export class Regions {
 
   findLocation(id) { const w = this.worldOf(this.locRegion(id)); return Object.hasOwn(w.locations, id) ? w.locations[id] : null; }
 
-  regionOpen(id) { return id === 'town' || this.worldFlags[`region_${id}`] === true; }
+  /** 区域是否开放：剧情或管理员打开的（世界标记），或区域自己声明默认开放（linkRegions / 世界包里的 open） */
+  regionOpen(id) {
+    if (id === 'town') return true;
+    const flag = this.worldFlags[`region_${id}`];
+    if (flag !== undefined) return flag === true;
+    return this.spec.regions.find((r) => r.id === id)?.open === true;
+  }
 
   openRegion(id, open = true) {
     if (!Object.hasOwn(this.regions, id) || id === 'town') return false;

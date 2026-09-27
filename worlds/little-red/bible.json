@@ -1,0 +1,11 @@
+{
+ "note": "手写的示例世界包：改编自格林童话《小红帽》（公版）。事实标注「原著」或「改编」。",
+ "characters": [
+  { "id": "red", "name": "小红帽", "source": "原著" }, { "id": "mom", "name": "妈妈", "source": "原著" }, { "id": "grandma", "name": "外婆", "source": "原著" },
+  { "id": "hunter", "name": "猎人", "source": "原著" }, { "id": "wolf", "name": "大灰狼", "source": "原著；「孤单、可以被感化」为改编" }
+ ],
+ "places": [ { "id": "forest_path", "name": "林间小路", "source": "原著" }, { "id": "flower_meadow", "name": "野花草地", "source": "原著" }, { "id": "bakery", "name": "麦穗面包房", "source": "改编" } ],
+ "rules": [ { "text": "没有人会被吃掉或死去", "source": "改编（原著中外婆与小红帽被吞下，改为全年龄）" } ],
+ "timeline": [ { "text": "妈妈让小红帽给外婆送蛋糕", "source": "原著" }, { "text": "大灰狼在林中与小红帽搭话", "source": "原著" } ],
+ "style": "童话、简洁、有悬念"
+}

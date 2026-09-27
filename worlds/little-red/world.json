@@ -1,0 +1,92 @@
+{
+ "id": "little-red",
+ "specVersion": 2,
+ "meta": { "name": "小红帽", "rating": "adventure", "storyteller": "voyage" },
+ "lore": {
+  "summary": "黑森林边上有个小村子。小红帽戴着外婆做的红帽子，常常提着篮子穿过森林去看外婆。妈妈叮嘱她不许在林子里绕远路；森林里住着一只狡猾又贪吃的大灰狼，还有一位守护森林的猎人。",
+  "pillars": ["没有人会被吃掉或死去，冒险总有惊无险", "大灰狼狡猾贪吃，但可以被机智打败，也可以被善意感化", "小红帽勇敢、好奇，会从错误中学到东西"],
+  "breakers": "吃掉|死亡|死去|杀死|血腥|屠",
+  "canon": []
+ },
+ "calendar": {
+  "weekdays": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+  "events": [ { "id": "grandma_birthday", "name": "外婆生日", "emoji": "🎂", "day": 3, "from": "10:00", "location": "grandma_house", "hint": "小红帽要把妈妈烤的蛋糕送到外婆家", "countdown": true } ]
+ },
+ "weather": {
+  "sunny": { "name": "晴朗", "emoji": "☀️", "weight": 50 },
+  "cloudy": { "name": "多云", "emoji": "⛅", "weight": 25 },
+  "rain": { "name": "下雨", "emoji": "🌧️", "weight": 15 },
+  "fog": { "name": "起雾", "emoji": "🌫️", "weight": 10, "avoid": { "from": "10:00", "to": "17:00", "fallback": "cloudy" } }
+ },
+ "locations": {},
+ "buildings": [],
+ "personas": [
+  { "id": "red", "name": "小红帽", "age": 9, "role": "戴红帽子的小姑娘", "home": "red_house", "work": "village_square",
+    "persona": "好奇、热心、有点冒失，最喜欢外婆做的红帽子。说话脆生生的，看到漂亮的花就挪不开脚，但答应过的事一定做到。",
+    "goal": "外婆生日那天，要把妈妈烤的蛋糕和一罐蜂蜜平平安安送到外婆家。",
+    "look": { "skin": "#f7d5bd", "hair": "#6b3a20", "hairStyle": "bun", "shirt": "#d62c2c", "pants": "#6b4a8a", "acc": ["apron"] },
+    "start": { "abilities": ["pick_flowers"], "inventory": { "basket": 1 } },
+    "relations": { "mom": [70, "妈妈，总是叮嘱我别绕远路"], "grandma": [80, "最疼我的外婆"], "hunter": [30, "森林里的猎人叔叔，看起来凶其实很好"], "wolf": [0, "听说森林里有只大灰狼"] },
+    "memories": ["外婆后天过生日，妈妈说要烤一个蜂蜜蛋糕让我送去。", "妈妈叮嘱：走林间小路，不许在林子里绕远，不要跟陌生人说话。", "野花草地的花开了，外婆最喜欢花。"] },
+  { "id": "mom", "name": "妈妈", "age": 36, "role": "小红帽的妈妈", "home": "red_house", "work": "bakery",
+    "persona": "温柔又操心，手艺很好，做事有条理。嘴上唠叨，心里全是牵挂。",
+    "goal": "给外婆烤一个最好吃的蜂蜜蛋糕，并确保小红帽路上平安。",
+    "look": { "skin": "#f3cfb3", "hair": "#4a2c20", "hairStyle": "long", "shirt": "#e8a0a0", "pants": "#5a5a7a", "acc": ["apron"] },
+    "start": { "abilities": ["bake_cake"], "inventory": { "honey": 1 } },
+    "relations": { "red": [80, "我的宝贝女儿，就是有点冒失"], "grandma": [70, "我的妈妈，一个人住在山坡上"], "hunter": [40, "靠得住的猎人"] },
+    "memories": ["面包房的老板娘说最近有人在林子里见过大灰狼。", "外婆的生日快到了，蛋糕要用最新鲜的蜂蜜。"] },
+  { "id": "grandma", "name": "外婆", "age": 72, "role": "住在山坡上的外婆", "home": "grandma_house", "work": "grandma_garden",
+    "persona": "慈祥、爱讲故事，腿脚不太好但心里明白。年轻时在森林里认识每一种草药。",
+    "goal": "想在生日那天给小红帽讲一个关于森林的秘密。",
+    "look": { "skin": "#f1d1b8", "hair": "#e8e8e8", "hairStyle": "bun", "shirt": "#8e6bb8", "pants": "#5a4a6a", "acc": ["glasses"] },
+    "start": { "abilities": ["old_story"], "inventory": {} },
+    "relations": { "red": [90, "我的小外孙女"], "mom": [70, "我的女儿"], "hunter": [50, "常来帮我劈柴的好孩子"] },
+    "memories": ["生日要到了，小红帽说会来看我。", "森林深处那片野花，是我年轻时种下的。"] },
+  { "id": "hunter", "name": "猎人", "age": 40, "role": "守护森林的猎人", "home": "hunter_cabin", "work": "forest_path",
+    "persona": "话少、稳重、眼尖，其实心很软。不喜欢打猎，更愿意把迷路的人送回家。",
+    "goal": "最近大灰狼太嚣张了，想弄清楚它在打什么主意。",
+    "look": { "skin": "#d9a88a", "hair": "#3a2a1a", "hairStyle": "short", "shirt": "#4a6a3a", "pants": "#5a4a3a", "acc": ["beard", "coat"] },
+    "start": { "abilities": [], "inventory": {} },
+    "relations": { "wolf": [-20, "狡猾的家伙，得盯着它"], "grandma": [50, "山坡上的老人家，要多照应"], "red": [30, "冒失的小丫头"] },
+    "memories": ["林子里的脚印说明大灰狼这几天总在外婆家附近转悠。"] },
+  { "id": "wolf", "name": "大灰狼", "age": 7, "role": "森林里的大灰狼", "home": "wolf_den", "work": "flower_meadow",
+    "persona": "狡猾、贪吃、爱耍小聪明，嘴巴甜得很，其实很孤单，没有朋友。自称“森林里最聪明的狼”。",
+    "goal": "想尝尝传说中的蜂蜜蛋糕，正在盘算怎么从小红帽的篮子里弄到手。",
+    "look": { "skin": "#8a8a8a", "hair": "#5a5a5a", "hairStyle": "spiky", "shirt": "#6a6a6a", "pants": "#4a4a4a", "acc": ["earring"] },
+    "start": { "abilities": [], "inventory": {} },
+    "relations": { "hunter": [-30, "最讨厌的就是他"], "red": [10, "那个提篮子的小姑娘，篮子里好香"] },
+    "memories": ["听说村里的小姑娘要给外婆送蜂蜜蛋糕。", "野花草地是个好地方，小姑娘们一看到花就走不动路。"] }
+ ],
+ "creatures": {},
+ "threads": [
+  { "id": "cake", "title": "送蛋糕", "owners": ["red", "mom"], "hook": "外婆生日那天，小红帽要把蜂蜜蛋糕送到外婆家" },
+  { "id": "wolf_plot", "title": "大灰狼的主意", "owners": ["wolf", "hunter"], "hook": "大灰狼盯上了篮子里的蛋糕，猎人盯上了大灰狼" }
+ ],
+ "items": {
+  "basket": { "name": "小篮子", "emoji": "🧺", "desc": "外婆编的小篮子" },
+  "honey": { "name": "蜂蜜", "emoji": "🍯", "desc": "新鲜的蜂蜜" },
+  "cake": { "name": "蜂蜜蛋糕", "emoji": "🎂", "desc": "妈妈烤的蜂蜜蛋糕，香极了" },
+  "flower": { "name": "野花", "emoji": "🌼", "desc": "野花草地的花" }
+ },
+ "structures": {},
+ "abilities": [
+  { "id": "pick_flowers", "name": "摘野花", "emoji": "🌼", "target": "self", "desc": "摘一束野花", "aiHint": "在野花草地或花园时", "cost": { "stamina": 5 }, "cooldown": 60,
+    "effects": [ { "op": "giveItem", "item": "flower", "count": 1 } ], "learn": { "teach": true } },
+  { "id": "bake_cake", "name": "烤蛋糕", "emoji": "🎂", "target": "self", "desc": "用蜂蜜烤一个蛋糕", "aiHint": "在家或面包房、手里有蜂蜜时", "cost": { "stamina": 10, "items": { "honey": 1 } }, "cooldown": 120,
+    "effects": [ { "op": "giveItem", "item": "cake", "count": 1 }, { "op": "vfx", "preset": "burst", "color": "#ffb347", "radius": 1 } ] },
+  { "id": "old_story", "name": "讲故事", "emoji": "📜", "target": "agent", "desc": "讲一个森林里的老故事", "aiHint": "有人来看望、对方好奇时", "cost": { "stamina": 5 }, "cooldown": 120,
+    "effects": [ { "op": "memory", "text": "{self}给我讲了一个森林里的老故事", "target": "target", "importance": 5 }, { "op": "affinity", "toward": "self", "delta": 2, "target": "target" } ] }
+ ],
+ "rules": [],
+ "factions": [],
+ "params": { "walkSpeed": 3.2, "maxConvos": 2, "convoBaseProb": 0.25, "reflectThreshold": 40, "dayEnd": 1320 },
+ "voice": {
+  "name": "小红帽", "emoji": "🧺", "place": "森林村", "resident": "居民", "spawn": "village_square",
+  "chronicle": { "name": "森林公告", "kind": "公告", "editor": "村口广场的布告员", "style": "像童话一样简短、带点悬念，爱用“从前”“这时候”" },
+  "ui": { "tagline": "穿过黑森林，去外婆家……", "welcome": "改编自格林童话《小红帽》：一个会自己演下去的童话。小红帽、妈妈、外婆、猎人和大灰狼各有心思，故事不一定照着原著走。",
+   "sampleEvents": ["🍯 面包房今天的蜂蜜卖完了，只剩最后一罐！", "🌫️ 黑森林起了大雾，林间小路看不清了。", "🐺 有人在野花草地看见了一条灰色的大尾巴。", "🎂 外婆托人捎话：生日那天想吃蜂蜜蛋糕。"] }
+ },
+ "rhythm": { "plan": "06:00", "diary": "21:30", "chronicle": "22:00" },
+ "era": { "tech": "童话里的中世纪村庄", "forbidden": ["手机", "汽车", "电视", "电脑", "枪"] },
+ "source": { "title": "小红帽（格林童话）", "author": "格林兄弟", "license": "公版" }
+}

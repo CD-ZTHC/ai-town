@@ -3,10 +3,12 @@
 //   moonrealm-v1  暗月界
 //   layout-v1     语义布局 → 地图（创世生成的世界用，见 layout.js）
 import { buildWorld, buildMoonRealm } from '../world.js';
+import { buildLayoutRegion } from './layout.js';
 
 const GENERATORS = {
   'yunxi-v1': (region, spec) => buildWorld({ buildings: spec.buildings, locationInfo: spec.locations }),
   'moonrealm-v1': (region, spec) => buildMoonRealm({ locationInfo: spec.locations }),
+  'layout-v1': (region, spec) => buildLayoutRegion(region, spec),
 };
 
 export function registerGenerator(name, fn) { GENERATORS[name] = fn; }
@@ -19,6 +21,7 @@ export function buildRegion(region, spec) {
   const w = gen(region, spec);
   w.id = region.id;
   w.name = region.name || w.name;
+  w.generator = region.generator;
   return w;
 }
 

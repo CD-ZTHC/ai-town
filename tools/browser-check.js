@@ -165,6 +165,10 @@ await step('13-play', async () => {
   await waitFor(() => evaluate(`document.body.dataset.mode === 'play'`), 10000, '游戏模式');
   await key('w');
 }, { wait: 1500 });
+await step('18-little-red', async () => {
+  await send('Page.navigate', { url: `${base}/w/little-red/?mode=observe` });
+  await waitFor(() => evaluate(`document.querySelectorAll('#roster .rcard').length >= 5 && document.title.includes('小红帽')`), 15000, '小红帽世界');
+}, { wait: 1500 });
 await step('15-lobby', async () => {
   await send('Page.navigate', { url: `${base}/` });
   await waitFor(() => evaluate(`document.querySelectorAll('.world-card').length >= 1`), 10000, '世界大厅');

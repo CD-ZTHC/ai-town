@@ -422,9 +422,11 @@ export class Town extends EventEmitter {
   sendToClinic(a) {
     const m = Math.floor(this.minute) + 1;
     if (m >= 22 * 60) return;
-    this.insertEntry(a, { start: m, end: Math.min(m + 60, 23 * 60), location: 'clinic', activity: '在诊所休息', emoji: '🏥', src: 'commit' });
-    const doc = this.byId.zhou;
-    if (doc && this.agents.includes(doc) && doc !== a) addMemory(doc, { t: this.t, type: 'event', text: `${a.name}被吓晕了，送到了诊所`, importance: 6 });
+    // 有诊所就去诊所（医生会记住这件事），没有就回家休息
+    const clinic = this.findLocation('clinic') ? 'clinic' : 'home';
+    this.insertEntry(a, { start: m, end: Math.min(m + 60, 23 * 60), location: clinic, activity: clinic === 'clinic' ? '在诊所休息' : '回家休息', emoji: '🏥', src: 'commit' });
+    const doc = clinic === 'clinic' ? this.agents.find((x) => x.work === 'clinic' && x.kind !== 'creature') : null;
+    if (doc && doc !== a) addMemory(doc, { t: this.t, type: 'event', text: `${a.name}被吓晕了，送到了${this.locName('clinic')}`, importance: 6 });
   }
 
   /** 按游戏日记录 token 用量（每天清晨结算前一天），用于估算真实的日用量 */
@@ -472,6 +474,7 @@ export class Town extends EventEmitter {
     }
     this.spec = applyOp(this.spec, rec, rec);
     if (rec.op === 'addBuilding') this.rebuildWorld();
+    if (rec.op === 'addRegion' || rec.op === 'linkRegions') this.rebuildRegions();
     this.specOps.push(rec);
     this.journal.append(rec);
     const desc = OPS[rec.op].describe?.(rec.args) || rec.op;
@@ -493,8 +496,10 @@ export class Town extends EventEmitter {
     }
     const r = replay(spec, this.specOps);
     const hadBuildings = JSON.stringify(this.spec.buildings);
+    const hadRegions = JSON.stringify(this.spec.regions);
     this.spec = r.spec;
-    if (JSON.stringify(this.spec.buildings) !== hadBuildings) this.rebuildWorld();
+    if (JSON.stringify(this.spec.regions) !== hadRegions) this.rebuildRegions();
+    else if (JSON.stringify(this.spec.buildings) !== hadBuildings) this.rebuildWorld();
     for (const a of this.agents) a.abilities = a.abilities.filter((id) => findAbility(this.spec, id));
     this.emit('world', { spec: publicSpec(this.spec), op: null, desc: '世界规格已重新计算' });
     return r.skipped.length;
@@ -524,6 +529,19 @@ export class Town extends EventEmitter {
     for (const a of this.agents) if (a.status === 'walking') { a.curKey = null; a.path = []; }
     for (const c of this.creatures.list) c.path = [];
     this.emit('worldmap', this.world);
+  }
+
+  /** 区域增减（addRegion / linkRegions）后重建所有区域；前端重新拿一次初始数据 */
+  rebuildRegions() {
+    this.regions = buildRegions(this.spec);
+    this.world = this.regions.town;
+    // 所在区域被移除的角色回到主地图的渡口
+    for (const a of this.agents) {
+      if (!this.regions[a.region || 'town']) Object.assign(a, { region: 'town', x: this.world.gate.x, y: this.world.gate.y, inside: null, path: [], dest: null, curKey: null, locId: null });
+      if (a.status === 'walking') { a.curKey = null; a.path = []; }
+    }
+    this.emit('regions', this.regionsView());
+    this.emit('reinit');
   }
 
   worldHistory() {

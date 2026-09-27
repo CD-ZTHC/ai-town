@@ -94,7 +94,7 @@ export function cleanOverlay(list, world) {
     if (!isObj(c) || !['emoji', 'text', 'ring', 'sparkle'].includes(c.kind)) continue;
     if (!(fin(c.x) && fin(c.y) && c.x >= 0 && c.y >= 0 && c.x <= W && c.y <= Hh)) continue;
     const color = /^#[0-9a-f]{6}$/i.test(String(c.color || '')) ? c.color : '#ffffff';
-    out.push({ kind: c.kind, x: +c.x.toFixed(2), y: +c.y.toFixed(2), text: String(c.text ?? c.emoji ?? '').slice(0, 12), color, r: fin(c.r) ? Math.max(0.3, Math.min(6, c.r)) : 1, region: c.region === 'moonrealm' ? 'moonrealm' : 'town' });
+    out.push({ kind: c.kind, x: +c.x.toFixed(2), y: +c.y.toFixed(2), text: String(c.text ?? c.emoji ?? '').slice(0, 12), color, r: fin(c.r) ? Math.max(0.3, Math.min(6, c.r)) : 1, region: typeof c.region === 'string' && /^[a-z][a-z0-9_]{1,23}$/.test(c.region) ? c.region : 'town' });
   }
   return out;
 }

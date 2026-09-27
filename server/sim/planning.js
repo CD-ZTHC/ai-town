@@ -19,15 +19,23 @@ export class Planning {
     for (const a of this.agents) if (a.kind !== 'creature') this.planDay(a);
   }
 
+  /** 候选地点里这个世界有的（云溪镇的地点都在，因此随机数的消耗与之前一致）；一个都没有时退回任意公共地点 */
+  placesOr(ids) {
+    const have = ids.filter((id) => id === 'home' || this.findLocation(id));
+    if (have.length) return have;
+    const pub = this.publicLocs().filter((id) => this.locRegion(id) === 'town');
+    return pub.length ? pub : ['home'];
+  }
+
   fallbackSchedule(a) {
-    const w = a.work === a.home ? 'park' : a.work;
+    const w = a.work === a.home ? this.placesOr(['park'])[0] : a.work;
     // 暗月界开放时，傍晚的散步有机会改成去渡口那头逛逛
     const moon = this.moonOuting(a);
-    const walk = moon ? [moon.location, moon.activity, moon.emoji] : [rand(['square', 'park', 'pier']), '散步透气', '🚶'];
+    const walk = moon ? [moon.location, moon.activity, moon.emoji] : [rand(this.placesOr(['square', 'park', 'pier'])), '散步透气', '🚶'];
     const raw = [
       ['06:30', '07:30', 'home', '起床吃早饭', '🍳'], ['07:30', '11:30', w, '忙自己的事', '💼'],
-      ['11:30', '12:30', 'cafe', '吃午饭', '🍱'], ['12:30', '17:00', w, '继续忙', '💼'],
-      ['17:00', '18:30', ...walk], ['18:30', '20:30', rand(['tavern', 'home']), '吃晚饭', '🍲'],
+      ['11:30', '12:30', this.placesOr(['cafe'])[0], '吃午饭', '🍱'], ['12:30', '17:00', w, '继续忙', '💼'],
+      ['17:00', '18:30', ...walk], ['18:30', '20:30', rand(this.placesOr(['tavern', 'home'])), '吃晚饭', '🍲'],
       ['20:30', '22:30', 'home', '看书休息', '📖'],
     ];
     return raw.map(([s, e, l, act, em]) => ({ start: parseHM(s), end: parseHM(e), location: l, activity: act, emoji: em, src: 'plan' }));
@@ -38,7 +46,7 @@ export class Planning {
    * 按「角色 + 日期」取固定的伪随机数，同一天的结果稳定；听说过、去过的人更想去。
    */
   moonOuting(a) {
-    if (!this.regionOpen('moonrealm') || a.kind === 'creature') return null;
+    if (!this.regions.moonrealm || !this.regionOpen('moonrealm') || a.kind === 'creature') return null;
     const belief = a.beliefs.find((b) => b.about === '暗月界');
     const chance = 0.25 + (belief ? 0.2 * belief.confidence : 0) + (a.visited?.includes('moonrealm') ? 0.1 : 0);
     let h = 2166136261;

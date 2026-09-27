@@ -15,6 +15,8 @@
 | `addStructure` | minor | ✅ | {"id","name":"≤8字","emoji","ttl":10~240,"tags":["light"],"light":{"r":20~160,"color":"255,200,100"}} |
 | `addAbility` | minor | ✅ | {"id","name":"≤8字","emoji","target":"self/agent/area","desc":"≤50字","aiHint":"≤50字","cost":{"stamina":0~40,"items":{"物品id":1~3}},"cooldown":0~1440,"requires":"表达式(可选)","effects":[效果，最多8个],"learn":{"teach":true,"research":{"location":"地点id","keywords":["关键词"]}}} |
 | `addBuilding` | minor | ✅ | {"id":"英文小写id","name":"≤10字","kind":"英文小写类型，如 tower/shrine/shop/garden","w":3~7,"h":3~6,"place":{"near":"地点id","within":6~16},"roof":"#rrggbb","wall":"#rrggbb","sign":"一个emoji","desc":"≤60字","lightAtNight":true/false} —— 不要写坐标，系统会在 near 附近自动找空地；新建筑会成为居民可以去的地点 |
+| `addRegion` | major | — | 仅管理员 / 剧情弧使用 |
+| `linkRegions` | minor | — | 仅管理员 / 剧情弧使用 |
 | `addPersona` | major | — | 仅管理员 / 剧情弧使用 |
 | `setPersonaStatus` | major | — | 仅管理员 / 剧情弧使用 |
 | `addRule` | major | ✅ | {"id","name":"≤16字","when":{"every":10~1440} 或 {"at":"HH:MM"} 或 {"weather":"天气id"} 或 {"enter":"地点id"},"forEach":"agent"(可选),"if":"表达式(可选)","then":[效果]} |

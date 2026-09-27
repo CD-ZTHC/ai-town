@@ -34,15 +34,17 @@ export class AvatarSystem {
       return old;
     }
     if (this.list.length >= setting('AVATAR_MAX')) throw err(429, `这里的访客已经满了（最多 ${setting('AVATAR_MAX')} 位），稍后再来吧`);
-    const spots = town.findLocation('square')?.spots || [];
-    const s = spots.length ? spots[Math.floor(Math.random() * spots.length)] : town.locCenter('square') || { x: 50, y: 34 };
+    // 旅人出现的地方：世界包的 voice.spawn，其次是广场，再其次是主地图上第一个有站位的公共地点
+    const spawn = [town.spec.voice?.spawn, 'square', ...town.publicLocs()].find((id) => id && town.locRegion(id) === 'town' && town.findLocation(id)?.spots?.length) || 'square';
+    const spots = town.findLocation(spawn)?.spots || [];
+    const s = spots.length ? spots[Math.floor(Math.random() * spots.length)] : town.locCenter(spawn) || town.world.gate;
     const v = {
       id: `v${++this.seq}`, uid, ip, name, color: COLORS.includes(color) ? color : COLORS[this.seq % COLORS.length],
-      x: s.x, y: s.y, dir: 'down', moving: false, region: 'town', locId: 'square', path: [], hop: null,
+      x: s.x, y: s.y, dir: 'down', moving: false, region: 'town', locId: spawn, path: [], hop: null,
       seen: this.now(), movedAt: 0,
     };
     this.list.push(v);
-    town.log('avatar', `👣 旅人「${name}」来到了${town.locName('square')}`, {});
+    town.log('avatar', `👣 旅人「${name}」来到了${town.locName(spawn)}`, {});
     town.emit('avatars');
     return v;
   }

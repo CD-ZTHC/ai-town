@@ -6,6 +6,7 @@ import { PARAM_BOUNDS, RATINGS, STORYTELLERS, validateSpec } from './spec.js';
 import { parseHM } from '../memory.js';
 import { validateAbility } from './abilities.js';
 import { validateRule } from './rules.js';
+import { solveLayout, layoutProblems, BIOME_IDS, BUILDING_KINDS, OUTDOOR_KINDS } from '../worldgen/layout.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const ID_RE = /^[a-z][a-z0-9_]{1,23}$/;
@@ -169,6 +170,56 @@ export const OPS = {
     },
     describe: (a) => `小镇上建起了新地方：${str(a.sign || a.emoji, 4)}「${str(a.name, 10)}」`,
   },
+  // 开辟一个新区域（多世界设计 §3.2）：只描述语义布局，由生成器 layout-v1 落地；默认关闭，linkRegions 之后才能过去
+  addRegion: {
+    level: 'major',
+    check(spec, a) {
+      if (!validId(a.id) || a.id === 'town') return 'id 不合法';
+      if (spec.regions.some((r) => r.id === a.id)) return `区域已存在：${a.id}`;
+      if (spec.regions.length >= 6) return '区域已达上限（6 个）';
+      if (!str(a.name, 16)) return 'name 不能为空（≤16字）';
+      if (a.biome != null && !BIOME_IDS.includes(a.biome)) return `biome 只能是 ${BIOME_IDS.join('/')}`;
+      const areas = Array.isArray(a.areas) ? a.areas : [];
+      if (!areas.length || areas.length > 4) return 'areas 需要 1~4 块';
+      const ids = new Set();
+      for (const ar of areas) {
+        if (!validId(ar.id)) return `区域块 id 不合法：${ar.id}`;
+        if (ar.biome != null && !BIOME_IDS.includes(ar.biome)) return `biome 只能是 ${BIOME_IDS.join('/')}`;
+        if (!Array.isArray(ar.places) || !ar.places.length || ar.places.length > 8) return '每块需要 1~8 个地点';
+        for (const p of ar.places) {
+          if (!validId(p.id)) return `地点 id 不合法：${p.id}`;
+          if (ids.has(p.id) || Object.hasOwn(spec.locations, p.id) || spec.buildings.some((b) => b.id === p.id)) return `地点已存在：${p.id}`;
+          ids.add(p.id);
+          if (!Object.hasOwn(BUILDING_KINDS, p.kind) && !Object.hasOwn(OUTDOOR_KINDS, p.kind)) return `地点类型未知：${p.kind}`;
+          if (!str(p.name, 16)) return '地点需要 name';
+        }
+      }
+      const problems = layoutProblems(regionOf(a), spec);
+      return problems.length ? `布局不可行：${problems[0]}` : null;
+    },
+    apply(spec, a) {
+      const r = regionOf(a);
+      const solved = solveLayout(r);
+      spec.regions.push({ ...r, open: false });
+      spec.buildings.push(...solved.buildings);
+      Object.assign(spec.locations, solved.locations);
+    },
+    describe: (a) => `世界的边缘出现了一片新的地方：「${str(a.name, 16)}」`,
+  },
+  // 打通（或封闭）通往某个区域的路
+  linkRegions: {
+    level: 'minor',
+    check(spec, a) {
+      const r = spec.regions.find((x) => x.id === a.region);
+      if (!r || r.id === 'town') return `未知区域：${a.region}`;
+      return null;
+    },
+    apply(spec, a) {
+      const r = spec.regions.find((x) => x.id === a.region);
+      r.open = a.open !== false;
+    },
+    describe: (a) => (a.open === false ? `通往「${a.region}」的路被封上了` : `通往「${a.region}」的路打通了`),
+  },
   addPersona: {
     level: 'major',
     check(spec, a) {
@@ -226,6 +277,17 @@ export class OpError extends Error {
  * 在规格副本上应用一条操作，返回新规格；失败抛出 OpError，原规格不受影响。
  * 应用后还会做一次整体校验，防止单个操作检查不到的连锁问题。
  */
+/** addRegion 的参数 → 区域描述 */
+function regionOf(a) {
+  return {
+    id: a.id, name: str(a.name, 16), generator: 'layout-v1', biome: a.biome || 'meadow', seed: Number.isInteger(a.seed) ? a.seed : undefined,
+    size: [40, 30], ...(a.gate ? { gate: a.gate } : {}),
+    areas: (a.areas || []).map((ar) => ({ id: ar.id, biome: ar.biome, size: ['small', 'medium', 'large'].includes(ar.size) ? ar.size : 'medium',
+      places: (ar.places || []).map((p) => ({ id: p.id, kind: p.kind, name: str(p.name, 16), emoji: str(p.emoji, 4) || undefined, desc: str(p.desc, 80) || undefined, public: p.public !== false })) })),
+    links: Array.isArray(a.links) ? a.links.slice(0, 6).map((l) => ({ from: str(l.from, 24), to: str(l.to, 24), via: l.via === 'trail' ? 'trail' : 'path' })) : undefined,
+  };
+}
+
 export function applyOp(spec, op, ctx = {}) {
   const def = Object.hasOwn(OPS, op?.op ?? '') && OPS[op.op];
   if (!def) throw new OpError(`未知操作：${op?.op}`);

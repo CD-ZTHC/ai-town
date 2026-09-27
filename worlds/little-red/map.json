@@ -1,0 +1,31 @@
+{
+ "regions": [
+  {
+   "id": "town", "generator": "layout-v1", "name": "森林边的村子", "seed": 1697, "size": [64, 44], "biome": "meadow", "gate": "village_square",
+   "areas": [
+    { "id": "village", "name": "村子", "biome": "village", "size": "medium", "places": [
+      { "id": "red_house", "kind": "cottage", "name": "小红帽家", "emoji": "🏠", "desc": "村口的红顶小屋，妈妈在这里烤蛋糕", "public": false,
+        "style": { "roof": "#c0392b", "wall": "#f4e3c3", "roofShape": "gable", "decor": ["chimney", "flowers"] } },
+      { "id": "bakery", "kind": "bakery", "name": "麦穗面包房", "emoji": "🥖", "desc": "妈妈常来买面粉和蜂蜜，老板娘爱讲森林里的传闻",
+        "style": { "roof": "#d9a441", "wall": "#fbe8d2", "roofShape": "gable", "decor": ["awning", "chimney"], "sign": "🥖" } },
+      { "id": "village_square", "kind": "square", "name": "村口广场", "emoji": "⛲", "desc": "村子中心的小广场，大家在这里碰头闲聊" },
+      { "id": "village_well", "kind": "well", "name": "老水井", "emoji": "🪣", "desc": "村里的老井，井水清凉" }
+    ] },
+    { "id": "forest", "name": "黑森林", "biome": "dark_forest", "size": "large", "places": [
+      { "id": "forest_path", "kind": "path", "name": "林间小路", "emoji": "🌲", "desc": "穿过黑森林的小路，妈妈说走这条路不许绕远" },
+      { "id": "flower_meadow", "kind": "meadow", "name": "野花草地", "emoji": "🌼", "desc": "林子深处的一片野花，最容易让人忘了赶路" },
+      { "id": "hunter_cabin", "kind": "cabin", "name": "猎人小屋", "emoji": "🏕️", "desc": "猎人的木头小屋，门口堆着柴",
+        "style": { "roof": "#6b4a2f", "wall": "#a07850", "roofShape": "flat", "material": "wood", "decor": ["lantern"] } },
+      { "id": "wolf_den", "kind": "hut", "name": "狼窝", "emoji": "🐺", "desc": "藏在树根下的洞穴，大灰狼的家", "public": false,
+        "style": { "roof": "#4a4a4a", "wall": "#7a6a5a", "roofShape": "thatch", "material": "stone" } }
+    ] },
+    { "id": "grandma_hill", "name": "外婆的山坡", "biome": "meadow", "size": "small", "places": [
+      { "id": "grandma_house", "kind": "cottage", "name": "外婆家", "emoji": "🏡", "desc": "三棵大橡树下的小屋，外婆住在这里", "public": false,
+        "style": { "roof": "#8e44ad", "wall": "#f2e2c2", "roofShape": "thatch", "decor": ["chimney", "ivy"] } },
+      { "id": "grandma_garden", "kind": "garden", "name": "外婆的花园", "emoji": "🌷", "desc": "外婆种的花和草药，篱笆上爬满了牵牛花" }
+    ] }
+   ],
+   "links": [ { "from": "village", "to": "forest", "via": "path" }, { "from": "forest", "to": "grandma_hill", "via": "trail" } ]
+  }
+ ]
+}

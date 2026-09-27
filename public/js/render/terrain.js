@@ -3,6 +3,10 @@
 import { shade } from '../sprites.js';
 import { TS, T, h2, vnoise, mix, clamp01, roundRect } from './util.js';
 
+const DEFAULT_PAL = { grass: ['#68a74a', '#8cc963'], blade: ['#5a9640', '#9fd877'] };
+const PLANK_KINDS = new Set(['tavern', 'workshop', 'farmhouse']);
+const CHIMNEY_KINDS = new Set(['house', 'farmhouse', 'tavern', 'workshop', 'cafe']);
+
 export class Terrain {
   buildTreeSprites() {
     const make = (kind, v) => {
@@ -128,7 +132,8 @@ export class Terrain {
           if (!isGround(tile(x + dx, y + dy))) continue;
           for (let i = 0; i < TS; i += 3) {
             const len = 1 + Math.floor(h2(x * 7 + i, y * 3 + dx + dy * 5) * 4);
-            g.fillStyle = h2(i, x + y) > 0.5 ? '#6fae4f' : '#7dbb58';
+            const pal = this.grassPal(x + dx, y + dy);
+            g.fillStyle = pal === DEFAULT_PAL ? (h2(i, x + y) > 0.5 ? '#6fae4f' : '#7dbb58') : (h2(i, x + y) > 0.5 ? pal.grass[0] : pal.grass[1]);
             if (dy === -1) g.fillRect(X + i, Y, 3, len);
             if (dy === 1) g.fillRect(X + i, Y + TS - len, 3, len);
             if (dx === -1) g.fillRect(X, Y + i, len, 3);
@@ -166,8 +171,8 @@ export class Terrain {
         if (dx === 1) g.fillRect(X + TS - 3, Y, 3, TS);
       }
     }
-    // 广场马赛克：喷泉周围的圆环
-    if (this.world.id === 'town') {
+    // 广场马赛克：云溪镇喷泉周围的圆环（手工布局的坐标）
+    if (this.world.id === 'town' && (!this.world.generator || this.world.generator === 'yunxi-v1')) {
     g.save();
     g.strokeStyle = 'rgba(170,140,110,.55)';
     g.lineWidth = 6;
@@ -196,16 +201,24 @@ export class Terrain {
     for (const b of this.world.buildings) this.drawBuilding(g, b);
   }
 
+  /** 这一格的地貌调色板（生成器 layout-v1 按区域给出；云溪镇没有，用默认的草地色） */
+  grassPal(x, y) {
+    const w = this.world;
+    if (!w.biomes || !w.biome) return DEFAULT_PAL;
+    return w.biomes[w.biome[y * w.W + x]] || DEFAULT_PAL;
+  }
+
   paintGrass(g, x, y, flowers) {
     const X = x * TS, Y = y * TS;
+    const pal = this.grassPal(x, y);
     for (let by = 0; by < TS; by += 4) for (let bx = 0; bx < TS; bx += 4) {
       const n = vnoise((X + bx) / 150, (Y + by) / 150) * 0.8 + (h2(X + bx, Y + by) - 0.5) * 0.3;
-      g.fillStyle = mix('#68a74a', '#8cc963', n);
+      g.fillStyle = mix(pal.grass[0], pal.grass[1], n);
       g.fillRect(X + bx, Y + by, 4, 4);
     }
     for (let i = 0; i < 4; i++) {
       const tx = X + Math.floor(h2(x, y, i) * 28), ty = Y + Math.floor(h2(y, x, i + 9) * 26);
-      g.fillStyle = h2(x, y, i + 3) > 0.5 ? '#5a9640' : '#9fd877';
+      g.fillStyle = h2(x, y, i + 3) > 0.5 ? pal.blade[0] : pal.blade[1];
       g.fillRect(tx, ty + 2, 1, 3); g.fillRect(tx + 2, ty, 1, 5); g.fillRect(tx + 4, ty + 2, 1, 3);
     }
     if (flowers) {
@@ -363,13 +376,20 @@ export class Terrain {
     }
   }
 
+  /**
+   * 建筑：云溪镇的建筑按类型画；世界包里的建筑带 style（多世界设计 §3.2，按参数绘制）：
+   *   roofShape gable 人字 / thatch 茅草 / flat 平顶 / spire 尖塔 / dome 圆顶；material plaster / wood / stone / brick；
+   *   decor chimney 烟囱 / flowers 花箱 / awning 遮阳篷 / lantern 门灯 / ivy 爬藤 / banner 旗帜 / bell 钟
+   */
   drawBuilding(g, b) {
     const X = b.x * TS, Y = b.y * TS, w = b.w * TS, h = b.h * TS;
     const kind = b.kind;
+    const st = b.style || null;
+    const decor = new Set(st?.decor || []);
     // 未知类型（由世界规格新增的建筑）使用 b.wall 或默认墙色
     const wallC = { house: '#f2e2c2', library: '#e9dfcf', cafe: '#fbe8d2', tavern: '#7b5a40', clinic: '#f7f8fb', workshop: '#a58b6c', farmhouse: '#e8cfa6' }[kind] || b.wall || '#e8dcc4';
     const roofC = b.roof;
-    const roofH = Math.round(h * (kind === 'library' ? 0.5 : 0.55));
+    const roofH = Math.round(h * (kind === 'library' ? 0.5 : st?.roofShape === 'flat' ? 0.3 : st?.roofShape === 'spire' ? 0.62 : 0.55));
     // 阴影
     g.fillStyle = 'rgba(20,30,20,.22)';
     g.beginPath(); g.moveTo(X + w, Y + 14); g.lineTo(X + w + 12, Y + 24); g.lineTo(X + w + 12, Y + h + 6); g.lineTo(X + 8, Y + h + 6); g.lineTo(X, Y + h); g.lineTo(X + w, Y + h); g.fill();
@@ -378,7 +398,16 @@ export class Terrain {
     const wy = Y + roofH - 4;
     g.fillStyle = wallC;
     g.fillRect(X + 2, wy, w - 4, h - roofH + 4);
-    if (kind === 'tavern' || kind === 'workshop' || kind === 'farmhouse') {
+    if (st?.material === 'stone' || st?.material === 'brick') {
+      // 石块 / 砖：错缝的块
+      const bw = st.material === 'stone' ? 12 : 8, bh = st.material === 'stone' ? 8 : 5;
+      for (let yy = wy, row = 0; yy < Y + h - 6; yy += bh, row++) {
+        for (let xx = X + 2 - (row % 2) * (bw / 2); xx < X + w - 2; xx += bw) {
+          g.fillStyle = shade(wallC, h2(xx, yy) > 0.5 ? -0.05 : 0.04);
+          g.fillRect(Math.max(X + 2, xx + 1), yy + 1, Math.min(bw - 1, X + w - 2 - Math.max(X + 2, xx + 1)), bh - 1);
+        }
+      }
+    } else if (PLANK_KINDS.has(kind) || st?.material === 'wood') {
       for (let i = 0; i < w - 4; i += 8) { g.fillStyle = shade(wallC, i % 16 ? -0.06 : 0.04); g.fillRect(X + 2 + i, wy, 7, h - roofH + 4); }
     } else {
       for (let yy = wy + 6; yy < Y + h - 6; yy += 7) { g.fillStyle = shade(wallC, -0.05); g.fillRect(X + 2, yy, w - 4, 1); }
@@ -417,7 +446,7 @@ export class Terrain {
       g.fillStyle = 'rgba(255,255,255,.55)'; g.fillRect(wx + 2, wyy + 2, 4, 2); g.fillRect(wx + 2, wyy + 4, 2, 3);
       g.fillStyle = '#5a4030'; g.fillRect(wx + winW / 2 - 1, wyy, 2, winH); g.fillRect(wx, wyy + winH / 2 - 1, winW, 2);
       // 花箱
-      if (kind === 'house' || kind === 'cafe') {
+      if (kind === 'house' || kind === 'cafe' || decor.has('flowers')) {
         g.fillStyle = '#8a5a3a'; g.fillRect(wx - 2, wyy + winH + 2, winW + 4, 4);
         for (let i = 0; i < 5; i++) { g.fillStyle = ['#ff6b8a', '#ffd166', '#ff9ec0'][i % 3]; g.fillRect(wx + i * 4, wyy + winH, 3, 3); }
       }
@@ -438,6 +467,8 @@ export class Terrain {
     // 屋顶
     const ov = 5;
     const rt = Y + 2;
+    if (st && st.roofShape && st.roofShape !== 'gable') this.drawRoofShape(g, st.roofShape, X, Y, w, roofH, roofC);
+    else {
     g.fillStyle = shade(roofC, -0.35);
     g.fillRect(X - ov, Y + roofH - 4, w + ov * 2, 6);
     g.fillStyle = roofC;
@@ -465,9 +496,32 @@ export class Terrain {
     g.fillRect(X + 4, rt + 4, w - 8, 4);
     g.fillStyle = shade(roofC, -0.3);
     g.fillRect(X + 4, rt + 8, w - 8, 1);
+    }
+
+    // 爬藤、门灯、旗帜、钟（世界包里的建筑装饰）
+    if (decor.has('ivy')) {
+      for (let i = 0; i < 26; i++) {
+        const ix = X + 3 + h2(b.x, i, 7) * 18, iy = wy + h2(b.y, i, 9) * (h - roofH - 4);
+        g.fillStyle = i % 2 ? '#4f8a3c' : '#6aa34e'; g.fillRect(ix, iy, 4, 3);
+      }
+    }
+    if (decor.has('lantern')) {
+      const lx = Math.round(doorX - dW / 2 - 8), ly = dy + 2;
+      g.fillStyle = '#4a3222'; g.fillRect(lx + 2, ly - 4, 1, 4);
+      g.fillStyle = '#ffd76a'; g.fillRect(lx, ly, 5, 7);
+      g.fillStyle = '#b8862a'; g.fillRect(lx, ly, 5, 1); g.fillRect(lx, ly + 6, 5, 1);
+    }
+    if (decor.has('banner')) {
+      const bx = X + w - 10, by = rt - 14;
+      g.fillStyle = '#5a3e28'; g.fillRect(bx, by, 2, 18);
+      g.fillStyle = shade(roofC, 0.2); g.beginPath(); g.moveTo(bx + 2, by); g.lineTo(bx + 14, by + 4); g.lineTo(bx + 2, by + 8); g.fill();
+    }
+    if (decor.has('bell')) {
+      g.fillStyle = '#d9a441'; g.beginPath(); g.arc(X + w / 2, Y + roofH * 0.45, 5, Math.PI, 0); g.fill(); g.fillRect(X + w / 2 - 5, Y + roofH * 0.45, 10, 3);
+    }
 
     // 烟囱
-    if (kind === 'house' || kind === 'farmhouse' || kind === 'tavern' || kind === 'workshop' || kind === 'cafe') {
+    if ((CHIMNEY_KINDS.has(kind) && !st) || decor.has('chimney')) {
       const cx = X + w * 0.74, cy = rt - 6;
       g.fillStyle = '#8a4a3a'; g.fillRect(cx, cy, 11, 18);
       g.fillStyle = '#a85a46'; for (let i = 0; i < 18; i += 5) g.fillRect(cx, cy + i, 11, 1);
@@ -477,11 +531,12 @@ export class Terrain {
 
     // 特色装饰
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    if (kind === 'cafe') {
-      // 条纹遮阳篷
+    if (kind === 'cafe' || decor.has('awning')) {
+      // 条纹遮阳篷（世界包里的建筑用自己的屋顶色）
       const ay = wy + 2;
-      for (let i = 0; i < w - 12; i += 8) { g.fillStyle = (i / 8) % 2 ? '#fff6ea' : '#d9534f'; g.fillRect(X + 6 + i, ay, 8, 10); }
-      for (let i = 0; i < w - 12; i += 8) { g.fillStyle = (i / 8) % 2 ? '#fff6ea' : '#d9534f'; g.beginPath(); g.arc(X + 10 + i, ay + 10, 4, 0, Math.PI); g.fill(); }
+      const stripe = kind === 'cafe' ? '#d9534f' : roofC;
+      for (let i = 0; i < w - 12; i += 8) { g.fillStyle = (i / 8) % 2 ? '#fff6ea' : stripe; g.fillRect(X + 6 + i, ay, 8, 10); }
+      for (let i = 0; i < w - 12; i += 8) { g.fillStyle = (i / 8) % 2 ? '#fff6ea' : stripe; g.beginPath(); g.arc(X + 10 + i, ay + 10, 4, 0, Math.PI); g.fill(); }
     }
     if (kind === 'clinic') {
       g.fillStyle = '#e74c3c';
@@ -505,6 +560,37 @@ export class Terrain {
     }
   }
 
+  /** 非人字形的屋顶：茅草、平顶、尖塔、圆顶 */
+  drawRoofShape(g, shape, X, Y, w, roofH, roofC) {
+    const ov = 5, rt = Y + 2;
+    g.fillStyle = shade(roofC, -0.35);
+    g.fillRect(X - ov, Y + roofH - 4, w + ov * 2, 6);
+    if (shape === 'flat') {
+      g.fillStyle = roofC; g.fillRect(X - 3, Y + roofH - 12, w + 6, 10);
+      g.fillStyle = shade(roofC, 0.2); g.fillRect(X - 3, Y + roofH - 12, w + 6, 2);
+      return;
+    }
+    g.fillStyle = roofC;
+    g.beginPath();
+    if (shape === 'spire') { g.moveTo(X - ov, Y + roofH - 2); g.lineTo(X + w + ov, Y + roofH - 2); g.lineTo(X + w / 2, rt - 18); }
+    else if (shape === 'dome') { g.ellipse(X + w / 2, Y + roofH - 2, w / 2 + ov, roofH - 6, 0, Math.PI, 0); }
+    else { g.moveTo(X - ov - 2, Y + roofH); g.lineTo(X + w + ov + 2, Y + roofH); g.quadraticCurveTo(X + w, rt + 2, X + w / 2, rt + 2); g.quadraticCurveTo(X, rt + 2, X - ov - 2, Y + roofH); }
+    g.closePath(); g.fill();
+    g.save(); g.clip();
+    if (shape === 'thatch') {
+      // 茅草：一缕一缕的斜线
+      for (let yy = rt; yy < Y + roofH; yy += 4) for (let xx = X - ov; xx < X + w + ov; xx += 3) {
+        g.fillStyle = shade(roofC, h2(xx, yy) > 0.5 ? 0.12 : -0.12); g.fillRect(xx, yy, 2, 3);
+      }
+    } else {
+      for (let yy = rt; yy < Y + roofH; yy += 6) { g.fillStyle = shade(roofC, -0.14); g.fillRect(X - ov, yy + 4, w + ov * 2, 1); }
+    }
+    const rg = g.createLinearGradient(X, 0, X + w, 0);
+    rg.addColorStop(0, 'rgba(255,255,255,.14)'); rg.addColorStop(1, 'rgba(0,0,0,.2)');
+    g.fillStyle = rg; g.fillRect(X - ov, rt - 20, w + ov * 2, roofH + 20);
+    g.restore();
+  }
+
   buildMinimap() {
     const { W, H, tiles } = this.world;
     const s = 3;
@@ -512,7 +598,12 @@ export class Terrain {
     c.width = W * s; c.height = H * s;
     const g = c.getContext('2d');
     const col = { 0: '#78b656', 1: '#d7c79f', 2: '#e4d8bd', 3: '#c6a06a', 4: '#4b9fd4', 5: '#e9d59c', 6: '#a77a4c', 7: '#8a5c3a', 8: '#b98b58', 9: '#2f76ae', 10: '#86c160', 11: '#4a4288', 12: '#0e0a26', 13: '#8d86b8' };
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { g.fillStyle = col[tiles[y * W + x]]; g.fillRect(x * s, y * s, s, s); }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const t = tiles[y * W + x];
+      const pal = (t === 0 || t === 10) && this.world.biomes ? this.grassPal(x, y) : null;
+      g.fillStyle = pal ? pal.grass[1] : col[t];
+      g.fillRect(x * s, y * s, s, s);
+    }
     for (const o of this.world.objects) if (o.type === 'moonwell' || o.type === 'crystal') { g.fillStyle = '#c9b8ff'; g.fillRect(o.x * s, o.y * s, (o.w || 1) * s, (o.h || 1) * s); } else if (o.type === 'tree') { g.fillStyle = o.kind === 'sakura' ? '#e89ab8' : '#3f7d3c'; g.fillRect(o.x * s, o.y * s, s, s); }
     for (const b of this.world.buildings) { g.fillStyle = b.roof; g.fillRect(b.x * s, b.y * s, b.w * s, b.h * s); g.strokeStyle = 'rgba(0,0,0,.4)'; g.strokeRect(b.x * s + 0.5, b.y * s + 0.5, b.w * s - 1, b.h * s - 1); }
     this.miniBase = c;

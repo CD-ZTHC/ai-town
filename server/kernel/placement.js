@@ -1,13 +1,16 @@
 // 语义化放置（设计文档 5.3）：AI 只描述「靠近哪里、多大」，由这里寻找合法位置并校验连通性。
 // 校验标准：占地可建、与其他建筑隔一格、门口能走到、原有建筑入口仍然可达、各地点的可达站位一个都不少。
-import { buildWorld, T } from '../world.js';
+import { T } from '../world.js';
+import { buildRegion } from '../worldgen/index.js';
 
 const BUILDABLE = new Set([T.GRASS, T.FLOWER, T.DIRT, T.SAND]);
 const MAX_FULL_CHECKS = 24;
 
-const worldOf = (spec, extra = null) => buildWorld({
+// 用主地图自己的生成器重建（云溪镇是 yunxi-v1，创世生成的世界是 layout-v1）
+const worldOf = (spec, extra = null) => buildRegion(spec.regions.find((r) => r.id === 'town'), {
+  ...spec,
   buildings: extra ? [...spec.buildings, { ...extra, added: true }] : spec.buildings,
-  locationInfo: extra ? { ...spec.locations, [extra.id]: { name: extra.name, emoji: extra.emoji || '🏠', desc: extra.desc || '' } } : spec.locations,
+  locations: extra ? { ...spec.locations, [extra.id]: { name: extra.name, emoji: extra.emoji || '🏠', desc: extra.desc || '' } } : spec.locations,
 });
 
 /** 地点的中心点（站位、入口或区域中心） */
