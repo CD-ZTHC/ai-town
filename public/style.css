@@ -457,3 +457,8 @@ body.moon-view #minimap-wrap { box-shadow: 0 0 0 2px rgba(181, 140, 255, 0.55), 
 .world-closed a { color: var(--accent); }
 /* 预览中的世界：顶部提示只有创建者能看见 */
 body.world-preview #topbar::after { content: '预览中 · 只有你能看见'; position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 4px; padding: 2px 10px; border-radius: 999px; font-size: 12px; background: rgba(240, 192, 96, 0.25); color: #f0c060; }
+/* 区域菜单（地图演变 §5.2）：主地图、相邻的地图、远处的地方 */
+.region-menu { position: fixed; z-index: 60; display: grid; gap: 2px; padding: 6px; border-radius: 12px; background: rgba(24, 26, 38, 0.94); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); min-width: 150px; }
+.region-menu button { text-align: left; padding: 6px 10px; border-radius: 8px; background: transparent; color: inherit; border: 0; font-size: 13px; cursor: pointer; }
+.region-menu button:hover, .region-menu button.on { background: rgba(255, 255, 255, 0.1); }
+.region-menu small { margin-left: 8px; opacity: 0.6; }

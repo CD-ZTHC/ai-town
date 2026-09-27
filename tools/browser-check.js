@@ -212,6 +212,22 @@ await step('18d-expand', async () => {
   await waitFor(() => evaluate(`app.world.W === 80 && Boolean(app.world.locations.west_inn)`), 8000, '地图扩展');
   await evaluate(`(() => { const b = app.world.buildings.find((x) => x.id === 'west_inn'); app.follow = null; app.cam.x = (b.x + 6) * 32; app.cam.y = (b.y + 4) * 32; return true; })()`);
 }, { wait: 1200 });
+await step('18e-adjacent', async () => {
+  // 相邻的地图：东边连上一张「城东」，打开区域菜单切过去
+  const id = await evaluate(`app.api('/api/proposals/direct', { title: '东边的新街区', ops: [{ op: 'addAdjacentRegion', args: { id: 'chengdong', name: '城东', side: 'east', length: 40, fromName: '城中', biome: 'village',
+    areas: [{ id: 'cd_a', size: 'large', places: [{ id: 'cd_market', kind: 'market', name: '东市' }, { id: 'cd_inn', kind: 'inn', name: '东门客栈' }, { id: 'cd_house', kind: 'house', name: '新街小屋' }] }] } }] }).then((r) => r.id, (e) => { console.log('direct', e.message); return null; })`);
+  if (!id) throw new Error('提交相邻地图的提案失败');
+  await waitFor(() => evaluate(`app.api('/api/proposals').then((d) => d.proposals.find((p) => p.id === '${id}')?.status === 'awaiting')`), 8000, '等待终审').catch(async (e) => {
+    throw new Error(`${e.message}：${await evaluate(`app.api('/api/proposals').then((d) => JSON.stringify(d.proposals.find((p) => p.id === '${id}')?.status + ' ' + JSON.stringify(d.proposals.find((p) => p.id === '${id}')?.result)))`)}`);
+  });
+  await evaluate(`app.api('/api/proposals/decide', { id: '${id}', approve: true }).then(() => true)`);
+  await waitFor(() => evaluate(`Boolean(app.regionWorlds.chengdong) && !document.querySelector('#region-chip').hidden`), 10000, '区域菜单');
+  await click('#region-chip');
+  await waitFor(() => evaluate(`document.querySelectorAll('#region-menu [data-region]').length >= 2`), 5000, '菜单');
+  await click('#region-menu [data-region="chengdong"]');
+  await waitFor(() => evaluate(`app.view === 'chengdong'`), 5000, '切到城东');
+  await evaluate(`(() => { const p = app.world.passages[0]; app.cam.x = (p.x + 8) * 32; app.cam.y = p.y * 32; return true; })()`);
+}, { wait: 1200 });
 await step('19-genesis', async () => {
   await send('Page.navigate', { url: `${base}/genesis.html` });
   await waitFor(() => evaluate(`Boolean(document.querySelector('#go'))`), 10000, '创世向导');
@@ -279,6 +295,7 @@ cleanup();
 for (const s of steps) console.log(`${s.errors.length ? '✖' : '✔'} ${s.name}${s.errors.length ? `\n    ${s.errors.join('\n    ')}` : ''}`);
 const extra = problems.filter((p) => !steps.some((s) => s.errors.includes(p)));
 if (extra.length) console.log(`其他错误：\n    ${extra.join('\n    ')}`);
+if (steps.some((x) => x.errors.length)) { const api = serverLog.split('\n').filter((l) => l.includes('[api]')).slice(-5); if (api.length) console.log(`服务端错误：\n    ${api.join('\n    ')}`); }
 if (/Error|错误/.test(serverLog) && /at .*\.js:\d+/.test(serverLog)) console.log(`服务器日志里有异常：\n${serverLog.slice(-2000)}`);
 console.log(`\n截图：${OUT}\n${problems.length ? `✖ 共 ${problems.length} 个错误` : '✔ 没有错误'}`);
 process.exit(problems.length ? 1 : 0);

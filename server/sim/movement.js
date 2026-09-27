@@ -86,16 +86,18 @@ export class Movement {
       if (b) { a.x = b.entrance.x; a.y = b.entrance.y; }
       a.inside = null;
     }
-    // 目的地在另一个区域：先走到本区域的渡口，穿过去再继续
+    // 目的地在另一个区域：按区域图走到下一段的路口 / 通道，穿过去再继续（可能要换乘几次）
     const to = this.locRegion(locId);
     if (to !== (a.region || 'town')) {
-      a.hop = { to, locId };
-      a.dest = { locId: null, x: here.gate.x, y: here.gate.y, indoor: null, hop: true };
+      const step = this.routeStep(a.region || 'town', to, a);
+      if (!step) { Object.assign(a, { status: 'acting', dest: null, curKey: null, moving: false }); return; }
+      a.hop = { to: step.to, locId, arrive: step.b };
+      a.dest = { locId: null, x: step.a.x, y: step.a.y, indoor: null, hop: true };
       a.locId = null;
-      a.path = findPath(here, a.x, a.y, here.gate.x, here.gate.y) || [];
+      a.path = findPath(here, a.x, a.y, step.a.x, step.a.y) || [];
       a.status = 'walking';
       a.moving = true;
-      a.action = { text: `前往${loc.name}（经月之渡口）`, emoji: '🌀' };
+      a.action = { text: `前往${loc.name}（经${step.name}）`, emoji: '🌀' };
       return;
     }
     let dest;
@@ -143,14 +145,17 @@ export class Movement {
       const hop = a.hop;
       a.hop = null;
       if (!hop || !this.regionOpen(hop.to)) { a.curKey = null; a.status = 'acting'; a.moving = false; a.dest = null; return; }
-      this.emit('vfx', { preset: 'ripple', x: a.x, y: a.y, color: '#b58cff', radius: 1.5, region: a.region || 'town' });
-      const gate = this.worldOf(hop.to).gate;
-      Object.assign(a, { region: hop.to, x: gate.x, y: gate.y });
-      this.emit('vfx', { preset: 'ripple', x: gate.x, y: gate.y, color: '#b58cff', radius: 1.5, region: hop.to });
+      const r = this.spec.regions.find((x) => x.id === hop.to) || {};
+      const portal = !r.adjacent && hop.to !== 'town' || (a.region && a.region !== 'town' && !this.spec.regions.find((x) => x.id === a.region)?.adjacent);
+      if (portal) this.emit('vfx', { preset: 'ripple', x: a.x, y: a.y, color: '#b58cff', radius: 1.5, region: a.region || 'town' });
+      const at = hop.arrive || this.worldOf(hop.to).gate;
+      Object.assign(a, { region: hop.to, x: at.x, y: at.y });
+      if (portal) this.emit('vfx', { preset: 'ripple', x: at.x, y: at.y, color: '#b58cff', radius: 1.5, region: hop.to });
       if (hop.to !== 'town' && !a.visited?.includes(hop.to)) {
         (a.visited ||= []).push(hop.to);
-        addMemory(a, { t: this.t, type: 'obs', text: `第一次穿过月之渡口，来到了${this.regions[hop.to].name}：天是深紫色的，到处是会发光的花`, importance: 7 });
-        this.log('region', `🌗 ${a.name}第一次踏进了${this.regions[hop.to].name}`, { agents: [a.id] });
+        const name = this.regions[hop.to].name;
+        addMemory(a, { t: this.t, type: 'obs', text: `第一次${r.gateName ? `穿过${r.gateName}，` : ''}来到了${name}${r.firstVisit ? `：${r.firstVisit}` : ''}`, importance: 7 });
+        this.log('region', `${r.adjacent ? '🗺️' : '🌗'} ${a.name}第一次踏进了${name}`, { agents: [a.id] });
       }
       this.navigate(a, hop.locId, e);
       return;

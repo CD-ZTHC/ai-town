@@ -26,8 +26,9 @@
 | `plantGrove` | minor | ✅ | {"near":"地点id","w":2~8,"h":2~8,"trees":"oak/pine/sakura（可选）"} —— 在附近的空草地上种一片树 |
 | `addOutdoorPlace` | minor | ✅ | {"id":"英文小写id","kind":"garden/orchard/market/plaza/field/pond/well/camp/shrine/clearing/grove/meadow","name":"≤16字","emoji","desc":"≤60字","near":"地点id"} —— 新的户外去处，系统在附近找空地画出来 |
 | `expandMap` | major | ✅ | {"side":"north/south/east/west","by":8~24,"biome":"meadow/village/forest/…","name":"新地块的名字≤16字","places":[{"id":"英文小写id","kind":"house/cottage/shop/inn/…或 garden/orchard/market/…","name":"≤16字","emoji","desc":"≤60字"}]（最多6个）} —— 地图向一边长出一片新地方（大改）；空地不够、镇子要长大时用；地图最大 96×64 |
-| `addRegion` | major | — | 仅管理员 / 剧情弧使用 |
-| `linkRegions` | minor | — | 仅管理员 / 剧情弧使用 |
+| `addRegion` | major | ✅ | {"id","name","biome","areas":[同上]} —— 远处的新地方（北山、河对岸的村子、异界…）；必须同时用 linkRegions 打通（大改） |
+| `linkRegions` | minor | ✅ | {"region":"区域id","open":true,"entry":"主地图上的路口地点id","gateName":"路口的名字，如 北山山口"} |
+| `addAdjacentRegion` | major | ✅ | {"id":"英文小写id","name":"如 城东","from":"相邻的哪张地图（默认 town）","side":"north/south/east/west","length":32~96,"fromName":"原来那张地图的新称呼，如 城中（可选）","biome","areas":[{"id","biome","size":"small/medium/large","places":[{"id","kind","name","emoji","desc"}]}]} —— 某个方向的地图到了 96×64 的上限、镇子还要往那边长时，在那一侧新建一张相邻的地图（大改）；接壤的边上自动开通道，走到边缘就过去了 |
 | `addPersona` | major | — | 仅管理员 / 剧情弧使用 |
 | `setPersonaStatus` | major | — | 仅管理员 / 剧情弧使用 |
 | `settlePersona` | major | — | 仅管理员 / 剧情弧使用 |

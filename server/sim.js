@@ -484,7 +484,8 @@ export class Town extends EventEmitter {
     const prev = this.spec;
     this.spec = applyOp(this.spec, rec, rec);
     if (MAP_OPS.has(rec.op)) { const moved = this.shiftByOffsets(prev); this.syncMap(prev, moved); }
-    if (rec.op === 'addRegion' || rec.op === 'linkRegions') this.rebuildRegions();
+    if (rec.op === 'addRegion' || rec.op === 'linkRegions' || rec.op === 'addAdjacentRegion' || (rec.op === 'expandMap' && (rec.args.region || 'town') !== 'town')) this.rebuildRegions();
+    if (rec.op === 'addAdjacentRegion') this.seedRegionRumors(rec.args.id);
     this.specOps.push(rec);
     this.journal.append(rec);
     const desc = OPS[rec.op].describe?.(rec.args, prev) || rec.op; // 用操作之前的规格描述（拆除、改建之后旧名字就找不到了）

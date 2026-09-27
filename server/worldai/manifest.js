@@ -19,6 +19,9 @@ export const OP_DOCS = {
   plantGrove: '{"near":"地点id","w":2~8,"h":2~8,"trees":"oak/pine/sakura（可选）"} —— 在附近的空草地上种一片树',
   addOutdoorPlace: '{"id":"英文小写id","kind":"garden/orchard/market/plaza/field/pond/well/camp/shrine/clearing/grove/meadow","name":"≤16字","emoji","desc":"≤60字","near":"地点id"} —— 新的户外去处，系统在附近找空地画出来',
   expandMap: '{"side":"north/south/east/west","by":8~24,"biome":"meadow/village/forest/…","name":"新地块的名字≤16字","places":[{"id":"英文小写id","kind":"house/cottage/shop/inn/…或 garden/orchard/market/…","name":"≤16字","emoji","desc":"≤60字"}]（最多6个）} —— 地图向一边长出一片新地方（大改）；空地不够、镇子要长大时用；地图最大 96×64',
+  addAdjacentRegion: '{"id":"英文小写id","name":"如 城东","from":"相邻的哪张地图（默认 town）","side":"north/south/east/west","length":32~96,"fromName":"原来那张地图的新称呼，如 城中（可选）","biome","areas":[{"id","biome","size":"small/medium/large","places":[{"id","kind","name","emoji","desc"}]}]} —— 某个方向的地图到了 96×64 的上限、镇子还要往那边长时，在那一侧新建一张相邻的地图（大改）；接壤的边上自动开通道，走到边缘就过去了',
+  addRegion: '{"id","name","biome","areas":[同上]} —— 远处的新地方（北山、河对岸的村子、异界…）；必须同时用 linkRegions 打通（大改）',
+  linkRegions: '{"region":"区域id","open":true,"entry":"主地图上的路口地点id","gateName":"路口的名字，如 北山山口"}',
   addCalendarEvent: '{"id","name":"≤16字","emoji","day":第几天（必须大于今天）,"from":"HH:MM","location":"地点id","hint":"≤60字","countdown":true}',
   addWeather: '{"id","name":"≤8字","emoji","weight":0~20,"render":{"base":"sunny/cloudy/rain/storm/fog/snow","tint":"#rrggbb","tintAlpha":0~0.5}}',
   addItem: '{"id","name":"≤8字","emoji","desc":"≤40字"}',
@@ -53,6 +56,7 @@ ${exprText()}
 现有物品：${Object.entries(spec.items).map(([id, i]) => `${id}(${i.name})`).join('、')}
 现有构筑物：${Object.entries(spec.structures).map(([id, x]) => `${id}(${x.name})`).join('、')}
 现有能力：${spec.abilities.map((a) => `${a.id}(${a.name})`).join('、')}
+地图：${spec.regions.map((r) => { const sz = Array.isArray(r.size) ? r.size.join('×') : '?'; return `${r.id}(${r.name || ''}${r.id === 'town' ? '，主地图' : r.adjacent ? `，在 ${r.adjacent.to} 的${{ north: '北', south: '南', east: '东', west: '西' }[r.adjacent.side]}边` : '，远处'}，${sz})`; }).join('、')}（每张地图最大 96×64）
 现有建筑（id(名字，状态，住着几人)）：${spec.buildings.filter((b) => !b.removed).map((b) => {
     const n = spec.personas.filter((p) => p.home === b.id && p.status !== 'departed').length;
     const st = { closed: '停业', damaged: '受损', ruin: '废墟' }[b.state];

@@ -185,6 +185,38 @@ export function finishRegion(c0, region, spec) {
     }
   }
 
+  // ---- 边缘通道（地图演变 §5.2）：与相邻地图接壤的边上，从边缘开一条路接到最近的路（沿途清掉树丛），两侧位置对齐 ----
+  const passages = [];
+  for (const e of region.entries || []) {
+    const at = Math.round(e.at);
+    const p = e.side === 'east' ? { x: W - 1, y: at } : e.side === 'west' ? { x: 0, y: at } : e.side === 'north' ? { x: at, y: 0 } : { x: at, y: H - 1 };
+    if (!inb(p.x, p.y)) continue;
+    const prev = new Map([[p.y * W + p.x, null]]);
+    const q = [[p.x, p.y]];
+    const passable = (x, y) => inb(x, y) && WALKABLE.has(get(x, y)) || (inb(x, y) && [T.WATER].includes(get(x, y)));
+    const soft = (x, y) => !solid[y * W + x] || objects.some((o) => REMOVABLE.has(o.type) && o.x === x && o.y === y);
+    let hit = null;
+    for (let i = 0; i < q.length && !hit; i++) {
+      const [x, y] = q[i];
+      if (ROADS_OF.has(get(x, y)) && !(x === p.x && y === p.y)) { hit = [x, y]; break; }
+      for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+        const nx = x + dx, ny = y + dy, k = ny * W + nx;
+        if (prev.has(k) || !passable(nx, ny) || !soft(nx, ny)) continue;
+        prev.set(k, y * W + x);
+        q.push([nx, ny]);
+      }
+    }
+    if (!hit) continue;
+    for (let k = hit[1] * W + hit[0]; k != null; k = prev.get(k)) {
+      const px = k % W, py = Math.floor(k / W);
+      clearAt(px, py);
+      const t = get(px, py);
+      if (t === T.WATER) set(px, py, T.BRIDGE);
+      else if ([T.GRASS, T.FLOWER, T.SAND, T.SOIL].includes(t)) set(px, py, T.DIRT);
+    }
+    passages.push({ key: e.key, to: e.to, side: e.side, x: p.x, y: p.y, name: e.name || null });
+  }
+
   // ---- 运行中新增的建筑：清理占地及周围一格的树木 / 灌木 / 石头，开辟连到道路的小路 ----
   const overlayErrors = {};
   const inRect = (x, y, r, m = 0) => x >= r.x - m && x < r.x + r.w + m && y >= r.y - m && y < r.y + r.h + m;
@@ -261,5 +293,5 @@ export function finishRegion(c0, region, spec) {
 
   const { solid: _s, origin: _o, lampForAdded: _l, gate: _g, roads: _r, dirtOver: _d, ...rest } = c;
   if (rest.biome && !Array.isArray(rest.biome)) rest.biome = [...rest.biome];
-  return { ...rest, id: region.id, walk, overlayErrors, gate, ...(lots.length ? { lots } : {}) };
+  return { ...rest, id: region.id, walk, overlayErrors, gate, ...(lots.length ? { lots } : {}), ...(passages.length ? { passages: passages.filter((p) => walk[p.y * W + p.x]) } : {}) };
 }

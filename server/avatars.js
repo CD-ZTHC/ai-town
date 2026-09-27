@@ -83,8 +83,10 @@ export class AvatarSystem {
     const to = town.locRegion(locId);
     v.locId = null;
     if (to !== v.region) {
-      v.hop = { to, locId };
-      v.path = findPath(here, Math.round(v.x), Math.round(v.y), here.gate.x, here.gate.y) || [];
+      const step = town.routeStep(v.region || 'town', to, v);
+      if (!step) return;
+      v.hop = { to: step.to, locId, arrive: step.b };
+      v.path = findPath(here, Math.round(v.x), Math.round(v.y), step.a.x, step.a.y) || [];
       return;
     }
     const loc = town.findLocation(locId);
@@ -129,10 +131,10 @@ export class AvatarSystem {
     const town = this.town;
     v.moving = false;
     if (v.hop) {
-      const { to, locId } = v.hop;
+      const { to, locId, arrive } = v.hop;
       v.hop = null;
       if (!town.regionOpen(to)) return;
-      const g = town.worldOf(to).gate;
+      const g = arrive || town.worldOf(to).gate;
       Object.assign(v, { region: to, x: g.x, y: g.y });
       this.walk(v, locId);
       return;

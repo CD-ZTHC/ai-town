@@ -230,3 +230,46 @@ export function groveTrees(rect, seed = 1, kinds = ['oak', 'pine']) {
 }
 
 export const outdoorSize = (kind) => OUTDOOR_KINDS[kind] || null;
+
+/**
+ * 相邻地图的通道（地图演变 §5.2）：沿接壤的边找离现有道路最近的位置（沿途只能是能走的地或可以清掉的树丛），
+ * 边长 ≥ 40 时再找一个相隔至少 12 格的。返回 { passages: [坐标] } 或 { error }
+ */
+export function choosePassages(spec, regionId, side) {
+  const region = spec.regions.find((r) => r.id === regionId);
+  if (!region) return { error: `未知区域：${regionId}` };
+  const w = buildRegion(region, spec);
+  const { W, H, tiles, walk, objects } = w;
+  const removable = new Set(objects.filter((o) => ['tree', 'bush', 'rock'].includes(o.type)).map((o) => o.y * W + o.x));
+  const ok = (x, y) => x >= 0 && y >= 0 && x < W && y < H && (walk[y * W + x] || (removable.has(y * W + x) && SOFT.has(tiles[y * W + x])) || (SOFT.has(tiles[y * W + x]) && !objects.some((o) => o.x === x && o.y === y)));
+  const vertical = side === 'east' || side === 'west';
+  const len = vertical ? H : W;
+  const edge = (i) => (side === 'east' ? { x: W - 1, y: i } : side === 'west' ? { x: 0, y: i } : side === 'north' ? { x: i, y: 0 } : { x: i, y: H - 1 });
+  const score = (i) => {
+    const p = edge(i);
+    if (!ok(p.x, p.y)) return Infinity;
+    const seen = new Set([p.y * W + p.x]);
+    let frontier = [[p.x, p.y]];
+    for (let d = 0; d <= 16 && frontier.length; d++) {
+      const next = [];
+      for (const [x, y] of frontier) {
+        if (ROADS.has(tiles[y * W + x]) && walk[y * W + x]) return d;
+        for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+          const nx = x + dx, ny = y + dy, k = ny * W + nx;
+          if (seen.has(k) || !ok(nx, ny)) continue;
+          seen.add(k);
+          next.push([nx, ny]);
+        }
+      }
+      frontier = next;
+    }
+    return Infinity;
+  };
+  const cands = [];
+  for (let i = 3; i <= len - 4; i++) { const s = score(i); if (Number.isFinite(s)) cands.push({ i, s: s + Math.abs(i - len / 2) * 0.05 }); }
+  cands.sort((a, b) => a.s - b.s);
+  if (!cands.length) return { error: '接壤的这条边上找不到能开路的地方' };
+  const out = [cands[0].i];
+  if (len >= 40) { const second = cands.find((c) => Math.abs(c.i - out[0]) >= 12); if (second) out.push(second.i); }
+  return { passages: out.sort((a, b) => a - b) };
+}

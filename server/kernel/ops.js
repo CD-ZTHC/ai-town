@@ -6,6 +6,7 @@ import { PARAM_BOUNDS, RATINGS, STORYTELLERS, validateSpec } from './spec.js';
 import { parseHM } from '../memory.js';
 import { checkRemap, applyRemap } from './impact.js';
 import { stripOf, packStrip, SIDES, MAX_SIZE } from '../worldgen/extend.js';
+import { buildRegion } from '../worldgen/index.js';
 import { validateAbility } from './abilities.js';
 import { validateRule } from './rules.js';
 import { solveLayout, layoutProblems, regionSize, mapSize, BIOME_IDS, BUILDING_KINDS, OUTDOOR_KINDS } from '../worldgen/layout.js';
@@ -47,7 +48,52 @@ function shiftRegion(spec, region, dx, dy) {
     if (e.rect) e.rect = { ...e.rect, x: e.rect.x + dx, y: e.rect.y + dy };
   }
   for (const ext of region.extensions || []) ext.rect = { ...ext.rect, x: ext.rect.x + dx, y: ext.rect.y + dy };
+  for (const e of region.entries || []) e.at += e.side === 'east' || e.side === 'west' ? dy : dx;
   region.offset = { x: (region.offset?.x || 0) + dx, y: (region.offset?.y || 0) + dy };
+}
+
+// 区域：地点块的检查、相邻关系
+const SIDE_NAMES = { north: '北边', south: '南边', east: '东边', west: '西边' };
+const OPPOSITE = { north: 'south', south: 'north', east: 'west', west: 'east' };
+const regionName = (spec, id) => spec?.regions?.find((r) => r.id === id)?.name || id;
+/** 某张地图在某一侧有没有相邻的地图（它自己连过去的，或者别的地图连过来的） */
+export function neighborOn(spec, id, side) {
+  const r = spec.regions.find((x) => x.id === id);
+  if (r?.adjacent && OPPOSITE[r.adjacent.side] === side) return r.adjacent.to;
+  return spec.regions.find((x) => x.adjacent?.to === id && x.adjacent.side === side)?.id || null;
+}
+function areasProblem(spec, a) {
+  if (!str(a.name, 16)) return 'name 不能为空（≤16字）';
+  if (a.biome != null && !BIOME_IDS.includes(a.biome)) return `biome 只能是 ${BIOME_IDS.join('/')}`;
+  const areas = Array.isArray(a.areas) ? a.areas : [];
+  if (!areas.length || areas.length > 4) return 'areas 需要 1~4 块';
+  const ids = new Set();
+  for (const ar of areas) {
+    if (!validId(ar.id)) return `区域块 id 不合法：${ar.id}`;
+    if (ar.biome != null && !BIOME_IDS.includes(ar.biome)) return `biome 只能是 ${BIOME_IDS.join('/')}`;
+    if (!Array.isArray(ar.places) || !ar.places.length || ar.places.length > 8) return '每块需要 1~8 个地点';
+    for (const p of ar.places) {
+      if (!validId(p.id)) return `地点 id 不合法：${p.id}`;
+      if (ids.has(p.id) || Object.hasOwn(spec.locations, p.id) || spec.buildings.some((b) => b.id === p.id)) return `地点已存在：${p.id}`;
+      ids.add(p.id);
+      if (!Object.hasOwn(BUILDING_KINDS, p.kind) && !Object.hasOwn(OUTDOOR_KINDS, p.kind)) return `地点类型未知：${p.kind}`;
+      if (!str(p.name, 16)) return '地点需要 name';
+    }
+  }
+  return null;
+}
+function adjacentApply(spec, a) {
+  const from = spec.regions.find((r) => r.id === (a.from || 'town'));
+  const [FW, FH] = mapSize(from);
+  const size = a.side === 'east' || a.side === 'west' ? [a.length, FH] : [FW, a.length];
+  const r = { ...regionOf({ ...a, seed: Number.isInteger(a.seed) ? a.seed : 1 }), size, open: true, adjacent: { to: from.id, side: a.side } };
+  r.entries = a.passages.map((at, i) => ({ side: OPPOSITE[a.side], at, to: from.id, key: `${a.id}_${i}` }));
+  (from.entries ||= []).push(...a.passages.map((at, i) => ({ side: a.side, at, to: a.id, key: `${a.id}_${i}` })));
+  if (a.fromName) from.name = str(a.fromName, 16);
+  const solved = solveLayout(r);
+  spec.regions.push(r);
+  spec.buildings.push(...solved.buildings);
+  Object.assign(spec.locations, solved.locations);
 }
 
 // 每个操作：level 决定审批等级（micro / minor / major），check 返回错误文本或 null，
@@ -377,6 +423,7 @@ export const OPS = {
       if (!SIDES.includes(a.side)) return `side 只能是 ${SIDES.join('/')}`;
       if (!Number.isInteger(a.by) || a.by < 8 || a.by > 24) return 'by 应为 8~24 格';
       if ((region.extensions || []).length >= 8) return '这张地图已经扩展过太多次了';
+      if (neighborOn(spec, region.id, a.side)) return `这一侧已经连着相邻的地图了，不能再往${SIDE_NAMES[a.side]}扩展`;
       const cur = mapSize(region);
       const { size, rect } = stripOf(cur, a.side, a.by);
       if (size[0] > MAX_SIZE[0] || size[1] > MAX_SIZE[1]) return `地图最大 ${MAX_SIZE.join('×')}，这个方向已经到头了（可以在那一侧开辟相邻的地图）`;
@@ -428,23 +475,8 @@ export const OPS = {
       if (!validId(a.id) || a.id === 'town') return 'id 不合法';
       if (spec.regions.some((r) => r.id === a.id)) return `区域已存在：${a.id}`;
       if (spec.regions.length >= 6) return '区域已达上限（6 个）';
-      if (!str(a.name, 16)) return 'name 不能为空（≤16字）';
-      if (a.biome != null && !BIOME_IDS.includes(a.biome)) return `biome 只能是 ${BIOME_IDS.join('/')}`;
-      const areas = Array.isArray(a.areas) ? a.areas : [];
-      if (!areas.length || areas.length > 4) return 'areas 需要 1~4 块';
-      const ids = new Set();
-      for (const ar of areas) {
-        if (!validId(ar.id)) return `区域块 id 不合法：${ar.id}`;
-        if (ar.biome != null && !BIOME_IDS.includes(ar.biome)) return `biome 只能是 ${BIOME_IDS.join('/')}`;
-        if (!Array.isArray(ar.places) || !ar.places.length || ar.places.length > 8) return '每块需要 1~8 个地点';
-        for (const p of ar.places) {
-          if (!validId(p.id)) return `地点 id 不合法：${p.id}`;
-          if (ids.has(p.id) || Object.hasOwn(spec.locations, p.id) || spec.buildings.some((b) => b.id === p.id)) return `地点已存在：${p.id}`;
-          ids.add(p.id);
-          if (!Object.hasOwn(BUILDING_KINDS, p.kind) && !Object.hasOwn(OUTDOOR_KINDS, p.kind)) return `地点类型未知：${p.kind}`;
-          if (!str(p.name, 16)) return '地点需要 name';
-        }
-      }
+      const e = areasProblem(spec, a);
+      if (e) return e;
       const problems = layoutProblems(regionOf(a), spec);
       return problems.length ? `布局不可行：${problems[0]}` : null;
     },
@@ -457,19 +489,53 @@ export const OPS = {
     },
     describe: (a) => `世界的边缘出现了一片新的地方：「${str(a.name, 16)}」`,
   },
-  // 打通（或封闭）通往某个区域的路
+  // 打通（或封闭）通往某个远处区域的路；entry 是主地图上的路口地点（不写时用主地图的渡口），gateName 是路口的名字
   linkRegions: {
     level: 'minor',
     check(spec, a) {
       const r = spec.regions.find((x) => x.id === a.region);
       if (!r || r.id === 'town') return `未知区域：${a.region}`;
+      if (r.adjacent) return '相邻的地图一直是通的';
+      if (a.entry != null && !Object.hasOwn(spec.locations, a.entry) && !spec.buildings.some((b) => b.id === a.entry && !b.removed)) return `未知地点：${a.entry}`;
       return null;
     },
     apply(spec, a) {
       const r = spec.regions.find((x) => x.id === a.region);
       r.open = a.open !== false;
+      if (a.entry) r.entry = a.entry;
+      if (a.gateName) r.gateName = str(a.gateName, 12);
     },
     describe: (a) => (a.open === false ? `通往「${a.region}」的路被封上了` : `通往「${a.region}」的路打通了`),
+  },
+  // 相邻的地图（地图演变 §5.2）：主地图（或另一张相邻地图）在某一侧到头之后，在那一侧新建一张地图，接壤的边上有 1~3 个通道
+  addAdjacentRegion: {
+    level: 'major',
+    check(spec, a) {
+      if (!validId(a.id) || a.id === 'town') return 'id 不合法';
+      if (spec.regions.some((r) => r.id === a.id)) return `区域已存在：${a.id}`;
+      if (spec.regions.length >= 6) return '区域已达上限（6 个）';
+      const from = spec.regions.find((r) => r.id === (a.from || 'town'));
+      if (!from) return `未知区域：${a.from}`;
+      if (!SIDES.includes(a.side)) return `side 只能是 ${SIDES.join('/')}`;
+      if (neighborOn(spec, from.id, a.side)) return `「${from.name || from.id}」的${SIDE_NAMES[a.side]}已经有相邻的地图了`;
+      if (!Number.isInteger(a.length) || a.length < 32 || a.length > MAX_SIZE[a.side === 'east' || a.side === 'west' ? 0 : 1]) return 'length（远离接缝的方向有多长）应为 32~96（南北向最多 64）';
+      const e = areasProblem(spec, a);
+      if (e) return e;
+      const edge = a.side === 'east' || a.side === 'west' ? mapSize(from)[1] : mapSize(from)[0];
+      if (!Array.isArray(a.passages) || !a.passages.length || a.passages.length > 3 || !a.passages.every((p) => Number.isInteger(p) && p >= 2 && p <= edge - 3)) return '通道（passages）不合法：让系统选';
+      const next = structuredClone(spec);
+      adjacentApply(next, a);
+      const r = next.regions.find((x) => x.id === a.id);
+      const problems = layoutProblems(r, next);
+      if (problems.length) return `布局不可行：${problems[0]}`;
+      const w = buildRegion(r, next);
+      const wf = buildRegion(next.regions.find((x) => x.id === from.id), next);
+      const mine = (w.passages || []).length, theirs = (wf.passages || []).filter((p) => p.to === a.id).length;
+      if (mine < a.passages.length || theirs < a.passages.length) return '接壤的边上开不出通道（被水或建筑挡住了），换个位置';
+      return null;
+    },
+    apply(spec, a) { adjacentApply(spec, a); },
+    describe: (a, spec) => `「${regionName(spec, a.from || 'town')}」的${SIDE_NAMES[a.side]}连上了一片新地方：「${str(a.name, 16)}」`,
   },
   addPersona: {
     level: 'major',

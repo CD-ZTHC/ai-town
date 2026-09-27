@@ -2,7 +2,7 @@
 // 审批：本地模式 小改自动通过、大改等管理员确认；公网模式 小改和大改都先访客投票，再由管理员终审。
 // 自主演化 E1：管理员终审窗口（真实时间，minor 6 小时 / major 24 小时）超时后，交给 AI 裁决官决定（不再作废）。
 import { OPS, applyOp, OpError } from '../kernel/ops.js';
-import { findPlacement, checkPlacement, solvePath, solveBridge, solveRect, checkEdit, outdoorSize } from '../kernel/placement.js';
+import { findPlacement, checkPlacement, solvePath, solveBridge, solveRect, checkEdit, outdoorSize, choosePassages } from '../kernel/placement.js';
 import { addMemory, fmtTime } from '../memory.js';
 import { review } from './canon.js';
 import { impactOf } from '../kernel/impact.js';
@@ -20,7 +20,7 @@ export const levelOf = (o) => OPS[o.op].levelOf?.(o.args) || OPS[o.op].level;
 /** 会让建筑消失（或变成废墟）的操作：需要搬迁去处、施工、居民议事 */
 export const isDemolition = (o) => o.op === 'removeBuilding' || (o.op === 'setBuildingState' && o.args?.state === 'ruin');
 // 架构师（以及导演、居民、访客的点子）可以提出的操作；管理员直接提交时还可以调参数、改分级
-export const ARCHITECT_OPS = ['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace', 'expandMap', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'addRule', 'addCanon'];
+export const ARCHITECT_OPS = ['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace', 'expandMap', 'addAdjacentRegion', 'addRegion', 'linkRegions', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'addRule', 'addCanon'];
 export const ADMIN_OPS = [...ARCHITECT_OPS, 'setParam', 'setMeta'];
 const FINAL = new Set(['applied', 'rejected', 'failed', 'expired', 'reverted']);
 
@@ -54,7 +54,7 @@ export class ProposalSystem {
     if (!p) return '（提案不存在）';
     return `建设提案「${p.title}」（${p.level === 'major' ? '大改' : '小改'}，来自${this.originText(p.origin)}）
 动机：${p.motive || '（无）'}
-内容：${p.ops.map((o) => OPS[o.op].describe?.(o.args) || o.op).join('；')}
+内容：${p.ops.map((o) => OPS[o.op].describe?.(o.args, this.town.spec) || o.op).join('；')}
 设定考据：${p.canon ? (p.canon.ok ? `通过${p.canon.notes ? `（${p.canon.notes}）` : ''}` : `未通过：${p.canon.issues.join('；')}`) : '未完成'}
 今天已落地：小改 ${this.appliedToday('minor')} 个，大改 ${this.appliedToday('major')} 个`;
   }
@@ -117,6 +117,10 @@ export class ProposalSystem {
         return { error: `第 ${i + 1} 个操作（${name}）：${e instanceof OpError ? e.message : '无法应用'}` };
       }
       ops.push({ op: name, args });
+    }
+    // 远处的新区域要同时打通路口，否则开出来没人去得了
+    for (const o of ops) if (o.op === 'addRegion' && !ops.some((x) => x.op === 'linkRegions' && x.args.region === o.args.id && x.args.open !== false)) {
+      if (allowed === ARCHITECT_OPS) return { error: `新区域「${o.args.name || o.args.id}」需要同时用 linkRegions 打通路口（entry 是主地图上的路口地点）` };
     }
     return { ops };
   }
@@ -302,6 +306,14 @@ export class ProposalSystem {
       const r = solveRect(spec, { mode: 'place', w: size[0], h: size[1], near: args.near ?? args.place?.near, id: args.id, placeKind: args.kind, seed });
       if (r.error) return r.error;
       Object.assign(args, { rect: r.rect, seed });
+    } else if (name === 'addAdjacentRegion') {
+      if (args.seed == null) args.seed = seed;
+      args.length = Math.max(32, Math.min(96, Math.round(Number(args.length) || 48)));
+      if (!Array.isArray(args.passages)) {
+        const r = choosePassages(spec, args.from || 'town', args.side);
+        if (r.error) return r.error;
+        args.passages = r.passages;
+      }
     } else if (name === 'expandMap') {
       if (args.seed == null) args.seed = seed;
       args.by = Math.round(Number(args.by) || 12);
@@ -394,7 +406,7 @@ export class ProposalSystem {
       id: p.id, title: p.title, motive: p.motive, origin: this.originText(p.origin), level: p.level, status: p.status,
       createdT: p.createdT, voteUntil: p.voteUntil || null, finishT: p.finishT || null,
       decision: p.decision ? this.town.decisions?.get(p.decision) && { untilMs: this.town.decisions.get(p.decision).untilMs, status: this.town.decisions.get(p.decision).status } : null,
-      ops: p.ops.map((o) => ({ op: o.op, desc: OPS[o.op].describe?.(o.args) || o.op, rect: o.op === 'addBuilding' ? { x: o.args.x, y: o.args.y, w: o.args.w, h: o.args.h } : null })),
+      ops: p.ops.map((o) => ({ op: o.op, desc: OPS[o.op].describe?.(o.args, this.town.spec) || o.op, rect: o.op === 'addBuilding' ? { x: o.args.x, y: o.args.y, w: o.args.w, h: o.args.h } : null })),
       canon: p.canon, tally: this.tally(p), mine: key ? p.votes[key] ?? null : null, result: p.result, construction: p.construction, council: this.town.council?.view(p) || null,
     };
   }

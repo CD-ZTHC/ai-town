@@ -18,7 +18,32 @@
     26
    ],
    "name": "暗月界",
-   "gateFrom": "pier"
+   "gateName": "月之渡口",
+   "openText": "🌗 月之渡口那头的「暗月界」向小镇敞开了",
+   "firstVisit": "天是深紫色的，到处是会发光的花",
+   "belief": "渡口那头的暗月界很美，可以过去逛逛",
+   "rumors": [
+    "听说月之渡口那头的暗月界能去了：月光花园的花一碰就会发光，影灵们晚上提着灯在广场散步",
+    "听说暗月界有个星坠崖，站在崖边能同时看见两个月亮，对着双月许愿特别灵",
+    "听说暗月界的月井水凉丝丝的，月光花采回来能泡茶，影灵们还挺欢迎客人的"
+   ],
+   "friends": [
+    {
+     "type": "shade_wisp",
+     "name": "月月",
+     "near": "moon_plaza"
+    },
+    {
+     "type": "shade_wisp",
+     "name": "萤萤",
+     "near": "moon_plaza"
+    },
+    {
+     "type": "shade_wisp",
+     "name": "朦朦",
+     "near": "moon_plaza"
+    }
+   ]
   }
  ]
 }

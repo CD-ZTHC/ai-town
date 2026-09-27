@@ -42,7 +42,7 @@ export function init(a, first) {
   }));
   // 底部 Dock 的按钮（天气 / 事件 / 日报 / 关系网 / 建设）由 hud.js 绑定
   $('#story-chip').addEventListener('click', () => storyModal());
-  $('#region-chip').addEventListener('click', () => app.setView(app.view === 'town' ? nextRegion() : 'town'));
+  $('#region-chip').addEventListener('click', (e) => { e.stopPropagation(); regionMenu(); });
   // 顶栏的活动标签：显示的是这个世界最近的日历活动；有灯会特效的活动可以预览，其余的给出时间、地点与说明
   $('#festival-chip').addEventListener('click', () => {
     const ev = ui.chipEvent;
@@ -74,6 +74,7 @@ export function init(a, first) {
     const w = e.target.closest('[data-agent]');
     if (w && !e.target.closest('#modal-card canvas')) { app.select(w.dataset.agent); }
     if (!e.target.closest('#weather-menu, #btn-weather')) $('#weather-menu').hidden = true;
+    if (!e.target.closest('#region-menu, #region-chip')) $('#region-menu')?.remove();
   });
 }
 
@@ -225,16 +226,37 @@ export function onAgents() {
   if (app.selected && !app.meta[app.selected]) closeInspector();
 }
 
-const nextRegion = () => Object.keys(app.regionsOpen).find((k) => k !== 'town' && app.regionsOpen[k].open);
+const openRegions = () => Object.entries(app.regionsOpen || {}).filter(([k, r]) => k === 'town' || r.open);
+const regionIcon = (k, r) => (k === 'town' ? '🏘️' : r.theme === 'moon' ? '🌗' : r.adjacent ? '🗺️' : '🧭');
 
 export function onRegions() {
   const chip = $('#region-chip');
-  const other = nextRegion();
-  chip.hidden = !other && app.view === 'town';
-  const name = app.regionsOpen[other]?.name || '异界';
-  chip.textContent = app.view === 'town' ? `🌗 去${name}看看` : '🏘️ 回到小镇';
+  const list = openRegions();
+  chip.hidden = list.length < 2;
+  const cur = app.regionsOpen?.[app.view] || { name: voice().place };
+  chip.textContent = `${regionIcon(app.view, cur)} ${app.view === 'town' ? (cur.name || voice().place) : cur.name} ▾`;
+  chip.title = '切换查看的地图';
   chip.classList.toggle('live', app.view !== 'town');
-  document.body.classList.toggle('moon-view', app.view !== 'town');
+  document.body.classList.toggle('moon-view', cur.theme === 'moon');
+}
+
+/** 区域菜单：主地图、相邻的地图（城东、城西……）、远处的地方 */
+function regionMenu() {
+  let m = $('#region-menu');
+  if (m) { m.remove(); return; }
+  m = document.createElement('div');
+  m.id = 'region-menu';
+  m.className = 'region-menu';
+  m.innerHTML = openRegions().map(([k, r]) => `<button data-region="${esc(k)}" class="${k === app.view ? 'on' : ''}">${regionIcon(k, r)} ${esc(r.name || voice().place)}${r.adjacent ? `<small>${{ north: '北边', south: '南边', east: '东边', west: '西边' }[r.adjacent.side] || ''}</small>` : ''}</button>`).join('');
+  const rc = $('#region-chip').getBoundingClientRect();
+  Object.assign(m.style, { left: `${rc.left}px`, top: `${rc.bottom + 6}px` });
+  document.body.appendChild(m);
+  m.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-region]');
+    if (!b) return;
+    app.setView(b.dataset.region);
+    m.remove();
+  });
 }
 
 export function onWorld(w) {

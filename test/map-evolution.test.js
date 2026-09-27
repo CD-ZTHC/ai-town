@@ -360,3 +360,75 @@ test('向西扩展：基础地图与运行中的一切整体平移——新增�
   assert.deepEqual([red.x, red.y], [10, 20]);
   assert.equal(town.world.buildings.find((b) => b.id === 'shed').x, before.shed.x);
 });
+
+// ---------- E6 区域图：相邻的地图、路口、数据化的文案 ----------
+const walkTo = (town, a, locId) => {
+  const e = { activity: '逛逛' };
+  Object.assign(a, { inside: null, status: 'acting', convoId: null, curEntry: e });
+  town.navigate(a, locId, e);
+  for (let i = 0; i < 4000 && a.status === 'walking'; i++) town.step(a, 1);
+  return a;
+};
+const ADJ = (id, side, extra = {}) => ({ op: 'addAdjacentRegion', args: { id, name: '城东', side, length: 40, fromName: '城中', biome: 'village', areas: [{ id: `${id}_a`, size: 'large', places: [{ id: `${id}_market`, kind: 'market', name: '东市' }, { id: `${id}_inn`, kind: 'inn', name: '东门客栈' }] }], ...extra } });
+
+test('相邻的地图：通道两边对齐；居民从主地图走过去（经路口换到新地图）；再连一张时能连续换乘', (t) => {
+  const town = redTown();
+  t.after(() => town.stop());
+  const r = town.proposalSystem.prepare([ADJ('chengdong', 'east')]);
+  assert.ok(!r.error, r.error);
+  town.applyWorldOp(r.ops[0]);
+  assert.equal(town.spec.regions[0].name, '城中');
+  const east = town.regions.chengdong;
+  assert.ok(east && east.passages.length >= 1, '新地图有通道');
+  const mine = town.world.passages.find((p) => p.to === 'chengdong');
+  const theirs = east.passages.find((p) => p.key === mine.key);
+  assert.equal(mine.x, town.world.W - 1);
+  assert.equal(theirs.x, 0);
+  assert.equal(mine.y, theirs.y, '两边对齐');
+  assert.ok(town.regionOpen('chengdong'), '相邻的地图一直是通的');
+  assert.ok(town.publicLocs().includes('chengdong_market'));
+  assert.match(town.locListText(), /东市.*在城东/);
+  const red = walkTo(town, town.byId.red, 'chengdong_market');
+  assert.equal(red.region, 'chengdong');
+  assert.equal(red.locId, 'chengdong_market');
+  assert.ok(red.memories.some((m) => m.text.includes('第一次来到了城东')));
+  // 城东再往东连一张：从城中出发要换乘两次
+  const r2 = town.proposalSystem.prepare([ADJ('dongjiao', 'east', { from: 'chengdong', name: '东郊', fromName: undefined, areas: [{ id: 'dj_a', size: 'large', places: [{ id: 'dj_farm', kind: 'farm', name: '东郊农场' }] }] })]);
+  assert.ok(!r2.error, r2.error);
+  town.applyWorldOp(r2.ops[0]);
+  assert.equal(town.routeStep('town', 'dongjiao').to, 'chengdong');
+  const mom = walkTo(town, town.byId.mom, 'dj_farm');
+  // 第一段走到城东，接着自己继续走完第二段
+  for (let i = 0; i < 4 && mom.region !== 'dongjiao'; i++) walkTo(town, mom, 'dj_farm');
+  assert.equal(mom.region, 'dongjiao');
+  // 有邻居的一侧不能再扩展
+  assert.match(town.proposalSystem.prepare([EXT('east', 8, { places: [] })]).error, /已经连着相邻的地图/);
+  assert.ok(!town.proposalSystem.prepare([EXT('south', 8, { places: [] })]).error);
+});
+
+test('远处的区域：经路口往返；开放时的旁白、传闻、第一次到访的记忆来自区域数据（小红帽世界里没有暗月界的字样）', (t) => {
+  const yx = new Town({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'town-map-')), instantTalk: true });
+  t.after(() => yx.stop());
+  yx.openRegion('moonrealm', true);
+  assert.ok(yx.logs.some((l) => l.text.includes('月之渡口那头的「暗月界」向小镇敞开了')));
+  assert.ok(yx.byId.lin.memories.some((m) => m.text.includes('暗月界')));
+  const lin = walkTo(yx, yx.byId.lin, 'moon_plaza');
+  assert.equal(lin.region, 'moonrealm');
+  assert.ok(lin.memories.some((m) => m.text.includes('第一次穿过月之渡口，来到了暗月界：天是深紫色的')));
+
+  const town = redTown();
+  t.after(() => town.stop());
+  // 架构师：远处的区域要同时打通路口
+  const region = { op: 'addRegion', args: { id: 'north_hill', name: '北山', biome: 'forest', areas: [{ id: 'nh_a', places: [{ id: 'nh_camp', kind: 'camp', name: '山顶营地' }] }] } };
+  assert.match(town.proposalSystem.prepare([region]).error, /linkRegions/);
+  const r = town.proposalSystem.prepare([region, { op: 'linkRegions', args: { region: 'north_hill', open: true, entry: 'forest_path', gateName: '北山山口' } }]);
+  assert.ok(!r.error, r.error);
+  for (const o of r.ops) town.applyWorldOp(o);
+  town.openRegion('north_hill', true);
+  const red = walkTo(town, town.byId.red, 'nh_camp');
+  assert.equal(red.region, 'north_hill');
+  const text = [...town.logs.map((l) => l.text), ...red.memories.map((m) => m.text)].join('\n');
+  assert.ok(text.includes('北山'));
+  assert.ok(!/暗月界|月之渡口/.test(text), '没有暗月界的字样');
+  assert.ok(red.memories.some((m) => m.text.includes('第一次穿过北山山口，来到了北山')));
+});
