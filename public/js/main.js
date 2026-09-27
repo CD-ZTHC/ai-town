@@ -402,7 +402,7 @@ function loop(now) {
       overlay: (s.overlay || []).filter((o) => (o.region || 'town') === app.view),
       agents, agentMap, occupancy, convos: s.convos, entities: (s.entities || []).filter((e) => e.kind === 'portal' ? app.view === 'town' : here(e)), creatures, avatars,
       selected: app.selected, hover: app.hover, boardCount: app.board.length,
-      festival: app.view === 'town' && (app.forceFestival || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns')),
+      festival: app.view === 'town' && ((app.forceFestival && app.spec?.calendar.events?.some((e) => e.vfx === 'festival_lanterns')) || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns')),
       mode: app.mode, subtitles: app.mode === 'immerse' && Immerse.subsOn(),
       play: app.mode === 'play' ? Play.state() : null,
     };

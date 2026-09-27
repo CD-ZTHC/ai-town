@@ -155,8 +155,9 @@ function candidates() {
   // 节日灯会（夜晚的镜湖）
   const m = s.t % 1440;
   const pier = app.regionWorlds.town?.locations?.pier?.rect;
-  const festive = app.forceFestival || (app.spec?.calendar.events || []).some((e) => e.vfx === 'festival_lanterns' && e.day === Math.floor(s.t / 1440) + 1);
-  if (festive && (m > 1110 || m < 60) && pier) out.push({ key: 'festival', score: 55, region: 'town', x: (pier.x + pier.w / 2) * TS, y: (pier.y - 2) * TS, zoom: 1.25, label: '🏮 萤火节灯会' });
+  const lanterns = (app.spec?.calendar.events || []).filter((e) => e.vfx === 'festival_lanterns');
+  const fest = lanterns.find((e) => e.day === Math.floor(s.t / 1440) + 1) || (app.forceFestival && lanterns[0]);
+  if (fest && (m > 1110 || m < 60) && pier) out.push({ key: 'festival', score: 55, region: 'town', x: (pier.x + pier.w / 2) * TS, y: (pier.y - 2) * TS, zoom: 1.25, label: `${fest.emoji || '🏮'} ${fest.name}` });
   // 访客化身在和居民说话
   for (const v of s.avatars || []) {
     const a = awake.find((q) => !q.inside && regionOf(q) === regionOf(v) && q.bubble?.kind === 'say' && Math.hypot(q.x - v.x, q.y - v.y) < 4);

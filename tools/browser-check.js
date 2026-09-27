@@ -129,6 +129,7 @@ await step('01-observe', async () => {
   await evaluate(`localStorage.setItem('town-help-seen', '1')`);
   await send('Page.navigate', { url: `${base}/w/yunxi/?mode=observe` });
   await waitFor(() => evaluate(`document.querySelectorAll('#roster .rcard').length >= 8`), 15000, '名册渲染');
+  await waitFor(() => evaluate(`document.querySelector('#festival-chip').textContent.includes('萤火节')`), 8000, '活动标签');
 }, { wait: 1500 });
 await step('02-inspector', async () => {
   await click('#roster .rcard[data-id="lin"]');
@@ -169,6 +170,11 @@ await step('13-play', async () => {
 await step('18-little-red', async () => {
   await send('Page.navigate', { url: `${base}/w/little-red/?mode=observe` });
   await waitFor(() => evaluate(`document.querySelectorAll('#roster .rcard').length >= 5 && document.title.includes('小红帽')`), 15000, '小红帽世界');
+  // 顶栏活动标签与点击提示用的是这个世界自己的日历活动，而不是云溪镇的萤火节
+  await waitFor(() => evaluate(`document.querySelector('#festival-chip').textContent.includes('外婆生日')`), 8000, '活动标签');
+  await click('#festival-chip');
+  const tip = await evaluate(`document.querySelector('#toasts').lastElementChild?.textContent || ''`);
+  if (!tip.includes('外婆生日') || tip.includes('萤火')) throw new Error(`活动提示不对：${tip}`);
 }, { wait: 1500 });
 await step('19-genesis', async () => {
   await send('Page.navigate', { url: `${base}/genesis.html` });

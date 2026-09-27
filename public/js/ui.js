@@ -14,6 +14,8 @@ export { onEvolution, evolveModal } from './ui/evolve.js';
 export { avatarModal, eventModal, newsModal, graphModal, helpModal, adminModal } from './ui/modals.js';
 export { accountModal, requireLogin } from './ui/auth.js';
 
+const where = (ev) => (ev.location && app.spec?.locations?.[ev.location]?.name) || '';
+
 /** 按世界的叙述口吻设置页面标题与品牌 */
 function applyVoice() {
   const v = voice();
@@ -41,9 +43,17 @@ export function init(a, first) {
   // 底部 Dock 的按钮（天气 / 事件 / 日报 / 关系网 / 建设）由 hud.js 绑定
   $('#story-chip').addEventListener('click', () => storyModal());
   $('#region-chip').addEventListener('click', () => app.setView(app.view === 'town' ? nextRegion() : 'town'));
+  // 顶栏的活动标签：显示的是这个世界最近的日历活动；有灯会特效的活动可以预览，其余的给出时间、地点与说明
   $('#festival-chip').addEventListener('click', () => {
-    app.forceFestival = !app.forceFestival;
-    toast(app.forceFestival ? '🏮 萤火节灯会预览：夜晚时镜湖上会升起河灯与天灯' : '🏮 已关闭灯会预览');
+    const ev = ui.chipEvent;
+    if (!ev) return;
+    if (ev.vfx === 'festival_lanterns') {
+      app.forceFestival = !app.forceFestival;
+      toast(app.forceFestival ? `${esc(ev.emoji)} ${esc(ev.name)}灯会预览：夜晚时${esc(where(ev) || '水面')}会升起河灯与天灯` : `${esc(ev.emoji)} 已关闭灯会预览`);
+      return;
+    }
+    const at = [`第 ${ev.day} 天（${esc(weekday(ev.day))}）`, ev.from && `${esc(ev.from)} 起`, where(ev) && `在${esc(where(ev))}`].filter(Boolean).join(' ');
+    toast(`${esc(ev.emoji)} ${esc(ev.name)}：${at}${ev.hint ? `，${esc(ev.hint)}` : ''}`);
   });
   $('#insp-close').addEventListener('click', closeInspector);
   const feedOpen = (open) => {
@@ -87,13 +97,14 @@ export function frame(S) {
   const fc = $('#festival-chip');
   const evs = (app.spec?.calendar.events || []).filter((e) => e.countdown).sort((x, y) => x.day - y.day);
   const ev = evs.find((e) => e.day >= S.day) || evs[evs.length - 1];
+  ui.chipEvent = ev || null;
   if (ev) {
     const d = ev.day - S.day;
     const from = Number(String(ev.from).split(':')[0]) || 0;
     fc.textContent = d > 0 ? `${ev.emoji} ${ev.name} · 还有${d}天` : d === 0 ? (h >= from ? `${ev.emoji} ${ev.name}进行中！` : `${ev.emoji} 今晚${ev.name}！`) : `${ev.emoji} ${ev.name}已落幕`;
   }
   fc.hidden = !ev;
-  fc.classList.toggle('live', (ev && ev.day === S.day) || app.forceFestival);
+  fc.classList.toggle('live', Boolean(ev && (ev.day === S.day || (app.forceFestival && ev.vfx === 'festival_lanterns'))));
   const sp = app.snap;
   $$('#speed button').forEach((b) => {
     const v = Number(b.dataset.speed);
