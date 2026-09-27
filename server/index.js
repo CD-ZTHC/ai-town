@@ -21,6 +21,10 @@ import { HttpError } from './http/util.js';
 import { worldPage } from './http/pages.js';
 import { evolveConfig } from '../plugin-host/evolved.js';
 import { engineArgs } from '../evolution/common.js';
+import { hostCall } from '../evolution/llm.js';
+import { Ledger, budgetPolicy, LEVEL_NAMES } from './scheduler/budget.js';
+import { withContext } from './scheduler/context.js';
+import { CLASS_NAMES } from './scheduler/classes.js';
 
 // 设置中心：环境变量 > 面板保存的值（data/settings.json）> 默认值。环境变量写错时直接报错退出，不悄悄用默认值
 const bad = settings.envProblems();
@@ -83,6 +87,22 @@ for (const id of settings.get('PINNED_WORLDS')) {
 }
 setInterval(() => manager.tick(), 5000).unref();
 
+// ---------- 统一 AI 调度（§7）：账本记在 usage 表；出队前按世界的分层预算检查 ----------
+const ledger = new Ledger(accounts.db);
+llm.onUsage((e) => ledger.add(e));
+const budget = budgetPolicy({ ledger, world: (id) => registry.get(id), ownerGrant: (w) => (w.ownerId ? accounts.grant(w.ownerId, 'genesis') : null), globalUsed: () => llm.stats.dayTokens });
+llm.setBudgetPolicy(budget.allow);
+/** 调度面板（管理员）：各级别队列、各世界用量排行与降级档位、正在进行的调用 */
+function llmView() {
+  return {
+    classes: llm.sched.view().map((x) => ({ ...x, name: CLASS_NAMES[x.cls] })),
+    ranking: ledger.ranking().map((r) => ({ ...r, title: registry.get(r.id)?.title || r.id, level: budget.level(r.id), levelName: LEVEL_NAMES[budget.level(r.id)], limit: Number.isFinite(budget.worldLimit(registry.get(r.id))) ? budget.worldLimit(registry.get(r.id)) : null })),
+    pool: budget.pool(),
+    concurrency: settings.get('LLM_CONCURRENCY'), inflight: llm.stats.inflight, dayTokens: llm.stats.dayTokens, dailyBudget: llm.stats.dailyBudget,
+    active: llm.stats.active.map((a) => ({ label: a.label, agent: a.agent, ms: Date.now() - a.since })),
+  };
+}
+
 let llmDirty = false;
 llm.onActivity(() => { llmDirty = true; });
 setInterval(() => { if (llmDirty || llm.stats.active.length) { llmDirty = false; manager.broadcastAll('llm', llmPublic()); } }, 400);
@@ -128,7 +148,7 @@ const app = createApp({
   publicDir: path.join(ROOT, 'public'),
   accounts,
   engineStatus: () => engineStatus(),
-  admin: { restart, supervised: () => supervised, impactOf, manager, registry },
+  admin: { restart, supervised: () => supervised, impactOf, manager, registry, llmView, budget, ledger },
   routes: [['worlds', worldsApi({ registry, manager, accounts })]],
   worlds: {
     lobby: true,
@@ -158,8 +178,19 @@ function startEngine() {
   if (cfg.mode === 'off' || !settings.get('EVOLVE_DAEMON')) return;
   fs.mkdirSync(EVOLVED_DIR, { recursive: true });
   fs.mkdirSync(EVO_DIR, { recursive: true });
-  const args = [...engineArgs({ root: ROOT, data: DATA, evolvedDir: EVOLVED_DIR, evoDir: EVO_DIR }), path.join(ROOT, 'evolution', 'daemon.js')];
-  engine = spawn(process.execPath, args, { cwd: ROOT, env: settings.env({ ...process.env, DATA_DIR: DATA }), stdio: ['ignore', 'inherit', 'inherit'] });
+  // 引擎不联网：模型调用经 IPC 交给主进程，放进统一队列的 P4 级（§7.5）
+  const args = [...engineArgs({ root: ROOT, data: DATA, evolvedDir: EVOLVED_DIR, evoDir: EVO_DIR, net: false }), path.join(ROOT, 'evolution', 'daemon.js')];
+  engine = spawn(process.execPath, args, { cwd: ROOT, env: settings.env({ ...process.env, DATA_DIR: DATA, EVOLVE_IPC: '1', EVOLVE_LLM: llm.stats.enabled ? '1' : '0' }), stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+  const proc = engine;
+  proc.on('message', async (m) => {
+    if (m?.type !== 'llm') return;
+    let reply;
+    try {
+      const r = await withContext({ worldId: m.worldId || 'yunxi', userId: null }, () => hostCall(m));
+      reply = { type: 'llm-result', id: m.id, ok: true, json: r.json, tokens: r.tokens };
+    } catch (e) { reply = { type: 'llm-result', id: m.id, ok: false, error: String(e.message).slice(0, 300), code: e.code }; }
+    if (proc.connected) proc.send(reply);
+  });
   engine.on('exit', (code) => {
     engine = null;
     if (shuttingDown) return;

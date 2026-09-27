@@ -5,9 +5,10 @@ import { page as settingsPage } from './settings.js';
 import { page as usersPage } from './users.js';
 import { page as auditPage } from './audit.js';
 import { page as worldsPage } from './worlds.js';
+import { page as llmPage } from './llm.js';
 
 // 各页：{ id, title, render(el, ctx) }，每页一个模块
-export const PAGES = [settingsPage, usersPage, worldsPage, auditPage];
+export const PAGES = [settingsPage, usersPage, worldsPage, llmPage, auditPage];
 
 const ctx = { me: null, refreshAlerts };
 
@@ -95,4 +96,6 @@ export async function restartServer() {
   $('#alerts').innerHTML = '<div class="banner bad">服务器 60 秒内没有恢复，请检查服务器日志</div>';
 }
 
+// 地址栏里改了锚点（或者前进 / 后退）：切到对应的页
+window.addEventListener('hashchange', () => { const id = decodeURIComponent(location.hash.slice(1)); if (ctx.me?.admin && id && id !== current?.id) go(id); });
 boot();

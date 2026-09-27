@@ -9,6 +9,7 @@ import { worldApi } from './world-api.js';
 import { adminApi } from './admin-api.js';
 import { authApi } from './auth-api.js';
 import { identity } from './identity.js';
+import { withContext } from '../scheduler/context.js';
 
 export const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 export const SECURITY_HEADERS = {
@@ -95,15 +96,18 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
 
   // ---------- 世界接口：/api/w/:world/*（设计里的路径）、/w/:world/api/*（世界页面的相对路径）、/api/*（旧路径 → 默认世界）----------
   const wapi = worldApi({ engineStatus, openStream, accounts });
-  const bind = (getId) => async (c, next) => { c.set('host', worlds.resolve(c, getId(c))); await next(); };
+  const bind = (getId) => async (c, next) => {
+    const host = worlds.resolve(c, getId(c));
+    c.set('host', host);
+    await withContext({ worldId: host.id, userId: c.get('user')?.id || null }, () => next());
+  };
   app.use('/api/w/:world/*', bind((c) => c.req.param('world')));
   app.route('/api/w/:world', wapi);
   app.use('/w/:world/api/*', bind((c) => c.req.param('world')));
   app.route('/w/:world/api', wapi);
   app.use('/api/*', async (c, next) => {
     if (c.req.path.startsWith('/api/w/')) return next();
-    c.set('host', worlds.resolve(c, worlds.defaultId()));
-    await next();
+    return bind(() => worlds.defaultId())(c, next);
   });
   app.route('/api', wapi);
   const notFound = (c) => { throw new HttpError(['GET', 'POST'].includes(c.req.method) ? 404 : 405, ['GET', 'POST'].includes(c.req.method) ? '不存在' : '不支持的方法'); };

@@ -161,7 +161,7 @@ ${this.actionBlock(a)}
 ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22:30的日程（可保留原有安排，也可因消息调整）。
 输出 JSON：{"reaction":"脱口而出的一句话（≤30字）","thought":"内心想法（≤40字）","schedule":[{"start":"HH:MM","end":"HH:MM","location":"id","activity":"≤14字","emoji":"一个emoji"}]}`,
         },
-      ], { label: '重新规划', agent: a.name, maxTokens: 3500, priority: true }));
+      ], { label: '重新规划', agent: a.name, maxTokens: 3500 }));
       const sched = this.normalizeSchedule(a, res.schedule, Math.floor(now));
       if (sched.length) {
         const past = (a.scheduleDay === this.day ? a.schedule : []).filter((e) => e.end <= now);

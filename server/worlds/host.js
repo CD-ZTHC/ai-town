@@ -1,3 +1,5 @@
+import { withContext } from '../scheduler/context.js';
+
 // 世界托管：一个运行中的世界 = 一个 Town 实例 + 它的 SSE 观众。
 // 负责把 Town 的事件推给观众、无人观看时休眠、重置 / 回溯 / 切换时间线时换一个新的 Town。
 export class WorldHost {
@@ -45,7 +47,8 @@ export class WorldHost {
       t.on(ev, () => { if (!timer) timer = setTimeout(() => { timer = null; this.broadcast(ev, { t: t.t }); }, 800); });
     }
     this.onWire?.(t);
-    t.start();
+    // 世界的主循环在「这个世界」的调用上下文里运行：之后所有的模型调用都自动记在这个世界名下
+    withContext({ worldId: this.id }, () => t.start());
   }
 
   /** 换上一个新的 Town（重置、回溯、切换时间线）；旧的由调用方先存盘停下 */

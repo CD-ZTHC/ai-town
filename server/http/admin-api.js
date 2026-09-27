@@ -119,6 +119,15 @@ export function adminApi(deps) {
   });
   api.post('/worlds/:id/unload', (c) => c.json({ ok: Boolean(deps.manager?.close(c.req.param('id'), '管理员卸载')) }));
 
+  // ---------- 调度（§7.6）----------
+  api.get('/llm', (c) => c.json(deps.llmView ? deps.llmView() : {}));
+  api.post('/worlds/:id/ai', (c) => {
+    const paused = Boolean(c.get('body').paused);
+    const w = reg().update(c.req.param('id'), { settings: { aiPaused: paused } });
+    deps.audit?.({ actor: actor(c), action: paused ? 'world.ai-pause' : 'world.ai-resume', target: w.id });
+    return c.json({ ok: true });
+  });
+
   // ---------- 审计 ----------
   api.get('/audit', (c) => c.json(acc().auditLog({ actor: String(c.req.query('actor') || ''), action: String(c.req.query('action') || ''), before: c.req.query('before') ? Number(c.req.query('before')) : null })));
 

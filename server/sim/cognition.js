@@ -196,7 +196,7 @@ ${other.slice(-30).join('\n') || '（无）'}
 {"headline":"头条标题（≤20字）","subhead":"副标题（≤30字）","lead":"头条正文（120~200字）","articles":[{"title":"≤16字","body":"60~110字"}],"gossip":"街头巷尾的小道消息（≤60字）","quote":{"who":"居民姓名","text":"今日语录"},"forecast":"明日预告（≤40字）"}
 articles 写 3 篇。`,
         },
-      ], { label: '撰写日报', agent: ch.name, maxTokens: 5000, priority: true, timeoutMs: 240_000, attempts: 2, tier: 'smart' });
+      ], { label: '撰写日报', agent: ch.name, maxTokens: 5000, timeoutMs: 240_000, attempts: 2, tier: 'smart' });
       const paper = { day: this.day, weekday: this.weekday, weather: this.weather, ...res, at: this.t };
       this.newspapers.push(paper);
       if (this.newspapers.length > 20) this.newspapers.shift();

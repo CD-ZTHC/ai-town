@@ -2,6 +2,9 @@
 import fs from 'node:fs';
 import { createProvider } from './llm-providers.js';
 import { get as setting, env as settingsEnv } from './settings/index.js';
+import { Scheduler } from './scheduler/index.js';
+import { classOf } from './scheduler/classes.js';
+import { currentContext } from './scheduler/context.js';
 
 // provider 按「服务类型 + 地址 + 密钥」缓存：面板里改了地址或密钥，下一次调用就换用新的
 let injected = null; // 测试或启动时注入的 provider（setProvider）
@@ -80,7 +83,8 @@ export function budgetLeft() {
   const b = dailyBudget();
   return b ? Math.max(0, b - stats.dayTokens) : Infinity;
 }
-export const queueSize = () => queue.length + stats.inflight;
+/** 队列长度：不传世界时是全局（排队 + 进行中），传世界时是这个世界的积压（按世界调速用） */
+export const queueSize = (worldId = null) => (worldId ? sched.backlog(worldId) : sched.queued() + stats.inflight);
 
 async function ensureModel() {
   const provider = currentProvider();
@@ -108,44 +112,58 @@ async function ensureModel() {
   }
 }
 
-// ---- 并发队列（带自适应限流）----
-const queue = [];
+// ---- 统一调度（多世界设计 §7）：一个队列、一个并发上限；按级别与世界出队，带自适应限流 ----
 let penalty = 0; // 触发限流后临时降低并发
 let cooldownUntil = 0;
 let backoff = 0;
 let pumpTimer = null;
 const limit = () => Math.max(1, concurrency() - penalty);
-export const isBusy = () => queue.length > 1 || stats.inflight >= limit() || Date.now() < cooldownUntil;
+// allow：出队前的额度检查（按世界的分层预算，见 scheduler/budget.js；由服务入口设置）
+let budgetPolicy = () => true;
+export function setBudgetPolicy(fn) { budgetPolicy = fn || (() => true); }
+export const sched = new Scheduler({ limit, agingMs: () => setting('PRIORITY_AGING_MIN') * 60_000, allow: (job) => budgetPolicy(job) });
+/** 队列忙：调用点（导演、独白、群体心智）据此让路；让路记在当前世界上，作为公平补偿的依据 */
+export const isBusy = () => {
+  const busy = sched.queued() > 1 || stats.inflight >= limit() || Date.now() < cooldownUntil;
+  if (busy) sched.noteYield(currentContext().worldId);
+  return busy;
+};
 function pump() {
   const wait = cooldownUntil - Date.now();
   if (wait > 0) {
     if (!pumpTimer) pumpTimer = setTimeout(() => { pumpTimer = null; pump(); }, wait);
-    stats.queued = queue.length;
+    stats.queued = sched.queued();
     return notify();
   }
-  while (stats.inflight < limit() && queue.length) {
-    const job = queue.shift();
-    stats.queued = queue.length;
+  for (let job = sched.next(); job; job = sched.next()) {
+    sched.started(job);
     stats.inflight++;
-    job().finally(() => {
+    stats.queued = sched.queued();
+    job.run().finally(() => {
+      sched.finished(job);
       stats.inflight--;
       pump();
       notify();
     });
   }
-  stats.queued = queue.length;
+  stats.queued = sched.queued();
   notify();
 }
-function enqueue(fn, priority = false) {
+/** 放进队列：级别由 label 决定（调用点不再自己选优先级），世界与用户来自调用上下文 */
+function enqueue(fn, opts) {
+  const ctx = currentContext();
   return new Promise((resolve, reject) => {
-    const job = () => fn().then(resolve, reject);
-    priority ? queue.unshift(job) : queue.push(job);
+    sched.push({ cls: opts.cls || classOf(opts.label), worldId: ctx.worldId, userId: ctx.userId, label: opts.label, run: () => fn(ctx).then(resolve, reject), reject });
     pump();
   });
 }
 
+// ---- 用量账本：每次调用结束后记下 { worldId, userId, class, tokens }（由服务入口写进 usage 表）----
+const usageListeners = new Set();
+export function onUsage(fn) { usageListeners.add(fn); return () => usageListeners.delete(fn); }
+
 let seq = 0;
-async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = timeoutMsSetting(), attempts = 3, tier = 'default', json = false, schema = null, model: override = '' }) {
+async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = timeoutMsSetting(), attempts = 3, tier = 'default', json = false, schema = null, model: override = '', provider: providerOverride = null, cls = null, onTokens = null }, ctx = {}) {
   await ensureModel();
   // override：进化引擎的评审 Agent 可以指定另一个模型（EVOLVE_REVIEW_MODEL）
   const model = override || modelFor(tier);
@@ -163,11 +181,14 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
         const withSchema = Boolean(schema && json && jsonMode && schemaMode);
-        const { content, usage, finishReason } = await currentProvider().complete({ model, messages, temperature, maxTokens, json: json && jsonMode, ...(withSchema ? { schema } : {}), signal: ctrl.signal });
+        const { content, usage, finishReason } = await (providerOverride || currentProvider()).complete({ model, messages, temperature, maxTokens, json: json && jsonMode, ...(withSchema ? { schema } : {}), signal: ctrl.signal });
         stats.promptTokens += usage.prompt;
         stats.completionTokens += usage.completion;
         rollDay();
         stats.dayTokens += usage.prompt + usage.completion;
+        const tokens = usage.prompt + usage.completion;
+        onTokens?.(tokens);
+        for (const fn of usageListeners) { try { fn({ worldId: ctx.worldId || null, userId: ctx.userId || null, cls: cls || classOf(label), label, tokens }); } catch { /* 账本失败不影响调用 */ } }
         const u = labelStats(label);
         u.calls++;
         u.tokens += usage.prompt + usage.completion;
@@ -243,7 +264,7 @@ export function chat(messages, opts = {}) {
   if (mock) return Promise.resolve().then(() => mock(messages, opts));
   if (!stats.enabled) return Promise.reject(new Error('LLM 未配置'));
   if (budgetLeft() <= 0) return Promise.reject(new BudgetError());
-  const p = enqueue(() => rawChat(messages, opts), opts.priority);
+  const p = enqueue((ctx) => rawChat(messages, opts, ctx), opts);
   return RECORD_FILE ? p.then((content) => { record(opts.label || 'llm', content); return content; }) : p;
 }
 

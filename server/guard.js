@@ -159,7 +159,7 @@ ${RATING_RULE[rating] || RATING_RULE.cozy}
 轻微的戏剧冲突（误会、下雨、东西丢失、小争吵）是允许的。
 输出：{"allow":true 或 false,"reason":"若拒绝，用一句温和的话说明原因（≤25字）"}`,
       },
-    ], { label: '内容审核', agent: '守门人', maxTokens: 1500, temperature: 0, priority: true, timeoutMs: 45_000, attempts: 1, tier: 'fast' });
+    ], { label: '内容审核', agent: '守门人', maxTokens: 1500, temperature: 0, timeoutMs: 45_000, attempts: 1, tier: 'fast' });
     if (res.allow === true) return { ok: true };
     return { ok: false, reason: String(res.reason || '这个内容不太适合小镇').slice(0, 40) };
   } catch {

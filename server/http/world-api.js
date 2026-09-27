@@ -29,7 +29,7 @@ function requireInteraction(c) {
   const admin = c.get('admin');
   if (!llm.stats.enabled) throw new HttpError(503, 'AI 尚未配置');
   if (llm.budgetLeft() <= 0) throw new HttpError(429, '今天的 AI 额度已经用完了，明天再来吧 🌙');
-  if (llm.queueSize() > config.maxQueueForUser && !admin) throw new HttpError(503, '居民们正忙着思考，请稍后再试');
+  if (llm.queueSize(c.get('host').id) > config.maxQueueForUser && !admin) throw new HttpError(503, '居民们正忙着思考，请稍后再试');
 }
 function take(c, bucket, opts = {}) {
   const r = quota(c.get('who'), bucket, { world: c.get('host').id, ...opts });

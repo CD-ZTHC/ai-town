@@ -241,7 +241,7 @@ test('长期没人用的代码插件：提议退役 → 采纳后停用 → 撤�
   town.stop();
 });
 
-test('进化引擎进程能联网（要调用模型），沙箱进程不能', async (t) => {
+test('独立运行的进化引擎能联网（要调用模型）；经 IPC 调用模型的引擎与沙箱进程不能', async (t) => {
   const { engineArgs } = await import('../evolution/common.js');
   const { sandboxArgs } = await import('../plugin-host/sandbox/client.js');
   const http = await import('node:http');
@@ -260,6 +260,7 @@ test('进化引擎进程能联网（要调用模型），沙箱进程不能', as
   });
   assert.equal(await run(engineArgs({ root: dir, data: dir, evolvedDir: dir, evoDir: dir })), 'ok', '引擎要能访问模型服务');
   if (process.allowedNodeEnvironmentFlags.has('--allow-net')) {
+    assert.match(await run(engineArgs({ root: dir, data: dir, evolvedDir: dir, evoDir: dir, net: false })), /^ERR/, '由服务器启动的引擎不联网');
     assert.match(await run(sandboxArgs(dir)), /^ERR/, '沙箱进程不能联网');
   }
 });

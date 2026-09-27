@@ -176,6 +176,14 @@ await step('14-admin-settings', async () => {
   await evaluate(`(() => { const i = document.querySelector('[data-k="MAX_CLIENTS"]'); i.value = '150'; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await waitFor(() => evaluate(`!document.querySelector('#s-save').disabled`), 3000, '保存按钮');
 });
+await step('16-admin-llm', async () => {
+  await send('Page.navigate', { url: `${base}/admin/#llm` });
+  await waitFor(() => evaluate(`document.querySelector('#page')?.textContent.includes('队列')`), 10000, '管理面板 · 调度');
+});
+await step('17-admin-worlds', async () => {
+  await send('Page.navigate', { url: `${base}/admin/#worlds` });
+  await waitFor(() => evaluate(`document.querySelector('#page')?.textContent.includes('yunxi')`), 10000, '管理面板 · 世界');
+});
 
 ws.close();
 cleanup();

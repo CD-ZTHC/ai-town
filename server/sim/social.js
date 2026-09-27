@@ -224,7 +224,7 @@ ${whisper
 输出 JSON：{"reply":"${whisper ? '自言自语说出口的一句话（≤40字）' : '回应（口语，≤80字）'}","emoji":"一个emoji","thought":"此刻的内心想法（≤40字）","memory":"${a.name}对此的第一人称记忆（≤60字）","importance":1~10,"newPlan":null 或 {"time":"HH:MM","location":"地点id","activity":"≤14字","emoji":"一个emoji"}}
 若${a.name}因此决定今天稍后去做某件事，newPlan 写明（时间须晚于${fmtTime(this.t)}），否则为 null。`,
       },
-    ], { label: whisper ? '心声' : '与旅人交谈', agent: a.name, maxTokens: 3000, priority: true, timeoutMs: 90_000, attempts: 2 }));
+    ], { label: whisper ? '心声' : '与旅人交谈', agent: a.name, maxTokens: 3000, timeoutMs: 90_000, attempts: 2 }));
     } finally {
       a.chatBusy = false;
     }

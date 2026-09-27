@@ -74,7 +74,7 @@ test('鉴权失败不重试；空回复会重试到次数用完', async () => {
   assert.equal(empty.reqs.length, 2);
 });
 
-test('同时在飞的请求不超过并发上限（默认 4）', async () => {
+test('同时在飞的请求不超过并发上限（默认 4），其中 1 个留给交互（P0）', async () => {
   let inflight = 0, peak = 0;
   const release = [];
   const p = fake([() => {
@@ -84,10 +84,14 @@ test('同时在飞的请求不超过并发上限（默认 4）', async () => {
   llm.setProvider(p);
   const all = Array.from({ length: 7 }, (_, i) => llm.chat([{ role: 'user', content: String(i) }], { label: 'conc' }));
   await new Promise((r) => setImmediate(r));
+  assert.equal(peak, 3, '非交互的调用最多占 3 个');
+  assert.equal(llm.queueSize(), 7, '4 个排队 + 3 个在飞');
+  // 有人在等的交互（旅人聊天）立刻用上保留的那一个
+  all.push(llm.chat([{ role: 'user', content: 'p0' }], { label: '与旅人交谈' }));
+  await new Promise((r) => setImmediate(r));
   assert.equal(peak, 4);
-  assert.equal(llm.queueSize(), 7, '3 个排队 + 4 个在飞');
   while (release.length || inflight) { release.splice(0).forEach((f) => f()); await new Promise((r) => setImmediate(r)); }
-  assert.deepEqual(await Promise.all(all), Array(7).fill('done'));
+  assert.deepEqual(await Promise.all(all), Array(8).fill('done'));
   assert.equal(peak, 4);
 });
 

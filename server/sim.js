@@ -233,7 +233,8 @@ export class Town extends EventEmitter {
       // 随 AI 负载放慢：模型排队太长时时间流速按比例降低，避免游戏时间跑在思考前面（最低 1/4）
       this.paced = 1;
       if (this.pacing && llm.stats.enabled && !this.nightSkip) {
-        const q = (this.queueSize || llm.queueSize)();
+        // 按世界调速：看本世界在队列里的积压，一个世界卡住不会拖慢所有世界的时钟
+        const q = this.queueSize ? this.queueSize() : llm.queueSize(this.worldId);
         const cap = setting('PACE_QUEUE'); // 模型排队超过这个数时开始放慢时间
         if (q > cap) this.paced = Math.max(0.25, cap / q);
       }
