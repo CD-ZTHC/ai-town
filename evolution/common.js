@@ -25,6 +25,16 @@ export function paths(opts = {}) {
   };
 }
 
+/**
+ * 进化引擎进程的启动参数：用 Node 权限模型限制为只能写 plugins/evolved/ 与 data/evolution/。
+ * Node 25 起权限模型默认也禁止网络，引擎要调用模型，所以支持时加上 --allow-net；
+ * 沙箱与影子试运行的子进程各自带自己的参数、不加 --allow-net，因此仍然断网。
+ */
+export function engineArgs({ root, data, evolvedDir, evoDir }) {
+  const net = process.allowedNodeEnvironmentFlags.has('--allow-net') ? ['--allow-net'] : [];
+  return ['--permission', `--allow-fs-read=${root}`, `--allow-fs-read=${data}`, `--allow-fs-write=${evolvedDir}`, `--allow-fs-write=${evoDir}`, ...net, '--allow-child-process'];
+}
+
 export const readJSON = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
 export function writeJSON(f, v) {
   fs.mkdirSync(path.dirname(f), { recursive: true });

@@ -240,3 +240,26 @@ test('长期没人用的代码插件：提议退役 → 采纳后停用 → 撤�
   assert.ok(EFFECTS.glowUp);
   town.stop();
 });
+
+test('进化引擎进程能联网（要调用模型），沙箱进程不能', async (t) => {
+  const { engineArgs } = await import('../evolution/common.js');
+  const { sandboxArgs } = await import('../plugin-host/sandbox/client.js');
+  const http = await import('node:http');
+  const server = http.createServer((req, res) => res.end('ok'));
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${server.address().port}/`;
+  const probe = `fetch(${JSON.stringify(url)}).then((r) => r.text()).then((x) => console.log(x), (e) => console.log('ERR', e.cause?.code || e.message))`;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-net-'));
+  const { spawn } = await import('node:child_process');
+  const run = (args) => new Promise((resolve) => {
+    const c = spawn(process.execPath, [...args, '--no-warnings', '-e', probe]);
+    let out = '';
+    c.stdout.on('data', (d) => { out += d; });
+    c.on('exit', () => resolve(out.trim()));
+  });
+  assert.equal(await run(engineArgs({ root: dir, data: dir, evolvedDir: dir, evoDir: dir })), 'ok', '引擎要能访问模型服务');
+  if (process.allowedNodeEnvironmentFlags.has('--allow-net')) {
+    assert.match(await run(sandboxArgs(dir)), /^ERR/, '沙箱进程不能联网');
+  }
+});

@@ -28,6 +28,13 @@ test('台词里的引号：中文引号保持原样，没转义的英文引号�
   assert.deepEqual(extractJSON('{"a":"x \\"引\\" y"}'), { a: 'x "引" y' }, '已经转义的引号不动');
 });
 
+test('台词漏掉 "text" 键时补上（线上最常见的对话格式错误）', () => {
+  assert.deepEqual(extractJSON('{"lines":[{"speaker":"赵铁柱":"萤儿！片子放到片尾"},{"speaker":"阿萤","text":"好"}],"summary":"x"}'),
+    { lines: [{ speaker: '赵铁柱', text: '萤儿！片子放到片尾' }, { speaker: '阿萤', text: '好' }], summary: 'x' });
+  assert.deepEqual(extractJSON('{"lines":[{"speaker":"周慧"："月儿来得正好"}]}'), { lines: [{ speaker: '周慧', text: '月儿来得正好' }] }, '全角冒号');
+  assert.deepEqual(extractJSON('{"lines":[{"speaker":"周慧","text":"他说\\"speaker\\":\\"x\\":\\"y"}]}'), { lines: [{ speaker: '周慧', text: '他说"speaker":"x":"y' }] }, '合法 JSON 不经过修补');
+});
+
 test('修不好时，报错里带上出错位置附近的原文', () => {
   assert.throws(() => extractJSON('{"lines":[{"speaker" "林晓雨"}]}'), /附近：.*林晓雨/);
 });

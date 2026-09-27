@@ -299,9 +299,11 @@ function closesString(s, i) {
 /**
  * 修复模型常见的格式错误。逐字符扫描、区分字符串内外，只改 JSON 结构，不动台词内容：
  * 结构位置的中文引号 / 全角冒号 / 全角逗号、数字前的 + 号、尾逗号；
- * 字符串里没转义的英文引号（如 "text":"桩上刻着"第三根桩"几个字"）与换行。
+ * 字符串里没转义的英文引号（如 "text":"桩上刻着"第三根桩"几个字"）与换行；台词漏掉的 "text" 键。
  */
 export function repairJSON(s) {
+  // 台词里最常见的错误：{"speaker":"赵铁柱":"……"} 漏了 "text" 键（对话与多人场景都用 speaker / text）
+  s = s.replace(/("speaker"\s*[:：]\s*"[^"\n]{1,40}")\s*[:：]\s*(?=["“])/g, '$1,"text":');
   let out = '';
   let inStr = false;
   let curly = false; // 这个字符串是不是用中文引号开头的（是的话 ” 才可能是结束引号）
@@ -333,9 +335,10 @@ export async function chatJSON(messages, opts = {}) {
   s.json++;
   try {
     return extractJSON(content);
-  } catch {
+  } catch (e) {
     // 输出不是合法 JSON：让模型改一次（计入 repairs），还不行计入 badJson
     s.repairs++;
+    console.warn(`[llm] ${opts.label || 'llm'} 的回复不是合法 JSON，让模型重写：${String(e.message).slice(0, 240)}`);
     content = await chat(
       [...messages, { role: 'assistant', content }, { role: 'user', content: '上面的输出不是合法 JSON。请只输出合法的 JSON，不要任何其他文字。' }],
       opts,
