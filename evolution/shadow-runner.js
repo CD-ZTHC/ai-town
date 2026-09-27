@@ -8,10 +8,13 @@ let warnings = 0;
 console.warn = () => { warnings++; };
 console.log = () => {};
 const { Town } = await import('../server/sim.js');
+const { loadPack } = await import('../server/worlds/pack.js');
 
 fs.mkdirSync(job.workDir, { recursive: true });
 const town = new Town({
   dataDir: job.workDir, instantTalk: true, pacing: false,
+  // 用户世界：用它自己的世界包（官方世界不传，默认就是云溪镇）
+  ...(job.packDir ? { pack: loadPack(job.packDir) } : {}),
   evolution: { dir: path.join(job.workDir, 'evolution'), pluginsDir: path.join(job.workDir, 'no-plugins'), force: job.candidate ? [job.candidate] : [], config: { mode: 'off' } },
 });
 town.save = () => {}; // 试运行不写存档

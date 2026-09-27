@@ -104,7 +104,7 @@ export function worldApi(deps) {
   api.get('/proposals', (c) => c.json({ ...town(c).proposalsView(c.get('vid') || '-', Boolean(reviewer(c))), admin: Boolean(reviewer(c)) }));
   api.get('/evolution', (c) => {
     const t = town(c), admin = Boolean(reviewer(c));
-    return c.json({ ...t.evolved.view(admin), builtin: t.plugins.view(), decisions: t.decisions.view(admin), engine: c.get('admin') ? deps.engineStatus?.() : undefined, admin });
+    return c.json({ ...t.evolved.view(admin), builtin: t.plugins.view(), decisions: t.decisions.view(admin), engine: c.get('admin') || reviewer(c) === 'owner' ? deps.engineStatus?.(c.get('host').id) : undefined, admin });
   });
   api.get('/decisions', (c) => c.json({ ...town(c).decisions.view(Boolean(reviewer(c))), admin: Boolean(reviewer(c)) }));
   api.get('/snapshots', (c) => { requireAdmin(c); return c.json(listSnapshots(town(c).dataDir)); });

@@ -206,6 +206,10 @@ await step('22-admin-reports', async () => {
   await send('Page.navigate', { url: `${base}/admin/#reports` });
   await waitFor(() => evaluate(`document.querySelector('#page')?.textContent.includes('举报')`), 10000, '管理面板 · 举报');
 });
+await step('23-admin-evolution', async () => {
+  await send('Page.navigate', { url: `${base}/admin/#evolution` });
+  await waitFor(() => evaluate(`document.querySelector('#page')?.textContent.includes('进化引擎')`), 10000, '管理面板 · 进化');
+});
 
 ws.close();
 cleanup();

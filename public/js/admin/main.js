@@ -8,9 +8,10 @@ import { page as worldsPage } from './worlds.js';
 import { page as llmPage } from './llm.js';
 import { page as overviewPage } from './overview.js';
 import { page as reportsPage } from './reports.js';
+import { page as evolutionPage } from './evolution.js';
 
 // 各页：{ id, title, render(el, ctx) }，每页一个模块
-export const PAGES = [overviewPage, settingsPage, usersPage, worldsPage, reportsPage, llmPage, auditPage];
+export const PAGES = [overviewPage, settingsPage, usersPage, worldsPage, reportsPage, llmPage, evolutionPage, auditPage];
 
 const ctx = { me: null, refreshAlerts };
 

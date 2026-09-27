@@ -9,6 +9,7 @@ import { defaultSpec } from '../server/kernel/spec.js';
 import { replay } from '../server/kernel/ops.js';
 import { manifestText } from '../server/worldai/manifest.js';
 import { activeDir } from '../server/timelines.js';
+import { loadPack, packSpec } from '../server/worlds/pack.js';
 import { runGate } from './gate.js';
 import { runShadow } from './shadow.js';
 import { hostApiDoc, pluginCapabilities } from './prompts.js';
@@ -22,11 +23,12 @@ const REVIEW_ROUNDS = 3;
 const SHADOW_RETRIES = 1;
 const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 
-/** 当前世界规格：默认规格 + 当前时间线存档里的操作历史 */
+/** 当前世界规格：这个世界的世界包（官方世界是仓库里的包）+ 当前时间线存档里的操作历史 */
 export function currentSpec(P) {
   let specOps = [];
   try { specOps = readJSON(path.join(activeDir(P.data), 'save.json'), {})?.specOps || []; } catch { /* 没有存档 */ }
-  return replay(defaultSpec(), specOps).spec;
+  const base = P.world?.packDir ? packSpec(loadPack(P.world.packDir)) : defaultSpec();
+  return replay(base, specOps).spec;
 }
 
 function pluginList(P) {
@@ -83,7 +85,7 @@ ${reviews.map((r, i) => `- 第 ${i + 1} 轮：${r.verdict}${r.issues.length ? `�
 export async function runJob(ctx, need) {
   const { P, llm } = ctx;
   const jobs = loadJobs(P);
-  const job = { id: `job${Date.now().toString(36)}`, pid: process.pid, need, status: 'running', stage: 'rfc', startedAt: new Date().toISOString(), log: [] };
+  const job = { id: `job${Date.now().toString(36)}`, worldId: P.world?.id || 'yunxi', pid: process.pid, need, status: 'running', stage: 'rfc', startedAt: new Date().toISOString(), log: [] };
   jobs.push(job);
   saveJobs(P, jobs);
   const note = (text) => { job.log.push({ at: new Date().toISOString(), text: str(text, 200) }); };

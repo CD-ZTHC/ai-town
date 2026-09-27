@@ -158,8 +158,8 @@ test('进化引擎经 IPC 调用模型：进入主进程的统一队列（P4）�
   fs.writeFileSync(script, `
 import { makeLLM } from ${JSON.stringify(path.resolve('evolution/llm.js'))};
 let used = 0;
-const llm = makeLLM({ left: () => Infinity, add: (n) => { used += n; } });
-const r = await llm.call('评审', [{ role: 'user', content: 'x' }], { review: true, worldId: 'little-red' });
+const llm = makeLLM({ left: () => Infinity, add: (n) => { used += n; } }, { worldId: 'little-red' });
+const r = await llm.call('评审', [{ role: 'user', content: 'x' }], { review: true });
 process.send({ type: 'done', r, used, enabled: llm.enabled() });
 `);
   const child = fork(script, { env: { PATH: process.env.PATH, EVOLVE_IPC: '1', EVOLVE_LLM: '1' } });

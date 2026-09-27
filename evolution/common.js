@@ -7,12 +7,22 @@ import { get as setting } from '../server/settings/index.js';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+/**
+ * 进化引擎的目录（多世界设计 §9）：一台引擎服务所有开启进化的世界。
+ *   按世界：data/worlds/<id>/ 下的存档（data）、evolution/（登记、锁定哈希、信号、候选、试运行、需求文档）、plugins/（AI 插件）
+ *   全站：data/evolution/ 下的任务（jobs）、引擎状态（engine）、账本（ledger，每条带 world）
+ * opts.data 直接给出世界的数据目录时（测试、旧用法），全站的文件也放在这个世界的 evolution/ 里。
+ */
 export function paths(opts = {}) {
-  const data = path.resolve(opts.data || path.resolve(ROOT, setting('DATA_DIR')));
+  const dataRoot = path.resolve(opts.dataRoot || path.resolve(ROOT, setting('DATA_DIR')));
+  const worldId = opts.world || 'yunxi';
+  const data = path.resolve(opts.data || path.join(dataRoot, 'worlds', worldId));
   const evo = path.resolve(opts.evo || path.join(data, 'evolution'));
+  const global = path.resolve(opts.global || (opts.data ? evo : path.join(dataRoot, 'evolution')));
   return {
-    data, evo,
-    plugins: path.resolve(opts.plugins || path.join(ROOT, 'plugins', 'evolved')),
+    dataRoot, data, evo, global,
+    world: { id: worldId, packDir: opts.packDir || null },
+    plugins: path.resolve(opts.plugins || path.join(data, 'plugins')),
     candidates: path.join(evo, 'candidates'),
     shadow: path.join(evo, 'shadow'),
     rfcs: path.join(evo, 'rfcs'),
@@ -20,10 +30,26 @@ export function paths(opts = {}) {
     registry: path.join(evo, 'registry.json'),
     signals: path.join(evo, 'signals.json'),
     heartbeat: path.join(evo, 'heartbeat.json'),
-    jobs: path.join(evo, 'jobs.json'),
-    engine: path.join(evo, 'engine.json'),
-    ledger: path.join(evo, 'ledger.jsonl'),
+    budget: path.join(evo, 'budget.json'),
+    jobs: path.join(global, 'jobs.json'),
+    engine: path.join(global, 'engine.json'),
+    ledger: path.join(global, 'ledger.jsonl'),
+    worlds: path.join(global, 'worlds.json'),
   };
+}
+
+/** 开启进化的世界（由小镇服务器写入 data/evolution/worlds.json）：[{ id, official, packDir, mode }] */
+export function enabledWorlds(P) { return readJSON(P.worlds, []).filter((w) => w && /^[a-z][a-z0-9-]{2,31}$/.test(w.id)); }
+
+/**
+ * 在开启进化的世界之间轮转：从上次的下一个开始，跳过已经有任务在进行的世界（每个世界最多同时 1 个任务）。
+ * 返回世界的列表顺序（调用方依次尝试「发现需求」，第一个有需求的就做）。
+ */
+export function rotation(worlds, jobs, last = null) {
+  const busy = new Set(jobs.filter((j) => j.status === 'running').map((j) => j.worldId || 'yunxi'));
+  const i = worlds.findIndex((w) => w.id === last);
+  const ordered = [...worlds.slice(i + 1), ...worlds.slice(0, i + 1)];
+  return ordered.filter((w) => !busy.has(w.id));
 }
 
 /**
@@ -49,7 +75,7 @@ export const today = () => new Date().toISOString().slice(0, 10);
 export function ledger(P, event, extra = {}) {
   try {
     fs.mkdirSync(P.evo, { recursive: true });
-    fs.appendFileSync(P.ledger, `${JSON.stringify({ at: new Date().toISOString(), by: 'engine', event, ...extra })}\n`);
+    fs.appendFileSync(P.ledger, `${JSON.stringify({ at: new Date().toISOString(), by: 'engine', world: P.world?.id, event, ...extra })}\n`);
   } catch { /* 账本写失败不影响流程 */ }
 }
 
@@ -67,18 +93,17 @@ export class Budget {
     this.P = P;
     this.limit = Number.isFinite(limit) && limit > 0 ? limit : 0;
   }
+  // 每个世界各有 EVOLVE_BUDGET（记在世界的 evolution/budget.json）
   state() {
-    const e = readJSON(this.P.engine, {});
-    const b = e.budget?.day === today() ? e.budget : { day: today(), tokens: 0 };
-    return b;
+    const e = readJSON(this.P.budget, {});
+    return e.day === today() ? e : { day: today(), tokens: 0 };
   }
   used() { return this.state().tokens; }
   left() { return this.limit ? Math.max(0, this.limit - this.used()) : Infinity; }
   add(tokens) {
-    const e = readJSON(this.P.engine, {});
-    const b = e.budget?.day === today() ? e.budget : { day: today(), tokens: 0 };
+    const b = this.state();
     b.tokens += Math.max(0, Math.round(tokens || 0));
-    writeJSON(this.P.engine, { ...e, budget: b });
+    writeJSON(this.P.budget, b);
   }
 }
 

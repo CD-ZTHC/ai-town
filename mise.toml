@@ -13,8 +13,8 @@ description = "开发模式（文件变更自动重启）"
 run = "node --watch-path=server server/index.js"
 
 [tasks.reset]
-description = "清空存档，小镇从第一天重新开始"
-run = "rm -rf data/save.json data/timelines data/timelines.json && echo '存档与时间线已清除（AI 插件与进化记录保留；清除它们请删除 data/evolution 与 plugins/evolved）'"
+description = "清空云溪镇的存档，从第一天重新开始"
+run = "rm -rf data/worlds/yunxi/save.json data/worlds/yunxi/timelines data/worlds/yunxi/timelines.json && echo '云溪镇的存档与时间线已清除（AI 插件与进化记录保留；清除它们请删除 data/worlds/yunxi/plugins 与 data/worlds/yunxi/evolution）'"
 
 [tasks.public]
 description = "以公网模式启动（需在 .env 中设置 ADMIN_TOKEN）"

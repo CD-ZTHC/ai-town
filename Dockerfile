@@ -17,10 +17,10 @@ COPY plugin-host ./plugin-host
 COPY plugins/builtin ./plugins/builtin
 COPY evolution ./evolution
 COPY core.lock ./
-# data/：存档与进化状态；plugins/evolved/：AI 生成的插件（进化引擎只能写这两处）
+# data/：账号、设置、各个世界的存档与 AI 插件（data/worlds/<id>/plugins/，进化引擎只能写开启进化的世界各自的目录）
 RUN mkdir -p /app/data /app/plugins/evolved && chown -R node:node /app/data /app/plugins/evolved
 USER node
-VOLUME ["/app/data", "/app/plugins/evolved"]
+VOLUME ["/app/data"]
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD wget -qO- http://127.0.0.1:3000/healthz >/dev/null || exit 1

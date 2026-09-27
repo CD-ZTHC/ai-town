@@ -11,7 +11,8 @@ services:
       - "127.0.0.1:3000:3000"   # 只暴露给本机的反向代理
     volumes:
       - town-data:/app/data
-      - town-plugins:/app/plugins/evolved   # AI 生成的插件（EVOLVE=auto 时）
+      # 旧版本的 AI 插件目录：升级后首次启动会自动迁移到 data/worlds/yunxi/plugins/，确认迁移完成后可以去掉这一行
+      - town-plugins:/app/plugins/evolved
     read_only: true
     tmpfs:
       - /tmp

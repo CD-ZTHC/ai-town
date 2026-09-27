@@ -65,7 +65,7 @@ function onIpc(m) {
 }
 export const viaIpc = () => typeof process.send === 'function' && process.env.EVOLVE_IPC === '1';
 
-export function makeLLM(budget) {
+export function makeLLM(budget, { worldId = null } = {}) {
   let last = base.stats.promptTokens + base.stats.completionTokens;
   const settle = () => {
     const now = base.stats.promptTokens + base.stats.completionTokens;
@@ -81,7 +81,7 @@ export function makeLLM(budget) {
      * @param {Array} messages
      * @param {{ review?: boolean, maxTokens?: number, temperature?: number }} opts review：评审类 Agent
      */
-    async call(role, messages, { review = false, maxTokens = 4000, temperature = 0.4, worldId = null } = {}) {
+    async call(role, messages, { review = false, maxTokens = 4000, temperature = 0.4 } = {}) {
       if (budget.left() <= 0) throw new BudgetExceeded();
       if (viaIpc()) {
         const r = await ipcCall({ role, messages, review, maxTokens, temperature, worldId });

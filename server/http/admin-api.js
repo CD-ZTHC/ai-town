@@ -152,6 +152,16 @@ export function adminApi(deps) {
     return c.json({ ok: Boolean(n) });
   });
 
+  // ---------- 进化（§9）：引擎状态与全部任务；运行中的世界各自的 AI 插件 ----------
+  api.get('/evolution', (c) => {
+    const worlds = [...(deps.manager?.loaded.values() || [])].map((h) => ({
+      id: h.id, title: deps.registry?.get(h.id)?.title || h.id,
+      plugins: h.town.evolved.view(true).plugins,
+      pending: h.town.decisions.list.filter((d) => d.kind === 'plugin' && d.status === 'waiting').length,
+    }));
+    return c.json({ engine: deps.engineStatus?.() || null, worlds });
+  });
+
   // ---------- 概览 ----------
   api.get('/overview', (c) => {
     const view = deps.manager?.view() || [];

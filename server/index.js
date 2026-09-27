@@ -13,7 +13,7 @@ import { Accounts, installRefs } from './accounts/index.js';
 import { authorize } from './accounts/authz.js';
 import { WorldRegistry } from './worlds/registry.js';
 import { WorldManager, WorldFullError } from './worlds/manager.js';
-import { migrateLegacy } from './worlds/migrate.js';
+import { migrateLegacy, migrateEvolution } from './worlds/migrate.js';
 import { officialPack, officialIds, loadPack } from './worlds/pack.js';
 import { createApp } from './http/app.js';
 import { worldsApi } from './http/worlds-api.js';
@@ -40,7 +40,7 @@ const PORT = settings.get('PORT');
 const HOST = settings.get('HOST') || undefined;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.resolve(settings.get('DATA_DIR'));
-// 进化引擎的全站状态（任务、账本）；官方世界的 AI 插件登记也暂时在这里
+// 进化引擎的全站状态（任务、引擎状态、账本、开启进化的世界列表）；每个世界的插件与登记在 data/worlds/<id>/ 里
 const EVO_DIR = path.join(DATA, 'evolution');
 
 // ---------- 账号与世界登记 ----------
@@ -52,6 +52,7 @@ const registry = new WorldRegistry(accounts.db, { onChange: (id) => manager?.onS
 
 // 首次以多世界版本启动：把 data/ 下的存档移到 data/worlds/yunxi/（先完整备份）
 migrateLegacy(DATA, 'yunxi');
+migrateEvolution(DATA, ROOT, 'yunxi');
 // 官方世界登记；原来的同名环境变量（STORY_RATING、STORYTELLER、MODS）只在第一次登记时写入官方世界的设置（§14.8）
 for (const id of officialIds()) {
   const p = officialPack(id);
@@ -63,6 +64,10 @@ for (const id of officialIds()) {
 }
 
 // ---------- 世界管理器 ----------
+function evolutionMode(world) {
+  if (world.official) return evolveConfig().mode;
+  return world.evolution ? 'auto' : 'off';
+}
 function makeTown(world, root) {
   const pack = world.official ? officialPack(world.id) : loadPack(path.join(root, 'pack'));
   const s = world.settings || {};
@@ -71,10 +76,9 @@ function makeTown(world, root) {
     worldId: world.id,
     pack,
     worldSettings: { rating: s.rating, storyteller: s.storyteller, mods: s.mods || [] },
-    // 官方世界的 AI 插件仍在 plugins/evolved/ 与 data/evolution/；用户世界的插件在各自的目录里
-    evolution: world.id === 'yunxi'
-      ? { dir: EVO_DIR, config: { publicMode: config.publicMode } }
-      : { dir: path.join(root, 'evolution'), pluginsDir: path.join(root, 'plugins'), config: { publicMode: config.publicMode, mode: world.evolution ? evolveConfig().mode : 'off' } },
+    // 每个世界的 AI 插件只在自己的目录里（为 A 世界生成的插件不会被 B 世界加载）；
+    // 官方世界的进化开关是 EVOLVE，用户世界是创世时（或之后在设置里）打开的开关，超时交给 AI 裁决官
+    evolution: { dir: path.join(root, 'evolution'), pluginsDir: path.join(root, 'plugins'), config: { publicMode: config.publicMode, mode: evolutionMode(world) } },
   });
 }
 manager = new WorldManager({
@@ -212,8 +216,8 @@ function impactOf(changes) {
 const app = createApp({
   publicDir: path.join(ROOT, 'public'),
   accounts,
-  engineStatus: () => engineStatus(),
-  admin: { restart, supervised: () => supervised, impactOf, manager, registry, llmView, budget, ledger },
+  engineStatus: (worldId) => engineStatus(worldId),
+  admin: { restart, supervised: () => supervised, impactOf, manager, registry, llmView, budget, ledger, engineStatus: () => engineStatus() },
   routes: [
     ['worlds', worldsApi({ registry, manager, accounts, jobs: genesis, mine: myWorlds })],
     ['genesis', genesisApi({ accounts, registry, jobs: genesis, used: genesisUsed, userDiskTotal: () => manager.userDiskTotal() })],
@@ -237,23 +241,43 @@ const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, () => {
 server.headersTimeout = 20_000;
 server.requestTimeout = 30_000;
 
-// ---------- 进化引擎（自主演化设计 §3）：独立进程，用 Node 权限模型限制为只能写 plugins/evolved/ 与 data/evolution/ ----------
-const EVOLVED_DIR = path.join(ROOT, 'plugins', 'evolved');
+// ---------- 进化引擎（自主演化设计 §3、多世界设计 §9）：一台引擎服务所有开启进化的世界 ----------
+// 用 Node 权限模型限制为只能写：开启进化的世界各自的 plugins/ 与 evolution/，以及 data/evolution/（全站的任务与账本）
 let engine = null;
 let engineRestarts = 0;
-function startEngine() {
-  const cfg = evolveConfig();
-  if (cfg.mode === 'off' || !settings.get('EVOLVE_DAEMON')) return;
-  fs.mkdirSync(EVOLVED_DIR, { recursive: true });
+let engineWorlds = '[]';
+/** 开启进化的世界：官方世界看 EVOLVE，用户世界看自己的开关；磁盘超限、下架、归档的不算 */
+function evolutionWorlds() {
+  return registry.list().filter((w) => WorldRegistry.runnable(w) && evolutionMode(w) !== 'off' && !manager.get(w.id)?.diskFull)
+    .map((w) => ({ id: w.id, official: w.official, packDir: w.official ? path.join(ROOT, 'worlds', w.id) : path.join(manager.root(w.id), 'pack'), mode: evolutionMode(w) }));
+}
+/** 列表变了：写给引擎看；需要写的目录变了就重启引擎（权限在启动时给定） */
+function syncEvolution() {
+  const list = evolutionWorlds();
+  const json = JSON.stringify(list);
   fs.mkdirSync(EVO_DIR, { recursive: true });
+  fs.writeFileSync(path.join(EVO_DIR, 'worlds.json'), JSON.stringify(list, null, 1));
+  if (json === engineWorlds) return;
+  engineWorlds = json;
+  if (engine) { engineRestarts = 0; engine.removeAllListeners('exit'); engine.kill('SIGTERM'); engine = null; }
+  startEngine();
+}
+setInterval(syncEvolution, 60_000).unref();
+function startEngine() {
+  const list = JSON.parse(engineWorlds);
+  if (!list.length || !settings.get('EVOLVE_DAEMON')) return;
+  const dirs = list.flatMap((w) => [path.join(manager.root(w.id), 'plugins'), path.join(manager.root(w.id), 'evolution')]);
+  for (const d of [...dirs, EVO_DIR]) fs.mkdirSync(d, { recursive: true });
   // 引擎不联网：模型调用经 IPC 交给主进程，放进统一队列的 P4 级（§7.5）
-  const args = [...engineArgs({ root: ROOT, data: DATA, evolvedDir: EVOLVED_DIR, evoDir: EVO_DIR, net: false }), path.join(ROOT, 'evolution', 'daemon.js')];
+  const args = [...engineArgs({ root: ROOT, data: DATA, evolvedDir: dirs[0], evoDir: EVO_DIR, extraWrite: dirs.slice(1), net: false }), path.join(ROOT, 'evolution', 'daemon.js')];
   engine = spawn(process.execPath, args, { cwd: ROOT, env: settings.env({ ...process.env, DATA_DIR: DATA, EVOLVE_IPC: '1', EVOLVE_LLM: llm.stats.enabled ? '1' : '0' }), stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
   const proc = engine;
   proc.on('message', async (m) => {
     if (m?.type !== 'llm') return;
     let reply;
     try {
+      // 只替开启了进化的世界调用模型
+      if (!JSON.parse(engineWorlds).some((w) => w.id === (m.worldId || 'yunxi'))) throw new Error('这个世界没有开启进化');
       const r = await withContext({ worldId: m.worldId || 'yunxi', userId: null }, () => hostCall(m));
       reply = { type: 'llm-result', id: m.id, ok: true, json: r.json, tokens: r.tokens };
     } catch (e) { reply = { type: 'llm-result', id: m.id, ok: false, error: String(e.message).slice(0, 300), code: e.code }; }
@@ -267,19 +291,21 @@ function startEngine() {
     console.warn(`[evolve] 进化引擎退出（${code}），${Math.round(wait / 1000)} 秒后重启`);
     setTimeout(startEngine, wait).unref();
   });
+  const cfg = evolveConfig();
   if (cfg.publicMode && cfg.publicDeploy === 'all' && cfg.sandboxNet !== 'isolated') {
     console.warn('[evolve] ⚠️ 公网模式允许 AI 代码插件自动上线，但没有声明沙箱已在系统层面断网（EVOLVE_SANDBOX_NET=isolated）。沙箱已禁止导入网络模块并移除网络对象，仍建议在容器层给沙箱断网。');
   }
 }
-function engineStatus() {
+/** 引擎状态；worldId 给出时只列这个世界的任务 */
+function engineStatus(worldId = null) {
   let st = {};
   try { st = JSON.parse(fs.readFileSync(path.join(EVO_DIR, 'engine.json'), 'utf8')); } catch { /* 还没有运行过 */ }
   let jobs = [];
-  try { jobs = JSON.parse(fs.readFileSync(path.join(EVO_DIR, 'jobs.json'), 'utf8')).slice(-12).reverse().map((j) => ({ id: j.id, status: j.status, stage: j.stage, need: j.need?.text, source: j.need?.source, title: j.title || null, tier: j.tier || null, key: j.key || null, reason: j.reason || null, rfc: j.rfc || null, startedAt: j.startedAt, finishedAt: j.finishedAt || null, log: (j.log || []).slice(-8) })); } catch { /* 无 */ }
+  try { jobs = JSON.parse(fs.readFileSync(path.join(EVO_DIR, 'jobs.json'), 'utf8')).filter((j) => !worldId || (j.worldId || 'yunxi') === worldId).slice(-12).reverse().map((j) => ({ id: j.id, worldId: j.worldId || 'yunxi', status: j.status, stage: j.stage, need: j.need?.text, source: j.need?.source, title: j.title || null, tier: j.tier || null, key: j.key || null, reason: j.reason || null, rfc: j.rfc || null, startedAt: j.startedAt, finishedAt: j.finishedAt || null, log: (j.log || []).slice(-8) })); } catch { /* 无 */ }
   const cfg = evolveConfig();
-  return { ...st, running: Boolean(engine), mode: cfg.mode, publicDeploy: cfg.publicDeploy, budgetLimit: settings.get('EVOLVE_BUDGET'), sandboxNet: cfg.sandboxNet, jobs };
+  return { ...st, running: Boolean(engine), worlds: JSON.parse(engineWorlds).map((w) => w.id), enabled: worldId ? JSON.parse(engineWorlds).some((w) => w.id === worldId) : undefined, mode: cfg.mode, publicDeploy: cfg.publicDeploy, budgetLimit: settings.get('EVOLVE_BUDGET'), sandboxNet: cfg.sandboxNet, jobs };
 }
-startEngine();
+syncEvolution();
 
 let shuttingDown = false;
 const shutdown = () => { shuttingDown = true; engine?.kill('SIGTERM'); manager.closeAll(); accounts.close(); process.exit(0); };

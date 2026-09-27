@@ -18,7 +18,8 @@ function runOne(P, job, timeoutMs) {
     job = { ...job, saveFile: null, workDir: real(job.workDir), candidate: job.candidate && { ...job.candidate, dir: real(job.candidate.dir) } };
     // 路径里有符号链接时（例如 macOS 的 /var → /private/var），权限模型有的地方按原路径、有的按真实路径比对，两种都放行
     const both = (flag, p) => [...new Set([p, real(p)])].map((x) => `${flag}=${x}`);
-    const args = ['--no-warnings', '--permission', ...both('--allow-fs-read', ROOT), ...both('--allow-fs-read', P.evo), ...both('--allow-fs-read', job.workDir), ...both('--allow-fs-write', job.workDir), '--allow-child-process', path.join(ROOT, 'evolution', 'shadow-runner.js'), JSON.stringify(job)];
+    const packRead = P.world?.packDir ? both('--allow-fs-read', P.world.packDir) : [];
+    const args = ['--no-warnings', '--permission', ...both('--allow-fs-read', ROOT), ...both('--allow-fs-read', P.evo), ...packRead, ...both('--allow-fs-read', job.workDir), ...both('--allow-fs-write', job.workDir), '--allow-child-process', path.join(ROOT, 'evolution', 'shadow-runner.js'), JSON.stringify(job)];
     const child = spawn(process.execPath, args, { cwd: ROOT, env: { PATH: process.env.PATH || '', NODE_ENV: 'shadow' }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
@@ -43,8 +44,8 @@ export async function runShadow(P, candidate, { hours = setting('EVOLVE_SHADOW_H
   let saveFile = null;
   try { saveFile = path.join(activeDir(P.data), 'save.json'); } catch { /* 没有存档就从第一天开始 */ }
   const [base, trial] = await Promise.all([
-    runOne(P, { workDir: path.join(root, 'base'), saveFile, candidate: null, hours }, timeoutMs),
-    runOne(P, { workDir: path.join(root, 'trial'), saveFile, candidate, hours }, timeoutMs),
+    runOne(P, { workDir: path.join(root, 'base'), saveFile, candidate: null, hours, packDir: P.world?.packDir || null }, timeoutMs),
+    runOne(P, { workDir: path.join(root, 'trial'), saveFile, candidate, hours, packDir: P.world?.packDir || null }, timeoutMs),
   ]);
   fs.rmSync(root, { recursive: true, force: true });
   const metrics = { base, trial };

@@ -10,7 +10,8 @@ const MAX_PENDING = 2; // 等待裁决的插件太多时先不做新的
 const ADMIN_REASONS = /管理员/;
 
 export function discover(P, { now = Date.now(), ideas = setting('EVOLVE_IDEAS') } = {}) {
-  const jobs = loadJobs(P);
+  // 任务是全站的：只看这个世界的
+  const jobs = loadJobs(P).filter((j) => (j.worldId || 'yunxi') === (P.world?.id || 'yunxi'));
   if (jobs.some((j) => j.status === 'running')) return null;
   const reg = readJSON(P.registry, { plugins: {} }).plugins;
   if (Object.values(reg).filter((e) => ['pending', 'approved'].includes(e.status)).length >= MAX_PENDING) return null;
