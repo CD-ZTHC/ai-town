@@ -149,3 +149,19 @@ test('管理员接口 · 测试连接：用填写的值真实调用一次模型'
   assert.equal(badKey.ok, false);
   assert.match(badKey.error, /invalid api key/);
 });
+
+test('响应头不串：一次 404 之后，JSON 接口的 Content-Length 仍然正确（共享的安全响应头不能被写入）', async (t) => {
+  const { app, host } = setup();
+  t.after(() => host.close({ save: false }));
+  assert.equal((await app.request('/favicon.ico')).status, 404);
+  const { serve } = await import('@hono/node-server');
+  const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });
+  await new Promise((r) => server.once('listening', r));
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  await fetch(`${base}/nope.ico`);
+  const res = await fetch(`${base}/api/me`);
+  const text = await res.text();
+  assert.equal(Number(res.headers.get('content-length') || Buffer.byteLength(text)), Buffer.byteLength(text));
+  assert.doesNotThrow(() => JSON.parse(text));
+});
