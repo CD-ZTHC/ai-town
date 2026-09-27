@@ -169,6 +169,16 @@ await step('18-little-red', async () => {
   await send('Page.navigate', { url: `${base}/w/little-red/?mode=observe` });
   await waitFor(() => evaluate(`document.querySelectorAll('#roster .rcard').length >= 5 && document.title.includes('小红帽')`), 15000, '小红帽世界');
 }, { wait: 1500 });
+await step('19-genesis', async () => {
+  await send('Page.navigate', { url: `${base}/genesis.html` });
+  await waitFor(() => evaluate(`Boolean(document.querySelector('#go'))`), 10000, '创世向导');
+  await evaluate(`(() => { const i = document.querySelector('#wid'); i.value = 'little-red'; i.dispatchEvent(new Event('input')); return true; })()`);
+  await waitFor(() => evaluate(`document.querySelector('#wid-msg').textContent.length > 0`), 5000, '短名检查');
+});
+await step('20-mine', async () => {
+  await send('Page.navigate', { url: `${base}/mine.html` });
+  await waitFor(() => evaluate(`document.querySelector('#app').textContent.includes('还没有创建世界')`), 10000, '我的世界');
+});
 await step('15-lobby', async () => {
   await send('Page.navigate', { url: `${base}/` });
   await waitFor(() => evaluate(`document.querySelectorAll('.world-card').length >= 1`), 10000, '世界大厅');

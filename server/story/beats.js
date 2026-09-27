@@ -116,6 +116,18 @@ const KINDS = {
     check(b) { return str(b.text, 200) ? null : 'text 不能为空'; },
     run(town, b, ctx) { town.applyWorldOp({ op: 'addCanon', args: { text: b.text, tags: b.tags } }, { by: ctx.source }); },
   },
+  // 原著的命运节点（创世生成的世界，多世界设计 §4.2）：到达了、以变形的方式出现了、或者这次跳过
+  fate: {
+    check(b, town) {
+      if (!(town.spec.adaptation?.fateNodes || []).some((f) => f.id === b.id)) return `未知命运节点：${b.id}`;
+      return ['reached', 'transformed', 'skipped'].includes(b.status) ? null : 'status 只能是 reached / transformed / skipped';
+    },
+    run(town, b) {
+      town.worldFlags[`fate_${b.id}`] = b.status;
+      const f = town.spec.adaptation.fateNodes.find((x) => x.id === b.id);
+      town.log('thread', `📖 原著的命运节点「${f.text}」${b.status === 'reached' ? '如约发生了' : b.status === 'transformed' ? '以另一种方式发生了' : '这一次没有发生'}`, {});
+    },
+  },
   flag: {
     check(b) { return /^[a-z][a-z0-9_]{1,23}$/.test(b.name || '') ? null : 'name 不合法'; },
     run(town, b) { town.worldFlags[b.name] = b.value ?? true; },

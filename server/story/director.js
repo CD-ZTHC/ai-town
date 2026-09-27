@@ -87,7 +87,7 @@ export class Director {
 叙事风格：${STYLE[town.spec.meta.storyteller] || STYLE.gentle}
 内容分级：${RATING[town.spec.meta.rating] || RATING.cozy}
 当前张力 ${now.value}/100，目标 ${now.target}（威胁${(now.parts?.threat ?? 0).toFixed(2)} 冲突${(now.parts?.conflict ?? 0).toFixed(2)} 悬念${(now.parts?.mystery ?? 0).toFixed(2)}）；距离上一个剧情节拍 ${Math.round((town.t - st.lastBeatT) / 60)} 小时。
-${town.storyContext() || '目前没有进行中的剧情弧。'}
+${town.storyContext() || '目前没有进行中的剧情弧。'}${fateBlock(town)}
 居民：
 ${people}
 剧情线程（伏笔看板）：
@@ -106,7 +106,7 @@ ${pending ? `\n玩家刚刚发布的小镇事件（这是故事素材，不是�
 {"kind":"effect","who":"姓名","effects":[{"op":"mood","text":"两字","emoji":"😊"}]}（只能用 stat/condition/mood/memory/vfx/say/flag/belief）
 {"kind":"weather","id":"${Object.keys(town.spec.weather).join('/')}"}
 {"kind":"canon","text":"写进小镇历史的事实（≤100字）"}
-{"kind":"growth","who":"姓名","change":"这个人的成长（≤20字）"}
+{"kind":"growth","who":"姓名","change":"这个人的成长（≤20字）"}${town.spec.adaptation?.fateNodes?.length ? '\n{"kind":"fate","id":"命运节点id","status":"reached / transformed / skipped"}（原著的命运节点发生了、变形发生了或确定不会发生时标记）' : ''}
 {"kind":"propose","intent":"希望小镇新增的建筑 / 节日 / 物品 / 能力等（≤80字），交给世界架构师设计，经审批后落地"}
 ${canLaunch ? '{"kind":"launchArc","template":"上面「可以开启的剧情弧」中的 id"}\n' : ''}原则：先埋伏笔再爆发；优先推进或回收剧情线程；与进行中的剧情弧保持一致；没有人死亡；不要重复最近已经发生的事。
 输出 JSON：{"decision":"…","reason":"一句话说明理由（≤40字）","beats":[…]}`;
@@ -148,3 +148,23 @@ ${canLaunch ? '{"kind":"launchArc","template":"上面「可以开启的剧情弧
     }
   }
 }
+
+/**
+ * 原著引力（多世界设计 §4.2）：创世生成的世界有「命运节点」。按忠实度告诉导演要不要把故事引回原著，
+ * 并给出当前偏离度 = 已到期却没有发生（也没有变形发生）的节点 / 已到期的节点。
+ */
+export function fateBlock(town) {
+  const ad = town.spec.adaptation;
+  if (!ad?.fateNodes?.length) return '';
+  const FID = {
+    faithful: '尽量把故事引回原著：到期还没发生的命运节点，要创造条件让它发生',
+    drift: '允许偏离原著，但关键节点要以变形的方式出现',
+    free: '原著只当背景，不必追随命运节点',
+  };
+  const due = ad.fateNodes.filter((f) => f.day <= town.day);
+  const missed = due.filter((f) => !['reached', 'transformed'].includes(town.worldFlags[`fate_${f.id}`]));
+  const dev = due.length ? Math.round((missed.length / due.length) * 100) : 0;
+  const list = ad.fateNodes.map((f) => `- ${f.id}（第${f.day}天）${f.text}${town.worldFlags[`fate_${f.id}`] ? `【${town.worldFlags[`fate_${f.id}`]}】` : f.day <= town.day ? '【到期未发生】' : ''}`).join('\n');
+  return `\n原著引力（忠实度：${FID[ad.fidelity] || FID.drift}；当前偏离度 ${dev}%）：\n${list}`;
+}
+

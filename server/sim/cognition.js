@@ -79,7 +79,8 @@ export class Cognition {
   }
 
   async innerThought(a) {
-    if (llm.isBusy()) return;
+    // 配角（创世生成的世界里 tier 为 support）只按日程生活和对话，不做内心独白与反思
+    if (a.tier === 'support' || llm.isBusy()) return;
     a.lastThoughtT = this.t;
     const key = a.curKey;
     try {
@@ -125,6 +126,7 @@ ${this.abilityList(a)}
   }
 
   async maybeReflect(a) {
+    if (a.tier === 'support') return;
     if (a.importanceAcc < this.params.reflectThreshold || a.reflecting || this.t - a.lastReflectT < 90) return;
     a.reflecting = true;
     a.lastReflectT = this.t;

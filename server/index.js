@@ -17,6 +17,8 @@ import { migrateLegacy } from './worlds/migrate.js';
 import { officialPack, officialIds, loadPack } from './worlds/pack.js';
 import { createApp } from './http/app.js';
 import { worldsApi } from './http/worlds-api.js';
+import { genesisApi, genesisQuota } from './http/genesis-api.js';
+import { GenesisJobs } from './genesis/jobs.js';
 import { HttpError } from './http/util.js';
 import { worldPage } from './http/pages.js';
 import { evolveConfig } from '../plugin-host/evolved.js';
@@ -54,7 +56,7 @@ for (const id of officialIds()) {
   const p = officialPack(id);
   const first = !registry.get(id);
   registry.ensureOfficial(id, {
-    title: p.world.voice.name, summary: p.world.lore.summary.slice(0, 200), packHash: p.hash,
+    title: p.world.voice.name, summary: p.world.lore.summary.slice(0, 200), packHash: p.hash, rating: p.world.meta.rating,
     settings: first && id === 'yunxi' ? { rating: process.env.STORY_RATING || undefined, storyteller: process.env.STORYTELLER || undefined, mods: settings.get('MODS') } : {},
   });
 }
@@ -92,6 +94,31 @@ const ledger = new Ledger(accounts.db);
 llm.onUsage((e) => ledger.add(e));
 const budget = budgetPolicy({ ledger, world: (id) => registry.get(id), ownerGrant: (w) => (w.ownerId ? accounts.grant(w.ownerId, 'genesis') : null), globalUsed: () => llm.stats.dayTokens });
 llm.setBudgetPolicy(budget.allow);
+// ---------- 创世（§4）：任务排队运行，模型调用在 P3 级，从创世者的 genesisTokens 扣 ----------
+const genesisUsed = (uid) => ledger.userTotal(uid, 'P3');
+const genesis = new GenesisJobs({
+  data: DATA, registry,
+  budgetLeft: (uid) => genesisQuota(accounts.grant(uid, 'genesis')).genesisTokens - genesisUsed(uid),
+  audit: (e) => accounts.audit(e),
+  onWorldReady: (id) => manager.close(id, '世界包已更新'),
+});
+
+/** 我的世界（owner 页面）：状态、今日用量与降级档位、磁盘、观众、创世任务 */
+function myWorlds(user) {
+  return registry.list({ ownerId: user.id }).filter((w) => w.status !== 'archived').map((w) => {
+    const h = manager.get(w.id);
+    const grant = accounts.grant(user.id, 'genesis');
+    const limit = budget.worldLimit(w);
+    return {
+      id: w.id, title: w.title, status: w.status, statusReason: w.statusReason, evolution: w.evolution, running: Boolean(h), viewers: h ? h.clients.size : 0,
+      usage: ledger.world(w.id), dailyLimit: Number.isFinite(limit) ? limit : null, level: budget.level(w.id), levelName: LEVEL_NAMES[budget.level(w.id)],
+      diskBytes: w.diskBytes, diskLimitMB: w.quota?.diskMB ?? grant?.quota?.diskMB ?? settings.get('WORLD_DISK_MB'),
+      pendingDecisions: h ? h.town.decisions.list?.filter?.((d) => d.status === 'waiting').length || 0 : 0,
+      job: genesis.jobs.filter((j) => j.worldId === w.id).at(-1) ? genesis.view(genesis.jobs.filter((j) => j.worldId === w.id).at(-1)) : null,
+    };
+  });
+}
+
 /** 调度面板（管理员）：各级别队列、各世界用量排行与降级档位、正在进行的调用 */
 function llmView() {
   return {
@@ -100,6 +127,7 @@ function llmView() {
     pool: budget.pool(),
     concurrency: settings.get('LLM_CONCURRENCY'), inflight: llm.stats.inflight, dayTokens: llm.stats.dayTokens, dailyBudget: llm.stats.dailyBudget,
     active: llm.stats.active.map((a) => ({ label: a.label, agent: a.agent, ms: Date.now() - a.since })),
+    genesis: genesis.all().map((j) => ({ ...j, owner: accounts.get(j.ownerId)?.nickname || j.ownerId })),
   };
 }
 
@@ -149,7 +177,10 @@ const app = createApp({
   accounts,
   engineStatus: () => engineStatus(),
   admin: { restart, supervised: () => supervised, impactOf, manager, registry, llmView, budget, ledger },
-  routes: [['worlds', worldsApi({ registry, manager, accounts })]],
+  routes: [
+    ['worlds', worldsApi({ registry, manager, accounts, jobs: genesis, mine: myWorlds })],
+    ['genesis', genesisApi({ accounts, registry, jobs: genesis, used: genesisUsed, userDiskTotal: () => manager.userDiskTotal() })],
+  ],
   worlds: {
     lobby: true,
     defaultId: () => settings.get('DEFAULT_WORLD'),

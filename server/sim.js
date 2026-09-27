@@ -169,7 +169,7 @@ export class Town extends EventEmitter {
     // 没有房子的角色（例如暗月守门人）出现在所属地点的某个站位
     const spot = b ? b.entrance : (home?.spots?.[0] || this.locCenter(p.home) || { x: 50, y: 34 });
     const a = {
-      id: p.id, name: p.name, age: p.age, role: p.role, persona: p.persona, goal: p.goal, look: p.look,
+      id: p.id, name: p.name, age: p.age, role: p.role, persona: p.persona, goal: p.goal, look: p.look, ...(p.tier ? { tier: p.tier } : {}),
       home: p.home, work: p.work,
       x: spot.x, y: spot.y, dir: 'down', moving: false, inside: b ? b.id : null, locId: p.home, region: 'town',
       status: 'sleeping', action: { text: '睡觉', emoji: '😴' }, thought: '', mood: { text: '平静', emoji: '🙂' },

@@ -76,10 +76,10 @@ export class WorldRegistry {
   }
 
   /** 官方世界：启动时登记（已有则只更新标题与包哈希） */
-  ensureOfficial(id, { title, summary, packHash, settings }) {
+  ensureOfficial(id, { title, summary, packHash, settings, rating = 'cozy' }) {
     const w = this.get(id);
-    if (!w) return this.create({ id, title, summary, status: 'public', official: true, packHash, settings, rating: settings?.rating || 'cozy' });
-    this.db.prepare('UPDATE worlds SET title = ?, summary = ?, pack_hash = ?, official = 1 WHERE id = ?').run(title, summary, packHash, id);
+    if (!w) return this.create({ id, title, summary, status: 'public', official: true, packHash, settings, rating: settings?.rating || rating });
+    this.db.prepare('UPDATE worlds SET title = ?, summary = ?, pack_hash = ?, official = 1, rating = ? WHERE id = ?').run(title, summary, packHash, w.settings?.rating || rating, id);
     return this.get(id);
   }
 
