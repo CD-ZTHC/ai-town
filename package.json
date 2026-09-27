@@ -15,5 +15,10 @@
   },
   "optionalDependencies": {
     "@earendil-works/pi-ai": "0.87.1"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.17",
+    "hono": "^4.13.9",
+    "zod": "^4.6.5"
   }
 }
