@@ -40,6 +40,8 @@ function remaining(c) {
   const who = c.get('who');
   return { chat: quotaLeft(who, 'chat'), event: quotaLeft(who, 'event') };
 }
+/** 审核用的世界上下文 */
+const worldCtx = (t) => ({ name: t.spec.meta.name, place: t.spec.voice?.place || '小镇', pillars: t.spec.lore.pillars });
 /** 当前请求的旅人身份：账号 id + 当前昵称 */
 const visitor = (c) => ({ id: c.get('vid'), name: c.get('user')?.nickname || null });
 
@@ -98,7 +100,7 @@ export function worldApi(deps) {
     const text = sanitize(b.text, 200);
     if (text.length < 1) throw new HttpError(400, '说点什么吧');
     take(c, 'chat');
-    const m = await moderate(text, 'chat', t.spec.meta.rating);
+    const m = await moderate(text, 'chat', t.spec.meta.rating, worldCtx(t));
     if (!m.ok) throw new HttpError(422, m.reason);
     // 心声对居民是匿名的，但日志里记下账号，便于管理员追查滥用
     if (mode === 'whisper') console.log(`[whisper] ${c.get('host').id} ${c.get('vid')} → ${agent.id}: ${text}`);
@@ -116,7 +118,7 @@ export function worldApi(deps) {
     // 先检查不扣次数，审核通过后再扣，避免被拒的内容也消耗额度；尝试次数（含被拒的）单独计数
     take(c, 'event', { take: false });
     take(c, 'eventAttempt');
-    const m = await moderate(text, 'event', t.spec.meta.rating);
+    const m = await moderate(text, 'event', t.spec.meta.rating, worldCtx(t));
     if (!m.ok) throw new HttpError(422, m.reason);
     take(c, 'event');
     console.log(`[event] ${c.get('host').id} ${c.get('vid')}@${c.get('ip')} → ${target}: ${text}`);
@@ -180,7 +182,7 @@ export function worldApi(deps) {
     const text = sanitize(b.intent, 120);
     if (text.length < 4) throw new HttpError(400, '说得再具体一点吧');
     take(c, 'proposal');
-    const m = await moderate(text, 'event', t.spec.meta.rating);
+    const m = await moderate(text, 'event', t.spec.meta.rating, worldCtx(t));
     if (!m.ok) throw new HttpError(422, m.reason);
     const err = t.architect ? t.architect.enqueue(text, admin ? 'admin' : 'visitor') : '世界架构师插件未启用';
     if (err) throw new HttpError(409, err);
@@ -310,7 +312,7 @@ export function worldApi(deps) {
     // 旅人在所有世界里都用账号昵称出现；只有持令牌但没登录的管理员才自己起名字
     const name = user?.nickname || sanitize(b.name, 8);
     if (!user) {
-      const m = await moderate(name, 'chat', t.spec.meta.rating);
+      const m = await moderate(name, 'chat', t.spec.meta.rating, worldCtx(t));
       if (!m.ok) throw new HttpError(422, m.reason);
     }
     const v = t.avatars.join(c.get('vid'), c.get('ip'), { name, color: b.color });

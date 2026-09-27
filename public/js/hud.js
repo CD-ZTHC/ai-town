@@ -101,7 +101,7 @@ function commands() {
     ['🔭', '观察模式', () => app.setMode('observe')],
     ['🎬', '沉浸模式', () => app.setMode('immerse')],
     ...(app.perms.canTry ? [['🎮', '游戏模式', () => app.setMode('play')]] : []),
-    ['📰', '云溪日报', () => UI.newsModal()],
+    ['📰', app.spec?.voice?.chronicle.name || '日报', () => UI.newsModal()],
     ['🕸️', '关系网络', UI.graphModal],
     ['🎭', '故事面板', () => UI.storyModal()],
     ['🛠', '建设与编年史', () => UI.buildModal()],

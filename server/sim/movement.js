@@ -13,7 +13,7 @@ export class Movement {
       return { key: `guard-${a.work}`, location: a.work, activity: p?.idle || '静静地守着', emoji: '🌑' };
     }
     const sleep = { key: `sleep-${this.day}-${m < 12 * 60 ? 'am' : 'pm'}`, location: a.home, activity: '睡觉', emoji: '😴', sleep: true };
-    if (m >= 23 * 60 || m < 5 * 60 + 30) return sleep;
+    if (m >= 23 * 60 || m < this.rhythm.plan) return sleep;
     const s = a.scheduleDay === this.day ? a.schedule : [];
     if (!s.length) {
       if (m < 6 * 60 + 30) return sleep;

@@ -40,10 +40,13 @@ PORT=${PORT_OVERRIDE:-$(grep -E '^PORT=' .env | head -1 | sed -E 's/^PORT=([0-9]
 PORT=${PORT:-3000}
 health() { curl -sf -o /dev/null --max-time 3 "http://127.0.0.1:$PORT/"; }
 stop() {
-  for p in $(pgrep -f 'node server/index.js' || true); do
-    [ "$(readlink "/proc/$p/cwd")" = "$1" ] || continue
-    kill -TERM "$p"
-    timeout 30 bash -c "while kill -0 $p 2>/dev/null; do sleep 0.5; done" || kill -KILL "$p"
+  # 先停守护进程（它会带着服务进程一起退出），再停没有守护进程的旧版本
+  for pat in 'node server/main.js' 'node server/index.js'; do
+    for p in $(pgrep -f "$pat" || true); do
+      [ "$(readlink "/proc/$p/cwd")" = "$1" ] || continue
+      kill -TERM "$p"
+      timeout 30 bash -c "while kill -0 $p 2>/dev/null; do sleep 0.5; done" || kill -KILL "$p"
+    done
   done
 }
 start() { (cd "$1" && exec setsid nohup "$MISE" run start > server.log 2>&1 < /dev/null) > /dev/null 2>&1 < /dev/null & timeout 40 bash -c "until curl -sf -o /dev/null --max-time 3 http://127.0.0.1:$PORT/; do sleep 1; done"; }

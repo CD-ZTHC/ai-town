@@ -60,7 +60,8 @@ export class Views {
   initPayload() {
     return {
       world: this.world,
-      regions: { moonrealm: this.regions.moonrealm },
+      regions: Object.fromEntries(Object.entries(this.regions).filter(([id]) => id !== 'town')),
+      worldId: this.worldId,
       regionsOpen: this.regionsView(),
       weathers: this.spec.weather,
       spec: publicSpec(this.spec),

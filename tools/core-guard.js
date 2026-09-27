@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { fileHashes } from '../plugin-host/hash.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const FROZEN = ['server', 'public', 'plugin-host', 'evolution', 'plugins/builtin'];
+export const FROZEN = ['server', 'public', 'plugin-host', 'evolution', 'plugins/builtin', 'worlds'];
 const LOCK = path.join(ROOT, 'core.lock');
 
 export function currentHashes(root = ROOT) {

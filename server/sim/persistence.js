@@ -30,7 +30,7 @@ export class Persistence {
         const { path: _p, dest: _d, curKey: _k, curEntry: _e, bubble: _b, thinking: _t, thinkingLabel: _l, reflecting: _r, convoId: _c, chatBusy: _cb, visitorChat: _vc, pendingAct: _pa, actKey: _ak, hop: _h, ...rest } = a;
         return rest;
       });
-      const data = { v: SAVE_VERSION, t: this.t, weather: this.weather, weatherLock: this.weatherLock, specOps: this.specOps, agents, entities: this.entities, worldFlags: this.worldFlags, paramMods: this.paramMods, ruleState: this.ruleState,
+      const data = { v: SAVE_VERSION, worldId: this.worldId, packHash: this.packHash, t: this.t, weather: this.weather, weatherLock: this.weatherLock, specOps: this.specOps, agents, entities: this.entities, worldFlags: this.worldFlags, paramMods: this.paramMods, ruleState: this.ruleState,
         threadState: this.threadState, crisis: this.crisis, discovered: this.discovered, story: this.story, arcRuns: this.arcRuns, voteState: this.voteState,
         pendingScenes: this.pendingScenes, creatureList: this.creatureList, portalState: this.portalState, swarmGoal: this.swarmGoal || null,
         proposals: this.proposals, decisionState: this.decisionState, architectQueue: this.architectQueue, gaps: this.gaps, architectUsage: this.architectUsage,

@@ -133,7 +133,7 @@ test('时间线：从存档或快照分叉、切换、登记表防越界', () =>
 });
 
 test('暗月界：地图可以走通，所有地点都在可走区域', () => {
-  const w = buildMoonRealm();
+  const w = buildMoonRealm({ locationInfo: defaultSpec({}).locations });
   assert.equal(w.id, 'moonrealm');
   assert.ok(w.walk[w.gate.y * w.W + w.gate.x]);
   for (const l of Object.values(w.locations)) for (const s of l.spots) assert.ok(w.walk[s.y * w.W + s.x], `${l.id} ${s.x},${s.y}`);

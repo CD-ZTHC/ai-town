@@ -1,0 +1,24 @@
+{
+ "regions": [
+  {
+   "id": "town",
+   "generator": "yunxi-v1",
+   "seed": 20260924,
+   "size": [
+    64,
+    44
+   ],
+   "name": "云溪镇"
+  },
+  {
+   "id": "moonrealm",
+   "generator": "moonrealm-v1",
+   "size": [
+    36,
+    26
+   ],
+   "name": "暗月界",
+   "gateFrom": "pier"
+  }
+ ]
+}

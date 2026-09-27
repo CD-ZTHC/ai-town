@@ -1,0 +1,1676 @@
+{
+ "id": "yunxi",
+ "specVersion": 2,
+ "meta": {
+  "name": "云溪镇",
+  "rating": "cozy",
+  "storyteller": "voyage"
+ },
+ "lore": {
+  "summary": "云溪镇是一个依山傍水的小镇：一条云溪从北山流下，穿过小镇汇入南边的镜湖。镇中心有喷泉广场和集市，西南是樱花公园，东北是陈家农场。\n这个周六晚上是一年一度的「萤火节」——传说百年前一位少女在镜湖边放出第一盏萤火灯，为迷路的恋人照亮归途；从此每年这天，镇民会在湖边放灯许愿。",
+  "pillars": [
+   "云溪镇的温馨底色不可改变",
+   "居民不会死亡，离开小镇也总是可以回来"
+  ],
+  "canon": [],
+  "breakers": "死亡|死去|去世|毁掉小镇|毁灭小镇|摧毁小镇|屠|血腥|永远离开|再也回不来"
+ },
+ "calendar": {
+  "weekdays": [
+   "周三",
+   "周四",
+   "周五",
+   "周六",
+   "周日",
+   "周一",
+   "周二"
+  ],
+  "events": [
+   {
+    "id": "firefly",
+    "name": "萤火节",
+    "emoji": "🏮",
+    "day": 4,
+    "from": "18:00",
+    "location": "pier",
+    "hint": "晚上大家会在镜湖边放灯许愿",
+    "vfx": "festival_lanterns",
+    "countdown": true
+   }
+  ]
+ },
+ "weather": {
+  "sunny": {
+   "name": "晴朗",
+   "emoji": "☀️",
+   "weight": 50
+  },
+  "cloudy": {
+   "name": "多云",
+   "emoji": "⛅",
+   "weight": 25
+  },
+  "rain": {
+   "name": "下雨",
+   "emoji": "🌧️",
+   "weight": 13
+  },
+  "storm": {
+   "name": "雷阵雨",
+   "emoji": "⛈️",
+   "weight": 5
+  },
+  "fog": {
+   "name": "起雾",
+   "emoji": "🌫️",
+   "weight": 7,
+   "avoid": {
+    "from": "10:00",
+    "to": "19:00",
+    "fallback": "cloudy"
+   }
+  },
+  "snow": {
+   "name": "下雪",
+   "emoji": "❄️",
+   "weight": 0
+  },
+  "bloodmoon": {
+   "name": "血月",
+   "emoji": "🌕",
+   "weight": 0,
+   "render": {
+    "base": "cloudy",
+    "tint": "#8a1c3c",
+    "tintAlpha": 0.22
+   }
+  }
+ },
+ "locations": {
+  "cafe": {
+   "name": "星光咖啡馆",
+   "emoji": "☕",
+   "desc": "林晓雨经营的咖啡馆，带露台，07:00-20:00营业，镇上的社交中心",
+   "public": true
+  },
+  "library": {
+   "name": "云溪图书馆",
+   "emoji": "📚",
+   "desc": "苏墨管理的图书馆，安静，可以看书写作查资料",
+   "public": true
+  },
+  "tavern": {
+   "name": "月光酒馆",
+   "emoji": "🍺",
+   "desc": "何月经营的酒馆，傍晚后热闹，有驻唱与美酒",
+   "public": true
+  },
+  "clinic": {
+   "name": "云溪诊所",
+   "emoji": "🏥",
+   "desc": "周慧医生的诊所，看病、体检",
+   "public": true
+  },
+  "workshop": {
+   "name": "铁柱工坊",
+   "emoji": "🔨",
+   "desc": "赵铁柱的木工铁艺工坊，带后院",
+   "public": true
+  },
+  "square": {
+   "name": "中央广场",
+   "emoji": "⛲",
+   "desc": "镇中心，有喷泉、舞台和公告栏，镇民聚集闲聊的地方",
+   "public": true
+  },
+  "market": {
+   "name": "广场集市",
+   "emoji": "🧺",
+   "desc": "广场四周的小摊，买菜买花买杂货",
+   "public": true
+  },
+  "park": {
+   "name": "樱花公园",
+   "emoji": "🌸",
+   "desc": "樱花树、小池塘和长椅，散步、晒太阳、喂鸽子",
+   "public": true
+  },
+  "farm": {
+   "name": "陈家农场",
+   "emoji": "🌾",
+   "desc": "陈大山的农田，种着西瓜和蔬菜",
+   "public": true
+  },
+  "pier": {
+   "name": "镜湖码头",
+   "emoji": "🎣",
+   "desc": "湖边木码头，钓鱼、看日落、发呆",
+   "public": true
+  },
+  "moon_gate": {
+   "name": "月之渡口·彼岸",
+   "emoji": "🌗",
+   "desc": "裂隙另一头的渡口，脚下是泛着微光的月砂",
+   "public": true,
+   "region": "moonrealm"
+  },
+  "moon_plaza": {
+   "name": "暗月广场",
+   "emoji": "🌑",
+   "desc": "月井旁的小广场，影灵们提着灯在这里散步",
+   "public": true,
+   "region": "moonrealm"
+  },
+  "moon_garden": {
+   "name": "月光花园",
+   "emoji": "🌸",
+   "desc": "只在月光下开放的花，一碰就会发光",
+   "public": true,
+   "region": "moonrealm"
+  },
+  "moon_lookout": {
+   "name": "星坠崖",
+   "emoji": "✨",
+   "desc": "能同时看见两个月亮的崖边，据说是许愿的地方",
+   "public": true,
+   "region": "moonrealm"
+  }
+ },
+ "buildings": [
+  {
+   "id": "home_lin",
+   "name": "林家小屋",
+   "kind": "house",
+   "x": 2,
+   "y": 3,
+   "w": 5,
+   "h": 5,
+   "roof": "#d4606f"
+  },
+  {
+   "id": "home_su",
+   "name": "苏家小屋",
+   "kind": "house",
+   "x": 7,
+   "y": 3,
+   "w": 5,
+   "h": 5,
+   "roof": "#5b7bb4"
+  },
+  {
+   "id": "home_zhou",
+   "name": "周家小屋",
+   "kind": "house",
+   "x": 2,
+   "y": 9,
+   "w": 5,
+   "h": 5,
+   "roof": "#6aa56b"
+  },
+  {
+   "id": "home_wang",
+   "name": "王家老宅",
+   "kind": "house",
+   "x": 7,
+   "y": 9,
+   "w": 5,
+   "h": 5,
+   "roof": "#e39a3b"
+  },
+  {
+   "id": "library",
+   "name": "云溪图书馆",
+   "kind": "library",
+   "x": 17,
+   "y": 5,
+   "w": 9,
+   "h": 8,
+   "roof": "#7a5aa6"
+  },
+  {
+   "id": "home_sun",
+   "name": "孙婆婆家",
+   "kind": "house",
+   "x": 26,
+   "y": 9,
+   "w": 5,
+   "h": 5,
+   "roof": "#b86b4b"
+  },
+  {
+   "id": "cafe",
+   "name": "星光咖啡馆",
+   "kind": "cafe",
+   "x": 34,
+   "y": 6,
+   "w": 7,
+   "h": 7,
+   "roof": "#c4553f"
+  },
+  {
+   "id": "clinic",
+   "name": "云溪诊所",
+   "kind": "clinic",
+   "x": 3,
+   "y": 19,
+   "w": 7,
+   "h": 6,
+   "roof": "#e8e8ee"
+  },
+  {
+   "id": "tavern",
+   "name": "月光酒馆",
+   "kind": "tavern",
+   "x": 34,
+   "y": 18,
+   "w": 8,
+   "h": 6,
+   "roof": "#3d4a78"
+  },
+  {
+   "id": "workshop",
+   "name": "铁柱工坊",
+   "kind": "workshop",
+   "x": 34,
+   "y": 25,
+   "w": 6,
+   "h": 4,
+   "roof": "#7b6b5b"
+  },
+  {
+   "id": "home_chen",
+   "name": "陈家农舍",
+   "kind": "farmhouse",
+   "x": 52,
+   "y": 19,
+   "w": 5,
+   "h": 5,
+   "roof": "#a0452f"
+  }
+ ],
+ "personas": [
+  {
+   "id": "lin",
+   "name": "林晓雨",
+   "age": 28,
+   "role": "星光咖啡馆老板娘",
+   "home": "home_lin",
+   "work": "cafe",
+   "persona": "温柔、热情、有点爱八卦但心地善良，记得每位客人的口味。三年前从大城市辞职回乡开了咖啡馆。说话轻快，喜欢用“呀”“啦”。",
+   "goal": "想在萤火节当晚办一场露天音乐会，正在四处找人帮忙（需要舞台、灯光、乐手）。",
+   "look": {
+    "skin": "#f7d5bd",
+    "hair": "#4a2c20",
+    "hairStyle": "long",
+    "shirt": "#ee8fa6",
+    "pants": "#5a5a7a",
+    "acc": [
+     "apron"
+    ]
+   },
+   "start": {
+    "abilities": [
+     "warm_coffee"
+    ],
+    "inventory": {}
+   },
+   "relations": {
+    "su": [
+     30,
+     "常客，安静但很有才华，总点一杯美式"
+    ],
+    "he": [
+     55,
+     "最好的闺蜜"
+    ],
+    "wang": [
+     20,
+     "活泼的小弟弟"
+    ],
+    "zhou": [
+     15,
+     "靠谱的医生姐姐"
+    ]
+   },
+   "memories": [
+    "我决定在萤火节办一场露天音乐会，但还缺舞台和乐手。",
+    "何月以前是流浪歌手，也许她愿意上台唱歌？",
+    "苏墨最近来店里总是心不在焉地盯着窗外。"
+   ]
+  },
+  {
+   "id": "chen",
+   "name": "陈大山",
+   "age": 54,
+   "role": "农场主",
+   "home": "home_chen",
+   "work": "farm",
+   "persona": "憨厚、固执、话少但心软。妻子早逝，女儿在省城工作很少回家。种的西瓜是镇上最甜的。说话朴实，带点方言味。",
+   "goal": "今年雨水少，担心西瓜收成；想修好农场的旧水车。私下很想女儿回来过萤火节。",
+   "look": {
+    "skin": "#d9a07a",
+    "hair": "#6b6b6b",
+    "hairStyle": "short",
+    "shirt": "#7c9a45",
+    "pants": "#3f5f8a",
+    "acc": [
+     "strawhat",
+     "beard"
+    ]
+   },
+   "start": {
+    "abilities": [
+     "pick_melon"
+    ],
+    "inventory": {
+     "melon": 2,
+     "wood": 3
+    }
+   },
+   "relations": {
+    "sun": [
+     55,
+     "小时候的老师，很敬重她"
+    ],
+    "zhao": [
+     40,
+     "老酒友"
+    ],
+    "wang": [
+     -5,
+     "年轻人整天拿手机拍来拍去，浮躁"
+    ]
+   },
+   "memories": [
+    "已经半个月没下雨了，西瓜藤有些发蔫。",
+    "女儿上周打电话说萤火节可能回不来。",
+    "农场的旧水车坏了，得找铁柱帮忙修。"
+   ]
+  },
+  {
+   "id": "su",
+   "name": "苏墨",
+   "age": 31,
+   "role": "图书管理员 / 作家",
+   "home": "home_su",
+   "work": "library",
+   "persona": "内向、敏感、观察入微，说话慢条斯理，偶尔冒出一句诗。正在写一部以云溪镇为背景的小说。",
+   "goal": "小说卡在结局写不下去；暗恋林晓雨很久，想在萤火节鼓起勇气表白。",
+   "look": {
+    "skin": "#f3d6c0",
+    "hair": "#1d1d26",
+    "hairStyle": "messy",
+    "shirt": "#5a70aa",
+    "pants": "#3a3a46",
+    "acc": [
+     "glasses"
+    ]
+   },
+   "start": {
+    "abilities": [],
+    "inventory": {}
+   },
+   "relations": {
+    "lin": [
+     60,
+     "暗恋她，但从未说出口"
+    ],
+    "sun": [
+     45,
+     "向她收集小镇的老故事"
+    ],
+    "he": [
+     10,
+     "神秘的酒馆老板，看不透她"
+    ]
+   },
+   "memories": [
+    "我的小说写到萤火节那晚就停住了，不知道主角该不该开口。",
+    "晓雨笑起来的时候，咖啡馆的光都变软了。",
+    "孙婆婆说过，镜湖的传说还有一个没人知道的后半段。"
+   ]
+  },
+  {
+   "id": "zhao",
+   "name": "赵铁柱",
+   "age": 42,
+   "role": "木匠 / 铁匠",
+   "home": "workshop",
+   "work": "workshop",
+   "persona": "豪爽、大嗓门、爱喝酒爱吹牛，手艺一流，讲义气。口头禅“包在我身上！”",
+   "goal": "在工坊后院偷偷造一只热气球，想在萤火节当晚飞上天给全镇一个惊喜（还缺一块足够大的布料）。",
+   "look": {
+    "skin": "#c98a5c",
+    "hair": "#2a1a10",
+    "hairStyle": "buzz",
+    "shirt": "#c8553d",
+    "pants": "#4b3a2a",
+    "acc": [
+     "beard"
+    ]
+   },
+   "start": {
+    "abilities": [
+     "craft_lantern"
+    ],
+    "inventory": {
+     "wood": 8,
+     "lantern": 1
+    }
+   },
+   "relations": {
+    "chen": [
+     40,
+     "老酒友，答应过帮他修水车"
+    ],
+    "he": [
+     35,
+     "酒馆老主顾"
+    ],
+    "zhou": [
+     5,
+     "总被她唠叨少喝酒，有点怕她"
+    ],
+    "wang": [
+     25,
+     "这小子挺机灵"
+    ]
+   },
+   "memories": [
+    "热气球的吊篮已经编好了，就差一块大布做球囊。",
+    "周医生上次警告我再喝下去肝要出问题。",
+    "答应了大山帮他修水车，还没顾上。"
+   ]
+  },
+  {
+   "id": "zhou",
+   "name": "周慧",
+   "age": 46,
+   "role": "云溪诊所医生",
+   "home": "home_zhou",
+   "work": "clinic",
+   "persona": "理性、严谨、刀子嘴豆腐心，有点唠叨，总提醒别人注意身体。王小乐是她的外甥。",
+   "goal": "最近发现孙婆婆记性越来越差，担心是阿尔茨海默症早期，想找机会委婉地给她做检查；也想劝铁柱戒酒。",
+   "look": {
+    "skin": "#f2cfb3",
+    "hair": "#2e2b2b",
+    "hairStyle": "bun",
+    "shirt": "#f4f4f8",
+    "pants": "#5b6f8a",
+    "acc": [
+     "glasses",
+     "coat"
+    ]
+   },
+   "start": {
+    "abilities": [
+     "checkup"
+    ],
+    "inventory": {
+     "herb": 5
+    }
+   },
+   "relations": {
+    "wang": [
+     50,
+     "外甥，操心他不务正业"
+    ],
+    "sun": [
+     40,
+     "担心她的健康"
+    ],
+    "zhao": [
+     10,
+     "不听劝的酒鬼病人"
+    ],
+    "lin": [
+     20,
+     "常去她店里买咖啡"
+    ]
+   },
+   "memories": [
+    "孙婆婆上周把我叫成了她女儿的名字。",
+    "小乐说要拍什么“镜湖探秘”，别又去水边乱跑。",
+    "铁柱的体检报告转氨酶偏高。"
+   ]
+  },
+  {
+   "id": "wang",
+   "name": "王小乐",
+   "age": 19,
+   "role": "大学生 / 短视频博主",
+   "home": "home_wang",
+   "work": "square",
+   "persona": "活泼、好奇、话多、自来熟，走到哪拍到哪，说话夹杂网络流行语。暑假回镇住在外婆留下的老宅。",
+   "goal": "想拍一期“镜湖百年宝藏探秘”让云溪镇上热搜；也想帮镇上的人实现点什么。",
+   "look": {
+    "skin": "#f6d7c0",
+    "hair": "#e0913a",
+    "hairStyle": "spiky",
+    "shirt": "#ffd23f",
+    "pants": "#2e5eaa",
+    "acc": [
+     "cap"
+    ]
+   },
+   "start": {
+    "abilities": [],
+    "inventory": {}
+   },
+   "relations": {
+    "zhou": [
+     30,
+     "姨妈，唠叨但疼我"
+    ],
+    "sun": [
+     60,
+     "最爱听她讲故事"
+    ],
+    "zhao": [
+     35,
+     "超酷的手艺人大叔"
+    ],
+    "chen": [
+     5,
+     "陈叔好像不太喜欢我"
+    ]
+   },
+   "memories": [
+    "孙婆婆说镜湖底下藏着百年前的宝藏！",
+    "我的账号粉丝刚破一万，要趁萤火节搞个大新闻。",
+    "听说铁柱叔在后院神神秘秘地造什么东西。"
+   ]
+  },
+  {
+   "id": "he",
+   "name": "何月",
+   "age": 37,
+   "role": "月光酒馆老板",
+   "home": "tavern",
+   "work": "tavern",
+   "persona": "神秘、优雅、见多识广，说话带点诗意和调侃。年轻时是流浪歌手，走遍天南海北，十年前在云溪镇停下了脚步。",
+   "goal": "五天前收到一封没有署名的信，只写着“萤火节那晚，老地方见”。想弄清楚是谁寄的——她怀疑和十年前的一段往事有关。",
+   "look": {
+    "skin": "#f0cab0",
+    "hair": "#7a2338",
+    "hairStyle": "long",
+    "shirt": "#43305e",
+    "pants": "#2a2238",
+    "acc": [
+     "earring"
+    ]
+   },
+   "start": {
+    "abilities": [
+     "moon_song"
+    ],
+    "inventory": {}
+   },
+   "relations": {
+    "lin": [
+     55,
+     "闺蜜"
+    ],
+    "zhao": [
+     30,
+     "吵吵闹闹的老主顾"
+    ],
+    "su": [
+     20,
+     "他的文字很美"
+    ],
+    "sun": [
+     30,
+     "镇上唯一知道我过去的人"
+    ]
+   },
+   "memories": [
+    "那封匿名信的字迹，好像在哪见过。",
+    "“老地方”……十年前我初到云溪镇，是在镜湖码头下的船。",
+    "晓雨想请我在萤火节唱歌，我还没答应。"
+   ]
+  },
+  {
+   "id": "sun",
+   "name": "孙秀兰",
+   "age": 72,
+   "role": "退休小学教师（大家叫她孙婆婆）",
+   "home": "home_sun",
+   "work": "park",
+   "persona": "慈祥、幽默、爱讲古老传说，镇上一半的人都是她的学生。记性时好时坏，偶尔会把人名叫错，但讲起往事却清清楚楚。",
+   "goal": "想在萤火节把镜湖传说的“后半段”讲给年轻人听；每天去公园喂鸽子。",
+   "look": {
+    "skin": "#f3d3be",
+    "hair": "#dedede",
+    "hairStyle": "bun",
+    "shirt": "#8a6ab0",
+    "pants": "#5a4a5a",
+    "acc": [
+     "glasses"
+    ]
+   },
+   "start": {
+    "abilities": [
+     "old_tale",
+     "firefly_ward"
+    ],
+    "inventory": {
+     "lantern": 3
+    }
+   },
+   "relations": {
+    "chen": [
+     55,
+     "当年班上最老实的学生"
+    ],
+    "wang": [
+     60,
+     "像亲孙子一样"
+    ],
+    "zhou": [
+     45,
+     "好心的医生"
+    ],
+    "he": [
+     35,
+     "知道她的过去，替她保守秘密"
+    ]
+   },
+   "memories": [
+    "镜湖传说的后半段：那位少女等到的并不是恋人，而是……（我得好好想想怎么讲）。",
+    "十年前何月下船时，身边还有一个年轻人，后来那人走了。",
+    "今早喂鸽子时，差点忘了回家的路。"
+   ]
+  }
+ ],
+ "creatures": {
+  "shade_wisp": {
+   "name": "影灵",
+   "emoji": "👻",
+   "origin": "镜湖彼岸的暗月界",
+   "tags": [
+    "shadow",
+    "otherworld"
+   ],
+   "temperament": "mischievous",
+   "look": {
+    "bodyPlan": "wisp",
+    "body": "#3a2f6b",
+    "glow": "#8f7bff",
+    "eyes": "#f5e663"
+   },
+   "stats": {
+    "hp": 30,
+    "speed": 3.4,
+    "courage": 35
+   },
+   "behavior": {
+    "archetype": "thief",
+    "targets": [
+     "farm",
+     "pier",
+     "square",
+     "market"
+    ],
+    "fleeFrom": "light",
+    "active": [
+     "19:00",
+     "05:30"
+    ]
+   },
+   "weakness": [
+    "强光",
+    "萤火灯",
+    "歌声"
+   ],
+   "lore": "暗月界的光正在熄灭，它们循着萤火而来，爱偷亮晶晶的东西和甜甜的西瓜。"
+  },
+  "shade_hound": {
+   "name": "影犬",
+   "emoji": "🐺",
+   "origin": "镜湖彼岸的暗月界",
+   "tags": [
+    "shadow",
+    "otherworld"
+   ],
+   "temperament": "hostile",
+   "minRating": "adventure",
+   "look": {
+    "bodyPlan": "hound",
+    "body": "#241d45",
+    "glow": "#6b5bd6",
+    "eyes": "#ff6b6b"
+   },
+   "stats": {
+    "hp": 50,
+    "speed": 3.8,
+    "courage": 55
+   },
+   "behavior": {
+    "archetype": "chaser",
+    "targets": [
+     "square",
+     "park",
+     "pier"
+    ],
+    "fleeFrom": "light",
+    "active": [
+     "19:30",
+     "05:00"
+    ]
+   },
+   "weakness": [
+    "强光",
+    "萤火灯"
+   ],
+   "lore": "守门人的猎犬，会追着落单的人跑，但只要灯光够亮就会呜咽着退开。"
+  },
+  "moon_warden": {
+   "name": "暗月守门人",
+   "emoji": "🌑",
+   "origin": "暗月界",
+   "tags": [
+    "shadow",
+    "otherworld",
+    "leader"
+   ],
+   "temperament": "solemn",
+   "leader": true,
+   "look": {
+    "bodyPlan": "warden",
+    "body": "#1d1838",
+    "glow": "#b9a8ff",
+    "eyes": "#f3f0ff"
+   },
+   "stats": {
+    "hp": 200,
+    "speed": 2,
+    "courage": 90
+   },
+   "behavior": {
+    "archetype": "guard",
+    "targets": [
+     "pier"
+    ],
+    "active": [
+     "00:00",
+     "23:59"
+    ]
+   },
+   "weakness": [
+    "原初之灯"
+   ],
+   "lore": "暗月界的守门人。百年前，一位少女带走了暗月界的「原初之灯」，从此那边的天空一年比一年暗。"
+  }
+ },
+ "threads": [
+  {
+   "id": "concert",
+   "title": "萤火节露天音乐会",
+   "owners": [
+    "lin",
+    "he"
+   ],
+   "hook": "晓雨想在萤火节办露天音乐会，还缺舞台、灯光和乐手"
+  },
+  {
+   "id": "waterwheel",
+   "title": "农场的旧水车",
+   "owners": [
+    "chen",
+    "zhao"
+   ],
+   "hook": "大山的旧水车坏了，铁柱答应帮忙却一直没顾上"
+  },
+  {
+   "id": "confession",
+   "title": "苏墨的心意",
+   "owners": [
+    "su",
+    "lin"
+   ],
+   "hook": "苏墨暗恋晓雨多年，小说也卡在了「该不该开口」"
+  },
+  {
+   "id": "balloon",
+   "title": "铁柱的热气球",
+   "owners": [
+    "zhao"
+   ],
+   "hook": "铁柱在后院偷偷造热气球，还缺一块足够大的布"
+  },
+  {
+   "id": "sun_health",
+   "title": "孙婆婆的记性",
+   "owners": [
+    "zhou",
+    "sun"
+   ],
+   "hook": "周医生担心孙婆婆的记性越来越差"
+  },
+  {
+   "id": "treasure",
+   "title": "镜湖宝藏探秘",
+   "owners": [
+    "wang"
+   ],
+   "hook": "小乐想拍一期「镜湖百年宝藏」上热搜"
+  },
+  {
+   "id": "letter",
+   "title": "没有署名的信",
+   "owners": [
+    "he"
+   ],
+   "hook": "何月收到一封匿名信：「萤火节那晚，老地方见」"
+  },
+  {
+   "id": "legend",
+   "title": "传说的后半段",
+   "owners": [
+    "sun",
+    "su"
+   ],
+   "hook": "孙婆婆知道镜湖传说里没人知道的后半段"
+  },
+  {
+   "id": "daughter",
+   "title": "大山的女儿",
+   "owners": [
+    "chen"
+   ],
+   "hook": "大山很想女儿回来过萤火节，却说不出口"
+  }
+ ],
+ "items": {
+  "lantern": {
+   "name": "萤火灯",
+   "emoji": "🏮",
+   "desc": "竹骨纸面的小灯，萤火节必备"
+  },
+  "wood": {
+   "name": "木材",
+   "emoji": "🪵",
+   "desc": "工坊和农场常用的木料"
+  },
+  "herb": {
+   "name": "草药",
+   "emoji": "🌿",
+   "desc": "周医生常备的安神草药"
+  },
+  "melon": {
+   "name": "西瓜",
+   "emoji": "🍉",
+   "desc": "陈家农场的西瓜，镇上最甜"
+  },
+  "county_record": {
+   "name": "县志残页",
+   "emoji": "📜",
+   "desc": "泛黄的县志残页，画着湖心的门和一圈灯"
+  },
+  "moonstone": {
+   "name": "月石",
+   "emoji": "🌙",
+   "desc": "影灵留下的微微发光的小石头"
+  },
+  "moon_dew": {
+   "name": "月露",
+   "emoji": "💧",
+   "desc": "月光花瓣上接下的露水，喝一口清凉提神"
+  },
+  "moon_lantern": {
+   "name": "双月灯",
+   "emoji": "🏮",
+   "desc": "用两块月石扎成的灯，点起来一半金一半紫"
+  }
+ },
+ "structures": {
+  "light_ward": {
+   "name": "萤火结界",
+   "emoji": "🏮",
+   "tags": [
+    "light"
+   ],
+   "ttl": 90,
+   "light": {
+    "r": 110,
+    "color": "255,205,110"
+   }
+  },
+  "scaffold": {
+   "name": "施工中",
+   "emoji": "🚧",
+   "tags": [],
+   "ttl": 240
+  },
+  "lamp_wheel": {
+   "name": "灯轮",
+   "emoji": "🎡",
+   "tags": [
+    "light"
+   ],
+   "ttl": 240,
+   "light": {
+    "r": 150,
+    "color": "255,215,130"
+   }
+  },
+  "moon_float": {
+   "name": "双月灯",
+   "emoji": "🏮",
+   "tags": [
+    "light"
+   ],
+   "ttl": 120,
+   "light": {
+    "r": 120,
+    "color": "190,170,255"
+   }
+  }
+ },
+ "abilities": [
+  {
+   "id": "firefly_ward",
+   "name": "萤火结界",
+   "emoji": "🏮",
+   "target": "area",
+   "desc": "点起一圈萤火灯，让周围亮堂起来、让人安心",
+   "aiHint": "夜里、雾天或有人害怕时，在户外使用",
+   "cost": {
+    "stamina": 15,
+    "items": {
+     "lantern": 1
+    }
+   },
+   "cooldown": 120,
+   "requires": "!self.inside",
+   "effects": [
+    {
+     "op": "spawn",
+     "structure": "light_ward",
+     "ttl": 90
+    },
+    {
+     "op": "vfx",
+     "preset": "glow_ring",
+     "color": "#ffd76a",
+     "radius": 3
+    },
+    {
+     "op": "stat",
+     "stat": "courage",
+     "add": 6,
+     "target": "nearby",
+     "radius": 3,
+     "includeSelf": true
+    },
+    {
+     "op": "memory",
+     "text": "{self}点起了一圈萤火灯，四周一下子亮了",
+     "target": "nearby",
+     "radius": 3,
+     "importance": 4
+    }
+   ],
+   "learn": {
+    "teach": true,
+    "research": {
+     "location": "library",
+     "keywords": [
+      "萤火",
+      "灯",
+      "结界",
+      "传说",
+      "镜湖"
+     ]
+    }
+   }
+  },
+  {
+   "id": "warm_coffee",
+   "name": "暖心咖啡",
+   "emoji": "☕",
+   "target": "agent",
+   "desc": "亲手冲一杯对方爱喝的咖啡",
+   "aiHint": "朋友疲惫或心情低落时",
+   "cost": {
+    "stamina": 5
+   },
+   "cooldown": 60,
+   "requires": "self.loc == 'cafe'",
+   "effects": [
+    {
+     "op": "stat",
+     "stat": "stamina",
+     "add": 15,
+     "target": "target"
+    },
+    {
+     "op": "affinity",
+     "toward": "self",
+     "delta": 2,
+     "target": "target"
+    },
+    {
+     "op": "memory",
+     "text": "{self}给我冲了一杯咖啡，暖暖的",
+     "target": "target",
+     "importance": 3
+    },
+    {
+     "op": "vfx",
+     "preset": "sparkle",
+     "color": "#c48a5a",
+     "radius": 1
+    }
+   ],
+   "learn": {
+    "teach": true
+   }
+  },
+  {
+   "id": "checkup",
+   "name": "问诊",
+   "emoji": "🩺",
+   "target": "agent",
+   "desc": "给对方做个简单检查，叮嘱注意身体",
+   "aiHint": "发现有人疲惫、受惊或身体不适时",
+   "cost": {
+    "stamina": 10
+   },
+   "cooldown": 90,
+   "effects": [
+    {
+     "op": "condition",
+     "remove": "疲惫",
+     "target": "target"
+    },
+    {
+     "op": "condition",
+     "remove": "受惊",
+     "target": "target"
+    },
+    {
+     "op": "condition",
+     "remove": "晕倒",
+     "target": "target"
+    },
+    {
+     "op": "stat",
+     "stat": "stamina",
+     "add": 10,
+     "target": "target"
+    },
+    {
+     "op": "memory",
+     "text": "{self}给我做了检查，叮嘱我注意身体",
+     "target": "target",
+     "importance": 4
+    },
+    {
+     "op": "vfx",
+     "preset": "heal",
+     "color": "#7fd6a0",
+     "radius": 1
+    }
+   ]
+  },
+  {
+   "id": "moon_song",
+   "name": "月光之歌",
+   "emoji": "🎶",
+   "target": "area",
+   "desc": "轻轻唱一首流浪时学会的歌",
+   "aiHint": "傍晚在酒馆或广场，大家需要鼓舞时",
+   "cost": {
+    "stamina": 15
+   },
+   "cooldown": 180,
+   "requires": "hour >= 17",
+   "effects": [
+    {
+     "op": "stat",
+     "stat": "courage",
+     "add": 8,
+     "target": "nearby",
+     "radius": 4
+    },
+    {
+     "op": "memory",
+     "text": "听{self}唱了一首歌，心里暖暖的",
+     "target": "nearby",
+     "radius": 4,
+     "importance": 4
+    },
+    {
+     "op": "vfx",
+     "preset": "notes",
+     "color": "#b58cff",
+     "radius": 3
+    }
+   ],
+   "learn": {
+    "teach": true
+   }
+  },
+  {
+   "id": "craft_lantern",
+   "name": "扎萤火灯",
+   "emoji": "🔨",
+   "target": "self",
+   "desc": "用木材扎一盏萤火灯",
+   "aiHint": "在工坊、有木材时，为萤火节或结界备灯",
+   "cost": {
+    "stamina": 10,
+    "items": {
+     "wood": 2
+    }
+   },
+   "cooldown": 60,
+   "requires": "self.loc == 'workshop'",
+   "effects": [
+    {
+     "op": "giveItem",
+     "item": "lantern",
+     "count": 1
+    },
+    {
+     "op": "vfx",
+     "preset": "burst",
+     "color": "#ffb347",
+     "radius": 1
+    }
+   ],
+   "learn": {
+    "teach": true
+   }
+  },
+  {
+   "id": "old_tale",
+   "name": "讲古",
+   "emoji": "📜",
+   "target": "agent",
+   "desc": "给对方讲一段云溪镇的老故事",
+   "aiHint": "和年轻人闲坐、对方好奇过去时",
+   "cost": {
+    "stamina": 5
+   },
+   "cooldown": 120,
+   "effects": [
+    {
+     "op": "memory",
+     "text": "{self}给我讲了一段镜湖的老故事",
+     "target": "target",
+     "importance": 5
+    },
+    {
+     "op": "stat",
+     "stat": "courage",
+     "add": 3,
+     "target": "target"
+    },
+    {
+     "op": "affinity",
+     "toward": "self",
+     "delta": 2,
+     "target": "target"
+    }
+   ]
+  },
+  {
+   "id": "pick_melon",
+   "name": "摘西瓜",
+   "emoji": "🍉",
+   "target": "self",
+   "desc": "从瓜田里挑一个熟透的西瓜",
+   "aiHint": "在农场、想送人西瓜时",
+   "cost": {
+    "stamina": 8
+   },
+   "cooldown": 90,
+   "requires": "self.loc == 'farm'",
+   "effects": [
+    {
+     "op": "giveItem",
+     "item": "melon",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "id": "gather_dew",
+   "name": "采月露",
+   "emoji": "🌸",
+   "target": "self",
+   "desc": "用月光花的花瓣接一小瓶月露",
+   "aiHint": "在月光花园，想给朋友带点暗月界的礼物时",
+   "cost": {
+    "stamina": 5
+   },
+   "cooldown": 90,
+   "requires": "self.loc == 'moon_garden'",
+   "effects": [
+    {
+     "op": "giveItem",
+     "item": "moon_dew",
+     "count": 1
+    },
+    {
+     "op": "vfx",
+     "preset": "sparkle",
+     "color": "#b9a8ff",
+     "radius": 1
+    }
+   ],
+   "learn": {
+    "teach": true
+   }
+  },
+  {
+   "id": "share_dew",
+   "name": "赠月露",
+   "emoji": "💧",
+   "target": "agent",
+   "desc": "把一瓶月露递给身边的人，清凉提神",
+   "aiHint": "朋友累了或受了惊吓时",
+   "cost": {
+    "items": {
+     "moon_dew": 1
+    }
+   },
+   "cooldown": 30,
+   "effects": [
+    {
+     "op": "stat",
+     "stat": "stamina",
+     "add": 15,
+     "target": "target"
+    },
+    {
+     "op": "condition",
+     "remove": "疲惫",
+     "target": "target"
+    },
+    {
+     "op": "condition",
+     "remove": "受惊",
+     "target": "target"
+    },
+    {
+     "op": "affinity",
+     "toward": "self",
+     "delta": 2,
+     "target": "target"
+    },
+    {
+     "op": "memory",
+     "text": "{self}递给我一瓶暗月界的月露，凉丝丝的",
+     "target": "target",
+     "importance": 4
+    },
+    {
+     "op": "vfx",
+     "preset": "heal",
+     "color": "#b9a8ff",
+     "radius": 1,
+     "target": "target"
+    }
+   ],
+   "learn": {
+    "teach": true
+   }
+  },
+  {
+   "id": "pick_moonstone",
+   "name": "拾月石",
+   "emoji": "🌙",
+   "target": "self",
+   "desc": "在崖边的月砂里捡一块发光的月石",
+   "aiHint": "在星坠崖，想扎双月灯却缺月石时",
+   "cost": {
+    "stamina": 8
+   },
+   "cooldown": 120,
+   "requires": "self.loc == 'moon_lookout'",
+   "effects": [
+    {
+     "op": "giveItem",
+     "item": "moonstone",
+     "count": 1
+    },
+    {
+     "op": "vfx",
+     "preset": "sparkle",
+     "color": "#f5e663",
+     "radius": 1
+    }
+   ],
+   "learn": {
+    "teach": true
+   }
+  },
+  {
+   "id": "star_wish",
+   "name": "星坠许愿",
+   "emoji": "✨",
+   "target": "self",
+   "desc": "在崖边对着两个月亮许一个愿",
+   "aiHint": "傍晚以后在星坠崖，心里有放不下的事时",
+   "cost": {
+    "stamina": 5
+   },
+   "cooldown": 1440,
+   "requires": "self.loc == 'moon_lookout' && hour >= 19",
+   "effects": [
+    {
+     "op": "stat",
+     "stat": "courage",
+     "add": 8,
+     "target": "self"
+    },
+    {
+     "op": "memory",
+     "text": "我在星坠崖对着两个月亮许了一个愿",
+     "target": "self",
+     "importance": 6
+    },
+    {
+     "op": "memory",
+     "text": "看见{self}在星坠崖闭着眼睛许愿",
+     "target": "nearby",
+     "radius": 4,
+     "importance": 3
+    },
+    {
+     "op": "vfx",
+     "preset": "sparkle",
+     "color": "#b9a8ff",
+     "radius": 2
+    }
+   ]
+  },
+  {
+   "id": "craft_moon_lantern",
+   "name": "扎双月灯",
+   "emoji": "🔨",
+   "target": "self",
+   "desc": "跟影灵学着用两块月石扎一盏双月灯",
+   "aiHint": "在暗月广场、有两块月石时，为双月节备灯",
+   "cost": {
+    "stamina": 8,
+    "items": {
+     "moonstone": 2
+    }
+   },
+   "cooldown": 60,
+   "requires": "self.loc == 'moon_plaza'",
+   "effects": [
+    {
+     "op": "giveItem",
+     "item": "moon_lantern",
+     "count": 1
+    },
+    {
+     "op": "vfx",
+     "preset": "burst",
+     "color": "#b9a8ff",
+     "radius": 1
+    }
+   ],
+   "learn": {
+    "teach": true
+   }
+  },
+  {
+   "id": "release_moon_lantern",
+   "name": "放双月灯",
+   "emoji": "🌗",
+   "target": "area",
+   "desc": "把双月灯放上夜空，两个世界都看得见",
+   "aiHint": "双月节晚上，在码头、渡口或星坠崖",
+   "cost": {
+    "stamina": 5,
+    "items": {
+     "moon_lantern": 1
+    }
+   },
+   "cooldown": 60,
+   "requires": "(self.loc == 'pier' || self.loc == 'moon_gate' || self.loc == 'moon_lookout') && hour >= 18",
+   "effects": [
+    {
+     "op": "spawn",
+     "structure": "moon_float",
+     "ttl": 120
+    },
+    {
+     "op": "vfx",
+     "preset": "glow_ring",
+     "color": "#b9a8ff",
+     "radius": 3
+    },
+    {
+     "op": "stat",
+     "stat": "courage",
+     "add": 6,
+     "target": "nearby",
+     "radius": 4,
+     "includeSelf": true
+    },
+    {
+     "op": "memory",
+     "text": "{self}放起一盏双月灯，金色和紫色的光一起飘上了天",
+     "target": "nearby",
+     "radius": 4,
+     "includeSelf": true,
+     "importance": 5
+    }
+   ],
+   "learn": {
+    "teach": true
+   }
+  }
+ ],
+ "rules": [
+  {
+   "id": "ward_comfort",
+   "name": "萤火安神",
+   "when": {
+    "every": 30
+   },
+   "forEach": "agent",
+   "if": "e.status != 'sleeping' && nearStructure(e, 'light', 3)",
+   "then": [
+    {
+     "op": "stat",
+     "stat": "courage",
+     "add": 2,
+     "target": "e"
+    },
+    {
+     "op": "stat",
+     "stat": "stamina",
+     "add": 1,
+     "target": "e"
+    }
+   ]
+  },
+  {
+   "id": "rain_tired",
+   "name": "淋雨疲惫",
+   "when": {
+    "every": 60
+   },
+   "forEach": "agent",
+   "if": "(weather == 'rain' || weather == 'storm') && !e.inside && e.status != 'sleeping'",
+   "then": [
+    {
+     "op": "stat",
+     "stat": "stamina",
+     "add": -3,
+     "target": "e"
+    }
+   ]
+  },
+  {
+   "id": "learn_moon_garden",
+   "name": "花园里的影灵",
+   "when": {
+    "enter": "moon_garden"
+   },
+   "if": "!knows(e, 'gather_dew') || !knows(e, 'share_dew')",
+   "then": [
+    {
+     "op": "memory",
+     "text": "月光花园里的影灵教我用花瓣接月露",
+     "target": "e",
+     "importance": 5
+    },
+    {
+     "op": "grantAbility",
+     "ability": "gather_dew",
+     "target": "e"
+    },
+    {
+     "op": "grantAbility",
+     "ability": "share_dew",
+     "target": "e"
+    }
+   ]
+  },
+  {
+   "id": "learn_moon_lookout",
+   "name": "星坠崖的传说",
+   "when": {
+    "enter": "moon_lookout"
+   },
+   "if": "!knows(e, 'pick_moonstone') || !knows(e, 'star_wish')",
+   "then": [
+    {
+     "op": "memory",
+     "text": "影灵说，星坠崖的月砂里藏着月石，对着双月许的愿会被记住",
+     "target": "e",
+     "importance": 5
+    },
+    {
+     "op": "grantAbility",
+     "ability": "pick_moonstone",
+     "target": "e"
+    },
+    {
+     "op": "grantAbility",
+     "ability": "star_wish",
+     "target": "e"
+    }
+   ]
+  },
+  {
+   "id": "learn_moon_plaza",
+   "name": "影灵的灯艺",
+   "when": {
+    "enter": "moon_plaza"
+   },
+   "if": "!knows(e, 'craft_moon_lantern') || !knows(e, 'release_moon_lantern')",
+   "then": [
+    {
+     "op": "memory",
+     "text": "暗月广场的影灵给我看了它们怎么用月石扎灯",
+     "target": "e",
+     "importance": 5
+    },
+    {
+     "op": "grantAbility",
+     "ability": "craft_moon_lantern",
+     "target": "e"
+    },
+    {
+     "op": "grantAbility",
+     "ability": "release_moon_lantern",
+     "target": "e"
+    }
+   ]
+  },
+  {
+   "id": "moon_garden_calm",
+   "name": "月光花园安神",
+   "when": {
+    "every": 30
+   },
+   "forEach": "agent",
+   "if": "e.loc == 'moon_garden' && e.status != 'sleeping'",
+   "then": [
+    {
+     "op": "stat",
+     "stat": "stamina",
+     "add": 2,
+     "target": "e"
+    },
+    {
+     "op": "stat",
+     "stat": "courage",
+     "add": 2,
+     "target": "e"
+    }
+   ]
+  },
+  {
+   "id": "moon_dark_chill",
+   "name": "暗月寒意",
+   "when": {
+    "every": 60
+   },
+   "forEach": "agent",
+   "if": "e.region == 'moonrealm' && e.status != 'sleeping' && (hour >= 22 || hour < 5) && !nearStructure(e, 'light', 3)",
+   "then": [
+    {
+     "op": "stat",
+     "stat": "courage",
+     "add": -3,
+     "target": "e"
+    }
+   ]
+  }
+ ],
+ "factions": [],
+ "params": {
+  "walkSpeed": 3.2,
+  "maxConvos": 3,
+  "convoBaseProb": 0.22,
+  "reflectThreshold": 40,
+  "dayEnd": 1350
+ },
+ "voice": {
+  "name": "云溪镇",
+  "emoji": "🌸",
+  "place": "小镇",
+  "resident": "居民",
+  "chronicle": {
+   "name": "云溪日报",
+   "kind": "日报",
+   "editor": "主编",
+   "style": "温暖、俏皮，擅长从小事里挖出故事"
+  },
+  "ui": {
+   "tagline": "正在唤醒居民们的记忆……",
+   "welcome": "一座由大语言模型驱动的生成式智能体小镇。居民们各有性格、记忆、秘密和目标，他们会自己规划一天、相遇交谈、传播消息、反思成长。",
+   "sampleEvents": [
+    "🎆 今晚八点，中央广场将举办一场神秘的烟花表演！",
+    "🍉 陈家农场西瓜大丰收，下午五点在农场免费请全镇吃西瓜！",
+    "🌊 有人在镜湖码头捡到一个漂流瓶，里面是半张藏宝图。",
+    "💌 公告栏上出现一封匿名情书，收信人写着“咖啡馆的她”。",
+    "🎪 流动马戏团明天抵达，今天下午在广场招募帮手。",
+    "⚡ 气象台预警：今晚有雷暴，请大家早点回家。",
+    "🎤 萤火节音乐会招募表演者，报名处设在星光咖啡馆。",
+    "🐱 孙婆婆的猫走丢了，最后有人在樱花公园见过它。"
+   ]
+  }
+ },
+ "rhythm": {
+  "plan": "05:30",
+  "diary": "22:15",
+  "chronicle": "22:45"
+ },
+ "era": {
+  "tech": "现代乡镇",
+  "forbidden": []
+ }
+}

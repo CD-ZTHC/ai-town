@@ -1,6 +1,6 @@
 // 界面：名册、检查器、动态流、AI 大脑面板、弹窗（日报 / 关系网 / 事件 / 帮助）
 // 各面板拆在 ui/ 下；这里保留名册、顶栏、AI 大脑等外壳，并统一导出界面的公共接口（import * as UI from './ui.js'）。
-import { setApp, $, $$, closeModal, esc, fmtTime, guarded, name, toast, ui, weekday, app } from './ui/core.js';
+import { setApp, $, $$, closeModal, esc, fmtTime, guarded, name, toast, ui, weekday, app, voice } from './ui/core.js';
 import { renderFeed } from './ui/feed.js';
 import { closeInspector, loadDetail, openInspector } from './ui/inspector.js';
 import { storyModal } from './ui/story.js';
@@ -14,8 +14,21 @@ export { onEvolution, evolveModal } from './ui/evolve.js';
 export { avatarModal, eventModal, newsModal, graphModal, helpModal, adminModal } from './ui/modals.js';
 export { accountModal, requireLogin } from './ui/auth.js';
 
+/** 按世界的叙述口吻设置页面标题与品牌 */
+function applyVoice() {
+  const v = voice();
+  document.title = `${v.name} · AI Town`;
+  for (const el of document.querySelectorAll('.brand-name, #loading h1')) el.textContent = v.name;
+  for (const el of document.querySelectorAll('.brand-icon, .load-logo')) el.textContent = v.emoji;
+  $('.brand')?.setAttribute('title', `${v.name} · Generative Agents`);
+  $('#btn-news')?.setAttribute('title', v.chronicle.name);
+  const span = $('#btn-news span');
+  if (span) span.textContent = v.chronicle.kind;
+}
+
 export function init(a, first) {
   setApp(a);
+  applyVoice();
   buildRoster();
   renderFeed();
   updateBrain();
@@ -197,7 +210,7 @@ export function onWorld(w) {
 
 export function onNewspaper(p) {
   app.newspapers.push(p);
-  toast(`📰 新一期《云溪日报》出炉：<b>${esc(p.headline)}</b>`, 7000);
+  toast(`📰 新一期《${esc(voice().chronicle.name)}》出炉：<b>${esc(p.headline)}</b>`, 7000);
 }
 
 export function updateBrain() {

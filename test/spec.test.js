@@ -1,9 +1,13 @@
-// 世界规格：默认规格必须合法，并与重构前写死在代码里的数据完全一致
+// 世界规格：默认规格（官方世界包 worlds/yunxi/）必须合法，并与迁移前写死在代码里的数据完全一致
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { defaultSpec, validateSpec, calendarHint, pickWeather, activeEvents, weekdayOf } from '../server/kernel/spec.js';
-import { buildWorld } from '../server/world.js';
-import { PERSONAS } from '../server/personas.js';
+import { buildWorld, buildMoonRealm } from '../server/world.js';
+import { officialPack, loadPack, packErrors, hashPack } from '../server/worlds/pack.js';
+
+// 迁移前（地图常量还在 world.js 里时）生成的地图指纹：云溪镇与暗月界必须逐格不变
+const fingerprint = (x) => crypto.createHash('sha256').update(JSON.stringify({ t: x.tiles, w: [...x.walk], o: x.objects, b: x.buildings, l: x.locations, g: x.gate })).digest('hex').slice(0, 16);
 
 test('默认规格通过校验', () => {
   assert.deepEqual(validateSpec(defaultSpec({})), []);
@@ -15,20 +19,26 @@ test('内容分级读取 STORY_RATING，非法值回落到 cozy', () => {
   assert.equal(defaultSpec({}).meta.rating, 'cozy');
 });
 
-test('由规格生成的地图与原地图逐格一致', () => {
+test('由世界包生成的地图与迁移前逐格一致', () => {
   const s = defaultSpec({});
-  const a = buildWorld();
-  const b = buildWorld({ buildings: s.buildings, locationInfo: s.locations });
-  assert.deepEqual(b.tiles, a.tiles);
-  assert.deepEqual([...b.walk], [...a.walk]);
-  assert.deepEqual(b.buildings, a.buildings);
-  assert.deepEqual(b.objects, a.objects);
-  assert.deepEqual(b.locations, a.locations);
+  assert.equal(fingerprint(buildWorld({ buildings: s.buildings, locationInfo: s.locations })), '315c3482058a6357');
+  assert.equal(fingerprint(buildMoonRealm({ locationInfo: s.locations })), '972ab31556c53387');
+});
+
+test('官方世界包：结构合法，哈希稳定，带叙述口吻、作息与支柱', () => {
+  const p = officialPack('yunxi');
+  assert.deepEqual(packErrors(p), []);
+  assert.equal(hashPack(loadPack(p.dir)), p.hash);
+  assert.equal(p.world.voice.chronicle.name, '云溪日报');
+  assert.deepEqual(p.world.rhythm, { plan: '05:30', diary: '22:15', chronicle: '22:45' });
+  assert.ok(p.world.lore.pillars.length >= 2);
+  assert.equal(p.arcs[0].id, 'rift');
+  assert.equal(p.map.regions[0].id, 'town', '第一个区域是主地图');
 });
 
 test('居民、公共地点与重构前一致', () => {
   const s = defaultSpec({});
-  assert.deepEqual(s.personas, PERSONAS);
+  assert.deepEqual(s.personas.map((p) => p.id), ['lin', 'chen', 'su', 'zhao', 'zhou', 'wang', 'he', 'sun']);
   const pub = Object.keys(s.locations).filter((id) => s.locations[id].public && !s.locations[id].region);
   assert.deepEqual(pub, ['cafe', 'library', 'tavern', 'clinic', 'workshop', 'square', 'market', 'park', 'farm', 'pier']);
 });

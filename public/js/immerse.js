@@ -313,7 +313,7 @@ function chapter(html) {
   st.chapters.push(html);
 }
 export function onNewspaper(p) {
-  if (app.mode === 'immerse') chapter(`<small>📰 云溪日报 · 第 ${p.day ?? ''} 期</small><h2>${esc(p.headline)}</h2>${p.subhead ? `<p>${esc(p.subhead)}</p>` : ''}`);
+  if (app.mode === 'immerse') chapter(`<small>📰 ${esc(app.spec?.voice?.chronicle.name || '日报')} · 第 ${p.day ?? ''} 期</small><h2>${esc(p.headline)}</h2>${p.subhead ? `<p>${esc(p.subhead)}</p>` : ''}`);
 }
 function chapters(S) {
   const m = S.t % 1440;

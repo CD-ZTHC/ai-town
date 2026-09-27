@@ -14,36 +14,8 @@ function mulberry32(a) {
   };
 }
 
-export const BUILDINGS = [
-  { id: 'home_lin', name: '林家小屋', kind: 'house', x: 2, y: 3, w: 5, h: 5, roof: '#d4606f' },
-  { id: 'home_su', name: '苏家小屋', kind: 'house', x: 7, y: 3, w: 5, h: 5, roof: '#5b7bb4' },
-  { id: 'home_zhou', name: '周家小屋', kind: 'house', x: 2, y: 9, w: 5, h: 5, roof: '#6aa56b' },
-  { id: 'home_wang', name: '王家老宅', kind: 'house', x: 7, y: 9, w: 5, h: 5, roof: '#e39a3b' },
-  { id: 'library', name: '云溪图书馆', kind: 'library', x: 17, y: 5, w: 9, h: 8, roof: '#7a5aa6' },
-  { id: 'home_sun', name: '孙婆婆家', kind: 'house', x: 26, y: 9, w: 5, h: 5, roof: '#b86b4b' },
-  { id: 'cafe', name: '星光咖啡馆', kind: 'cafe', x: 34, y: 6, w: 7, h: 7, roof: '#c4553f' },
-  { id: 'clinic', name: '云溪诊所', kind: 'clinic', x: 3, y: 19, w: 7, h: 6, roof: '#e8e8ee' },
-  { id: 'tavern', name: '月光酒馆', kind: 'tavern', x: 34, y: 18, w: 8, h: 6, roof: '#3d4a78' },
-  { id: 'workshop', name: '铁柱工坊', kind: 'workshop', x: 34, y: 25, w: 6, h: 4, roof: '#7b6b5b' },
-  { id: 'home_chen', name: '陈家农舍', kind: 'farmhouse', x: 52, y: 19, w: 5, h: 5, roof: '#a0452f' },
-];
-
-export const LOCATION_INFO = {
-  home: { name: '自己家', emoji: '🏠', desc: '自己的家（休息、做饭、独处）' },
-  cafe: { name: '星光咖啡馆', emoji: '☕', desc: '林晓雨经营的咖啡馆，带露台，07:00-20:00营业，镇上的社交中心' },
-  library: { name: '云溪图书馆', emoji: '📚', desc: '苏墨管理的图书馆，安静，可以看书写作查资料' },
-  tavern: { name: '月光酒馆', emoji: '🍺', desc: '何月经营的酒馆，傍晚后热闹，有驻唱与美酒' },
-  clinic: { name: '云溪诊所', emoji: '🏥', desc: '周慧医生的诊所，看病、体检' },
-  workshop: { name: '铁柱工坊', emoji: '🔨', desc: '赵铁柱的木工铁艺工坊，带后院' },
-  square: { name: '中央广场', emoji: '⛲', desc: '镇中心，有喷泉、舞台和公告栏，镇民聚集闲聊的地方' },
-  market: { name: '广场集市', emoji: '🧺', desc: '广场四周的小摊，买菜买花买杂货' },
-  park: { name: '樱花公园', emoji: '🌸', desc: '樱花树、小池塘和长椅，散步、晒太阳、喂鸽子' },
-  farm: { name: '陈家农场', emoji: '🌾', desc: '陈大山的农田，种着西瓜和蔬菜' },
-  pier: { name: '镜湖码头', emoji: '🎣', desc: '湖边木码头，钓鱼、看日落、发呆' },
-};
-
-// 生成器 yunxi-v1：建筑与地点信息可由世界规格传入，默认使用上面的常量
-export function buildWorld({ buildings: buildingDefs = BUILDINGS, locationInfo = LOCATION_INFO } = {}) {
+// 生成器 yunxi-v1（手工布局）：建筑与地点信息来自世界规格（worlds/yunxi/world.json），保证云溪镇逐格不变
+export function buildWorld({ buildings: buildingDefs, locationInfo }) {
   const W = 64, H = 44;
   const rnd = mulberry32(20260924);
   const tiles = new Array(W * H).fill(T.GRASS);
@@ -335,15 +307,8 @@ export function buildWorld({ buildings: buildingDefs = BUILDINGS, locationInfo =
   return { id: 'town', W, H, tiles, walk, objects, buildings, locations, lamps, overlayErrors, gate: { x: 51, y: 37 } };
 }
 
-// ---------- 区域生成器 moonrealm-v1：暗月界（裂隙另一头的口袋地图）----------
-export const MOON_LOCATIONS = {
-  moon_gate: { name: '月之渡口·彼岸', emoji: '🌗', desc: '裂隙另一头的渡口，脚下是泛着微光的月砂', public: true, region: 'moonrealm' },
-  moon_plaza: { name: '暗月广场', emoji: '🌑', desc: '月井旁的小广场，影灵们提着灯在这里散步', public: true, region: 'moonrealm' },
-  moon_garden: { name: '月光花园', emoji: '🌸', desc: '只在月光下开放的花，一碰就会发光', public: true, region: 'moonrealm' },
-  moon_lookout: { name: '星坠崖', emoji: '✨', desc: '能同时看见两个月亮的崖边，据说是许愿的地方', public: true, region: 'moonrealm' },
-};
-
-export function buildMoonRealm() {
+// ---------- 区域生成器 moonrealm-v1：暗月界（裂隙另一头的口袋地图）；地点名称与描述来自世界规格 ----------
+export function buildMoonRealm({ locationInfo = {} } = {}) {
   const W = 36, H = 26;
   const rnd = mulberry32(19260404);
   const tiles = new Array(W * H).fill(T.VOID);
@@ -383,7 +348,7 @@ export function buildMoonRealm() {
     if (edge && !nearPath) obj({ type: 'crystal', x, y, v: rnd() });
   }
   const locations = {};
-  const addLoc = (id, rect, spots) => { locations[id] = { id, ...MOON_LOCATIONS[id], rect, spots: spots.map(([x, y]) => ({ x, y })) }; };
+  const addLoc = (id, rect, spots) => { locations[id] = { id, ...locationInfo[id], rect, spots: spots.map(([x, y]) => ({ x, y })) }; };
   addLoc('moon_gate', { x: 15, y: 19, w: 7, h: 4 }, [[18, 21], [17, 21], [19, 21], [17, 20], [19, 20]]);
   addLoc('moon_plaza', { x: 14, y: 9, w: 9, h: 7 }, [[16, 10], [20, 10], [16, 13], [20, 13], [17, 14], [19, 14], [18, 9]]);
   addLoc('moon_garden', { x: 4, y: 8, w: 9, h: 10 }, [[7, 11], [9, 13], [6, 14], [10, 10], [8, 16], [11, 15]]);

@@ -1,5 +1,5 @@
 // 其他弹窗：访客化身、发布事件、日报、关系网、说明、管理员
-import { $, $$, app, closeModal, esc, face, guarded, name, openModal, toast } from './core.js';
+import { $, $$, app, closeModal, esc, face, guarded, name, openModal, toast, voice } from './core.js';
 import { closeInspector } from './inspector.js';
 const AV_COLORS = ['#e57373', '#64b5f6', '#81c784', '#ffb74d', '#ba68c8', '#4db6ac', '#f06292', '#a1887f'];
 
@@ -47,16 +47,8 @@ export function avatarModal() {
   $('#av-leave', card).onclick = async () => { await app.api('/api/avatar/leave', {}).catch(() => {}); await app.refreshPerms(); closeModal(); };
 }
 
-const PRESETS = [
-  '🎆 今晚八点，中央广场将举办一场神秘的烟花表演！',
-  '🍉 陈家农场西瓜大丰收，下午五点在农场免费请全镇吃西瓜！',
-  '🌊 有人在镜湖码头捡到一个漂流瓶，里面是半张藏宝图。',
-  '💌 公告栏上出现一封匿名情书，收信人写着“咖啡馆的她”。',
-  '🎪 流动马戏团明天抵达，今天下午在广场招募帮手。',
-  '⚡ 气象台预警：今晚有雷暴，请大家早点回家。',
-  '🎤 萤火节音乐会招募表演者，报名处设在星光咖啡馆。',
-  '🐱 孙婆婆的猫走丢了，最后有人在樱花公园见过它。',
-];
+// 事件示例来自世界包（voice.ui.sampleEvents）
+const PRESETS = () => voice().ui?.sampleEvents || [];
 
 export function eventModal() {
   const opts = ['<option value="all">📢 全镇公告（所有人都会知道）</option>', ...Object.values(app.meta).map((a) => `<option value="${a.id}">✨ 只让 ${esc(a.name)} 知道（看消息如何传开）</option>`)].join('');
@@ -64,7 +56,7 @@ export function eventModal() {
     <h2>📢 发布小镇事件</h2>
     <div class="sub">你是这座小镇的命运之手。写下一个事件，居民们会根据各自的性格、记忆与关系作出反应，并重新规划今天。</div>
     <textarea id="ev-text" rows="3" maxlength="120" style="width:100%" placeholder="例如：今晚八点，中央广场将举办一场神秘的烟花表演！"></textarea>
-    <div class="presets">${PRESETS.map((p) => `<button>${esc(p)}</button>`).join('')}</div>
+    <div class="presets">${PRESETS().map((p) => `<button>${esc(p)}</button>`).join('')}</div>
     <div class="row"><select id="ev-target">${opts}</select></div>
     <div class="row" style="justify-content:space-between"><span class="quota" id="ev-msg">${app.perms.admin ? '管理员不受频率限制' : `本小时还可发布 ${app.perms.remaining?.event ?? '-'} 次 · 事件会经过审核，请保持温馨友善`}</span>
       <span style="display:flex;gap:10px"><button class="ghost" id="ev-cancel">取消</button><button class="primary" id="ev-go">发布 ✨</button></span></div>`);
@@ -91,7 +83,7 @@ export function eventModal() {
 export async function newsModal(idx) {
   const papers = app.newspapers;
   if (!papers.length) {
-    const card = openModal(`<div class="paper"><div class="masthead"><h1>云溪日报</h1></div><div class="paper-empty">
+    const card = openModal(`<div class="paper"><div class="masthead"><h1>${esc(voice().chronicle.name)}</h1></div><div class="paper-empty">
       <p>📰 本报每晚 22:45 出版，记录小镇一天里的大事小情。</p><p>今天的新闻还在发生中……</p>
       ${app.perms.admin ? '<button class="primary" id="np-now">📝 立即出版今日号外</button>' : ''}</div></div>`, 'paper-wrap');
     if ($('#np-now', card)) $('#np-now', card).onclick = publishNow;
@@ -102,7 +94,7 @@ export async function newsModal(idx) {
   const card = openModal(`
     <div class="paper-tabs">${papers.map((x, j) => `<button data-i="${j}" class="${i === j ? 'on' : ''}">第${x.day}天</button>`).join('')}${app.perms.admin ? '<button id="np-now" style="margin-left:auto">📝 出版号外</button>' : ''}</div>
     <div class="paper">
-      <div class="masthead"><h1>云溪日报</h1>
+      <div class="masthead"><h1>${esc(voice().chronicle.name)}</h1>
         <div class="meta"><span>第 ${p.day} 期 · ${esc(p.weekday || '')}</span><span>YUNXI DAILY</span><span>天气：${esc(app.weathers[p.weather]?.name || '')} · 售价 两颗西瓜籽</span></div></div>
       <div class="headline">${esc(p.headline)}</div>
       <div class="subhead">${esc(p.subhead || '')}</div>
@@ -230,8 +222,8 @@ export function helpModal() {
     ['Ctrl+K', '搜索与跳转', '—', '搜索与跳转'],
     ['Esc', '关闭面板', '退出沉浸', '结束对话 / 退出游戏'],
   ];
-  openModal(`<h2>🌸 欢迎来到云溪镇</h2>
-  <div class="sub">一座由大语言模型驱动的生成式智能体小镇。居民们各有性格、记忆、秘密和目标，他们会自己规划一天、相遇交谈、传播消息、反思成长。</div>
+  openModal(`<h2>${esc(voice().emoji)} 欢迎来到${esc(voice().name)}</h2>
+  <div class="sub">${esc(voice().ui?.welcome || '')}</div>
   <div class="help-modes">
     <button data-go="observe"><b>🔭 观察模式</b><small>点击居民查看日程、记忆、关系与日记；发布事件、改变天气、翻阅日报。</small></button>
     <button data-go="immerse"><b>🎬 沉浸模式</b><small>隐藏界面，镜头自动去有故事的地方，对白变成字幕。适合挂着慢慢看。</small></button>

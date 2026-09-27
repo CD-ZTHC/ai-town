@@ -15,6 +15,9 @@ export const weekday = (day) => { const w = app.spec?.calendar.weekdays || []; r
 
 export const face = (id) => app.meta[id]?.portrait || '';
 
+/** 世界的叙述口吻（世界包 world.json 的 voice）：世界名、编年名称、界面文案 */
+export const voice = () => app?.spec?.voice || { name: '云溪镇', emoji: '🌸', place: '小镇', chronicle: { name: '云溪日报', kind: '日报' }, ui: { welcome: '', sampleEvents: [] } };
+
 export const name = (id) => app.meta[id]?.name || id;
 
 export const ui = { tab: 'sched', memFilter: 'all', chatMode: 'visitor', feedFilter: 'all', detail: null, rosterT: 0, refreshT: 0, pending: false };

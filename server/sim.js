@@ -3,9 +3,10 @@
 // 以 mixin 的形式挂到 Town 上（见文件末尾），方法里的 this 都是 Town。
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
-import { buildWorld, buildMoonRealm } from './world.js';
+import { buildRegions, buildRegion } from './worldgen/index.js';
 import * as llm from './llm.js';
-import { addMemory } from './memory.js';
+import { addMemory, parseHM } from './memory.js';
+import { officialPack, packSpec } from './worlds/pack.js';
 import { defaultSpec, validateSpec, weekdayOf, calendarHint, pickWeather, publicSpec, PARAM_BOUNDS } from './kernel/spec.js';
 import { RuleEngine } from './kernel/rules.js';
 import { Director } from './story/director.js';
@@ -58,11 +59,18 @@ export class Town extends EventEmitter {
     const saved = this.readSave();
     // 世界规格 = 默认规格 + 存档中的操作历史重放
     this.specOps = Array.isArray(saved?.specOps) ? saved.specOps : [];
-    const baseErrs = validateSpec(defaultSpec());
-    if (baseErrs.length) throw new Error(`默认世界规格不合法：${baseErrs.join('；')}`);
-    // Mod 叠加在默认规格之上、存档之下（MODS=a,b 或 opts.mods）
-    const modNames = opts.mods ?? setting('MODS');
-    const m = applyMods(defaultSpec(), modNames, opts.modsDir);
+    // 世界包（多世界设计 §3）：opts.pack 不传时是官方世界云溪镇；worldSettings 是世界级设置（分级、叙事者、Mod）
+    this.worldId = opts.worldId || 'yunxi';
+    this.pack = opts.pack || null;
+    const ws = opts.worldSettings || null;
+    const base = () => (this.pack ? packSpec(this.pack, ws || {}) : defaultSpec(ws ? { STORY_RATING: ws.rating, STORYTELLER: ws.storyteller } : process.env));
+    this.packHash = (this.pack || officialPack('yunxi')).hash;
+    const baseErrs = validateSpec(base());
+    if (baseErrs.length) throw new Error(`世界规格不合法：${baseErrs.join('；')}`);
+    if (saved?.packHash && saved.packHash !== this.packHash) console.log(`[save] ${this.worldId}：世界包已更新（${saved.packHash} → ${this.packHash}），按操作历史重放`);
+    // Mod 叠加在世界包之上、存档之下（世界设置里的 mods，或 MODS / opts.mods）
+    const modNames = opts.mods ?? ws?.mods ?? setting('MODS');
+    const m = applyMods(base(), modNames, opts.modsDir);
     for (const k of m.skipped) console.warn(`[mod] ${k.mod}${k.op ? ` / ${k.op}` : ''}：${k.error}`);
     if (m.loaded.length) console.log(`[mod] 已加载：${m.loaded.map((x) => `${x.name}（${x.ops} 项）`).join('、')}`);
     this.mods = m.loaded;
@@ -70,14 +78,14 @@ export class Town extends EventEmitter {
     // 自主演化：AI 插件在重放操作历史之前加载（T2 的效果要先注册，T0 / T1 的内容作为覆盖层）
     this.evolved = new EvolvedManager(this, opts.evolution);
     this.overlays = this.evolved.preload(); // 插件带来的数据内容 [{ id, ops }]（自主演化 §5.2 T0/T1）
-    let base = m.spec;
-    for (const o of this.overlays) base = replay(base, o.ops.map((x, i) => ({ seq: i + 1, ...x }))).spec;
-    const { spec, skipped } = replay(base, this.specOps);
+    let withPlugins = m.spec;
+    for (const o of this.overlays) withPlugins = replay(withPlugins, o.ops.map((x, i) => ({ seq: i + 1, ...x }))).spec;
+    const { spec, skipped } = replay(withPlugins, this.specOps);
     for (const k of skipped) console.warn(`[spec] 跳过无法重放的操作 #${k.seq} ${k.op}：${k.error}`);
     this.spec = spec;
-    this.world = buildWorld({ buildings: this.spec.buildings, locationInfo: this.spec.locations });
-    // 区域：主地图 + 暗月界（口袋地图，默认关闭，由剧情或管理员打开）
-    this.regions = { town: this.world, moonrealm: buildMoonRealm() };
+    // 区域：主地图（id 为 town）+ 其他区域（例如暗月界，口袋地图，默认关闭，由剧情或管理员打开）
+    this.regions = buildRegions(this.spec);
+    this.world = this.regions.town;
     this.t = 6 * 60 + 15;
     this.speed = 1;
     this.paused = false;
@@ -278,15 +286,22 @@ export class Town extends EventEmitter {
     if (!this.opts?.embedder) this.embedder?.close();
   }
 
+  /** 世界作息（world.json 的 rhythm）：规划、日记、编年的时刻，单位为分钟 */
+  get rhythm() {
+    const r = this.spec.rhythm || {};
+    return { plan: parseHM(r.plan ?? '05:30'), diary: parseHM(r.diary ?? '22:15'), chronicle: parseHM(r.chronicle ?? '22:45') };
+  }
+
   dailyHooks() {
     const m = this.minute, d = this.day;
-    if (m >= 5 * 60 + 30 && m < this.dayEnd && this.flags.plannedDay !== d) this.planAll();
-    if (m >= 22 * 60 + 15 && this.flags.diaryDay !== d) {
+    const rh = this.rhythm;
+    if (m >= rh.plan && m < this.dayEnd && this.flags.plannedDay !== d) this.planAll();
+    if (m >= rh.diary && this.flags.diaryDay !== d) {
       this.flags.diaryDay = d;
       // 写完日记顺便整理记忆：太多时把较早一天的琐事浓缩成一条
       for (const a of this.agents) if (a.kind !== 'creature') this.writeDiary(a).then(() => this.condenseMemories(a)).catch(() => {});
     }
-    if (m >= 22 * 60 + 45 && this.flags.newsDay !== d) {
+    if (m >= rh.chronicle && this.flags.newsDay !== d) {
       this.flags.newsDay = d;
       this.makeNewspaper().catch(() => {});
     }
@@ -503,7 +518,7 @@ export class Town extends EventEmitter {
 
   /** 世界结构变化（新增建筑）后重建地图；正在走路的角色与生物重新寻路 */
   rebuildWorld() {
-    this.world = buildWorld({ buildings: this.spec.buildings, locationInfo: this.spec.locations });
+    this.world = this.regions.town = buildRegion(this.spec.regions.find((r) => r.id === 'town'), this.spec);
     this.regions.town = this.world;
     for (const a of this.agents) if (a.status === 'walking') { a.curKey = null; a.path = []; }
     for (const c of this.creatures.list) c.path = [];
