@@ -92,7 +92,7 @@ function fakeModel({ badFirstMap = false } = {}) {
       };
       case '创世：考据': return { conflicts: [] };
       case '创世：叙述口吻': return { emoji: '🐺', place: '森林', chronicle: { name: '狼嚎日报', kind: '日报' }, sampleEvents: ['🌕 满月了'] };
-      case '内容审核': return { allow: true };
+      case '内容审核': case '昵称审核': return { allow: true };
       default: throw new Error(`没想到的调用：${label}`);
     }
   };

@@ -16,6 +16,7 @@ const llm = await import('../server/llm.js');
 test('label → 级别：调度策略只有这一张表', () => {
   assert.equal(classOf('与旅人交谈'), 'P0');
   assert.equal(classOf('内容审核'), 'P0');
+  assert.equal(classOf('昵称审核'), 'P0');
   assert.equal(classOf('规划一天'), 'P1');
   assert.equal(classOf('叙事导演'), 'P2');
   assert.equal(classOf('撰写日报'), 'P2');

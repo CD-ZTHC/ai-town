@@ -248,6 +248,25 @@ test('公网模式：注册按 IP 限流、重复昵称被拒、互动额度按�
   assert.deepEqual(codes, [200, 200, 200, 200, 429]);
 });
 
+test('公网模式：昵称走昵称审核（不是事件审核），普通人名和英文名可以注册', async (t) => {
+  const { req } = setupPublic(t);
+  const seen = [];
+  llm.setMock((messages, opts) => {
+    if (/审核/.test(opts.label)) seen.push({ label: opts.label, prompt: messages[1].content });
+    return JSON.stringify(/坏名字/.test(messages[1].content) ? { allow: false, reason: '换个友善的名字吧' } : { allow: true, reason: '' });
+  });
+  assert.equal((await req('/api/auth/register', { body: { username: 'ye_yu', nickname: '叶宇', password: PW } })).status, 200);
+  const r = await req('/api/auth/register', { body: { username: 'alice_1', nickname: 'Alice', password: PW } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(seen.map((x) => x.label), ['昵称审核', '昵称审核']);
+  assert.match(seen[0].prompt, /<input>叶宇<\/input>/);
+  assert.doesNotMatch(seen[0].prompt, /小镇事件|针对真实人物/, '不能把昵称当成事件来审');
+
+  const bad = await req('/api/auth/nickname', { body: { nickname: '坏名字' }, cookie: cookieOf(r) });
+  assert.equal(bad.status, 422);
+  assert.match((await bad.json()).error, /换个友善的名字/);
+});
+
 test('管理员认领与用户管理接口', async (t) => {
   const { req } = setupPublic(t);
   const r = await req('/api/auth/register', { body: { username: 'boss_user', nickname: '镇长', password: PW } });

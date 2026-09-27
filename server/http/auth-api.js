@@ -1,7 +1,7 @@
 // 账号接口（多世界设计 §5.4、§11）：注册、登录、登出、改昵称、改密码、重置密码、管理员认领
 import crypto from 'node:crypto';
 import { Hono } from 'hono';
-import { config, moderate } from '../guard.js';
+import { config, moderateNickname } from '../guard.js';
 import { get as setting } from '../settings/index.js';
 import { quota } from '../accounts/quota.js';
 import { HttpError } from './util.js';
@@ -47,7 +47,7 @@ export function authApi({ accounts }) {
     // 昵称先过关键词与格式检查（register 内部），再过审核模型
     const pre = acc.checkNickname(nickname);
     if (pre) throw new HttpError(409, pre, { field: 'nickname' });
-    const m = await moderate(nickname, 'event', 'cozy');
+    const m = await moderateNickname(nickname);
     if (!m.ok) throw new HttpError(422, `昵称：${m.reason}`, { field: 'nickname' });
     const user = await acc.register({ username: str(b.username, 40), nickname, password: str(b.password, 300) });
     setSessionCookie(c, acc.createSession(user.id, { ip: c.get('ip'), ua: c.req.header('user-agent') }));
@@ -75,7 +75,7 @@ export function authApi({ accounts }) {
     const nickname = str(c.get('body').nickname, 40);
     const pre = need(c).checkNickname(nickname, u.id);
     if (pre) throw new HttpError(409, pre);
-    const m = await moderate(nickname, 'event', 'cozy');
+    const m = await moderateNickname(nickname);
     if (!m.ok) throw new HttpError(422, `昵称：${m.reason}`);
     return c.json({ ok: true, user: accounts.rename(u.id, nickname) });
   });
