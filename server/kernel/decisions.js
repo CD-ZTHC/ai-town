@@ -229,7 +229,7 @@ ${ask}`;
     const h = this.handlers[d.kind];
     d.status = 'decided';
     d.result = { ...result, at: this.now(), t: Math.floor(this.town.t) };
-    const who = { admin: '管理员终审', ai: '🤖 AI 裁决', rule: '🤖 AI 裁决（硬规则）', fallback: '🤖 AI 裁决（兜底规则）', majority: '多数决定' }[result.by] || result.by;
+    const who = { admin: '管理员终审', owner: '创建者终审', ai: '🤖 AI 裁决', rule: '🤖 AI 裁决（硬规则）', fallback: '🤖 AI 裁决（兜底规则）', majority: '多数决定' }[result.by] || result.by;
     if (result.by !== 'admin') {
       const noun = { plugin: '上线插件', retire: '退役插件', proposal: '建设提案' }[d.kind] || '';
       const what = result.option ? `选择「${(h.options?.(d) || []).find((o) => o.id === result.option)?.label || result.option}」` : `${result.decision === 'adopt' ? '采纳' : '驳回'}${noun}「${d.title}」`;

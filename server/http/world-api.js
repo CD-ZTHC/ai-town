@@ -12,9 +12,24 @@ import { config, sanitize, moderate } from '../guard.js';
 import { authorize } from '../accounts/authz.js';
 import { quota, remaining as quotaLeft } from '../accounts/quota.js';
 import { HttpError } from './util.js';
+import { get as setting } from '../settings/index.js';
 
 function requireAdmin(c) {
   if (!c.get('admin')) throw new HttpError(403, '只有小镇管理员可以这样做');
+}
+/**
+ * 决策的终审人（多世界设计 §8）：authority(world) → owner 终审，全站管理员可以否决或撤销；
+ * 官方世界（常驻世界）的一切决策由全站管理员终审。返回 'admin' / 'owner' / null
+ */
+export function reviewer(c) {
+  if (c.get('admin')) return 'admin';
+  const w = c.get('host')?.world;
+  const u = c.get('user');
+  if (w && u && !w.official && !setting('PINNED_WORLDS').includes(w.id) && w.ownerId === u.id) return 'owner';
+  return null;
+}
+function requireReviewer(c) {
+  if (!reviewer(c)) throw new HttpError(403, '只有这个世界的创建者或管理员可以终审');
 }
 /** 互动（现身、聊天、心声、事件、天气、投票、举报）：只有登录的用户；游客返回 401，页面弹出登录框后自动继续 */
 function requireUser(c) {
@@ -69,6 +84,11 @@ export function worldApi(deps) {
       avatar: c.get('vid') ? town(c).avatars.mine(c.get('vid'))?.id || null : null,
       budget: { total: llm.stats.dailyBudget, left: Number.isFinite(llm.budgetLeft()) ? llm.budgetLeft() : null },
       world: c.get('host').id,
+      // 终审人：owner 在自己的世界里终审决策；有待终审的决策时页面提醒
+      reviewer: reviewer(c),
+      pendingDecisions: reviewer(c) ? town(c).decisions.list.filter((d) => d.status === 'waiting').length : 0,
+      worldStatus: c.get('host').world?.status || null,
+      owner: c.get('host').world?.ownerId === user?.id,
     });
   });
   api.get('/agent/:id', (c) => {
@@ -80,13 +100,13 @@ export function worldApi(deps) {
   api.get('/metrics', (c) => c.json(town(c).metricsView()));
   api.get('/newspapers', (c) => c.json(town(c).newspapers));
   api.get('/world/history', (c) => c.json(town(c).worldHistory().slice(-200)));
-  api.get('/story', (c) => c.json({ ...town(c).storyView(c.get('vid') || '-'), admin: c.get('admin') }));
-  api.get('/proposals', (c) => c.json({ ...town(c).proposalsView(c.get('vid') || '-', c.get('admin')), admin: c.get('admin') }));
+  api.get('/story', (c) => c.json({ ...town(c).storyView(c.get('vid') || '-'), admin: Boolean(reviewer(c)) }));
+  api.get('/proposals', (c) => c.json({ ...town(c).proposalsView(c.get('vid') || '-', Boolean(reviewer(c))), admin: Boolean(reviewer(c)) }));
   api.get('/evolution', (c) => {
-    const t = town(c), admin = c.get('admin');
-    return c.json({ ...t.evolved.view(admin), builtin: t.plugins.view(), decisions: t.decisions.view(admin), engine: admin ? deps.engineStatus?.() : undefined, admin });
+    const t = town(c), admin = Boolean(reviewer(c));
+    return c.json({ ...t.evolved.view(admin), builtin: t.plugins.view(), decisions: t.decisions.view(admin), engine: c.get('admin') ? deps.engineStatus?.() : undefined, admin });
   });
-  api.get('/decisions', (c) => c.json({ ...town(c).decisions.view(c.get('admin')), admin: c.get('admin') }));
+  api.get('/decisions', (c) => c.json({ ...town(c).decisions.view(Boolean(reviewer(c))), admin: Boolean(reviewer(c)) }));
   api.get('/snapshots', (c) => { requireAdmin(c); return c.json(listSnapshots(town(c).dataDir)); });
   api.get('/timelines', (c) => { requireAdmin(c); return c.json(registry(c.get('host').dataRoot)); });
 
@@ -207,7 +227,7 @@ export function worldApi(deps) {
   });
 
   api.post('/gaps/status', (c) => {
-    requireAdmin(c);
+    requireReviewer(c);
     const t = town(c), b = c.get('body');
     const err = !t.architect ? '世界架构师插件未启用' : t.architect.setGapStatus(String(b.id || ''), String(b.status || ''));
     if (err) throw new HttpError(409, err);
@@ -215,9 +235,9 @@ export function worldApi(deps) {
   });
 
   api.post('/proposals/decide', (c) => {
-    requireAdmin(c);
+    requireReviewer(c);
     const b = c.get('body');
-    const err = town(c).proposalSystem.decide(String(b.id || ''), Boolean(b.approve), 'admin');
+    const err = town(c).proposalSystem.decide(String(b.id || ''), Boolean(b.approve), reviewer(c));
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
   });
@@ -231,7 +251,7 @@ export function worldApi(deps) {
     return c.json({ ok: true });
   });
   api.post('/evolution/action', (c) => {
-    requireAdmin(c);
+    requireReviewer(c);
     const b = c.get('body');
     const err = town(c).evolved.adminAction(String(b.key || ''), String(b.action || ''));
     if (err) throw new HttpError(409, err);
@@ -249,14 +269,15 @@ export function worldApi(deps) {
 
   // 统一决策队列：管理员直接拍板 / 撤销 AI 的裁决
   api.post('/decisions/decide', (c) => {
-    requireAdmin(c);
+    requireReviewer(c);
     const t = town(c), b = c.get('body');
     const d = t.decisions.get(String(b.id || ''));
     if (!d) throw new HttpError(404, '决策项不存在');
     // 提案与剧情抉择走原来的终审入口（会同时关闭决策项）
-    const err = d.kind === 'proposal' ? t.proposalSystem.decide(d.ref, Boolean(b.adopt), 'admin')
-      : d.kind === 'vote' ? t.votes.decide(d.ref, String(b.option || ''), 'admin')
-        : t.decisions.decide(d.id, { adopt: Boolean(b.adopt) }, 'admin');
+    const by = reviewer(c);
+    const err = d.kind === 'proposal' ? t.proposalSystem.decide(d.ref, Boolean(b.adopt), by)
+      : d.kind === 'vote' ? t.votes.decide(d.ref, String(b.option || ''), by)
+        : t.decisions.decide(d.id, { adopt: Boolean(b.adopt) }, by);
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
   });
@@ -340,9 +361,9 @@ export function worldApi(deps) {
     return c.json({ ok: true });
   });
   api.post('/vote/decide', (c) => {
-    requireAdmin(c);
+    requireReviewer(c);
     const b = c.get('body');
-    const err = town(c).votes.decide(String(b.id || ''), String(b.option || ''), 'admin');
+    const err = town(c).votes.decide(String(b.id || ''), String(b.option || ''), reviewer(c));
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
   });

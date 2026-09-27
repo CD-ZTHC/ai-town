@@ -446,3 +446,10 @@ body.moon-view #minimap-wrap { box-shadow: 0 0 0 2px rgba(181, 140, 255, 0.55), 
 .brand { text-decoration: none; color: inherit; }
 .brand-back { color: var(--muted); font-size: 20px; margin-right: -2px; }
 .brand:hover .brand-back { color: var(--accent); }
+
+/* 世界被下架 / 归档 */
+.world-closed { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: rgba(10, 12, 20, 0.86); text-align: center; }
+.world-closed h2 { font: 26px var(--display); margin-bottom: 8px; }
+.world-closed a { color: var(--accent); }
+/* 预览中的世界：顶部提示只有创建者能看见 */
+body.world-preview #topbar::after { content: '预览中 · 只有你能看见'; position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 4px; padding: 2px 10px; border-radius: 999px; font-size: 12px; background: rgba(240, 192, 96, 0.25); color: #f0c060; }

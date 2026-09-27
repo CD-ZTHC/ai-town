@@ -27,6 +27,7 @@ import { hostCall } from '../evolution/llm.js';
 import { Ledger, budgetPolicy, LEVEL_NAMES } from './scheduler/budget.js';
 import { withContext } from './scheduler/context.js';
 import { CLASS_NAMES } from './scheduler/classes.js';
+import { sampleWorld } from './worlds/review.js';
 
 // 设置中心：环境变量 > 面板保存的值（data/settings.json）> 默认值。环境变量写错时直接报错退出，不悄悄用默认值
 const bad = settings.envProblems();
@@ -79,8 +80,10 @@ function makeTown(world, root) {
 manager = new WorldManager({
   data: DATA, registry, makeTown,
   onWire: (world, t) => {
-    t.votes.requireAdmin = config.publicMode && Boolean(config.adminToken);
-    t.proposalSystem.requireAdmin = config.publicMode && Boolean(config.adminToken);
+    // 决策的终审人（§8）：用户世界由 owner 终审（超时交给 AI 裁决官）；官方世界由管理员终审（公网 + 设置了令牌时）
+    const human = !world.official ? Boolean(world.ownerId) : config.publicMode && Boolean(config.adminToken);
+    t.votes.requireAdmin = human;
+    t.proposalSystem.requireAdmin = human;
   },
   ownerGrant: (w) => (w.ownerId ? accounts.grant(w.ownerId, 'genesis') : null),
 });
@@ -145,6 +148,40 @@ function resolveWorld(c, id) {
     throw e;
   }
 }
+
+// ---------- 运行时抽样审核（§10.2）：公开的用户世界，每 30 分钟抽一条编年或动态送审（P3，只用空闲容量） ----------
+const SAMPLE_EVERY = 30 * 60_000;
+const lastSample = new Map();
+setInterval(async () => {
+  for (const h of manager.loaded.values()) {
+    const w = registry.get(h.id);
+    if (!w || w.official || w.status !== 'public' || Date.now() - (lastSample.get(h.id) || 0) < SAMPLE_EVERY) continue;
+    lastSample.set(h.id, Date.now());
+    try {
+      const r = await withContext({ worldId: h.id }, () => sampleWorld(h.town));
+      if (!r.hit) continue;
+      accounts.audit({ actor: 'system', action: 'world.sample-hit', target: h.id, detail: { what: r.what, text: r.text } });
+      const hits = Number(w.settings?.sampleHits || 0) + 1;
+      registry.update(h.id, { settings: { sampleHits: hits } });
+      // 累计多次命中：转为不公开，等管理员处理
+      if (hits >= 3) {
+        registry.setStatus(h.id, 'unlisted', `抽样审核累计 ${hits} 次发现不合适的内容，暂时不在大厅公开，等待管理员处理`);
+        accounts.audit({ actor: 'system', action: 'world.unlisted', target: h.id, detail: { sampleHits: hits } });
+      }
+    } catch (e) { console.warn(`[review] ${h.id} 抽样审核失败：`, e.message); }
+  }
+}, 60_000).unref();
+
+// 归档 30 天后清理磁盘；短名再冷却 30 天才能被重新使用（§4.4、§6.3）
+setInterval(() => {
+  for (const w of registry.list({ status: 'archived' })) {
+    if (w.releasedAt || Date.now() - (w.statusAt || 0) < 30 * 86400_000) continue;
+    manager.close(w.id, '归档清理');
+    fs.rmSync(manager.root(w.id), { recursive: true, force: true });
+    registry.release(w.id);
+    accounts.audit({ actor: 'system', action: 'world.purge', target: w.id });
+  }
+}, 3600_000).unref();
 
 const RESTART_CODE = 75;
 const supervised = typeof process.send === 'function';

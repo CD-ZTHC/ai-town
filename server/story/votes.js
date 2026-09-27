@@ -123,7 +123,7 @@ export class VoteSystem {
     v.status = 'closed';
     v.result = { option, by, t: Math.floor(this.town.t) };
     const o = v.options.find((x) => x.id === option);
-    this.town.log('vote', `🗳️ 抉择揭晓：${o.label}（${{ admin: '管理员终审', majority: '多数决定', ai: 'AI 裁决官', fallback: '多数决定' }[by] || by}）`, {});
+    this.town.log('vote', `🗳️ 抉择揭晓：${o.label}（${{ admin: '管理员终审', owner: '创建者终审', majority: '多数决定', ai: 'AI 裁决官', fallback: '多数决定' }[by] || by}）`, {});
     if (v.arc) this.town.arcs.onVoteResult(v.arc, option);
     this.town.emit('story');
   }

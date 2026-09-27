@@ -1,6 +1,6 @@
 // 界面：名册、检查器、动态流、AI 大脑面板、弹窗（日报 / 关系网 / 事件 / 帮助）
 // 各面板拆在 ui/ 下；这里保留名册、顶栏、AI 大脑等外壳，并统一导出界面的公共接口（import * as UI from './ui.js'）。
-import { setApp, $, $$, closeModal, esc, fmtTime, guarded, name, toast, ui, weekday, app, voice } from './ui/core.js';
+import { setApp, $, $$, closeModal, openModal, esc, fmtTime, guarded, name, toast, ui, weekday, app, voice } from './ui/core.js';
 import { renderFeed } from './ui/feed.js';
 import { closeInspector, loadDetail, openInspector } from './ui/inspector.js';
 import { storyModal } from './ui/story.js';
@@ -138,6 +138,25 @@ export function tooltip(id, x, y) {
   t.style.left = `${x + 16}px`; t.style.top = `${y + 12}px`;
 }
 
+/** 世界被下架 / 归档：盖住画面，给出原因 */
+export function worldClosed(reason) {
+  const el = document.createElement('div');
+  el.className = 'world-closed';
+  el.innerHTML = `<div><h2>这个世界暂时关闭了</h2><p>${esc(reason || '')}</p><a href="../../">回到世界大厅</a></div>`;
+  document.body.appendChild(el);
+}
+
+/** 举报：世界、居民或一条动态 */
+export function reportModal(target = 'world') {
+  const card = openModal(`<h2>🚩 举报</h2><div class="sub">如果这个世界里有不合适的内容（色情、现实政治、违法、针对真实的人……），告诉管理员。多位用户举报后，世界会暂时不在大厅公开。</div>
+    <div class="pform"><textarea id="rp-reason" rows="3" maxlength="200" placeholder="哪里不合适？"></textarea><button class="primary" id="rp-go">提交</button><span class="quota" id="rp-msg"></span></div>`);
+  $('#rp-go', card).onclick = guarded(async () => {
+    await app.api(`../../api/worlds/${encodeURIComponent(app.perms.world)}/report`, { target, reason: $('#rp-reason', card).value });
+    closeModal();
+    toast('已提交，谢谢你');
+  });
+}
+
 export function applyPerms() {
   const p = app.perms;
   // 游客也能看到互动入口：点下去先弹出登录框
@@ -150,6 +169,8 @@ export function applyPerms() {
   $('#more-admin').hidden = !p.needToken && !p.admin;
   $('#more-account').hidden = !p.accounts;
   $('#more-account').textContent = p.user ? `👤 ${p.user.nickname}` : '👤 登录 / 注册';
+  $('#more-report').hidden = !p.accounts || p.owner;
+  document.body.classList.toggle('world-preview', p.worldStatus === 'preview');
   $('#btn-weather').hidden = !canTry;
   if (!canTry && ui.tab === 'chat') ui.tab = 'sched';
 }

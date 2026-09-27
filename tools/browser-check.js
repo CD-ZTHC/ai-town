@@ -198,6 +198,14 @@ await step('17-admin-worlds', async () => {
   await send('Page.navigate', { url: `${base}/admin/#worlds` });
   await waitFor(() => evaluate(`document.querySelector('#page')?.textContent.includes('yunxi')`), 10000, '管理面板 · 世界');
 });
+await step('21-admin-overview', async () => {
+  await send('Page.navigate', { url: `${base}/admin/#overview` });
+  await waitFor(() => evaluate(`document.querySelector('#page')?.textContent.includes('运行中的世界')`), 10000, '管理面板 · 概览');
+});
+await step('22-admin-reports', async () => {
+  await send('Page.navigate', { url: `${base}/admin/#reports` });
+  await waitFor(() => evaluate(`document.querySelector('#page')?.textContent.includes('举报')`), 10000, '管理面板 · 举报');
+});
 
 ws.close();
 cleanup();

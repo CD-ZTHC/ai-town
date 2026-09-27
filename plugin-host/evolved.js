@@ -489,7 +489,7 @@ export class EvolvedManager {
         if (!e || e.status !== 'pending') return;
         e.decidedBy = by;
         if (adopt) this.startCanary(d.ref);
-        else this.setStatus(d.ref, 'rejected', by === 'admin' ? '管理员没有批准' : 'AI 裁决官没有采纳');
+        else this.setStatus(d.ref, 'rejected', by === 'admin' ? '管理员没有批准' : by === 'owner' ? '世界的创建者没有批准' : 'AI 裁决官没有采纳');
       },
       undo: (d) => this.rollback(d.ref, '管理员撤销了 AI 的裁决', 'undone'),
     };

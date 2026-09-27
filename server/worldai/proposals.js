@@ -33,8 +33,8 @@ export class ProposalSystem {
       resolve: (d, { adopt, by }) => {
         const p = this.get(d.ref);
         if (!p || !['voting', 'awaiting'].includes(p.status)) return;
-        if (adopt) this.approve(p, by === 'admin' ? 'admin' : 'ai');
-        else this.finish(p, 'rejected', by === 'admin' ? '管理员没有批准' : 'AI 裁决官没有采纳');
+        if (adopt) this.approve(p, by === 'admin' || by === 'owner' ? by : 'ai');
+        else this.finish(p, 'rejected', by === 'admin' ? '管理员没有批准' : by === 'owner' ? '世界的创建者没有批准' : 'AI 裁决官没有采纳');
       },
       undo: (d) => this.undo(this.get(d.ref)),
     });
@@ -173,7 +173,7 @@ export class ProposalSystem {
     if (!p || !['voting', 'awaiting', 'queued'].includes(p.status)) return '这个提案现在不能终审';
     this.town.decisions?.cancel('proposal', p.id);
     if (approve) this.approve(p, by);
-    else this.finish(p, 'rejected', '管理员没有批准');
+    else this.finish(p, 'rejected', by === 'owner' ? '世界的创建者没有批准' : '管理员没有批准');
     return null;
   }
 

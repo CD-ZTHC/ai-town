@@ -66,6 +66,7 @@ export function run(cmd) {
   if (cmd === 'help') return UI.helpModal();
   if (cmd === 'admin') return UI.adminModal();
   if (cmd === 'account') return UI.accountModal();
+  if (cmd === 'report') return UI.reportModal();
 }
 
 // ---------- 命令面板 ----------

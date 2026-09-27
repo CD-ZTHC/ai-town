@@ -107,7 +107,7 @@ export class WorldManager {
     const h = this.loaded.get(id);
     if (!h) return;
     h.world = w;
-    if (!WorldRegistry.runnable(w)) { this.close(id, w ? `世界已${w.status === 'suspended' ? '下架' : '关闭'}` : '世界已删除'); return; }
+    if (!WorldRegistry.runnable(w)) { this.close(id, w ? w.statusReason || `世界已${w.status === 'suspended' ? '下架' : '关闭'}` : '世界已删除'); return; }
     h.town.paused = w.status === 'paused';
   }
 

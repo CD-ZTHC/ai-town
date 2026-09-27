@@ -117,6 +117,55 @@ export function adminApi(deps) {
     deps.audit?.({ actor: actor(c), action: 'world.quota', target: w.id, detail: q });
     return c.json({ ok: true, world: w });
   });
+  // 下架：立即停止运行、从大厅消失、在线观众看到下架提示；owner 能看到原因，但不能自行恢复（§10.2）
+  api.post('/worlds/:id/suspend', (c) => {
+    const reason = String(c.get('body').reason || '').trim().slice(0, 200);
+    if (!reason) throw new HttpError(400, '请写下架原因（owner 会看到）');
+    const w = reg().get(c.req.param('id'));
+    if (!w) throw new HttpError(404, '世界不存在');
+    if (w.official) throw new HttpError(409, '官方世界不能下架');
+    reg().setStatus(w.id, 'suspended', `已被管理员下架：${reason}`);
+    deps.manager?.close(w.id, `已被管理员下架：${reason}`);
+    deps.audit?.({ actor: actor(c), action: 'world.suspend', target: w.id, detail: { reason } });
+    return c.json({ ok: true });
+  });
+  api.post('/worlds/:id/restore', (c) => {
+    const w = reg().get(c.req.param('id'));
+    if (!w) throw new HttpError(404, '世界不存在');
+    reg().setStatus(w.id, 'public', '');
+    // 恢复时把这个世界未处理的举报一并标记为已处理
+    reg().db.prepare("UPDATE reports SET handled_at = ?, handled_by = ?, resolution = 'restored' WHERE world_id = ? AND handled_at IS NULL").run(Date.now(), actor(c), w.id);
+    deps.audit?.({ actor: actor(c), action: 'world.restore', target: w.id });
+    return c.json({ ok: true });
+  });
+
+  // ---------- 举报 ----------
+  api.get('/reports', (c) => {
+    const open = c.req.query('all') ? '' : 'AND handled_at IS NULL';
+    const rows = reg().db.prepare(`SELECT * FROM reports WHERE 1=1 ${open} ORDER BY id DESC LIMIT 200`).all();
+    return c.json(rows.map((r) => ({ ...r, reporterName: accounts?.get(r.reporter)?.nickname || r.reporter, worldTitle: reg().get(r.world_id)?.title || r.world_id, worldStatus: reg().get(r.world_id)?.status || null })));
+  });
+  api.post('/reports/:id/handle', (c) => {
+    const resolution = String(c.get('body').resolution || 'dismissed').slice(0, 40);
+    const n = reg().db.prepare('UPDATE reports SET handled_at = ?, handled_by = ?, resolution = ? WHERE id = ? AND handled_at IS NULL').run(Date.now(), actor(c), resolution, Number(c.req.param('id'))).changes;
+    deps.audit?.({ actor: actor(c), action: 'report.handle', target: String(c.req.param('id')), detail: { resolution } });
+    return c.json({ ok: Boolean(n) });
+  });
+
+  // ---------- 概览 ----------
+  api.get('/overview', (c) => {
+    const view = deps.manager?.view() || [];
+    const openReports = deps.registry ? reg().db.prepare('SELECT COUNT(*) AS n FROM reports WHERE handled_at IS NULL').get().n : 0;
+    const alerts = accounts ? accounts.auditLog({ limit: 200 }).filter((a) => /^(world\.(unlisted|suspend|sample-hit|publish-rejected)|settings\.rollback|disk\.full|genesis\.failed|admin\.token)/.test(a.action)).slice(0, 12) : [];
+    const rb = settings.lastRollback();
+    return c.json({
+      online: view.reduce((s, w) => s + w.viewers, 0), running: view, max: settings.get('MAX_ACTIVE_WORLDS'),
+      worlds: deps.registry ? Object.fromEntries(['public', 'preview', 'unlisted', 'suspended', 'paused'].map((st) => [st, reg().list({ status: st }).length])) : {},
+      users: accounts?.count() ?? 0, openReports, llm: deps.llmView?.() || null,
+      alerts: [...(rb ? [{ at: Date.parse(rb.at), action: 'settings.rollback', target: `v${rb.from} → v${rb.to}`, detail: { reason: rb.reason } }] : []), ...alerts],
+    });
+  });
+
   api.post('/worlds/:id/unload', (c) => c.json({ ok: Boolean(deps.manager?.close(c.req.param('id'), '管理员卸载')) }));
 
   // ---------- 调度（§7.6）----------

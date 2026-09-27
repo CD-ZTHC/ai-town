@@ -59,6 +59,11 @@ export const app = {
     // 能不能看到互动入口：能互动，或者登录之后就能互动（游客点下去会弹出登录框）
     app.perms.canTry = Boolean(app.perms.interaction || app.perms.loginToInteract);
     UI.applyPerms();
+    // owner：有待终审的决策时提醒（每次打开页面提醒一次）
+    if (app.perms.reviewer === 'owner' && app.perms.pendingDecisions && !app.remindedDecisions) {
+      app.remindedDecisions = true;
+      UI.toast(`🔔 有 ${app.perms.pendingDecisions} 项决策等你终审（在「进化 → 决策队列」里；超时后由 AI 裁决官决定）`, 8000);
+    }
   },
   select(id, { focus = true } = {}) {
     app.selected = id;
@@ -141,6 +146,13 @@ function connect() {
   es.addEventListener('newspaper', (e) => { const p = JSON.parse(e.data); UI.onNewspaper(p); Immerse.onNewspaper(p); });
   // 管理员在面板里重启服务器：几秒后 EventSource 会自动重连
   es.addEventListener('restart', () => UI.toast('🔄 服务器正在重启，几秒后自动重连…', 6000));
+  // 世界被下架、归档或卸载：停止重连，给出说明
+  es.addEventListener('closed', (e) => {
+    const { reason } = JSON.parse(e.data || '{}');
+    if (/长时间无人观看|腾出位置|服务器停止|世界包已|设置已修改/.test(reason || '')) return; // 暂时卸载：EventSource 会自动重连并重新加载
+    es.close();
+    UI.worldClosed(reason);
+  });
   es.addEventListener('vfx', (e) => { const v = JSON.parse(e.data); if ((v.region || 'town') === app.view) renderer.addVfx(v); });
   es.addEventListener('regions', (e) => {
     app.regionsOpen = JSON.parse(e.data);
