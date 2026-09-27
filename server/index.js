@@ -1,4 +1,4 @@
-// 服务入口：创建世界、HTTP 应用（Hono，见 http/app.js）与进化引擎，然后监听端口
+// 服务入口：设置、账号、世界管理器（多世界）、HTTP 应用（Hono，见 http/app.js）与进化引擎，然后监听端口
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -9,9 +9,16 @@ import { Town, llmPublic } from './sim.js';
 import { activeDir } from './timelines.js';
 import * as llm from './llm.js';
 import { config } from './guard.js';
-import { WorldHost } from './worlds/host.js';
 import { Accounts, installRefs } from './accounts/index.js';
+import { authorize } from './accounts/authz.js';
+import { WorldRegistry } from './worlds/registry.js';
+import { WorldManager, WorldFullError } from './worlds/manager.js';
+import { migrateLegacy } from './worlds/migrate.js';
+import { officialPack, officialIds, loadPack } from './worlds/pack.js';
 import { createApp } from './http/app.js';
+import { worldsApi } from './http/worlds-api.js';
+import { HttpError } from './http/util.js';
+import { worldPage } from './http/pages.js';
 import { evolveConfig } from '../plugin-host/evolved.js';
 import { engineArgs } from '../evolution/common.js';
 
@@ -25,55 +32,119 @@ settings.load();
 const PORT = settings.get('PORT');
 const HOST = settings.get('HOST') || undefined;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// 数据根目录：主时间线存放在这里，分支时间线在 timelines/ 子目录
 const DATA = path.resolve(settings.get('DATA_DIR'));
-// AI 插件与进化引擎的状态放在数据根目录（所有时间线共用）
+// 进化引擎的全站状态（任务、账本）；官方世界的 AI 插件登记也暂时在这里
 const EVO_DIR = path.join(DATA, 'evolution');
 
-// 账号：data/accounts.db；官方世界居民的名字不能被注册为昵称
-const accounts = new Accounts({ file: path.join(DATA, 'accounts.db'), reservedNames: () => host?.town.spec.personas.map((p) => p.name) || [] });
+// ---------- 账号与世界登记 ----------
+const accounts = new Accounts({ file: path.join(DATA, 'accounts.db'), reservedNames: () => officialIds().flatMap((id) => officialPack(id).world.personas.map((p) => p.name)) });
 installRefs(accounts);
 setInterval(() => accounts.sweepSessions(), 3600_000).unref();
+let manager = null;
+const registry = new WorldRegistry(accounts.db, { onChange: (id) => manager?.onStatus(id) });
 
-const host = new WorldHost({
-  id: 'yunxi',
-  makeTown: () => new Town({ dataDir: activeDir(DATA), evolution: { dir: EVO_DIR, config: { publicMode: config.publicMode } } }),
-  onWire: (t) => {
+// 首次以多世界版本启动：把 data/ 下的存档移到 data/worlds/yunxi/（先完整备份）
+migrateLegacy(DATA, 'yunxi');
+// 官方世界登记；原来的同名环境变量（STORY_RATING、STORYTELLER、MODS）只在第一次登记时写入官方世界的设置（§14.8）
+for (const id of officialIds()) {
+  const p = officialPack(id);
+  const first = !registry.get(id);
+  registry.ensureOfficial(id, {
+    title: p.world.voice.name, summary: p.world.lore.summary.slice(0, 200), packHash: p.hash,
+    settings: first && id === 'yunxi' ? { rating: process.env.STORY_RATING || undefined, storyteller: process.env.STORYTELLER || undefined, mods: settings.get('MODS') } : {},
+  });
+}
+
+// ---------- 世界管理器 ----------
+function makeTown(world, root) {
+  const pack = world.official ? officialPack(world.id) : loadPack(path.join(root, 'pack'));
+  const s = world.settings || {};
+  return new Town({
+    dataDir: activeDir(root),
+    worldId: world.id,
+    pack,
+    worldSettings: { rating: s.rating, storyteller: s.storyteller, mods: s.mods || [] },
+    // 官方世界的 AI 插件仍在 plugins/evolved/ 与 data/evolution/；用户世界的插件在各自的目录里
+    evolution: world.id === 'yunxi'
+      ? { dir: EVO_DIR, config: { publicMode: config.publicMode } }
+      : { dir: path.join(root, 'evolution'), pluginsDir: path.join(root, 'plugins'), config: { publicMode: config.publicMode, mode: world.evolution ? evolveConfig().mode : 'off' } },
+  });
+}
+manager = new WorldManager({
+  data: DATA, registry, makeTown,
+  onWire: (world, t) => {
     t.votes.requireAdmin = config.publicMode && Boolean(config.adminToken);
     t.proposalSystem.requireAdmin = config.publicMode && Boolean(config.adminToken);
   },
-  idlePauseSec: () => config.idlePauseSec,
+  ownerGrant: (w) => (w.ownerId ? accounts.grant(w.ownerId, 'genesis') : null),
 });
-host.dataRoot = DATA;
+for (const id of settings.get('PINNED_WORLDS')) {
+  try { if (registry.get(id)) manager.open(id); } catch (e) { console.warn(`[worlds] 常驻世界 ${id} 加载失败：`, e.message); }
+}
+setInterval(() => manager.tick(), 5000).unref();
 
 let llmDirty = false;
 llm.onActivity(() => { llmDirty = true; });
-setInterval(() => { if (llmDirty || llm.stats.active.length) { llmDirty = false; host.broadcast('llm', llmPublic()); } }, 400);
-// 无人观看时自动暂停（节省 LLM 开销）
-setInterval(() => host.idleCheck(), 5000).unref();
+setInterval(() => { if (llmDirty || llm.stats.active.length) { llmDirty = false; manager.broadcastAll('llm', llmPublic()); } }, 400);
+
+/** 请求对应的世界：检查可见性（预览中 / 已下架的只有 owner 和管理员能看），按需加载；满员时 503 */
+function resolveWorld(c, id) {
+  const w = registry.get(id);
+  const ok = authorize(c.get('who') || {}, 'world.view', w);
+  if (ok !== true) throw new HttpError(w && w.status === 'suspended' ? 403 : 404, ok);
+  try { return manager.open(id); } catch (e) {
+    if (e instanceof WorldFullError) throw new HttpError(503, e.message, { retryAfter: e.retryAfter, full: true });
+    throw e;
+  }
+}
 
 const RESTART_CODE = 75;
 const supervised = typeof process.send === 'function';
 function restart() {
   // 存盘、通知在线页面「服务器正在重启」，再以 75 退出，由守护进程（server/main.js）立即拉起
-  host.broadcast('restart', { at: Date.now() });
-  host.town.save();
-  engine?.kill('SIGTERM');
+  manager.broadcastAll('restart', { at: Date.now() });
   shuttingDown = true;
-  setTimeout(() => process.exit(RESTART_CODE), 300);
+  engine?.kill('SIGTERM');
+  setTimeout(() => { manager.closeAll(); process.exit(RESTART_CODE); }, 300);
 }
+/** 保存设置前提示影响范围：例如把世界上限调小会卸载哪些世界 */
+function impactOf(changes) {
+  const out = [];
+  if (changes.MAX_ACTIVE_WORLDS != null) {
+    const n = Number(changes.MAX_ACTIVE_WORLDS);
+    const over = manager.loaded.size - n;
+    if (over > 0) {
+      const victims = [...manager.loaded.values()].filter((h) => !manager.isPinned(h.id)).sort((a, b) => a.clients.size - b.clients.size || a.lastViewer - b.lastViewer).slice(0, over);
+      const watched = victims.filter((h) => h.clients.size);
+      out.push(`将卸载 ${victims.length} 个世界${watched.length ? `，其中 ${watched.length} 个有 ${watched.reduce((s, h) => s + h.clients.size, 0)} 位观众` : ''}（新的上限在有人打开世界时生效）`);
+    }
+  }
+  if (changes.REGISTER_OPEN === false) out.push('关闭注册：新访客将无法注册账号（已有账号不受影响）');
+  if (changes.ALLOW_INTERACTION === false) out.push('关闭互动：所有世界变成纯观赏模式');
+  return out;
+}
+
 const app = createApp({
-  hostFor: () => host, publicDir: path.join(ROOT, 'public'), engineStatus: () => engineStatus(),
-  admin: { restart, supervised: () => supervised },
+  publicDir: path.join(ROOT, 'public'),
   accounts,
+  engineStatus: () => engineStatus(),
+  admin: { restart, supervised: () => supervised, impactOf, manager, registry },
+  routes: [['worlds', worldsApi({ registry, manager, accounts })]],
+  worlds: {
+    lobby: true,
+    defaultId: () => settings.get('DEFAULT_WORLD'),
+    resolve: resolveWorld,
+    page: (c, id) => worldPage({ c, id, registry, manager }),
+    health: () => ({ worlds: manager.view().map(({ id, viewers, idle }) => ({ id, viewers, idle })), clients: manager.view().reduce((s, w) => s + w.viewers, 0) }),
+  },
 });
 
 const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, () => {
-  // 端口监听成功、默认世界已加载：当前设置版本标记为「正常」，告诉守护进程启动成功
+  // 端口监听成功、常驻世界已加载：当前设置版本标记为「正常」，告诉守护进程启动成功
   settings.markGood();
   process.send?.({ type: 'ready' });
-  const mode = config.publicMode ? `公网模式${config.adminToken ? '（已设置管理员令牌）' : '（⚠️ 未设置 ADMIN_TOKEN，管理功能全部关闭）'}` : '本地模式（所有访问者均为管理员，请勿直接暴露到公网）';
-  console.log(`\n  🌸 云溪镇已开放： http://${HOST || 'localhost'}:${PORT}\n  🔐 ${mode}\n  🧠 LLM: ${llm.stats.enabled ? `${llm.stats.model}（快：${llm.stats.models.fast} · 强：${llm.stats.models.smart}）${llm.stats.dailyBudget ? ` · 每日预算 ${llm.stats.dailyBudget.toLocaleString()} tokens` : ''}` : '未配置（使用规则兜底）'}\n`);
+  const mode = config.publicMode ? `公网模式${config.adminToken ? '（已设置管理员令牌）' : '（⚠️ 未设置 ADMIN_TOKEN，无法认领超级管理员）'}` : '本地模式（所有访问者均为管理员，请勿直接暴露到公网）';
+  console.log(`\n  🌸 AI Town 已开放： http://${HOST || 'localhost'}:${PORT}（${registry.list({ status: 'public' }).length} 个公开世界，运行中 ${manager.loaded.size}）\n  🔐 ${mode}\n  🧠 LLM: ${llm.stats.enabled ? `${llm.stats.model}（快：${llm.stats.models.fast} · 强：${llm.stats.models.smart}）${llm.stats.dailyBudget ? ` · 每日预算 ${llm.stats.dailyBudget.toLocaleString()} tokens` : ''}` : '未配置（使用规则兜底）'}\n`);
 });
 server.headersTimeout = 20_000;
 server.requestTimeout = 30_000;
@@ -112,6 +183,6 @@ function engineStatus() {
 startEngine();
 
 let shuttingDown = false;
-const shutdown = () => { shuttingDown = true; engine?.kill('SIGTERM'); host.town.save(); accounts.close(); process.exit(0); };
+const shutdown = () => { shuttingDown = true; engine?.kill('SIGTERM'); manager.closeAll(); accounts.close(); process.exit(0); };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

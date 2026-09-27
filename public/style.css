@@ -443,3 +443,6 @@ body.moon-view #minimap-wrap { box-shadow: 0 0 0 2px rgba(181, 140, 255, 0.55), 
 .auth a { color: var(--accent); }
 .auth .btn-link { text-decoration: none; display: inline-flex; align-items: center; }
 .rel .rel-trav { width: 36px; height: 36px; display: grid; place-items: center; font-size: 22px; flex: none; }
+.brand { text-decoration: none; color: inherit; }
+.brand-back { color: var(--muted); font-size: 20px; margin-right: -2px; }
+.brand:hover .brand-back { color: var(--accent); }

@@ -292,6 +292,7 @@ export function worldApi(deps) {
   api.post('/timelines/fork', (c) => {
     requireAdmin(c);
     const host = c.get('host'), b = c.get('body');
+    if (host.diskFull) throw new HttpError(409, '这个世界的磁盘空间已经用满了，删掉一些时间线或联系管理员放宽上限后再分支');
     const fromId = registry(host.dataRoot).active;
     if (!b.snapshot) host.town.save();
     const entry = forkTimeline(host.dataRoot, { fromId, snapshot: b.snapshot ? String(b.snapshot) : null, name: sanitize(b.name, 20) });

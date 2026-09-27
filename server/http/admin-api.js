@@ -96,6 +96,29 @@ export function adminApi(deps) {
     return c.json({ ok: true, user: acc().setRole(c.req.param('id'), String(c.get('body').role || ''), actor(c)) });
   });
 
+  // ---------- 世界（多世界设计 §14.9）----------
+  const reg = () => { if (!deps.registry) throw new HttpError(503, '世界管理未启用'); return deps.registry; };
+  api.get('/worlds', (c) => {
+    const status = c.req.query('status') || null;
+    const running = new Map((deps.manager?.view() || []).map((w) => [w.id, w]));
+    const list = reg().list({ status }).map((w) => {
+      const grant = w.ownerId && accounts ? accounts.grant(w.ownerId, 'genesis') : null;
+      const limitMB = w.official ? null : w.quota?.diskMB ?? grant?.quota?.diskMB ?? settings.get('WORLD_DISK_MB');
+      return { ...w, owner: w.ownerId ? accounts?.get(w.ownerId)?.nickname || w.ownerId : null, runtime: running.get(w.id) || null, diskLimitMB: limitMB };
+    }).sort((a, b) => b.diskBytes - a.diskBytes);
+    return c.json({ list, running: running.size, max: settings.get('MAX_ACTIVE_WORLDS') });
+  });
+  api.post('/worlds/:id/quota', (c) => {
+    const b = c.get('body');
+    const q = {};
+    for (const k of ['dailyWorldTokens', 'diskMB']) if (b[k] !== undefined) q[k] = b[k] === null || b[k] === '' ? undefined : Math.max(0, Number(b[k]) || 0);
+    const w = reg().update(c.req.param('id'), { quota: q });
+    deps.manager?.checkDisk(w.id, { force: true });
+    deps.audit?.({ actor: actor(c), action: 'world.quota', target: w.id, detail: q });
+    return c.json({ ok: true, world: w });
+  });
+  api.post('/worlds/:id/unload', (c) => c.json({ ok: Boolean(deps.manager?.close(c.req.param('id'), '管理员卸载')) }));
+
   // ---------- 审计 ----------
   api.get('/audit', (c) => c.json(acc().auditLog({ actor: String(c.req.query('actor') || ''), action: String(c.req.query('action') || ''), before: c.req.query('before') ? Number(c.req.query('before')) : null })));
 

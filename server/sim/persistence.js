@@ -46,6 +46,8 @@ export class Persistence {
 
   /** 每个游戏小时保留一份快照（data/snapshots/），供之后的「时光回溯」使用 */
   snapshotHourly(text) {
+    // 超出磁盘上限（多世界设计 §6.4）：暂停新快照，存档照常写入
+    if (this.diskFull) return;
     const hour = Math.floor(this.t / 60);
     if (this.lastSnapHour === hour) return;
     this.lastSnapHour = hour;

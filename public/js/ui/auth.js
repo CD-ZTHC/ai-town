@@ -86,7 +86,7 @@ export function accountModal() {
       <div class="row"><button class="ghost" type="submit">改密码</button></div>
     </form>
     <div class="row">
-      ${app.perms.admin ? '<a class="ghost btn-link" href="admin/">🛠️ 管理面板</a>' : ''}
+      ${app.perms.admin ? '<a class="ghost btn-link" href="../../admin/">🛠️ 管理面板</a>' : ''}
       <button class="ghost" id="acc-out">退出登录</button><button class="ghost" id="acc-out-all">登出所有设备</button>
     </div>`, 'help auth');
   $('#acc-nick', card).addEventListener('submit', async (e) => {

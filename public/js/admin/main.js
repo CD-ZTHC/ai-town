@@ -4,9 +4,10 @@ import { loginDialog } from '../site/auth.js';
 import { page as settingsPage } from './settings.js';
 import { page as usersPage } from './users.js';
 import { page as auditPage } from './audit.js';
+import { page as worldsPage } from './worlds.js';
 
 // 各页：{ id, title, render(el, ctx) }，每页一个模块
-export const PAGES = [settingsPage, usersPage, auditPage];
+export const PAGES = [settingsPage, usersPage, worldsPage, auditPage];
 
 const ctx = { me: null, refreshAlerts };
 

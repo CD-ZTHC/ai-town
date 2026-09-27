@@ -20,7 +20,7 @@ function applyVoice() {
   document.title = `${v.name} · AI Town`;
   for (const el of document.querySelectorAll('.brand-name, #loading h1')) el.textContent = v.name;
   for (const el of document.querySelectorAll('.brand-icon, .load-logo')) el.textContent = v.emoji;
-  $('.brand')?.setAttribute('title', `${v.name} · Generative Agents`);
+  $('.brand')?.setAttribute('title', `${v.name} · 回到世界大厅`);
   $('#btn-news')?.setAttribute('title', v.chronicle.name);
   const span = $('#btn-news span');
   if (span) span.textContent = v.chronicle.kind;

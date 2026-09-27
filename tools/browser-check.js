@@ -45,7 +45,7 @@ let serverLog = '';
 server.stdout.on('data', (d) => (serverLog += d));
 server.stderr.on('data', (d) => (serverLog += d));
 const base = `http://127.0.0.1:${port}`;
-await waitFor(() => fetch(`${base}/`).then((r) => r.ok), 15000, '小镇服务器启动');
+await waitFor(() => fetch(`${base}/w/yunxi/`).then((r) => r.ok), 15000, '小镇服务器启动');
 
 // 2. 无头 Chrome
 const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${fs.mkdtempSync(path.join(os.tmpdir(), 'town-chrome-'))}`,
@@ -123,10 +123,10 @@ const closeModal = () => evaluate(`document.querySelector('#modal').hidden = tru
 // 4. 逐个打开主要界面
 await step('01-observe', async () => {
   // 先跳过首次访问的说明弹窗（它会挡住后面的截图；说明面板本身在 08-help 里单独检查）
-  await send('Page.navigate', { url: `${base}/?mode=observe` });
+  await send('Page.navigate', { url: `${base}/w/yunxi/?mode=observe` });
   await waitFor(() => evaluate(`document.readyState === 'complete'`), 15000, '页面加载');
   await evaluate(`localStorage.setItem('town-help-seen', '1')`);
-  await send('Page.navigate', { url: `${base}/?mode=observe` });
+  await send('Page.navigate', { url: `${base}/w/yunxi/?mode=observe` });
   await waitFor(() => evaluate(`document.querySelectorAll('#roster .rcard').length >= 8`), 15000, '名册渲染');
 }, { wait: 1500 });
 await step('02-inspector', async () => {
@@ -151,11 +151,11 @@ await step('09-weather', async () => {
 });
 await step('10-brain', async () => { await evaluate(`document.querySelector('#weather-menu').hidden = true`); await click('#brain-btn'); await waitFor(() => evaluate(`document.querySelector('#brain-stats').textContent.length > 0`), 5000, 'AI 大脑'); });
 await step('11-immerse', async () => {
-  await send('Page.navigate', { url: `${base}/?mode=immerse` });
+  await send('Page.navigate', { url: `${base}/w/yunxi/?mode=immerse` });
   await waitFor(() => evaluate(`document.body.dataset.mode === 'immerse'`), 15000, '沉浸模式');
 }, { wait: 2500 });
 await step('12-charcard', async () => {
-  await send('Page.navigate', { url: `${base}/?mode=play` });
+  await send('Page.navigate', { url: `${base}/w/yunxi/?mode=play` });
   // 第一次进游戏模式要先填角色卡（本地模式用内置账号的昵称，只挑衣服）
   await waitFor(() => evaluate(`Boolean(document.querySelector('#cc-go'))`), 15000, '角色卡');
   await evaluate(`document.querySelector('#cc-name') && (document.querySelector('#cc-name').value = '测试旅人'), true`);
@@ -165,6 +165,10 @@ await step('13-play', async () => {
   await waitFor(() => evaluate(`document.body.dataset.mode === 'play'`), 10000, '游戏模式');
   await key('w');
 }, { wait: 1500 });
+await step('15-lobby', async () => {
+  await send('Page.navigate', { url: `${base}/` });
+  await waitFor(() => evaluate(`document.querySelectorAll('.world-card').length >= 1`), 10000, '世界大厅');
+});
 await step('14-admin-settings', async () => {
   await send('Page.navigate', { url: `${base}/admin/#settings` });
   await waitFor(() => evaluate(`document.querySelectorAll('.setting').length > 20`), 10000, '管理面板 · 设置');
