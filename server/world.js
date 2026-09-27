@@ -242,7 +242,8 @@ export function buildWorld({ buildings: buildingDefs, locationInfo, region = nul
 
   // ---- 叠加层（拆除、新增建筑、建筑状态）与连通性：见 worldgen/finish.js ----
   // gate：通往其他区域（暗月界）的渡口位置，与裂隙的出怪点相同；连通性从喷泉广场出发
-  return finishRegion({ W, H, tiles, solid, objects, buildings, locations, lamps, gate: { x: 51, y: 37 }, origin: { x: 22, y: 20 }, carve, lampForAdded: true },
+  return finishRegion({ W, H, tiles, solid, objects, buildings, locations, lamps, gate: { x: 51, y: 37 }, origin: { x: 22, y: 20 }, lampForAdded: true,
+    roads: [T.PATH, T.PLAZA, T.BRIDGE], dirtOver: [T.GRASS, T.SAND] },
     region || { id: 'town' }, spec || { buildings: buildingDefs, locations: locationInfo });
 }
 
@@ -293,7 +294,7 @@ export function buildMoonRealm({ locationInfo = {}, region = null, spec = null }
   addLoc('moon_garden', { x: 4, y: 8, w: 9, h: 10 }, [[7, 11], [9, 13], [6, 14], [10, 10], [8, 16], [11, 15]]);
   addLoc('moon_lookout', { x: 24, y: 4, w: 8, h: 6 }, [[27, 6], [29, 7], [26, 8], [30, 6]]);
   // 叠加层与连通性（从渡口出发）：见 worldgen/finish.js
-  return finishRegion({ name: '暗月界', W, H, tiles, solid, objects, buildings: [], locations, lamps, gate: { x: 18, y: 21 }, carve: () => false },
+  return finishRegion({ name: '暗月界', W, H, tiles, solid, objects, buildings: [], locations, lamps, gate: { x: 18, y: 21 }, roads: [T.MOONPATH], dirtOver: [] },
     region || { id: 'moonrealm' }, spec || { buildings: [], locations: locationInfo });
 }
 

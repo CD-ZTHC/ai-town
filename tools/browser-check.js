@@ -205,6 +205,13 @@ await step('18c-buildings', async () => {
   await waitFor(() => evaluate(`Boolean(app.world.locations.honey_garden)`), 8000, '新地点');
   await evaluate(`(() => { const r = app.world.locations.honey_garden.rect; app.follow = null; app.cam.x = (r.x + r.w / 2) * 32; app.cam.y = (r.y + r.h / 2) * 32; return true; })()`);
 }, { wait: 1200 });
+await step('18d-expand', async () => {
+  // 地图扩展：向西长出一片新地方（原来的一切整体平移），镜头移到新地块
+  await evaluate(`app.api('/api/world/op', { op: 'expandMap', args: { side: 'west', by: 16, biome: 'autumn', name: '西坡', seed: 7, places: [
+    { id: 'west_inn', kind: 'inn', name: '西坡客栈' }, { id: 'west_orchard', kind: 'orchard', name: '苹果园' }, { id: 'west_cottage', kind: 'cottage', name: '新来的小屋' } ] } }).then(() => true)`);
+  await waitFor(() => evaluate(`app.world.W === 80 && Boolean(app.world.locations.west_inn)`), 8000, '地图扩展');
+  await evaluate(`(() => { const b = app.world.buildings.find((x) => x.id === 'west_inn'); app.follow = null; app.cam.x = (b.x + 6) * 32; app.cam.y = (b.y + 4) * 32; return true; })()`);
+}, { wait: 1200 });
 await step('19-genesis', async () => {
   await send('Page.navigate', { url: `${base}/genesis.html` });
   await waitFor(() => evaluate(`Boolean(document.querySelector('#go'))`), 10000, '创世向导');

@@ -5,9 +5,10 @@ import path from 'node:path';
 import { PARAM_BOUNDS, RATINGS, STORYTELLERS, validateSpec } from './spec.js';
 import { parseHM } from '../memory.js';
 import { checkRemap, applyRemap } from './impact.js';
+import { stripOf, packStrip, SIDES, MAX_SIZE } from '../worldgen/extend.js';
 import { validateAbility } from './abilities.js';
 import { validateRule } from './rules.js';
-import { solveLayout, layoutProblems, regionSize, BIOME_IDS, BUILDING_KINDS, OUTDOOR_KINDS } from '../worldgen/layout.js';
+import { solveLayout, layoutProblems, regionSize, mapSize, BIOME_IDS, BUILDING_KINDS, OUTDOOR_KINDS } from '../worldgen/layout.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const ID_RE = /^[a-z][a-z0-9_]{1,23}$/;
@@ -24,15 +25,30 @@ const MAX_EDITS = 40;
 const townOf = (spec) => spec.regions.find((r) => r.id === 'town') || spec.regions[0];
 const editsProblem = (spec) => ((townOf(spec).edits || []).length >= MAX_EDITS ? `这张地图上的地形改动已经够多了（最多 ${MAX_EDITS} 处）` : null);
 const cellsOk = (spec, cells, max) => {
-  const [W, H] = regionSize(townOf(spec));
+  const [W, H] = mapSize(townOf(spec));
   return Array.isArray(cells) && cells.length > 0 && cells.length <= max && cells.every((c) => Array.isArray(c) && Number.isInteger(c[0]) && Number.isInteger(c[1]) && c[0] >= 0 && c[1] >= 0 && c[0] < W && c[1] < H);
 };
 const rectOk = (spec, r, max) => {
-  const [W, H] = regionSize(townOf(spec));
+  const [W, H] = mapSize(townOf(spec));
   return r && [r.x, r.y, r.w, r.h].every(Number.isInteger) && r.w >= 1 && r.h >= 1 && r.w <= max && r.h <= max && r.x >= 0 && r.y >= 0 && r.x + r.w <= W && r.y + r.h <= H;
 };
 const pushEdit = (spec, e) => { const r = townOf(spec); (r.edits ||= []).push(e); };
 const locName = (spec, id) => spec?.locations?.[id]?.name || (spec?.buildings || []).find((b) => b.id === id)?.name || id || '那里';
+
+// 地图扩展：地点的占地、屋顶配色、平移
+const ROOFS = ['#c0392b', '#8e44ad', '#2e8b57', '#d9a441', '#5b7bb4', '#7b5b4b', '#b86b4b'];
+const placeSizes = (places) => Object.fromEntries(places.map((p) => [p.id, BUILDING_KINDS[p.kind] || OUTDOOR_KINDS[p.kind] || [5, 5]]));
+/** 向西 / 向北扩展：这个区域里运行中加入的一切（新增建筑、地形编辑、已有的扩展块）跟着平移；世界包的基础内容由 offset 平移 */
+function shiftRegion(spec, region, dx, dy) {
+  for (const b of spec.buildings) if (b.added && (b.region || 'town') === region.id) { b.x += dx; b.y += dy; }
+  for (const e of region.edits || []) {
+    if (e.cells) e.cells = e.cells.map(([x, y]) => [x + dx, y + dy]);
+    if (e.trees) e.trees = e.trees.map(([x, y, k]) => [x + dx, y + dy, k]);
+    if (e.rect) e.rect = { ...e.rect, x: e.rect.x + dx, y: e.rect.y + dy };
+  }
+  for (const ext of region.extensions || []) ext.rect = { ...ext.rect, x: ext.rect.x + dx, y: ext.rect.y + dy };
+  region.offset = { x: (region.offset?.x || 0) + dx, y: (region.offset?.y || 0) + dy };
+}
 
 // 每个操作：level 决定审批等级（micro / minor / major），check 返回错误文本或 null，
 // apply 修改规格（传入的是副本），describe 生成给玩家看的一句话
@@ -184,7 +200,7 @@ export const OPS = {
       if (!validId(a.id)) return 'id 不合法';
       if (spec.buildings.some((b) => b.id === a.id) || Object.hasOwn(spec.locations, a.id)) return `建筑或地点已存在：${a.id}`;
       const region = spec.regions.find((r) => r.id === (a.region || 'town')) || spec.regions[0];
-      const [RW, RH] = regionSize(region);
+      const [RW, RH] = mapSize(region);
       const cap = Math.floor((RW * RH) / 120);
       if (spec.buildings.filter((b) => !b.removed && (b.region || 'town') === region.id).length >= cap) return `这张地图上的建筑已经够多了（最多 ${cap} 座）`;
       if (!str(a.name, 10)) return 'name 不能为空（≤10字）';
@@ -351,6 +367,59 @@ export const OPS = {
       pushEdit(spec, { kind: 'place', id: a.id, placeKind: a.kind, rect: { ...a.rect }, seed: Number(a.seed) || 1 });
     },
     describe: (a) => `多了一个新去处：${str(a.emoji, 4)}「${str(a.name, 16)}」`,
+  },
+  // ---------- 地图扩展（地图演变设计 §5.1）：任意方向，最大 96×64；向西 / 向北时运行中加入的坐标一起平移 ----------
+  expandMap: {
+    level: 'major',
+    check(spec, a) {
+      const region = spec.regions.find((r) => r.id === (a.region || 'town'));
+      if (!region) return `未知区域：${a.region}`;
+      if (!SIDES.includes(a.side)) return `side 只能是 ${SIDES.join('/')}`;
+      if (!Number.isInteger(a.by) || a.by < 8 || a.by > 24) return 'by 应为 8~24 格';
+      if ((region.extensions || []).length >= 8) return '这张地图已经扩展过太多次了';
+      const cur = mapSize(region);
+      const { size, rect } = stripOf(cur, a.side, a.by);
+      if (size[0] > MAX_SIZE[0] || size[1] > MAX_SIZE[1]) return `地图最大 ${MAX_SIZE.join('×')}，这个方向已经到头了（可以在那一侧开辟相邻的地图）`;
+      if (a.biome != null && !BIOME_IDS.includes(a.biome)) return `biome 只能是 ${BIOME_IDS.join('/')}`;
+      if (!str(a.name, 16)) return 'name 不能为空（≤16字）';
+      const places = Array.isArray(a.places) ? a.places : [];
+      if (places.length > 6) return '新地块最多 6 个地点';
+      const ids = new Set();
+      for (const p of places) {
+        if (!validId(p.id) || ids.has(p.id) || Object.hasOwn(spec.locations, p.id) || spec.buildings.some((b) => b.id === p.id)) return `地点 id 不合法或已存在：${p.id}`;
+        ids.add(p.id);
+        if (!Object.hasOwn(BUILDING_KINDS, p.kind) && !Object.hasOwn(OUTDOOR_KINDS, p.kind)) return `地点类型未知：${p.kind}`;
+        if (!str(p.name, 16)) return '地点需要 name';
+      }
+      const { problems } = packStrip(rect, a.side, places, placeSizes(places));
+      return problems.length ? problems[0] : null;
+    },
+    apply(spec, a) {
+      const region = spec.regions.find((r) => r.id === (a.region || 'town'));
+      const cur = mapSize(region);
+      if (!region.baseSize) region.baseSize = [...regionSize(region)];
+      const { rect, dx, dy, size } = stripOf(cur, a.side, a.by);
+      if (dx || dy) shiftRegion(spec, region, dx, dy);
+      region.size = size;
+      const places = Array.isArray(a.places) ? a.places : [];
+      const { placed } = packStrip(rect, a.side, places, placeSizes(places));
+      const seed = Number(a.seed) || 1;
+      const inRegion = region.id !== 'town' ? { region: region.id } : {};
+      for (const p of places) {
+        const r = placed[p.id];
+        if (!r) continue;
+        spec.locations[p.id] = { name: str(p.name, 16), emoji: str(p.emoji, 4) || (Object.hasOwn(OUTDOOR_KINDS, p.kind) ? '📍' : '🏠'), desc: str(p.desc, 60) || str(p.name, 16), public: p.public !== false, ...inRegion };
+        if (Object.hasOwn(OUTDOOR_KINDS, p.kind)) (region.edits ||= []).push({ kind: 'place', id: p.id, placeKind: p.kind, rect: r, seed: seed + p.id.length });
+        else {
+          spec.buildings.push({
+            id: p.id, name: str(p.name, 10), kind: p.kind, ...r, roof: COLOR_RE.test(p.roof || '') ? p.roof : ROOFS[(seed + p.id.length) % ROOFS.length],
+            wall: COLOR_RE.test(p.wall || '') ? p.wall : '#efe2c8', ...(p.sign ? { sign: str(p.sign, 4) } : {}), added: true, ...inRegion, ...(a.builtDay != null ? { builtDay: a.builtDay } : {}),
+          });
+        }
+      }
+      (region.extensions ||= []).push({ side: a.side, by: a.by, biome: BIOME_IDS.includes(a.biome) ? a.biome : 'meadow', name: str(a.name, 16), rect, seed });
+    },
+    describe: (a) => `${{ north: '北边', south: '南边', east: '东边', west: '西边' }[a.side] || ''}长出了一片新地方：「${str(a.name, 16)}」`,
   },
   // 开辟一个新区域（多世界设计 §3.2）：只描述语义布局，由生成器 layout-v1 落地；默认关闭，linkRegions 之后才能过去
   addRegion: {

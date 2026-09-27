@@ -18,6 +18,7 @@ export const OP_DOCS = {
   clearArea: '{"near":"地点id","w":3~10,"h":3~10} —— 清理附近的树丛石头，腾出空地（为以后建房）',
   plantGrove: '{"near":"地点id","w":2~8,"h":2~8,"trees":"oak/pine/sakura（可选）"} —— 在附近的空草地上种一片树',
   addOutdoorPlace: '{"id":"英文小写id","kind":"garden/orchard/market/plaza/field/pond/well/camp/shrine/clearing/grove/meadow","name":"≤16字","emoji","desc":"≤60字","near":"地点id"} —— 新的户外去处，系统在附近找空地画出来',
+  expandMap: '{"side":"north/south/east/west","by":8~24,"biome":"meadow/village/forest/…","name":"新地块的名字≤16字","places":[{"id":"英文小写id","kind":"house/cottage/shop/inn/…或 garden/orchard/market/…","name":"≤16字","emoji","desc":"≤60字"}]（最多6个）} —— 地图向一边长出一片新地方（大改）；空地不够、镇子要长大时用；地图最大 96×64',
   addCalendarEvent: '{"id","name":"≤16字","emoji","day":第几天（必须大于今天）,"from":"HH:MM","location":"地点id","hint":"≤60字","countdown":true}',
   addWeather: '{"id","name":"≤8字","emoji","weight":0~20,"render":{"base":"sunny/cloudy/rain/storm/fog/snow","tint":"#rrggbb","tintAlpha":0~0.5}}',
   addItem: '{"id","name":"≤8字","emoji","desc":"≤40字"}',

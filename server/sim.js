@@ -41,7 +41,7 @@ import { get as setting } from './settings/index.js';
 
 const MAX_STRUCTURES = 30;
 // 改变地图上建筑的世界操作：落地后重建地图（syncMap）
-const MAP_OPS = new Set(['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace']);
+const MAP_OPS = new Set(['expandMap', 'addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace']);
 
 export class Town extends EventEmitter {
   /**
@@ -483,7 +483,7 @@ export class Town extends EventEmitter {
     }
     const prev = this.spec;
     this.spec = applyOp(this.spec, rec, rec);
-    if (MAP_OPS.has(rec.op)) this.syncMap(prev);
+    if (MAP_OPS.has(rec.op)) { const moved = this.shiftByOffsets(prev); this.syncMap(prev, moved); }
     if (rec.op === 'addRegion' || rec.op === 'linkRegions') this.rebuildRegions();
     this.specOps.push(rec);
     this.journal.append(rec);
@@ -508,7 +508,8 @@ export class Town extends EventEmitter {
     const hadBuildings = JSON.stringify(this.spec.buildings);
     const hadRegions = JSON.stringify(this.spec.regions);
     this.spec = r.spec;
-    if (JSON.stringify(this.spec.regions) !== hadRegions) this.rebuildRegions();
+    const moved = this.shiftByOffsets({ regions: JSON.parse(hadRegions) });
+    if (JSON.stringify(this.spec.regions) !== hadRegions) { this.rebuildRegions(); if (moved) this.syncMap(null, moved); }
     else if (JSON.stringify(this.spec.buildings) !== hadBuildings) this.syncMap(null);
     for (const a of this.agents) a.abilities = a.abilities.filter((id) => findAbility(this.spec, id));
     this.emit('world', { spec: publicSpec(this.spec), op: null, desc: '世界规格已重新计算' });
@@ -536,9 +537,9 @@ export class Town extends EventEmitter {
    * 建筑变化（新建、改建、停业、废墟、拆除、修复）之后：重建地图，并让运行时状态跟上——
    * 居民的住处与工作地按规格同步（拆除时的搬迁）；待在进不去的建筑里的人走到门口；原定在已消失地点的场景取消。
    */
-  syncMap(prev = null) {
+  syncMap(prev = null, moved = null) {
     const old = this.world;
-    this.rebuildWorld();
+    this.rebuildWorld(moved);
     const personas = Object.fromEntries(this.spec.personas.map((p) => [p.id, p]));
     for (const a of [...this.agents, ...this.away]) {
       const p = personas[a.id];
@@ -559,13 +560,51 @@ export class Town extends EventEmitter {
     }
   }
 
-  /** 世界结构变化（新增建筑）后重建地图；正在走路的角色与生物重新寻路 */
-  rebuildWorld() {
+  /**
+   * 地图向西 / 向北扩展（或撤销扩展）时，区域的偏移变了：把这个区域里一切运行时的坐标跟着平移，
+   * 让规格（重放得到的）与存档里的位置始终在同一个坐标系。返回 { dx, dy } 或 null。
+   */
+  shiftByOffsets(prevSpec) {
+    let moved = null;
+    for (const r of this.spec.regions) {
+      const before = prevSpec?.regions?.find((x) => x.id === r.id)?.offset || { x: 0, y: 0 };
+      const dx = (r.offset?.x || 0) - (before.x || 0), dy = (r.offset?.y || 0) - (before.y || 0);
+      if (!dx && !dy) continue;
+      this.shiftRuntime(r.id, dx, dy);
+      if (r.id === 'town') moved = { dx, dy };
+    }
+    return moved;
+  }
+
+  shiftRuntime(region, dx, dy) {
+    const inR = (o) => (o.region || 'town') === region;
+    const mv = (p) => { if (p) { p.x += dx; p.y += dy; } };
+    for (const a of this.agents) if (inR(a)) { mv(a); Object.assign(a, { path: [], dest: null, curKey: null, moving: false }); if (a.status === 'walking') a.status = 'idle'; }
+    for (const c of this.creatures.list) if (inR(c)) { mv(c); c.path = []; }
+    for (const e of this.entities) if (inR(e)) mv(e);
+    for (const v of this.avatars.list) if (inR(v)) { mv(v); v.path = []; v.target = null; }
+    if (region === 'town' && this.portalState) { mv(this.portalState); mv(this.portalState.spawn); }
+    // 还没落地的提案：选好的位置也跟着平移（落地前会按原坐标再校验一次）
+    if (region !== 'town') return;
+    for (const p of this.proposalSystem.open()) {
+      if (p.construction?.site) mv(p.construction.site);
+      for (const o of p.ops) {
+        const a = o.args || {};
+        if (o.op === 'addBuilding' && Number.isInteger(a.x)) mv(a);
+        if (Array.isArray(a.cells)) a.cells = a.cells.map(([x, y]) => [x + dx, y + dy]);
+        if (Array.isArray(a.trees)) a.trees = a.trees.map(([x, y, k]) => [x + dx, y + dy, k]);
+        if (a.rect) a.rect = { ...a.rect, x: a.rect.x + dx, y: a.rect.y + dy };
+      }
+    }
+  }
+
+  /** 世界结构变化（新增建筑）后重建地图；正在走路的角色与生物重新寻路；moved 是平移量（前端的镜头跟着移） */
+  rebuildWorld(moved = null) {
     this.world = this.regions.town = buildRegion(this.spec.regions.find((r) => r.id === 'town'), this.spec);
     this.regions.town = this.world;
     for (const a of this.agents) if (a.status === 'walking') { a.curKey = null; a.path = []; }
     for (const c of this.creatures.list) c.path = [];
-    this.emit('worldmap', this.world);
+    this.emit('worldmap', moved ? { ...this.world, shift: moved } : this.world);
   }
 
   /** 区域增减（addRegion / linkRegions）后重建所有区域；前端重新拿一次初始数据 */

@@ -175,8 +175,11 @@ function connect() {
   if (!app.usageTimer) app.usageTimer = setInterval(usage, 60_000);
   // 新建筑落地：重建地图与静态图层
   es.addEventListener('worldmap', (e) => {
-    app.regionWorlds.town = JSON.parse(e.data);
-    if (app.view === 'town') { app.world = app.regionWorlds.town; renderer.setWorld(app.world); }
+    const w = JSON.parse(e.data);
+    app.regionWorlds.town = w;
+    // 地图向西 / 向北扩展：原来的一切整体平移，镜头跟着移，画面不跳
+    if (w.shift && app.view === 'town') { app.cam.x += w.shift.dx * TS; app.cam.y += w.shift.dy * TS; for (const m of [app.disp, app.cdisp, app.vdisp || {}]) for (const d of Object.values(m)) { if (d.dx != null) { d.dx += w.shift.dx; d.dy += w.shift.dy; } } }
+    if (app.view === 'town') { app.world = w; renderer.setWorld(app.world); }
   });
   es.addEventListener('proposals', () => UI.onProposals());
   es.addEventListener('evolution', () => UI.onEvolution());

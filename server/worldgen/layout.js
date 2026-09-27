@@ -51,8 +51,13 @@ function mulberry32(a) {
 }
 const hashStr = (s) => { let h = 2166136261; for (const c of String(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; };
 
+/** 区域现在的总尺寸（扩展之后的）；regionSize 是生成器用的基础尺寸 */
+export function mapSize(region) { return Array.isArray(region.baseSize) && Array.isArray(region.size) ? region.size : regionSize(region); }
+
 /** 区域的地图尺寸：写了就用写的，否则按区域数量估算 */
 export function regionSize(region) {
+  // 扩展过的区域：生成器仍按基础尺寸生成，size 是扩展之后的总尺寸
+  if (Array.isArray(region.baseSize)) return region.baseSize;
   if (Array.isArray(region.size) && region.size.length === 2) return region.size.map((n) => Math.max(24, Math.min(96, Math.round(n))));
   const weight = (region.areas || []).reduce((s, a) => s + (AREA_WEIGHT[a.size] || 2), 0);
   return weight > 8 ? [80, 52] : weight > 5 ? [64, 44] : [52, 38];
@@ -316,7 +321,8 @@ export function buildLayoutRegion(region, spec) {
     return g;
   };
   return finishRegion({
-    name: region.name, W, H, tiles, solid, objects, buildings, locations, lamps, gate, carve,
+    name: region.name, W, H, tiles, solid, objects, buildings, locations, lamps, gate,
+    roads: [T.PATH, T.PLAZA, T.BRIDGE, T.DIRT, T.WOOD], dirtOver: [T.GRASS, T.SAND, T.FLOWER],
     // 前端按地貌调色：biomes 是调色板列表，biome 是每格的下标
     biomes: biomeIds.map((id) => ({ id, grass: BIOMES[id].grass, blade: BIOMES[id].blade })), biome: [...biome],
   }, region, spec);

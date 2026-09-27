@@ -3,6 +3,8 @@
 // 基础生成一行不动，所以云溪镇的基础瓦片与随机序列永远不变；两个生成器（yunxi-v1、layout-v1）共用这一段。
 import { T, WALKABLE } from './tiles.js';
 import { paintOutdoor } from './brush.js';
+import { paintExtension } from './extend.js';
+import { BIOMES } from './layout.js';
 
 const REMOVABLE = new Set(['tree', 'bush', 'rock']);
 const BUILDABLE = new Set([T.GRASS, T.FLOWER, T.DIRT, T.SAND]);
@@ -20,13 +22,49 @@ const cellHash = (x, y) => (((x * 73856093) ^ (y * 19349663)) >>> 0) / 429496729
 export const BUILDING_STATES = ['open', 'closed', 'damaged', 'ruin'];
 
 /**
+ * 扩大画布（地图演变 §5.1）：区域的尺寸大于基础地图、或有偏移时，把基础地图贴到 offset 位置，所有坐标跟着平移。
+ * 没有扩展过的区域原样返回。
+ */
+function compose(c, region) {
+  const [W2, H2] = Array.isArray(region.size) && region.baseSize ? region.size : [c.W, c.H];
+  const ox = region.offset?.x || 0, oy = region.offset?.y || 0;
+  const needBiome = (region.extensions || []).length > 0;
+  if (W2 === c.W && H2 === c.H && !ox && !oy && !needBiome) return c;
+  const { W, H } = c;
+  const tiles = new Array(W2 * H2).fill(T.GRASS);
+  const solid = new Uint8Array(W2 * H2);
+  const biome = new Uint8Array(W2 * H2);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y + oy) * W2 + x + ox;
+    tiles[i] = c.tiles[y * W + x];
+    solid[i] = c.solid[y * W + x];
+    if (c.biome) biome[i] = c.biome[y * W + x];
+  }
+  // 叠加之后才能确定的渡口：在原画布上先算出来再平移
+  const gate = typeof c.gate === 'function' ? c.gate() : c.gate;
+  const seen = new Set();
+  const shift = (o) => { if (!o || seen.has(o)) return; seen.add(o); o.x += ox; o.y += oy; };
+  for (const o of c.objects) shift(o);
+  for (const b of c.buildings) { shift(b); shift(b.door); shift(b.entrance); }
+  for (const l of Object.values(c.locations)) { shift(l.rect); for (const s of l.spots) shift(s); }
+  for (const l of c.lamps) shift(l);
+  const g = gate && { x: gate.x + ox, y: gate.y + oy };
+  const origin = c.origin && { x: c.origin.x + ox, y: c.origin.y + oy };
+  return {
+    ...c, W: W2, H: H2, tiles, solid, gate: g, ...(origin ? { origin } : {}), biome,
+    biomes: c.biomes ? c.biomes.map((b) => ({ ...b })) : [{ id: 'meadow', grass: BIOMES.meadow.grass, blade: BIOMES.meadow.blade }],
+  };
+}
+
+/**
  * 把生成器的画布变成最终的地图。
  * @param {object} c 生成器的画布：{ W, H, tiles, solid, objects, buildings, locations, lamps, gate, origin?, carve(x, y), lampForAdded?, ...其余字段原样返回 }
  *   gate 可以是函数（叠加之后才能确定的渡口，例如 layout-v1 要避开新建筑）；origin 是连通性的起点，缺省为 gate
  * @param {object} region 规格里的区域
  * @param {object} spec 世界规格
  */
-export function finishRegion(c, region, spec) {
+export function finishRegion(c0, region, spec) {
+  const c = compose(c0, region);
   const { W, H, tiles, solid, objects, buildings, locations, lamps } = c;
   const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
   const get = (x, y) => (inb(x, y) ? tiles[y * W + x] : -1);
@@ -34,7 +72,42 @@ export function finishRegion(c, region, spec) {
   const isSolid = (x, y) => !inb(x, y) || solid[y * W + x] || !WALKABLE.has(get(x, y));
   const block = (x, y) => inb(x, y) && (solid[y * W + x] = 1);
   const info = spec.locations || {};
+  // 从入口开辟小路连到最近的道路（与生成器里的规则相同：哪些瓦片算路、哪些地面铺成泥路由生成器给出）
+  const ROADS_OF = new Set(c.roads || [T.PATH, T.PLAZA, T.BRIDGE]);
+  const DIRT_OVER = new Set(c.dirtOver || [T.GRASS, T.SAND]);
+  const carve = (sx, sy) => {
+    const prev = new Map();
+    const key = (x, y) => y * W + x;
+    const q = [[sx, sy]];
+    prev.set(key(sx, sy), null);
+    for (let qi = 0; qi < q.length; qi++) {
+      const [x, y] = q[qi];
+      if (ROADS_OF.has(get(x, y)) && !(x === sx && y === sy)) {
+        for (let k = prev.get(key(x, y)); k !== null && k !== undefined; k = prev.get(k)) {
+          const px = k % W, py = Math.floor(k / W);
+          if (DIRT_OVER.has(get(px, py))) set(px, py, T.DIRT);
+        }
+        return true;
+      }
+      for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+        const nx = x + dx, ny = y + dy;
+        if (!inb(nx, ny) || prev.has(key(nx, ny)) || isSolid(nx, ny)) continue;
+        prev.set(key(nx, ny), key(x, y));
+        q.push([nx, ny]);
+      }
+    }
+    return false;
+  };
   const defs = (spec.buildings || []).filter((b) => (b.region || 'town') === region.id);
+
+  // ---- 扩展块（地图演变 §5.1）：按顺序画地貌、主路与支路、装饰，并接到原地图的路上 ----
+  for (const ext of region.extensions || []) {
+    paintExtension({ W, H, tiles, solid, objects, biome: c.biome, biomeIndex: (id) => {
+      let i = c.biomes.findIndex((b) => b.id === id);
+      if (i < 0) { c.biomes.push({ id, grass: BIOMES[id].grass, blade: BIOMES[id].blade }); i = c.biomes.length - 1; }
+      return i;
+    }, roads: ROADS_OF }, ext, BIOMES);
+  }
 
   // ---- 拆除：基础建筑照常参与了基础生成（保证随机序列不变），在这里变回空地 ----
   const lots = [];
@@ -140,7 +213,7 @@ export function finishRegion(c, region, spec) {
     for (let y = def.y; y < def.y + def.h; y++) for (let x = def.x; x < def.x + def.w; x++) block(x, y);
     const b = { ...def, door, entrance };
     buildings.push(b);
-    c.carve(entrance.x, entrance.y);
+    carve(entrance.x, entrance.y);
     locations[b.id] = { id: b.id, name: b.name || info[b.id]?.name, emoji: info[b.id]?.emoji || '🏠', desc: info[b.id]?.desc || '', spots: [], indoor: b.id, rect: b };
     if (def.lightAtNight && c.lampForAdded) {
       const lx = Math.min(W - 1, def.x + def.w), ly = def.y + def.h - 1;
@@ -186,6 +259,7 @@ export function finishRegion(c, region, spec) {
   for (const l of Object.values(locations)) l.spots = l.spots.filter((s) => walk[Math.round(s.y) * W + Math.round(s.x)]);
   for (const b of buildings) if (!walk[b.entrance.y * W + b.entrance.x]) console.warn(`[worldgen] ${region.id}：入口不可达：${b.id}`);
 
-  const { solid: _s, carve: _c, origin: _o, lampForAdded: _l, gate: _g, ...rest } = c;
+  const { solid: _s, origin: _o, lampForAdded: _l, gate: _g, roads: _r, dirtOver: _d, ...rest } = c;
+  if (rest.biome && !Array.isArray(rest.biome)) rest.biome = [...rest.biome];
   return { ...rest, id: region.id, walk, overlayErrors, gate, ...(lots.length ? { lots } : {}) };
 }

@@ -20,7 +20,7 @@ export const levelOf = (o) => OPS[o.op].levelOf?.(o.args) || OPS[o.op].level;
 /** 会让建筑消失（或变成废墟）的操作：需要搬迁去处、施工、居民议事 */
 export const isDemolition = (o) => o.op === 'removeBuilding' || (o.op === 'setBuildingState' && o.args?.state === 'ruin');
 // 架构师（以及导演、居民、访客的点子）可以提出的操作；管理员直接提交时还可以调参数、改分级
-export const ARCHITECT_OPS = ['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'addRule', 'addCanon'];
+export const ARCHITECT_OPS = ['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace', 'expandMap', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'addRule', 'addCanon'];
 export const ADMIN_OPS = [...ARCHITECT_OPS, 'setParam', 'setMeta'];
 const FINAL = new Set(['applied', 'rejected', 'failed', 'expired', 'reverted']);
 
@@ -226,7 +226,7 @@ export class ProposalSystem {
       r = this.prepare(p.ops.map((o) => (o.op === 'addBuilding' && o.args.near ? { op: o.op, args: { ...o.args, x: undefined, y: undefined, place: { near: o.args.near } } } : o)), ADMIN_OPS);
     }
     if (r.error) return this.finish(p, 'failed', r.error);
-    for (const o of r.ops) if (o.op === 'addBuilding') o.args.builtDay = town.day;
+    for (const o of r.ops) if (o.op === 'addBuilding' || o.op === 'expandMap') o.args.builtDay = town.day;
     const before = town.spec;
     try {
       for (const o of r.ops) town.applyWorldOp(o, { by: 'proposal', proposal: p.id, origin: p.origin });
@@ -302,6 +302,9 @@ export class ProposalSystem {
       const r = solveRect(spec, { mode: 'place', w: size[0], h: size[1], near: args.near ?? args.place?.near, id: args.id, placeKind: args.kind, seed });
       if (r.error) return r.error;
       Object.assign(args, { rect: r.rect, seed });
+    } else if (name === 'expandMap') {
+      if (args.seed == null) args.seed = seed;
+      args.by = Math.round(Number(args.by) || 12);
     } else if (name === 'plantGrove' || name === 'addOutdoorPlace') {
       // 坐标是现成的（落地前按原位置再校验一次）
       const edit = name === 'plantGrove' ? { kind: 'grove', trees: args.trees } : { kind: 'place', id: args.id, placeKind: args.kind, rect: args.rect, seed: args.seed };

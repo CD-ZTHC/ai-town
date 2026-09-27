@@ -25,6 +25,7 @@
 | `clearArea` | minor | ✅ | {"near":"地点id","w":3~10,"h":3~10} —— 清理附近的树丛石头，腾出空地（为以后建房） |
 | `plantGrove` | minor | ✅ | {"near":"地点id","w":2~8,"h":2~8,"trees":"oak/pine/sakura（可选）"} —— 在附近的空草地上种一片树 |
 | `addOutdoorPlace` | minor | ✅ | {"id":"英文小写id","kind":"garden/orchard/market/plaza/field/pond/well/camp/shrine/clearing/grove/meadow","name":"≤16字","emoji","desc":"≤60字","near":"地点id"} —— 新的户外去处，系统在附近找空地画出来 |
+| `expandMap` | major | ✅ | {"side":"north/south/east/west","by":8~24,"biome":"meadow/village/forest/…","name":"新地块的名字≤16字","places":[{"id":"英文小写id","kind":"house/cottage/shop/inn/…或 garden/orchard/market/…","name":"≤16字","emoji","desc":"≤60字"}]（最多6个）} —— 地图向一边长出一片新地方（大改）；空地不够、镇子要长大时用；地图最大 96×64 |
 | `addRegion` | major | — | 仅管理员 / 剧情弧使用 |
 | `linkRegions` | minor | — | 仅管理员 / 剧情弧使用 |
 | `addPersona` | major | — | 仅管理员 / 剧情弧使用 |

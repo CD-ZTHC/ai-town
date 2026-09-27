@@ -299,3 +299,64 @@ test('架桥、清地、种树、新的户外地点：求解后落地，读档�
   t.after(() => again.stop());
   assert.equal(fingerprint(again.world), fingerprint(w), '重放得到同样的地图');
 });
+
+// ---------- E5 地图扩展 ----------
+const EXT = (side, by = 16, extra = {}) => ({ op: 'expandMap', args: { side, by, biome: 'village', name: '新街', seed: 5, places: [{ id: 'new_inn', kind: 'inn', name: '旅人客栈' }, { id: 'new_orchard', kind: 'orchard', name: '新果园' }], ...extra } });
+
+test('向东扩展：原地图逐格不变（只多了接缝上的路），新地点可以走到；不能超过 96×64', () => {
+  const s0 = specOf('yunxi');
+  const w0 = buildRegions(s0).town;
+  const s = applyOp(s0, EXT('east'));
+  const w = buildRegions(s).town;
+  assert.deepEqual([w.W, w.H], [80, 44]);
+  let diff = 0;
+  for (let y = 0; y < 44; y++) for (let x = 0; x < 64; x++) {
+    const a = w0.tiles[y * 64 + x], b = w.tiles[y * 80 + x];
+    if (a !== b) { diff++; assert.ok([T.DIRT, T.PATH].includes(b), `(${x},${y}) ${a} → ${b}`); }
+  }
+  assert.ok(diff < 40, `接缝改动 ${diff} 格`);
+  for (const b of w0.buildings) assert.deepEqual([w.buildings.find((x) => x.id === b.id).x, w.buildings.find((x) => x.id === b.id).y], [b.x, b.y]);
+  const sq = locationCenter(w, 'square');
+  for (const id of ['new_inn', 'new_orchard']) { const c = locationCenter(w, id); assert.ok(findPath(w, sq.x, sq.y, c.x, c.y), id); }
+  assert.ok(w.biomes.some((b) => b.id === 'village'));
+  // 上限
+  let big = s;
+  big = applyOp(big, EXT('east', 16, { places: [] }));
+  assert.throws(() => applyOp(big, EXT('east', 8, { places: [] })), /最大 96×64/);
+});
+
+test('向西扩展：基础地图与运行中的一切整体平移——新增建筑、地形编辑、居民、施工现场；读档与重放一致；撤销时平移回来', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-map-'));
+  const town = new Town({ dataDir: dir, worldId: 'little-red', pack: redPack, instantTalk: true });
+  t.after(() => town.stop());
+  const ps = town.proposalSystem;
+  const r1 = ps.prepare([{ op: 'addPath', args: { from: 'village_square', to: 'wolf_den' } }, { op: 'addBuilding', args: { id: 'shed', name: '小棚', kind: 'hut', w: 4, h: 4, place: { near: 'village_square' } } }]);
+  assert.ok(!r1.error, r1.error);
+  for (const o of r1.ops) town.applyWorldOp(o);
+  const before = structuredClone({ shed: town.world.buildings.find((b) => b.id === 'shed'), bakery: town.world.buildings.find((b) => b.id === 'bakery'), gate: town.world.gate, path: town.spec.regions[0].edits[0].cells[0] });
+  const red = town.byId.red;
+  Object.assign(red, { x: 10, y: 20, inside: null });
+  const r = ps.prepare([EXT('west', 12)]);
+  assert.ok(!r.error, r.error);
+  const rec = town.applyWorldOp(r.ops[0], { by: 'test' });
+  const w = town.world;
+  assert.equal(w.W, 76);
+  assert.deepEqual([red.x, red.y], [22, 20], '居民跟着平移');
+  assert.equal(w.buildings.find((b) => b.id === 'shed').x, before.shed.x + 12, '新增建筑平移');
+  assert.equal(w.buildings.find((b) => b.id === 'bakery').x, before.bakery.x + 12, '基础建筑平移');
+  assert.deepEqual(w.gate, { x: before.gate.x + 12, y: before.gate.y });
+  assert.deepEqual(town.spec.regions[0].edits[0].cells[0], [before.path[0] + 12, before.path[1]], '地形编辑平移');
+  assert.deepEqual(town.spec.regions[0].offset, { x: 12, y: 0 });
+  // 所有居民站在能走的格子上（或在屋里）
+  for (const a of town.agents) if (!a.inside) assert.equal(w.walk[Math.round(a.y) * w.W + Math.round(a.x)], 1, `${a.name} 卡在 (${a.x},${a.y})`);
+  town.save();
+  const again = new Town({ dataDir: dir, worldId: 'little-red', pack: redPack, instantTalk: true });
+  t.after(() => again.stop());
+  assert.equal(fingerprint(again.world), fingerprint(w), '重放得到同样的地图');
+  assert.deepEqual([again.byId.red.x, again.byId.red.y], [22, 20]);
+  // 撤销扩展：平移回来
+  town.revertOps((x) => x.seq === rec.seq);
+  assert.equal(town.world.W, 64);
+  assert.deepEqual([red.x, red.y], [10, 20]);
+  assert.equal(town.world.buildings.find((b) => b.id === 'shed').x, before.shed.x);
+});
