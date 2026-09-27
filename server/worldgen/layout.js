@@ -8,9 +8,9 @@
 //                              "style": { "roof": "#c0392b", "wall": "#f2e2c2", "roofShape": "thatch", "decor": ["chimney", "flowers"] } }] }],
 //     "links": [{ "from": "village", "to": "forest", "via": "path" }] }
 // 建筑的坐标由求解器给出（packSpec 时写进规格的 buildings / locations），之后运行中新增的建筑（addBuilding）照常叠加。
-import { T, findPath } from '../world.js';
-
-const WALKABLE = new Set([T.GRASS, T.PATH, T.PLAZA, T.DIRT, T.SAND, T.BRIDGE, T.SOIL, T.WOOD, T.FLOWER, T.MOON, T.MOONPATH]);
+import { findPath } from '../world.js';
+import { T, WALKABLE } from './tiles.js';
+import { finishRegion } from './finish.js';
 
 // 建筑类的地点：占地（宽 × 高）
 export const BUILDING_KINDS = {
@@ -334,63 +334,24 @@ export function buildLayoutRegion(region, spec) {
     }
   }
 
-  // ---- 叠加运行中新增的建筑：清理占地与周围一格的树木 / 灌木 / 石头，开辟连到道路的小路 ----
-  const overlayErrors = {};
-  const REMOVABLE = new Set(['tree', 'bush', 'rock']);
-  const BUILDABLE = new Set([T.GRASS, T.FLOWER, T.DIRT, T.SAND]);
-  const inRect = (x, y, r, m = 0) => x >= r.x - m && x < r.x + r.w + m && y >= r.y - m && y < r.y + r.h + m;
-  for (const def of defs.filter((b) => b.added)) {
-    const door = { x: def.x + Math.floor(def.w / 2), y: def.y + def.h - 1 };
-    const entrance = { x: door.x, y: door.y + 1 };
-    let err = null;
-    for (let y = def.y; y < def.y + def.h && !err; y++) for (let x = def.x; x < def.x + def.w && !err; x++) {
-      if (!inb(x, y) || !BUILDABLE.has(get(x, y))) err = `(${x},${y}) 不是可以建房的地面`;
-      else if (solid[y * W + x] && !objects.some((o) => REMOVABLE.has(o.type) && o.x === x && o.y === y)) err = `(${x},${y}) 已被占用`;
+  // ---- 叠加层（拆除、新增建筑、建筑状态）与连通性：见 finish.js；渡口（通往其他区域的地方）在叠加之后确定，避开新建筑 ----
+  const gate = () => {
+    const gatePlace = region.gate && places[region.gate];
+    let g = gatePlace ? center(gatePlace.rect) : null;
+    if (!g) { const first = Object.values(places).find((p) => p.outdoor); g = first ? center(first.rect) : { x: Math.floor(W / 2), y: Math.floor(H / 2) }; }
+    if (isSolid(g.x, g.y)) {
+      // 找最近的可走格
+      let best = null;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (!isSolid(x, y)) { const d = Math.abs(x - g.x) + Math.abs(y - g.y); if (!best || d < best.d) best = { x, y, d }; }
+      g = { x: best.x, y: best.y };
     }
-    if (!err && buildings.some((b) => b.x < def.x + def.w + 1 && b.x + b.w + 1 > def.x && b.y < def.y + def.h + 1 && b.y + b.h + 1 > def.y)) err = '和已有建筑挨得太近';
-    if (!err && (!inb(entrance.x, entrance.y) || !WALKABLE.has(get(entrance.x, entrance.y)))) err = '门口不能通行';
-    if (err) { overlayErrors[def.id] = err; continue; }
-    for (let i = objects.length - 1; i >= 0; i--) {
-      const o = objects[i];
-      if (REMOVABLE.has(o.type) && (inRect(o.x, o.y, def, 1) || (o.x === entrance.x && o.y >= entrance.y && o.y <= entrance.y + 1))) { objects.splice(i, 1); solid[o.y * W + o.x] = 0; }
-    }
-    for (let y = def.y; y < def.y + def.h; y++) for (let x = def.x; x < def.x + def.w; x++) block(x, y);
-    const b = { ...def, door, entrance };
-    buildings.push(b);
-    carve(entrance.x, entrance.y);
-    locations[b.id] = { id: b.id, name: info[b.id]?.name || b.name, emoji: info[b.id]?.emoji || '🏠', desc: info[b.id]?.desc || '', spots: [], indoor: b.id, rect: b };
-  }
-
-  // ---- 渡口（通往其他区域的地方）与连通性 ----
-  const gatePlace = region.gate && places[region.gate];
-  let gate = gatePlace ? center(gatePlace.rect) : null;
-  if (!gate) { const first = Object.values(places).find((p) => p.outdoor); gate = first ? center(first.rect) : { x: Math.floor(W / 2), y: Math.floor(H / 2) }; }
-  if (isSolid(gate.x, gate.y)) {
-    // 找最近的可走格
-    let best = null;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (!isSolid(x, y)) { const d = Math.abs(x - gate.x) + Math.abs(y - gate.y); if (!best || d < best.d) best = { x, y, d }; }
-    gate = { x: best.x, y: best.y };
-  }
-  const walk = new Uint8Array(W * H);
-  const q = [[gate.x, gate.y]];
-  walk[gate.y * W + gate.x] = 1;
-  while (q.length) {
-    const [x, y] = q.pop();
-    for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-      const nx = x + dx, ny = y + dy;
-      if (isSolid(nx, ny) || walk[ny * W + nx]) continue;
-      walk[ny * W + nx] = 1;
-      q.push([nx, ny]);
-    }
-  }
-  for (const l of Object.values(locations)) l.spots = l.spots.filter((s) => walk[s.y * W + s.x]);
-  for (const b of buildings) if (!walk[b.entrance.y * W + b.entrance.x]) console.warn(`[worldgen] ${region.id}：入口不可达：${b.id}`);
-
-  return {
-    id: region.id, name: region.name, W, H, tiles, walk, objects, buildings, locations, lamps, overlayErrors, gate,
+    return g;
+  };
+  return finishRegion({
+    name: region.name, W, H, tiles, solid, objects, buildings, locations, lamps, gate, carve,
     // 前端按地貌调色：biomes 是调色板列表，biome 是每格的下标
     biomes: biomeIds.map((id) => ({ id, grass: BIOMES[id].grass, blade: BIOMES[id].blade })), biome: [...biome],
-  };
+  }, region, spec);
 }
 
 /** 检查一个区域描述能不能展开（创世校验用）：返回问题列表 */

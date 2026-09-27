@@ -1,9 +1,8 @@
 // 云溪镇地图生成：瓦片、建筑、装饰物、地点与站位点（确定性随机，前后端共享同一份数据）
-export const T = {
-  GRASS: 0, PATH: 1, PLAZA: 2, DIRT: 3, WATER: 4, SAND: 5, BRIDGE: 6, SOIL: 7, WOOD: 8, DEEP: 9, FLOWER: 10,
-  MOON: 11, VOID: 12, MOONPATH: 13, // 暗月界：月砂地、星空虚空、月光小径
-};
-const WALKABLE = new Set([T.GRASS, T.PATH, T.PLAZA, T.DIRT, T.SAND, T.BRIDGE, T.SOIL, T.WOOD, T.FLOWER, T.MOON, T.MOONPATH]);
+import { T, WALKABLE } from './worldgen/tiles.js';
+import { finishRegion } from './worldgen/finish.js';
+
+export { T };
 
 function mulberry32(a) {
   return function () {
@@ -15,7 +14,7 @@ function mulberry32(a) {
 }
 
 // 生成器 yunxi-v1（手工布局）：建筑与地点信息来自世界规格（worlds/yunxi/world.json），保证云溪镇逐格不变
-export function buildWorld({ buildings: buildingDefs, locationInfo }) {
+export function buildWorld({ buildings: buildingDefs, locationInfo, region = null, spec = null }) {
   const W = 64, H = 44;
   const rnd = mulberry32(20260924);
   const tiles = new Array(W * H).fill(T.GRASS);
@@ -81,9 +80,9 @@ export function buildWorld({ buildings: buildingDefs, locationInfo }) {
   objects.push({ type: 'scarecrow', x: 56, y: 7 }); block(56, 7);
 
   // ---- 建筑 ----
-  // 世界规格里后来新增的建筑（added）不参与基础生成，而是在最后叠加，保证原地图的随机序列与其余部分不变
-  const added = buildingDefs.filter((b) => b.added);
-  const buildings = buildingDefs.filter((b) => !b.added).map((b) => {
+  // 世界规格里后来新增的建筑（added）不参与基础生成，而是在最后叠加（worldgen/finish.js），保证原地图的随机序列与其余部分不变；
+  // 被拆除的基础建筑照常参与基础生成，同样在叠加层里变回空地。别的区域的建筑不在这张图上。
+  const buildings = buildingDefs.filter((b) => !b.added && (b.region || 'town') === 'town').map((b) => {
     const door = { x: b.x + Math.floor(b.w / 2), y: b.y + b.h - 1 };
     for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) block(x, y);
     return { ...b, door, entrance: { x: door.x, y: door.y + 1 } };
@@ -241,74 +240,14 @@ export function buildWorld({ buildings: buildingDefs, locationInfo }) {
     }
   }
 
-  // ---- 叠加新增建筑：清理占地及周围一格的树木 / 灌木 / 石头，开辟连到道路的小路 ----
-  const overlayErrors = {};
-  const REMOVABLE = new Set(['tree', 'bush', 'rock']);
-  const BUILDABLE = new Set([T.GRASS, T.FLOWER, T.DIRT, T.SAND]);
-  const inRect = (x, y, r, m = 0) => x >= r.x - m && x < r.x + r.w + m && y >= r.y - m && y < r.y + r.h + m;
-  for (const def of added) {
-    const door = { x: def.x + Math.floor(def.w / 2), y: def.y + def.h - 1 };
-    const entrance = { x: door.x, y: door.y + 1 };
-    let err = null;
-    for (let y = def.y; y < def.y + def.h && !err; y++) {
-      for (let x = def.x; x < def.x + def.w && !err; x++) {
-        if (!inb(x, y) || !BUILDABLE.has(get(x, y))) err = `(${x},${y}) 不是可以建房的地面`;
-        else if (solid[y * W + x] && !objects.some((o) => REMOVABLE.has(o.type) && o.x === x && o.y === y)) err = `(${x},${y}) 已被占用`;
-      }
-    }
-    // 与已有建筑至少隔一格
-    if (!err && buildings.some((b) => b.x < def.x + def.w + 1 && b.x + b.w + 1 > def.x && b.y < def.y + def.h + 1 && b.y + b.h + 1 > def.y)) err = '和已有建筑挨得太近';
-    if (!err && (!inb(entrance.x, entrance.y) || !WALKABLE.has(get(entrance.x, entrance.y)))) err = '门口不能通行';
-    if (err) { overlayErrors[def.id] = err; continue; }
-    // 清理占地（含门口一列）周围的可移除物体
-    for (let i = objects.length - 1; i >= 0; i--) {
-      const o = objects[i];
-      if (REMOVABLE.has(o.type) && (inRect(o.x, o.y, def, 1) || (o.x === entrance.x && o.y <= entrance.y + 1 && o.y >= entrance.y))) {
-        objects.splice(i, 1);
-        solid[o.y * W + o.x] = 0;
-      }
-    }
-    for (let y = def.y; y < def.y + def.h; y++) for (let x = def.x; x < def.x + def.w; x++) block(x, y);
-    const b = { ...def, door, entrance };
-    buildings.push(b);
-    B[b.id] = b;
-    carve(entrance.x, entrance.y);
-    addLoc(b.id, { indoor: b.id, rect: b, name: b.name });
-    if (def.lightAtNight) {
-      const lx = Math.min(W - 1, def.x + def.w), ly = def.y + def.h - 1;
-      if (!solid[ly * W + lx] && WALKABLE.has(get(lx, ly))) { objects.push({ type: 'lamp', x: lx, y: ly }); block(lx, ly); lamps.push({ x: lx, y: ly }); }
-    }
-  }
-
-  // 连通性校验：丢弃不可达的站位
-  const reach = new Uint8Array(W * H);
-  const q = [[22, 20]];
-  reach[20 * W + 22] = 1;
-  while (q.length) {
-    const [x, y] = q.pop();
-    for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-      const nx = x + dx, ny = y + dy;
-      if (isSolid(nx, ny) || reach[ny * W + nx]) continue;
-      reach[ny * W + nx] = 1;
-      q.push([nx, ny]);
-    }
-  }
-  for (const l of Object.values(locations)) {
-    l.spots = l.spots.filter((s) => reach[Math.round(s.y) * W + Math.round(s.x)]);
-  }
-  for (const b of buildings) {
-    if (!reach[b.entrance.y * W + b.entrance.x]) console.warn('[world] 入口不可达：', b.id);
-  }
-
-  const walk = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) walk[i] = reach[i] ? 1 : 0;
-
-  // gate：通往其他区域（暗月界）的渡口位置，与裂隙的出怪点相同
-  return { id: 'town', W, H, tiles, walk, objects, buildings, locations, lamps, overlayErrors, gate: { x: 51, y: 37 } };
+  // ---- 叠加层（拆除、新增建筑、建筑状态）与连通性：见 worldgen/finish.js ----
+  // gate：通往其他区域（暗月界）的渡口位置，与裂隙的出怪点相同；连通性从喷泉广场出发
+  return finishRegion({ W, H, tiles, solid, objects, buildings, locations, lamps, gate: { x: 51, y: 37 }, origin: { x: 22, y: 20 }, carve, lampForAdded: true },
+    region || { id: 'town' }, spec || { buildings: buildingDefs, locations: locationInfo });
 }
 
 // ---------- 区域生成器 moonrealm-v1：暗月界（裂隙另一头的口袋地图）；地点名称与描述来自世界规格 ----------
-export function buildMoonRealm({ locationInfo = {} } = {}) {
+export function buildMoonRealm({ locationInfo = {}, region = null, spec = null } = {}) {
   const W = 36, H = 26;
   const rnd = mulberry32(19260404);
   const tiles = new Array(W * H).fill(T.VOID);
@@ -353,21 +292,9 @@ export function buildMoonRealm({ locationInfo = {} } = {}) {
   addLoc('moon_plaza', { x: 14, y: 9, w: 9, h: 7 }, [[16, 10], [20, 10], [16, 13], [20, 13], [17, 14], [19, 14], [18, 9]]);
   addLoc('moon_garden', { x: 4, y: 8, w: 9, h: 10 }, [[7, 11], [9, 13], [6, 14], [10, 10], [8, 16], [11, 15]]);
   addLoc('moon_lookout', { x: 24, y: 4, w: 8, h: 6 }, [[27, 6], [29, 7], [26, 8], [30, 6]]);
-  // 连通性：从渡口出发可达的格子
-  const walk = new Uint8Array(W * H);
-  const q = [[18, 21]];
-  walk[21 * W + 18] = 1;
-  while (q.length) {
-    const [x, y] = q.pop();
-    for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-      const nx = x + dx, ny = y + dy;
-      if (!inb(nx, ny) || walk[ny * W + nx] || solid[ny * W + nx] || !WALKABLE.has(get(nx, ny))) continue;
-      walk[ny * W + nx] = 1;
-      q.push([nx, ny]);
-    }
-  }
-  for (const l of Object.values(locations)) l.spots = l.spots.filter((s) => walk[s.y * W + s.x]);
-  return { id: 'moonrealm', name: '暗月界', W, H, tiles, walk, objects, buildings: [], locations, lamps, overlayErrors: {}, gate: { x: 18, y: 21 } };
+  // 叠加层与连通性（从渡口出发）：见 worldgen/finish.js
+  return finishRegion({ name: '暗月界', W, H, tiles, solid, objects, buildings: [], locations, lamps, gate: { x: 18, y: 21 }, carve: () => false },
+    region || { id: 'moonrealm' }, spec || { buildings: [], locations: locationInfo });
 }
 
 // A* 寻路（4 邻接）

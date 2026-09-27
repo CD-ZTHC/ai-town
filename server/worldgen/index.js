@@ -6,8 +6,8 @@ import { buildWorld, buildMoonRealm } from '../world.js';
 import { buildLayoutRegion } from './layout.js';
 
 const GENERATORS = {
-  'yunxi-v1': (region, spec) => buildWorld({ buildings: spec.buildings, locationInfo: spec.locations }),
-  'moonrealm-v1': (region, spec) => buildMoonRealm({ locationInfo: spec.locations }),
+  'yunxi-v1': (region, spec) => buildWorld({ buildings: spec.buildings, locationInfo: spec.locations, region, spec }),
+  'moonrealm-v1': (region, spec) => buildMoonRealm({ locationInfo: spec.locations, region, spec }),
   'layout-v1': (region, spec) => buildLayoutRegion(region, spec),
 };
 

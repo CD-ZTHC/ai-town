@@ -1,5 +1,6 @@
 // 世界规格：把原本写死在代码里的世界（设定、居民、建筑、地点、天气、日历、参数）变成一份可校验的数据。
 // 默认规格来自官方世界包 worlds/yunxi/（多世界设计 §3）；之后的一切改动都以 WorldOp 叠加在它上面。
+import { BUILDING_STATES } from '../worldgen/finish.js';
 import { parseHM } from '../memory.js';
 import { validateAbility } from './abilities.js';
 import { validateRule } from './rules.js';
@@ -75,7 +76,11 @@ export function validateSpec(s) {
     if (bIds.has(b.id)) err(`buildings.${b.id}`, 'id 重复');
     bIds.add(b.id);
     if (![b.x, b.y, b.w, b.h].every(isInt) || b.w < 2 || b.h < 2) err(`buildings.${b.id}`, '位置或尺寸不合法');
+    if (b.state != null && !BUILDING_STATES.includes(b.state)) err(`buildings.${b.id}`, `state 只能是 ${BUILDING_STATES.join('/')}`);
   }
+  // 拆除的建筑留在数组里（基础生成要用），但不能再被引用；废墟不能住人
+  const liveB = new Set((s.buildings || []).filter((b) => !b.removed).map((b) => b.id));
+  const homeB = new Set((s.buildings || []).filter((b) => !b.removed && b.state !== 'ruin').map((b) => b.id));
   const locs = s.locations || {};
   const regionIds = new Set((s.regions || []).map((r) => r.id));
   for (const [id, l] of Object.entries(locs)) {
@@ -141,8 +146,8 @@ export function validateSpec(s) {
     if (p.kind === 'creature') {
       if (!Object.hasOwn(locs, p.home)) err(path, `异界角色的 home 应为地点：${p.home}`);
       if (!BODY_PLANS.includes(p.look?.bodyPlan)) err(path, 'look.bodyPlan 不合法');
-    } else if (!bIds.has(p.home)) err(path, `home 不是建筑：${p.home}`);
-    if (!locs[p.work] && !bIds.has(p.work)) err(path, `work 不存在：${p.work}`);
+    } else if (!homeB.has(p.home)) err(path, bIds.has(p.home) ? `home 已被拆除或成了废墟：${p.home}` : `home 不是建筑：${p.home}`);
+    if (!locs[p.work] && !liveB.has(p.work)) err(path, `work 不存在：${p.work}`);
     if (!p.look || typeof p.look !== 'object') err(path, '缺少 look');
     for (const id of p.start?.abilities || []) if (!abIds.has(id)) err(path, `初始能力不存在：${id}`);
     for (const id of Object.keys(p.start?.inventory || {})) if (!Object.hasOwn(items, id)) err(path, `初始物品不存在：${id}`);
