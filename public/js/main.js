@@ -136,6 +136,8 @@ function connect() {
   es.addEventListener('log', (e) => UI.onLog(JSON.parse(e.data)));
   es.addEventListener('agent', (e) => UI.onAgentChanged(JSON.parse(e.data).id));
   es.addEventListener('newspaper', (e) => { const p = JSON.parse(e.data); UI.onNewspaper(p); Immerse.onNewspaper(p); });
+  // 管理员在面板里重启服务器：几秒后 EventSource 会自动重连
+  es.addEventListener('restart', () => UI.toast('🔄 服务器正在重启，几秒后自动重连…', 6000));
   es.addEventListener('vfx', (e) => { const v = JSON.parse(e.data); if ((v.region || 'town') === app.view) renderer.addVfx(v); });
   es.addEventListener('regions', (e) => {
     app.regionsOpen = JSON.parse(e.data);

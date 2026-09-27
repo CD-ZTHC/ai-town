@@ -5,13 +5,13 @@
   "type": "module",
   "description": "云溪镇 · 由 LLM 驱动的生成式智能体小镇",
   "scripts": {
-    "start": "node server/index.js",
+    "start": "node server/main.js",
     "dev": "node --watch server/index.js",
     "test": "node --test test/*.test.js",
     "check": "node tools/check.js"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "optionalDependencies": {
     "@earendil-works/pi-ai": "0.87.1"

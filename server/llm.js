@@ -1,38 +1,46 @@
 // LLM 客户端：并发队列、重试、模型分档与自动校正、JSON 提取、统计。发请求交给 provider（见 llm-providers.js）
 import fs from 'node:fs';
 import { createProvider } from './llm-providers.js';
+import { get as setting, env as settingsEnv } from './settings/index.js';
 
-let provider = createProvider(process.env.LLM_PROVIDER || 'openai');
-const CONCURRENCY = Number(process.env.LLM_CONCURRENCY || 4);
-const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 150_000);
+// provider 按「服务类型 + 地址 + 密钥」缓存：面板里改了地址或密钥，下一次调用就换用新的
+let injected = null; // 测试或启动时注入的 provider（setProvider）
+let cached = null;
+function currentProvider() {
+  if (injected) return injected;
+  const sig = JSON.stringify([setting('LLM_PROVIDER'), setting('BASE_URL'), setting('API_KEY')]);
+  if (cached?.sig !== sig) {
+    cached = { sig, p: createProvider(setting('LLM_PROVIDER'), settingsEnv()) };
+    checked.clear();
+  }
+  return cached.p;
+}
+const concurrency = () => setting('LLM_CONCURRENCY');
+const timeoutMsSetting = () => setting('LLM_TIMEOUT_MS');
+// 每日令牌预算（0 = 不限）。公网模式默认 300 万，超出后世界退化为规则驱动，玩家交互暂停
+const dailyBudget = () => setting('LLM_DAILY_TOKENS');
 
-const PUBLIC = process.env.PUBLIC_MODE === '1' || process.env.PUBLIC_MODE === 'true';
-// 每日令牌预算（0 = 不限）。公网模式默认 300 万，超出后小镇退化为规则驱动，玩家交互暂停
-const DAILY_BUDGET = Number(process.env.LLM_DAILY_TOKENS ?? (PUBLIC ? 3_000_000 : 0));
-
-// 模型分档：fast 用于高频的小任务（独白、审核），smart 用于低频的重要任务（日报，以及之后的叙事导演、世界架构师）。
+// 模型分档：fast 用于高频的小任务（独白、审核），smart 用于低频的重要任务（日报、叙事导演、世界架构师）。
 // 未配置的档位回落到 MODEL，因此只配置 MODEL 时行为与之前完全一致。
-const models = {
-  default: process.env.MODEL || '',
-  fast: process.env.MODEL_FAST || '',
-  smart: process.env.MODEL_SMART || '',
-};
-const modelFor = (tier) => models[tier] || models.default;
+// fixes：模型名写错时自动纠正的结果（想要的名字 → 实际使用的名字）
+const fixes = {};
+const checked = new Set();
+const wanted = (tier) => (tier === 'fast' ? setting('MODEL_FAST') : tier === 'smart' ? setting('MODEL_SMART') : '') || setting('MODEL');
+const modelFor = (tier) => { const w = wanted(tier); return fixes[w] || w; };
 // JSON 模式（response_format: json_object）：大幅减少模型输出不合法 JSON 的情况。
 // 网关不支持时会报错，此时自动关闭并重试；也可以用 LLM_JSON_MODE=0 手动关闭。
-let jsonMode = process.env.LLM_JSON_MODE !== '0';
+let jsonMode = setting('LLM_JSON_MODE');
 export function setJsonMode(on) { jsonMode = Boolean(on); }
 // 结构化输出（response_format: json_schema）：调用方给了 schema 且 LLM_JSON_SCHEMA=1 时使用；
 // 网关不支持时自动退回普通 JSON 模式
-let schemaMode = process.env.LLM_JSON_SCHEMA === '1';
+let schemaMode = setting('LLM_JSON_SCHEMA');
 export function setJsonSchema(on) { schemaMode = Boolean(on); }
-let modelChecked = false;
 const listeners = new Set();
 
 export const stats = {
-  enabled: provider.enabled,
-  model: models.default,
-  models: { fast: modelFor('fast'), smart: modelFor('smart') },
+  get enabled() { return Boolean(mock) || currentProvider().enabled; },
+  get model() { return modelFor('default'); },
+  get models() { return { fast: modelFor('fast'), smart: modelFor('smart') }; },
   calls: 0,
   ok: 0,
   errors: 0,
@@ -44,7 +52,7 @@ export const stats = {
   lastError: '',
   dayKey: '',
   dayTokens: 0,
-  dailyBudget: DAILY_BUDGET,
+  get dailyBudget() { return dailyBudget(); },
   recent: [], // {label, agent, ms, ok, at}
   byLabel: {}, // 按模块统计：{ 规划一天: { calls, fails, tokens, ms } }
   active: [], // {id, label, agent, since}
@@ -69,32 +77,32 @@ function rollDay() {
 }
 export function budgetLeft() {
   rollDay();
-  return DAILY_BUDGET ? Math.max(0, DAILY_BUDGET - stats.dayTokens) : Infinity;
+  const b = dailyBudget();
+  return b ? Math.max(0, b - stats.dayTokens) : Infinity;
 }
 export const queueSize = () => queue.length + stats.inflight;
 
 async function ensureModel() {
-  if (modelChecked || !stats.enabled) return;
-  modelChecked = true;
+  const provider = currentProvider();
+  const want = [...new Set(['default', 'fast', 'smart'].map(wanted))].filter((w) => w && !checked.has(w));
+  if (!want.length || !stats.enabled) return;
+  for (const w of want) checked.add(w);
   try {
     const ids = provider.listModels ? await provider.listModels() : [];
-    for (const tier of Object.keys(models)) {
-      const want = models[tier];
-      if (!want || !ids.length || ids.includes(want)) continue;
+    for (const w of want) {
+      if (!ids.length || ids.includes(w)) continue;
       // 容错：尝试找到字符组成最相近的模型（例如 glm-5.3-xflash -> glm-5.3-flashx）
       const score = (id) => {
-        const a = [...want].sort().join('');
+        const a = [...w].sort().join('');
         const b = [...id].sort().join('');
         let same = 0;
         for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] === b[i]) same++;
         return same - Math.abs(a.length - b.length) * 2;
       };
       const best = ids.slice().sort((x, y) => score(y) - score(x))[0];
-      console.warn(`[llm] 模型 "${want}"（${tier}）不可用，自动改用 "${best}"（可用: ${ids.join(', ')}）`);
-      models[tier] = best;
+      console.warn(`[llm] 模型 "${w}" 不可用，自动改用 "${best}"（可用: ${ids.join(', ')}）`);
+      fixes[w] = best;
     }
-    stats.model = models.default;
-    stats.models = { fast: modelFor('fast'), smart: modelFor('smart') };
   } catch (e) {
     console.warn('[llm] 无法获取模型列表：', e.message);
   }
@@ -106,7 +114,7 @@ let penalty = 0; // 触发限流后临时降低并发
 let cooldownUntil = 0;
 let backoff = 0;
 let pumpTimer = null;
-const limit = () => Math.max(1, CONCURRENCY - penalty);
+const limit = () => Math.max(1, concurrency() - penalty);
 export const isBusy = () => queue.length > 1 || stats.inflight >= limit() || Date.now() < cooldownUntil;
 function pump() {
   const wait = cooldownUntil - Date.now();
@@ -137,7 +145,7 @@ function enqueue(fn, priority = false) {
 }
 
 let seq = 0;
-async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = TIMEOUT_MS, attempts = 3, tier = 'default', json = false, schema = null, model: override = '' }) {
+async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = timeoutMsSetting(), attempts = 3, tier = 'default', json = false, schema = null, model: override = '' }) {
   await ensureModel();
   // override：进化引擎的评审 Agent 可以指定另一个模型（EVOLVE_REVIEW_MODEL）
   const model = override || modelFor(tier);
@@ -155,7 +163,7 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
         const withSchema = Boolean(schema && json && jsonMode && schemaMode);
-        const { content, usage, finishReason } = await provider.complete({ model, messages, temperature, maxTokens, json: json && jsonMode, ...(withSchema ? { schema } : {}), signal: ctrl.signal });
+        const { content, usage, finishReason } = await currentProvider().complete({ model, messages, temperature, maxTokens, json: json && jsonMode, ...(withSchema ? { schema } : {}), signal: ctrl.signal });
         stats.promptTokens += usage.prompt;
         stats.completionTokens += usage.completion;
         rollDay();
@@ -188,7 +196,7 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
         if (/速率|频率|rate.?limit|429|too many|concurren|并发/i.test(e.message)) {
           // 限流：全局冷却 + 指数退避 + 降低并发
           backoff = Math.min(5, backoff + 1);
-          penalty = Math.min(CONCURRENCY - 1, penalty + 1);
+          penalty = Math.min(concurrency() - 1, penalty + 1);
           cooldownUntil = Math.max(cooldownUntil, Date.now() + 4000 * 2 ** (backoff - 1));
           stats.lastError = `限流中，${Math.round((cooldownUntil - Date.now()) / 1000)}s 后重试`;
           continue;
@@ -223,14 +231,12 @@ function pushRecent(r) {
 let mock = null;
 export function setMock(fn) {
   mock = fn || null;
-  stats.enabled = Boolean(mock) || provider.enabled;
 }
 
 /** 换用另一个 provider（测试，或在启动时接入其他 SDK）；模型名会重新校验 */
 export function setProvider(p) {
-  provider = p;
-  modelChecked = false;
-  stats.enabled = Boolean(mock) || provider.enabled;
+  injected = p || null;
+  checked.clear();
 }
 
 export function chat(messages, opts = {}) {
@@ -243,7 +249,7 @@ export function chat(messages, opts = {}) {
 
 // 录制真实回复，供无头回放测试使用：LLM_RECORD=test/fixtures/llm/responses.json mise run start
 // 按模块（label）分组，每个模块保留最近 RECORD_KEEP 条；能解析成 JSON 的存成对象，方便人工审阅与修改
-const RECORD_FILE = process.env.LLM_RECORD || '';
+const RECORD_FILE = setting('LLM_RECORD');
 const RECORD_KEEP = 4;
 function record(label, content) {
   try {

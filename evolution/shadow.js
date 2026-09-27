@@ -5,6 +5,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { ROOT } from './common.js';
 import { activeDir } from '../server/timelines.js';
+import { get as setting } from '../server/settings/index.js';
 
 const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
 
@@ -36,7 +37,7 @@ function runOne(P, job, timeoutMs) {
 /**
  * candidate：{ key, dir }。返回 { passed, reason, metrics: { base, trial } }
  */
-export async function runShadow(P, candidate, { hours = Number(process.env.EVOLVE_SHADOW_HOURS || 6), timeoutMs = 180_000 } = {}) {
+export async function runShadow(P, candidate, { hours = setting('EVOLVE_SHADOW_HOURS'), timeoutMs = 180_000 } = {}) {
   const root = path.join(P.shadow, candidate.key);
   fs.rmSync(root, { recursive: true, force: true });
   let saveFile = null;

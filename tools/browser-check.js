@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { SETTINGS } from '../server/settings/schema.js';
 
 const args = process.argv.slice(2);
 const opt = (k, d) => (args.includes(k) ? args[args.indexOf(k) + 1] : d);
@@ -36,7 +37,8 @@ async function waitFor(fn, ms, what) {
 // 1. 小镇服务器（临时存档、不连模型）
 const port = 3900 + Math.floor(Math.random() * 90);
 const env = { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'town-bc-')) };
-for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'LLM_PROVIDER', 'EMBED_MODEL', 'PUBLIC_MODE']) delete env[k];
+// 不受开发机 .env 的影响：只保留上面的几项
+for (const k of Object.keys(SETTINGS)) if (!['PORT', 'HOST', 'DATA_DIR'].includes(k)) delete env[k];
 const server = spawn(process.execPath, ['server/index.js'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
 procs.push(server);
 let serverLog = '';
@@ -163,6 +165,13 @@ await step('13-play', async () => {
   await waitFor(() => evaluate(`document.body.dataset.mode === 'play'`), 10000, '游戏模式');
   await key('w');
 }, { wait: 1500 });
+await step('14-admin-settings', async () => {
+  await send('Page.navigate', { url: `${base}/admin/#settings` });
+  await waitFor(() => evaluate(`document.querySelectorAll('.setting').length > 20`), 10000, '管理面板 · 设置');
+  // 改一项，保存按钮可用
+  await evaluate(`(() => { const i = document.querySelector('[data-k="MAX_CLIENTS"]'); i.value = '150'; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await waitFor(() => evaluate(`!document.querySelector('#s-save').disabled`), 3000, '保存按钮');
+});
 
 ws.close();
 cleanup();

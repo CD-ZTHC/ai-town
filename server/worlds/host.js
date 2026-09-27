@@ -6,13 +6,13 @@ export class WorldHost {
    * @param {string} o.id 世界 id
    * @param {() => import('../sim.js').Town} o.makeTown 按当前时间线创建 Town
    * @param {(town) => void} [o.onWire] 新 Town 接线时的额外设置（例如投票需要管理员终审）
-   * @param {number} [o.idlePauseSec] 无人观看多久后休眠（0 = 不休眠）
+   * @param {number|(() => number)} [o.idlePauseSec] 无人观看多久后休眠（0 = 不休眠；函数则每次读取当前设置）
    */
   constructor({ id, makeTown, onWire = null, idlePauseSec = 0, now = () => Date.now() }) {
     this.id = id;
     this.makeTown = makeTown;
     this.onWire = onWire;
-    this.idlePauseSec = idlePauseSec;
+    this._idle = idlePauseSec;
     this.now = now;
     this.clients = new Set(); // { send(event, data), ip }
     this.clientsPerIp = new Map();
@@ -20,6 +20,8 @@ export class WorldHost {
     this.town = null;
     this.replace(makeTown(), { initial: true });
   }
+
+  get idlePauseSec() { return typeof this._idle === 'function' ? this._idle() : this._idle; }
 
   broadcast(event, data) {
     const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;

@@ -1,27 +1,35 @@
 // 公网部署防护：配置、权限、限流、内容审核
 import crypto from 'node:crypto';
 import * as llm from './llm.js';
+import { get as setting } from './settings/index.js';
 
-const env = process.env;
-const num = (v, d) => (v === undefined || v === '' ? d : Number(v));
-
-export const config = {
-  publicMode: env.PUBLIC_MODE === '1' || env.PUBLIC_MODE === 'true',
-  adminToken: env.ADMIN_TOKEN || '',
+// 每个字段都读设置中心的当前值（live 类设置保存后立即生效）；测试可以直接赋值覆盖（例如 config.publicMode = true）
+const FIELDS = {
+  publicMode: 'PUBLIC_MODE',
+  adminToken: 'ADMIN_TOKEN',
   // 可信反向代理层数：1 = 前面有一层 Caddy/Nginx。从右往左数取客户端 IP，避免访客伪造 X-Forwarded-For
-  trustProxy: env.TRUST_PROXY === 'true' ? 1 : Math.max(0, Math.floor(num(env.TRUST_PROXY, 0))),
-  allowInteraction: env.ALLOW_INTERACTION !== '0',
-  maxClients: num(env.MAX_CLIENTS, 200),
-  maxClientsPerIp: num(env.MAX_CLIENTS_PER_IP, 6),
-  idlePauseSec: num(env.IDLE_PAUSE_SEC, 90),
-  chatPerHour: num(env.RATE_CHAT_PER_HOUR, 30),
-  eventPerHour: num(env.RATE_EVENT_PER_HOUR, 3),
-  eventGlobalCooldownSec: num(env.EVENT_GLOBAL_COOLDOWN_SEC, 120),
-  weatherCooldownSec: num(env.WEATHER_COOLDOWN_SEC, 60),
-  moderateEvents: (env.MODERATE_EVENTS || 'llm').toLowerCase(), // llm | keyword
-  moderateChat: (env.MODERATE_CHAT || 'keyword').toLowerCase(),
-  maxQueueForUser: num(env.MAX_QUEUE_FOR_USER, 6),
+  trustProxy: 'TRUST_PROXY',
+  allowInteraction: 'ALLOW_INTERACTION',
+  maxClients: 'MAX_CLIENTS',
+  maxClientsPerIp: 'MAX_CLIENTS_PER_IP',
+  idlePauseSec: 'IDLE_PAUSE_SEC',
+  chatPerHour: 'RATE_CHAT_PER_HOUR',
+  eventPerHour: 'RATE_EVENT_PER_HOUR',
+  eventGlobalCooldownSec: 'EVENT_GLOBAL_COOLDOWN_SEC',
+  weatherCooldownSec: 'WEATHER_COOLDOWN_SEC',
+  moderateEvents: 'MODERATE_EVENTS', // llm | keyword
+  moderateChat: 'MODERATE_CHAT',
+  maxQueueForUser: 'MAX_QUEUE_FOR_USER',
 };
+const overrides = {};
+export const config = {};
+for (const [field, key] of Object.entries(FIELDS)) {
+  Object.defineProperty(config, field, {
+    enumerable: true,
+    get: () => (Object.hasOwn(overrides, field) ? overrides[field] : setting(key)),
+    set: (v) => { if (v === undefined) delete overrides[field]; else overrides[field] = v; },
+  });
+}
 
 // ---------- 身份与权限 ----------
 export function clientIp(req) {
@@ -51,7 +59,10 @@ export function visitorId(req, ip) {
 
 // ---------- 限流：滑动窗口 ----------
 export class Limiter {
-  constructor(max, windowMs) { this.max = max; this.windowMs = windowMs; this.hits = new Map(); }
+  /** max / windowMs 可以是函数：每次检查时读取当前设置 */
+  constructor(max, windowMs) { this._max = max; this._window = windowMs; this.hits = new Map(); }
+  get max() { return typeof this._max === 'function' ? this._max() : this._max; }
+  get windowMs() { return typeof this._window === 'function' ? this._window() : this._window; }
   check(key, take = true) {
     const now = Date.now();
     const arr = (this.hits.get(key) || []).filter((t) => now - t < this.windowMs);
@@ -69,12 +80,12 @@ export class Limiter {
   }
 }
 export const limits = {
-  chat: new Limiter(config.chatPerHour, 3600_000),
+  chat: new Limiter(() => config.chatPerHour, 3600_000),
   chatBurst: new Limiter(4, 60_000),
-  event: new Limiter(config.eventPerHour, 3600_000),
-  eventGlobal: new Limiter(1, config.eventGlobalCooldownSec * 1000),
-  eventAttempt: new Limiter(Math.max(6, config.eventPerHour * 3), 3600_000), // 含被审核拒绝的尝试，防止刷审核调用
-  weather: new Limiter(1, config.weatherCooldownSec * 1000),
+  event: new Limiter(() => config.eventPerHour, 3600_000),
+  eventGlobal: new Limiter(1, () => config.eventGlobalCooldownSec * 1000),
+  eventAttempt: new Limiter(() => Math.max(6, config.eventPerHour * 3), 3600_000), // 含被审核拒绝的尝试，防止刷审核调用
+  weather: new Limiter(1, () => config.weatherCooldownSec * 1000),
   vote: new Limiter(20, 3600_000),
   proposal: new Limiter(2, 3600_000),
   avatar: new Limiter(6, 3600_000), // 现身（改名、重新现身）

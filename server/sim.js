@@ -34,8 +34,8 @@ import { Social } from './sim/social.js';
 import { Views } from './sim/views.js';
 import { Persistence } from './sim/persistence.js';
 import { Metrics } from './sim/metrics.js';
+import { get as setting } from './settings/index.js';
 
-const PACE_QUEUE = Number(process.env.PACE_QUEUE || 6); // 模型排队超过这个数时开始放慢时间
 const MAX_STRUCTURES = 30;
 
 export class Town extends EventEmitter {
@@ -46,10 +46,10 @@ export class Town extends EventEmitter {
    */
   constructor(opts = {}) {
     super();
-    this.dataDir = path.resolve(opts.dataDir || process.env.DATA_DIR || 'data');
+    this.dataDir = path.resolve(opts.dataDir || setting('DATA_DIR'));
     this.saveFile = path.join(this.dataDir, 'save.json');
     this.instantTalk = Boolean(opts.instantTalk);
-    this.pacing = opts.pacing ?? process.env.PACE_WITH_LLM !== '0';
+    this.pacing = opts.pacing ?? setting('PACE_WITH_LLM');
     this.queueSize = opts.queueSize || null; // 测试可注入
     this.journal = new OpJournal(path.join(this.dataDir, 'ops.jsonl'));
     // 可选的 embedding（EMBED_MODEL）：记忆检索参考语义相似度；向量缓存在 <数据目录>/embeddings.db
@@ -61,7 +61,7 @@ export class Town extends EventEmitter {
     const baseErrs = validateSpec(defaultSpec());
     if (baseErrs.length) throw new Error(`默认世界规格不合法：${baseErrs.join('；')}`);
     // Mod 叠加在默认规格之上、存档之下（MODS=a,b 或 opts.mods）
-    const modNames = opts.mods ?? String(process.env.MODS || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const modNames = opts.mods ?? setting('MODS');
     const m = applyMods(defaultSpec(), modNames, opts.modsDir);
     for (const k of m.skipped) console.warn(`[mod] ${k.mod}${k.op ? ` / ${k.op}` : ''}：${k.error}`);
     if (m.loaded.length) console.log(`[mod] 已加载：${m.loaded.map((x) => `${x.name}（${x.ops} 项）`).join('、')}`);
@@ -226,7 +226,7 @@ export class Town extends EventEmitter {
       this.paced = 1;
       if (this.pacing && llm.stats.enabled && !this.nightSkip) {
         const q = (this.queueSize || llm.queueSize)();
-        const cap = PACE_QUEUE;
+        const cap = setting('PACE_QUEUE'); // 模型排队超过这个数时开始放慢时间
         if (q > cap) this.paced = Math.max(0.25, cap / q);
       }
       const dtGame = dtReal * (this.nightSkip ? Math.max(this.speed, 15) : this.speed * this.paced);

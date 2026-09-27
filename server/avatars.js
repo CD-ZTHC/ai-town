@@ -1,8 +1,8 @@
 // 访客化身（设计文档 P6）：访客可以用一个名字在小镇里现身、走到公共地点；居民看得见，也会记住名字。
 // 化身只存在于内存（不进存档），长时间不操作会自动离开。每个 IP 同时最多一个化身，全镇最多 MAX 个。
 import { findPath } from './world.js';
+import { get as setting } from './settings/index.js';
 
-const MAX = Number(process.env.AVATAR_MAX || 8);
 const IDLE_MS = 20 * 60_000; // 20 分钟不操作就离开
 const MOVE_CD_MS = 3000;
 const GOTO_CD_MS = 250; // 游戏模式里点地 / 键盘走路，间隔可以短一些
@@ -27,7 +27,7 @@ export class AvatarSystem {
     if (town.agents.some((a) => a.name === name) || this.list.some((v) => v.name === name && v.vid !== vid && v.ip !== ip)) throw err(409, '这个名字已经有人用了');
     const old = this.mine(vid) || this.list.find((v) => v.ip === ip);
     if (old) this.remove(old, false);
-    if (this.list.length >= MAX) throw err(429, `小镇里的访客已经满了（最多 ${MAX} 位），稍后再来吧`);
+    if (this.list.length >= setting('AVATAR_MAX')) throw err(429, `小镇里的访客已经满了（最多 ${setting('AVATAR_MAX')} 位），稍后再来吧`);
     const spots = town.findLocation('square')?.spots || [];
     const s = spots.length ? spots[Math.floor(Math.random() * spots.length)] : town.locCenter('square') || { x: 50, y: 34 };
     const v = {

@@ -3,6 +3,7 @@
 // - AI 插件（plugins/evolved/）：见 evolved.js，数据类以规格覆盖层叠加，代码类在沙箱子进程里运行
 import { builtins } from './builtin.js';
 import { registerEffect, registerExprFn } from './registry.js';
+import { get as setting } from '../server/settings/index.js';
 
 export class PluginHost {
   /**
@@ -12,7 +13,7 @@ export class PluginHost {
   constructor(town, opts = {}) {
     this.town = town;
     this.list = [];
-    const disable = new Set(opts.disable ?? String(process.env.PLUGINS_DISABLE || '').split(',').map((s) => s.trim()).filter(Boolean));
+    const disable = new Set(opts.disable ?? setting('PLUGINS_DISABLE'));
     for (const b of builtins) {
       if (disable.has(b.id)) continue;
       b.mod.setup(town, this.api(b.id));

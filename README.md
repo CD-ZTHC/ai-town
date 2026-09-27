@@ -7,7 +7,7 @@
 
 ```bash
 mise install        # 安装 Node 26（见 mise.toml）
-mise run start      # 启动，打开 http://localhost:3000
+mise run start      # 启动，打开 http://localhost:3000（管理面板在 /admin）
 mise run dev        # 开发模式（改动 server/ 自动重启）
 mise run reset      # 清空存档，从第一天重新开始
 mise run public     # 以公网模式启动（需要 ADMIN_TOKEN）
@@ -19,41 +19,20 @@ mise run evolve     # 让进化引擎处理一个需求（需求文档 → 评�
 mise run evolve:rfc # 把 AI 心愿单里的能力缺口整理成给人看的需求文档（docs/rfcs/）
 mise run core:lock  # 人工修改冻结区之后更新 core.lock
 mise run manifest   # 重新生成能力清单 docs/capabilities.md
+mise run settings:doc  # 由设置声明表重新生成 docs/settings.md
 mise run browser-check  # 前端改动后：无头 Chrome 打开各个面板与模式，检查控制台错误并截图
 mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实调用一次（默认 token 上限 20 万）
 ```
 
-LLM 配置读取 `.env`（OpenAI 兼容接口）：
+### 设置
 
-| 变量 | 说明 |
-| --- | --- |
-| `BASE_URL` / `API_KEY` / `MODEL` | 接口地址、密钥、模型名（模型名写错时会自动匹配最接近的可用模型） |
-| `MODEL_FAST` / `MODEL_SMART` | 可选的模型分档：高频小任务用快模型，日报等重要任务用强模型（例如 `glm-5.3-flash` / `glm-5.3`），不填则都用 `MODEL` |
-| `STORY_RATING` | 内容分级：`cozy`（默认）/ `adventure` / `epic`；决定异界生物的危险程度与审核尺度 |
-| `STORYTELLER` | 叙事者：`voyage`（默认，每季自动上演一个剧情弧）/ `gentle`（以日常为主）/ `chaos` |
-| `LLM_CONCURRENCY` | 并发请求数，默认 4；遇到限流会自动退避并降低并发 |
-| `LLM_PROVIDER` | 模型服务：`openai`（默认，OpenAI 兼容接口，零依赖）或 `pi`（经 [pi-ai](https://github.com/earendil-works/pi) 接入 Anthropic、Gemini、DeepSeek、OpenRouter 等 40 多家，需要先 `npm install`）。`pi` 模式下模型写成 `服务商/模型`（如 `anthropic/claude-sonnet-5`，密钥读 `ANTHROPIC_API_KEY` 等），不带前缀的仍走 `BASE_URL` 网关，各档可以混用；Docker 用 `--build-arg WITH_PI=1` 构建 |
-| `LLM_RECORD` | 设为一个文件路径时，把真实模型的回复按模块录制下来，用来更新回放测试的 `test/fixtures/llm/responses.json` |
-| `EMBED_MODEL` | 可选：embedding 模型名（OpenAI 兼容的 `/embeddings`，默认沿用 `BASE_URL` / `API_KEY`，也可用 `EMBED_BASE_URL` / `EMBED_API_KEY` 单独指定）。配置后记忆检索同时参考语义相似度，向量缓存在 `data/embeddings.db`（`node:sqlite`）；`EMBED_TIMEOUT_MS`（默认 4000）内没算好就先只用双字组 |
-| `LLM_JSON_SCHEMA` | 设为 `1` 开启结构化输出：世界架构师用 `json_schema` 约束补丁格式（非严格模式），减少复杂补丁的格式错误；网关不支持时自动退回普通 JSON 模式 |
-| `LLM_JSON_MODE` | 默认开启：请求模型以 JSON 模式输出（`response_format: json_object`），网关不支持时自动关闭；设为 `0` 手动关闭 |
-| `NODE_USE_ENV_PROXY` | 服务器需要经由 HTTPS 代理访问模型时设为 `1`（Node ≥ 22.21），否则 Node 内置的 fetch 不会读取 `HTTPS_PROXY` |
-| `PACE_WITH_LLM` / `PACE_QUEUE` | 默认开启：模型排队超过 `PACE_QUEUE`（默认 6）个请求时按比例放慢时间（最低 1/4），避免游戏时间跑在思考前面；设为 `0` 关闭 |
-| `MODS` | 要加载的 Mod，逗号分隔（见 [spec/mods](spec/mods/README.md)） |
-| `AVATAR_MAX` | 同时在小镇里现身的访客上限，默认 8 |
-| `EVOLVE` | 自主进化：`off`（默认）/ `suggest`（进化引擎照常工作，但插件超时不交给 AI 裁决，只等管理员）/ `auto`（完全自主） |
-| `EVOLVE_BUDGET` | 进化引擎每天的 token 上限，默认 200000，`0` 为不限制 |
-| `EVOLVE_PUBLIC_DEPLOY` | 公网模式下允许 AI 裁决官自动上线的插件：`off` / `data`（只允许数据与规则类）/ `all`（默认，含代码插件） |
-| `EVOLVE_SANDBOX_NET` | 部署方已在系统层面给沙箱进程断网时设为 `isolated`（公网 + `all` 时未设置会给出警告） |
-| `EVOLVE_REVIEW_MODEL` / `EVOLVE_REVIEW_BASE_URL` / `EVOLVE_REVIEW_API_KEY` | 评审 Agent 使用的模型（可以是另一家服务）；建议与实施用的模型不同 |
-| `EVOLVE_INTERVAL_MIN` / `EVOLVE_SHADOW_HOURS` / `EVOLVE_MAX_ACTIVE` / `EVOLVE_RETIRE_DAYS` / `EVOLVE_IDEAS` | 两个需求之间的间隔（默认 20 分钟）、影子试运行的游戏小时数（默认 6）、同时运行的 AI 插件上限（默认 20）、多少游戏日没被用到就提议退役（默认 30）、没有需求时是否让引擎自己想点子（默认开启，`0` 关闭） |
-| `DECISION_WINDOW_MINOR_H` / `DECISION_WINDOW_MAJOR_H` | 管理员终审窗口（真实小时），默认 6 / 24；超时后由 AI 裁决官决定 |
-| `PLUGINS_DISABLE` | 不加载的内置插件，逗号分隔（例如 `construction`，排查用） |
-| `DATA_DIR` | 存档目录，默认 `data` |
-| `PORT` / `HOST` | 端口（默认 3000）/ 监听地址 |
-| 公网相关 | `PUBLIC_MODE`、`ADMIN_TOKEN`、`TRUST_PROXY`、`LLM_DAILY_TOKENS` 等，完整列表见 `.env.example` |
+所有设置在**管理面板 `/admin` → 设置**里修改：按组编辑，保存前校验取值范围，模型相关的改动可以先「测试连接」，每次保存生成一个版本（可以查看历史、一键恢复）。只有 6 项「启动必需」的设置必须用环境变量（`PORT`、`HOST`、`DATA_DIR`、`PUBLIC_MODE`、`TRUST_PROXY`、`ADMIN_TOKEN`，见 `.env.example`）。
 
-默认零 npm 依赖（pi-ai 是可选依赖，只在 `LLM_PROVIDER=pi` 时加载）：服务端只用 Node 内置模块，前端是原生 Canvas + ES Modules，所有像素美术均为程序化生成。
+- 值的来源：**环境变量 > 面板保存的值（`data/settings.json`）> 默认值**。已有的 `.env` 升级后行为不变；被环境变量设置的项在面板上显示为锁定。
+- 大部分设置保存后立即生效；少数（例如服务类型、embedding）需要重启——面板顶部会提示，点「立即重启」即可。服务由守护进程 `server/main.js` 拉起：新设置如果连续两次启动失败，会自动回退到上一个正常的版本。
+- 全部设置项、默认值与取值范围见 [docs/settings.md](docs/settings.md)（由 `mise run settings:doc` 从声明表生成）。
+
+依赖保持很少：`hono`（路由与中间件）、`zod`（校验）；账号与账本用 Node 内置的 `node:sqlite`。pi-ai 是可选依赖，只在 `LLM_PROVIDER=pi` 时加载。前端是原生 Canvas + ES Modules，没有构建步骤，所有像素美术均为程序化生成。
 
 ## 发布到个人网站
 
@@ -62,7 +41,7 @@ LLM 配置读取 `.env`（OpenAI 兼容接口）：
 **1. 准备配置**
 
 ```bash
-cp .env.example .env      # 填入 BASE_URL / API_KEY / MODEL
+cp .env.example .env      # 启动必需的几项；模型地址与密钥也可以之后在 /admin 里填
 mise run token            # 生成管理员令牌，把输出的 ADMIN_TOKEN=... 写进 .env
 ```
 

@@ -3,11 +3,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { get as setting } from '../server/settings/index.js';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export function paths(opts = {}) {
-  const data = path.resolve(opts.data || process.env.DATA_DIR || path.join(ROOT, 'data'));
+  const data = path.resolve(opts.data || path.resolve(ROOT, setting('DATA_DIR')));
   const evo = path.resolve(opts.evo || path.join(data, 'evolution'));
   return {
     data, evo,
@@ -61,7 +62,7 @@ export function readLedger(P, n = 60) {
 // ---------- 预算 ----------
 export class Budget {
   /** limit：每天的 token 上限（0 = 不限） */
-  constructor(P, limit = Number(process.env.EVOLVE_BUDGET ?? 200_000)) {
+  constructor(P, limit = setting('EVOLVE_BUDGET')) {
     this.P = P;
     this.limit = Number.isFinite(limit) && limit > 0 ? limit : 0;
   }

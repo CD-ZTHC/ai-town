@@ -10,7 +10,7 @@ User=aitown
 WorkingDirectory=/opt/ai-town
 EnvironmentFile=/opt/ai-town/.env
 Environment=PUBLIC_MODE=1 TRUST_PROXY=1 HOST=127.0.0.1 PORT=3000
-ExecStart=/usr/bin/node server/index.js
+ExecStart=/usr/bin/node server/main.js
 Restart=on-failure
 RestartSec=5
 # 加固

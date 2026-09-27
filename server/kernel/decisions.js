@@ -4,12 +4,14 @@
 // 硬规则不依赖模型：硬闸门只能驳回、明确民意不能被推翻、高风险需要两个角色都同意、低置信度延期（最多一次）、
 // 模型不可用时走确定性兜底。所有裁决公示在动态栏，管理员事后可以撤销。
 import * as llm from '../llm.js';
+import { get as setting } from '../settings/index.js';
 
 const H = 3600_000;
+/** 终审窗口（毫秒）：每次读取当前设置 */
 export const WINDOWS = {
-  low: Number(process.env.DECISION_WINDOW_MINOR_H || 6) * H,
-  medium: Number(process.env.DECISION_WINDOW_MINOR_H || 6) * H,
-  high: Number(process.env.DECISION_WINDOW_MAJOR_H || 24) * H,
+  get low() { return setting('DECISION_WINDOW_MINOR_H') * H; },
+  get medium() { return setting('DECISION_WINDOW_MINOR_H') * H; },
+  get high() { return setting('DECISION_WINDOW_MAJOR_H') * H; },
 };
 const CONFIDENCE = 0.6;
 const CONFIDENCE_STRICT = 0.75;

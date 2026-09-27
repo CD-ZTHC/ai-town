@@ -2,11 +2,12 @@
 // 避免「同一个模型写、同一个模型审」的共同盲区。所有调用计入进化预算（EVOLVE_BUDGET，0 为不限）。
 import * as base from '../server/llm.js';
 import { BudgetExceeded } from './common.js';
+import { get as setting } from '../server/settings/index.js';
 
 const REVIEW = {
-  url: (process.env.EVOLVE_REVIEW_BASE_URL || '').replace(/\/+$/, ''),
-  key: process.env.EVOLVE_REVIEW_API_KEY || '',
-  model: process.env.EVOLVE_REVIEW_MODEL || '',
+  url: setting('EVOLVE_REVIEW_BASE_URL').replace(/\/+$/, ''),
+  key: setting('EVOLVE_REVIEW_API_KEY'),
+  model: setting('EVOLVE_REVIEW_MODEL'),
 };
 
 export function reviewInfo() {

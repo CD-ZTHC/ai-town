@@ -9,12 +9,13 @@ import { paths, readJSON, setEngine, Budget, ledger, str } from './common.js';
 import { makeLLM, reviewInfo } from './llm.js';
 import { discover } from './discover.js';
 import { runJob } from './pipeline.js';
+import { get as setting } from '../server/settings/index.js';
 
 const P = paths();
 const once = process.argv.includes('--once');
-const MODE = once ? 'auto' : process.env.EVOLVE || 'off';
-const INTERVAL = Number(process.env.EVOLVE_INTERVAL_MIN || 20) * 60_000;
-const PACE_QUEUE = Number(process.env.PACE_QUEUE || 6);
+const MODE = once ? 'auto' : setting('EVOLVE');
+const INTERVAL = setting('EVOLVE_INTERVAL_MIN') * 60_000;
+const PACE_QUEUE = setting('PACE_QUEUE');
 const budget = new Budget(P);
 const llm = makeLLM(budget);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

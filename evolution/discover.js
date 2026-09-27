@@ -3,12 +3,13 @@
 //   2. AI 心愿单里的能力缺口（管理员「采纳」的优先，其次按出现次数；「忽略」的不做）
 //   3. 没有别的事可做时，每天最多一次，让引擎根据小镇近况自己想一个小功能（EVOLVE_IDEAS=0 关闭）
 import { readJSON, loadJobs, str } from './common.js';
+import { get as setting } from '../server/settings/index.js';
 
 const MAX_TRIES = 2;
 const MAX_PENDING = 2; // 等待裁决的插件太多时先不做新的
 const ADMIN_REASONS = /管理员/;
 
-export function discover(P, { now = Date.now(), ideas = process.env.EVOLVE_IDEAS !== '0' } = {}) {
+export function discover(P, { now = Date.now(), ideas = setting('EVOLVE_IDEAS') } = {}) {
   const jobs = loadJobs(P);
   if (jobs.some((j) => j.status === 'running')) return null;
   const reg = readJSON(P.registry, { plugins: {} }).plugins;

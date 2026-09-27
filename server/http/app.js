@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import { config, clientIp, isAdmin, visitorId, limits } from '../guard.js';
 import { HttpError, readJson, nodeLike } from './util.js';
 import { worldApi } from './world-api.js';
+import { adminApi } from './admin-api.js';
 
 export const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 export const SECURITY_HEADERS = {
@@ -25,8 +26,9 @@ const withHeaders = (res, headers) => { for (const [k, v] of Object.entries(head
  * @param {(c) => import('../worlds/host.js').WorldHost} o.hostFor 当前请求对应的世界
  * @param {string} o.publicDir 静态资源目录
  * @param {() => object} [o.engineStatus]
+ * @param {object} [o.admin] 管理员接口的依赖（见 admin-api.js）
  */
-export function createApp({ hostFor, publicDir, engineStatus }) {
+export function createApp({ hostFor, publicDir, engineStatus, admin = {} }) {
   const PUBLIC = path.resolve(publicDir);
   const app = new Hono();
 
@@ -37,7 +39,7 @@ export function createApp({ hostFor, publicDir, engineStatus }) {
       return withHeaders(res, { 'Cache-Control': 'no-store', ...SECURITY_HEADERS });
     }
     if (e.code === 'BUDGET') return withHeaders(c.json({ error: '今天小镇的 AI 额度已经用完了，明天再来吧 🌙' }, 429), SECURITY_HEADERS);
-    if (e.status) return withHeaders(c.json({ error: e.message }, e.status), SECURITY_HEADERS);
+    if (e.status) return withHeaders(c.json({ error: e.message, ...(e.errors ? { errors: e.errors } : {}) }, e.status), SECURITY_HEADERS);
     console.warn('[api]', c.req.path, e.message);
     // 不向客户端暴露上游错误细节
     return withHeaders(c.json({ error: '居民们一时没反应过来，请稍后再试' }, 502), SECURITY_HEADERS);
@@ -59,14 +61,15 @@ export function createApp({ hostFor, publicDir, engineStatus }) {
     c.set('vid', visitorId(req, ip));
     const r = limits.api.check(ip);
     if (!r.ok) throw new HttpError(429, '请求太频繁了', { retryAfter: r.retryAfter });
-    if (c.req.method === 'POST') c.set('body', await readJson(c.req));
-    else if (c.req.method !== 'GET' && c.req.method !== 'HEAD') throw new HttpError(405, '不支持的方法');
-    c.set('host', hostFor(c));
+    if (['POST', 'PUT', 'PATCH'].includes(c.req.method)) c.set('body', await readJson(c.req));
+    else if (!['GET', 'HEAD', 'DELETE'].includes(c.req.method)) throw new HttpError(405, '不支持的方法');
     await next();
     withHeaders(c.res, { 'Cache-Control': 'no-store', ...SECURITY_HEADERS });
   });
+  app.route('/api/admin', adminApi(admin));
+  app.use('/api/*', async (c, next) => { c.set('host', hostFor(c)); await next(); });
   app.route('/api', worldApi({ engineStatus, openStream }));
-  app.all('/api/*', () => { throw new HttpError(404, '不存在'); });
+  app.all('/api/*', (c) => { throw new HttpError(['GET', 'POST'].includes(c.req.method) ? 404 : 405, ['GET', 'POST'].includes(c.req.method) ? '不存在' : '不支持的方法'); });
 
   // ---------- 静态资源 ----------
   app.all('*', (c) => serveStatic(c, PUBLIC));

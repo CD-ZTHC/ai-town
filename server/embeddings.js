@@ -7,6 +7,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { env as settingsEnv } from './settings/index.js';
 
 const BATCH = 64; // 一次请求最多多少条文本
 const MAX_PER_CALL = 128; // 一次检索最多补算多少条记忆（其余下次再算）
@@ -76,7 +77,7 @@ async function openStore(dir) {
  * @param {string} [opts.dir] 缓存目录（不填只缓存在内存）
  * @param {(texts: string[], o?: {signal?: AbortSignal}) => Promise<{vectors: number[][], tokens?: number}>} [opts.embed] 测试用：注入假的 embedding
  */
-export function createEmbedder({ env = process.env, dir = null, embed = null } = {}) {
+export function createEmbedder({ env = settingsEnv(), dir = null, embed = null } = {}) {
   const model = env.EMBED_MODEL || '';
   const baseUrl = env.EMBED_BASE_URL || env.BASE_URL || '';
   const apiKey = env.EMBED_API_KEY || env.API_KEY || '';

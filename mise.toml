@@ -5,8 +5,8 @@ node = "26"
 _.file = ".env"
 
 [tasks.start]
-description = "启动 AI 小镇 (http://localhost:3000)"
-run = "node server/index.js"
+description = "启动 AI 小镇 (http://localhost:3000)；由守护进程拉起，管理面板里可以一键重启"
+run = "node server/main.js"
 
 [tasks.dev]
 description = "开发模式（文件变更自动重启）"
@@ -18,7 +18,7 @@ run = "rm -rf data/save.json data/timelines data/timelines.json && echo '存档�
 
 [tasks.public]
 description = "以公网模式启动（需在 .env 中设置 ADMIN_TOKEN）"
-run = "PUBLIC_MODE=1 node server/index.js"
+run = "PUBLIC_MODE=1 node server/main.js"
 
 [tasks.token]
 description = "生成一个随机的管理员令牌"
@@ -43,6 +43,10 @@ run = "node evolution/daemon.js --once"
 [tasks."evolve:rfc"]
 description = "把 AI 心愿单里的能力缺口整理成给人看的需求文档（docs/rfcs/，不写代码）"
 run = "node tools/evolve.js"
+
+[tasks."settings:doc"]
+description = "由设置声明表重新生成 docs/settings.md"
+run = "node tools/settings-doc.js"
 
 [tasks.manifest]
 description = "重新生成能力清单 docs/capabilities.md"
