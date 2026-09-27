@@ -27,7 +27,11 @@ const MIN_GROUP = 5; // 同一天至少这么多条琐碎记忆才值得压缩�
 let memSeq = 0;
 const newId = (agent) => `${agent.id}-${Date.now().toString(36)}-${(memSeq++).toString(36)}`;
 
+/** encode(agent, text)：写入前把旅人的昵称换成账号引用（由账号模块设置，见 accounts/refs.js） */
+export const memoryHooks = { encode: null };
+
 export function addMemory(agent, { t, type = 'obs', text, importance = 3 }) {
+  if (memoryHooks.encode) text = memoryHooks.encode(agent, text);
   const m = { id: newId(agent), t, type, text, importance };
   agent.memories.push(m);
   agent.importanceAcc = (agent.importanceAcc || 0) + importance;

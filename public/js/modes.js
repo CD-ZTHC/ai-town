@@ -31,7 +31,7 @@ export function start() {
   const q = new URLSearchParams(location.search).get('mode');
   const saved = app.storage.get('town-mode');
   let m = MODES.includes(q) ? q : ['observe', 'immerse'].includes(saved) ? saved : app.perms.publicMode ? 'immerse' : 'observe';
-  if (m === 'play' && !app.perms.interaction) m = 'observe';
+  if (m === 'play' && !app.perms.canTry) m = 'observe';
   setMode(m, { initial: true });
   if (m === 'observe' && !app.storage.get('town-help-seen')) { app.storage.set('town-help-seen', '1'); setTimeout(UI.helpModal, 1200); }
 }
@@ -39,7 +39,8 @@ export function start() {
 export async function setMode(m, { initial = false } = {}) {
   if (!MODES.includes(m) || m === app.mode) return;
   if (m === 'play') {
-    if (!app.perms.interaction) return UI.toast('👀 当前是只读观赏模式，不能进入游戏');
+    if (!app.perms.canTry) return UI.toast('👀 当前是只读观赏模式，不能进入游戏');
+    if (!app.perms.interaction) { try { await UI.requireLogin('登录之后就能以旅人的身份走进世界了。'); } catch { return; } }
     // 还没现身：先填角色卡，取消则留在原模式
     if (!(await Play.ensureAvatar())) return;
   }
@@ -74,7 +75,7 @@ function onKey(e) {
   if (k === 'Escape') UI.escape();
   if (k === 'f' && app.selected) app.follow = app.selected;
   if (k === 'i' || k === 'I') setMode('immerse');
-  if ((k === 'g' || k === 'G') && app.perms.interaction) setMode('play');
+  if ((k === 'g' || k === 'G') && app.perms.canTry) setMode('play');
   if (k === '=' || k === '+') app.zoomBy(1.15);
   if (k === '-') app.zoomBy(1 / 1.15);
   const sp = { 1: 1, 2: 3, 3: 8, 4: 20 }[k];

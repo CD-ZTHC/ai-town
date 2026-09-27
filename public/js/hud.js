@@ -65,6 +65,7 @@ export function run(cmd) {
   if (cmd === 'minimap') return setMinimap(document.body.classList.contains('no-minimap') ? '1' : '0');
   if (cmd === 'help') return UI.helpModal();
   if (cmd === 'admin') return UI.adminModal();
+  if (cmd === 'account') return UI.accountModal();
 }
 
 // ---------- 命令面板 ----------
@@ -99,13 +100,13 @@ function commands() {
   const tools = [
     ['🔭', '观察模式', () => app.setMode('observe')],
     ['🎬', '沉浸模式', () => app.setMode('immerse')],
-    ...(app.perms.interaction ? [['🎮', '游戏模式', () => app.setMode('play')]] : []),
+    ...(app.perms.canTry ? [['🎮', '游戏模式', () => app.setMode('play')]] : []),
     ['📰', '云溪日报', () => UI.newsModal()],
     ['🕸️', '关系网络', UI.graphModal],
     ['🎭', '故事面板', () => UI.storyModal()],
     ['🛠', '建设与编年史', () => UI.buildModal()],
     ['🧬', '小镇的进化（AI 插件与决策队列）', () => UI.evolveModal()],
-    ...(app.perms.interaction ? [['📢', '发布事件', UI.eventModal], ['⛅', '天气', () => UI.weatherMenu($('#btn-weather'))]] : []),
+    ...(app.perms.canTry ? [['📢', '发布事件', UI.eventModal], ['⛅', '天气', () => UI.weatherMenu($('#btn-weather'))]] : []),
     ['🔊', '环境音开关', toggleSound],
     ['🗺', '小地图开关', () => run('minimap')],
     ['❔', '说明与快捷键', UI.helpModal],

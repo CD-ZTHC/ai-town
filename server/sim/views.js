@@ -7,6 +7,7 @@ import { fmtTime, fmtStamp } from '../memory.js';
 import { publicSpec } from '../kernel/spec.js';
 import { findAbility } from '../kernel/abilities.js';
 import { threadList } from '../story/threads.js';
+import { renderRefs, ref } from '../accounts/refs.js';
 
 export class Views {
   snapshot() {
@@ -39,8 +40,12 @@ export class Views {
       status: a.status, action: a.action, thought: a.thought, mood: a.mood, loc: a.locId, locName: a.locId ? this.locName(a.locId) : '路上',
       thinking: a.thinking ? a.thinkingLabel : '',
       schedule: (a.scheduleDay === this.day ? a.schedule : []).map((e) => ({ ...e, time: `${fmtTime(e.start)}-${fmtTime(e.end)}`, locName: this.locName(this.resolveLoc(a, e.location)) })),
-      memories: a.memories.slice(-120).reverse().map((m) => ({ ...m, stamp: fmtStamp(m.t) })),
-      relations: Object.entries(a.relations).map(([oid, r]) => ({ id: oid, name: this.byId[oid]?.name, ...r })).sort((x, y) => y.affinity - x.affinity),
+      memories: a.memories.slice(-120).reverse().map((m) => ({ ...m, text: renderRefs(m.text), stamp: fmtStamp(m.t) })),
+      relations: [
+        ...Object.entries(a.relations).map(([oid, r]) => ({ id: oid, name: this.byId[oid]?.name, ...r })),
+        // 认识的旅人（按账号记，显示当前昵称）
+        ...Object.entries(a.travellers || {}).map(([uid, r]) => ({ id: uid, name: renderRefs(ref(uid)), affinity: r.affinity, note: `聊过 ${r.chats} 次`, traveller: true })),
+      ].sort((x, y) => y.affinity - x.affinity),
       diary: a.diary.slice().reverse(),
       chat: a.visitorChats[vid] || [],
       body: { ...a.body, stamina: Math.round(a.body.stamina), courage: Math.round(a.body.courage) },

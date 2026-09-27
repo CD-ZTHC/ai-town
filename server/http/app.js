@@ -3,10 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { Hono } from 'hono';
-import { config, clientIp, isAdmin, visitorId, limits } from '../guard.js';
-import { HttpError, readJson, nodeLike } from './util.js';
+import { config, limits } from '../guard.js';
+import { HttpError, readJson } from './util.js';
 import { worldApi } from './world-api.js';
 import { adminApi } from './admin-api.js';
+import { authApi } from './auth-api.js';
+import { identity } from './identity.js';
 
 export const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 export const SECURITY_HEADERS = {
@@ -27,8 +29,9 @@ const withHeaders = (res, headers) => { for (const [k, v] of Object.entries(head
  * @param {string} o.publicDir 静态资源目录
  * @param {() => object} [o.engineStatus]
  * @param {object} [o.admin] 管理员接口的依赖（见 admin-api.js）
+ * @param {import('../accounts/index.js').Accounts} [o.accounts] 账号（不传时只有本地模式可用）
  */
-export function createApp({ hostFor, publicDir, engineStatus, admin = {} }) {
+export function createApp({ hostFor, publicDir, engineStatus, admin = {}, accounts = null }) {
   const PUBLIC = path.resolve(publicDir);
   const app = new Hono();
 
@@ -54,21 +57,21 @@ export function createApp({ hostFor, publicDir, engineStatus, admin = {} }) {
 
   // ---------- 接口：身份、兜底限流、JSON 请求体 ----------
   app.use('/api/*', async (c, next) => {
-    const req = nodeLike(c);
-    const ip = clientIp(req);
-    c.set('ip', ip);
-    c.set('admin', isAdmin(req));
-    c.set('vid', visitorId(req, ip));
-    const r = limits.api.check(ip);
+    await next();
+    withHeaders(c.res, { 'Cache-Control': 'no-store', ...SECURITY_HEADERS });
+  });
+  app.use('/api/*', identity({ accounts }));
+  app.use('/api/*', async (c, next) => {
+    const r = limits.api.check(c.get('ip'));
     if (!r.ok) throw new HttpError(429, '请求太频繁了', { retryAfter: r.retryAfter });
     if (['POST', 'PUT', 'PATCH'].includes(c.req.method)) c.set('body', await readJson(c.req));
     else if (!['GET', 'HEAD', 'DELETE'].includes(c.req.method)) throw new HttpError(405, '不支持的方法');
     await next();
-    withHeaders(c.res, { 'Cache-Control': 'no-store', ...SECURITY_HEADERS });
   });
-  app.route('/api/admin', adminApi(admin));
+  app.route('/api/auth', authApi({ accounts }));
+  app.route('/api/admin', adminApi({ ...admin, accounts }));
   app.use('/api/*', async (c, next) => { c.set('host', hostFor(c)); await next(); });
-  app.route('/api', worldApi({ engineStatus, openStream }));
+  app.route('/api', worldApi({ engineStatus, openStream, accounts }));
   app.all('/api/*', (c) => { throw new HttpError(['GET', 'POST'].includes(c.req.method) ? 404 : 405, ['GET', 'POST'].includes(c.req.method) ? '不存在' : '不支持的方法'); });
 
   // ---------- 静态资源 ----------

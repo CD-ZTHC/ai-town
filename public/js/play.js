@@ -49,19 +49,21 @@ export async function ensureAvatar() {
   if (app.perms.avatar && me()) return true;
   return new Promise((resolve) => {
     let color = app.storage.get('town-avatar-color') || AV_COLORS[0];
+    // 登录的用户用账号昵称现身，只需要挑衣服
+    const nick = app.perms.user?.nickname || '';
     const card = UI.openModal(`<div class="charcard">
       <canvas id="cc-preview" width="120" height="150"></canvas>
       <div class="cc-form">
         <h2>👣 以旅人的身份走进小镇</h2>
-        <div class="sub">起个名字、挑件衣服。你会出现在中央广场，居民们看得见你、会跟你打招呼，和你聊过的话也会记住是你说的。20 分钟不操作会自动离开。</div>
-        <input id="cc-name" maxlength="8" placeholder="你的名字（≤8 字）" value="${esc(app.storage.get('town-avatar-name') || '')}">
+        <div class="sub">${nick ? `挑件衣服吧，${esc(nick)}。` : '起个名字、挑件衣服。'}你会出现在中央广场，居民们看得见你、会跟你打招呼，和你聊过的话也会记住是你说的。20 分钟不操作会自动离开。</div>
+        ${nick ? '' : `<input id="cc-name" maxlength="8" placeholder="你的名字（≤8 字）" value="${esc(app.storage.get('town-avatar-name') || '')}">`}
         <div class="av-colors">${AV_COLORS.map((c) => `<button class="av-c${c === color ? ' on' : ''}" data-c="${c}" style="background:${c}" aria-label="衣服颜色"></button>`).join('')}</div>
         <div class="row"><button class="primary" id="cc-go">走进小镇 ✨</button><span class="quota" id="cc-msg"></span></div>
         <div class="sub cc-tips">点击地面或用 <kbd>WASD</kbd> 走路 · 走到居民身边按 <kbd>E</kbd> 聊天 · <kbd>Esc</kbd> 退出</div>
       </div></div>`, 'charcard-wrap');
-    const draw = () => drawPreview($('#cc-preview', card), color, $('#cc-name', card).value.trim() || '旅人');
+    const draw = () => drawPreview($('#cc-preview', card), color, nick || $('#cc-name', card)?.value.trim() || '旅人');
     draw();
-    $('#cc-name', card).addEventListener('input', draw);
+    $('#cc-name', card)?.addEventListener('input', draw);
     $$('.av-c', card).forEach((b) => b.addEventListener('click', () => { color = b.dataset.c; $$('.av-c', card).forEach((x) => x.classList.toggle('on', x === b)); draw(); }));
     let done = false;
     const finish = (ok) => { if (done) return; done = true; obs.disconnect(); resolve(ok); };
@@ -69,7 +71,7 @@ export async function ensureAvatar() {
     const obs = new MutationObserver(() => { if ($('#modal').hidden) finish(false); });
     obs.observe($('#modal'), { attributes: true, attributeFilter: ['hidden'] });
     const go = async () => {
-      const nm = $('#cc-name', card).value.trim();
+      const nm = nick || $('#cc-name', card).value.trim();
       try {
         const r = await app.api('/api/avatar', { name: nm, color });
         app.storage.set('town-avatar-name', r.avatar.name); app.storage.set('town-avatar-color', r.avatar.color);
@@ -82,8 +84,8 @@ export async function ensureAvatar() {
       } catch (e) { $('#cc-msg', card).innerHTML = `<span style="color:var(--bad)">⚠️ ${esc(e.message)}</span>`; }
     };
     $('#cc-go', card).onclick = go;
-    $('#cc-name', card).addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-    setTimeout(() => $('#cc-name', card)?.focus(), 50);
+    $('#cc-name', card)?.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    setTimeout(() => ($('#cc-name', card) || $('#cc-go', card))?.focus(), 50);
   });
 }
 function drawPreview(cv, color, label) {

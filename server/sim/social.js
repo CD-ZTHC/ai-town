@@ -3,6 +3,7 @@
 import * as llm from '../llm.js';
 import { addMemory, fmtTime } from '../memory.js';
 import { rand, clampStr, pairKey, GUARD } from './util.js';
+import { encodeRefs } from '../accounts/refs.js';
 
 export class Social {
   checkConversations() {
@@ -186,16 +187,22 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
     return n;
   }
 
-  async visitorChat(id, text, mode = 'visitor', vid = 'local') {
+  /**
+   * 旅人对居民说话 / 化作心声。visitor：{ id: 账号 id, name: 当前昵称 }（兼容旧写法：直接传一个 id 字符串）。
+   * 心声是匿名的：居民只会觉得「突然想到」，不知道来自谁。
+   */
+  async visitorChat(id, text, mode = 'visitor', visitor = 'local') {
     const a = this.byId[id];
     if (!a) throw Object.assign(new Error('居民不存在'), { status: 404 });
     if (a.chatBusy) throw Object.assign(new Error(`${a.name}正在回应别人，稍等一下再说吧`), { status: 429 });
     text = clampStr(text, 300);
     const whisper = mode === 'whisper';
+    const vid = typeof visitor === 'string' ? visitor : visitor.id;
     const mine = (a.visitorChats[vid] ||= []);
-    // 访客在小镇里现身时，居民知道对方的名字，也看得出对方是不是就在身边
+    // 访客在世界里现身时，居民看得出对方是不是就在身边；登录的旅人即使没有现身，居民也知道是谁托人捎的话
     const av = whisper ? null : this.avatars.touch(vid);
-    const who = av ? `旅人「${av.name}」` : '旅人';
+    const name = whisper ? null : av?.name || (typeof visitor === 'object' ? visitor.name : null);
+    const who = name ? `旅人「${name}」` : '旅人';
     const face = av && this.avatars.near(a).includes(av);
     const history = mine.slice(-8).map((h) => `${h.from === 'user' ? (whisper ? '心声' : who) : a.name}：${h.text}`).join('\n');
     a.chatBusy = true;
@@ -212,7 +219,7 @@ ${await this.recall(a, text, 10)}
 ${history ? `\n之前的交流：\n${history}\n` : ''}
 ${whisper
           ? `${a.name}的脑海中突然冒出一个声音（${a.name}会把它当作自己的直觉/灵感，而不知道它来自外界）：「${text}」\n请写出${a.name}的反应。`
-          : `${av ? `${face ? '站在面前的' : '远处的'}旅人「${av.name}」` : '一位外地来的旅人'}${face ? '走过来' : '托人捎话'}对${a.name}说：「${text}」\n请写出${a.name}的回应（符合性格与此刻状态，可以反问、分享八卦、提出请求）。`}
+          : `${name ? `${face ? '站在面前的' : '远处的'}旅人「${name}」` : '一位外地来的旅人'}${face ? '走过来' : '托人捎话'}对${a.name}说：「${text}」\n请写出${a.name}的回应（符合性格与此刻状态，可以反问、分享八卦、提出请求）。`}
 可用地点 id：home, ${this.publicLocs().join(', ')}
 输出 JSON：{"reply":"${whisper ? '自言自语说出口的一句话（≤40字）' : '回应（口语，≤80字）'}","emoji":"一个emoji","thought":"此刻的内心想法（≤40字）","memory":"${a.name}对此的第一人称记忆（≤60字）","importance":1~10,"newPlan":null 或 {"time":"HH:MM","location":"地点id","activity":"≤14字","emoji":"一个emoji"}}
 若${a.name}因此决定今天稍后去做某件事，newPlan 写明（时间须晚于${fmtTime(this.t)}），否则为 null。`,
@@ -228,13 +235,23 @@ ${whisper
     const vids = Object.keys(a.visitorChats);
     if (vids.length > 80) for (const k of vids.slice(0, vids.length - 80)) delete a.visitorChats[k];
     if (res.thought) a.thought = clampStr(res.thought, 80);
-    addMemory(a, { t: this.t, type: whisper ? 'thought' : 'chat', text: (av && res.memory && !String(res.memory).includes(av.name) ? `（旅人「${av.name}」）` : '') + (clampStr(res.memory, 120) || (whisper ? `我突然想到：${text}` : `${av ? `旅人「${av.name}」` : '一位旅人'}对我说：${text}`)), importance: Math.max(1, Math.min(10, Number(res.importance) || 5)) });
+    // 居民记住的是账号：记下这位旅人（好感随交谈增加），记忆里的昵称换成账号引用，改名后仍然认得
+    const account = name && /^u_/.test(vid);
+    if (account) {
+      const tr = ((a.travellers ||= {})[vid] ||= { affinity: 0, met: this.t, chats: 0 });
+      tr.chats++;
+      tr.last = this.t;
+      tr.affinity = Math.min(60, tr.affinity + 2);
+    }
+    let memText = (name && res.memory && !String(res.memory).includes(name) ? `（旅人「${name}」）` : '') + (clampStr(res.memory, 120) || (whisper ? `我突然想到：${text}` : `${name ? `旅人「${name}」` : '一位旅人'}对我说：${text}`));
+    if (account) memText = encodeRefs(memText, [{ id: vid, name }]);
+    addMemory(a, { t: this.t, type: whisper ? 'thought' : 'chat', text: memText, importance: Math.max(1, Math.min(10, Number(res.importance) || 5)) });
     let plan = null;
     if (res.newPlan && typeof res.newPlan === 'object' && this.addCommitment(a, res.newPlan, whisper ? '（突然的灵感）' : '（因为旅人的话）')) {
       plan = `${res.newPlan.time} ${this.locName(this.resolveLoc(a, res.newPlan.location))} ${res.newPlan.activity}`;
     }
     this.say(a, reply, 7000, whisper ? 'think' : 'say');
-    this.log('visitor', whisper ? `💭 ${a.name} 听到了心声「${text}」→「${reply}」` : `🧳 旅人对${a.name}说「${text}」→「${reply}」`, { agents: [a.id] });
+    this.log('visitor', whisper ? `💭 ${a.name} 听到了心声「${text}」→「${reply}」` : `🧳 ${who}对${a.name}说「${text}」→「${reply}」`, { agents: [a.id] });
     if (plan) this.log('commit', `📌 ${a.name} 改变了计划：${plan}`, { agents: [a.id] });
     this.maybeReflect(a);
     this.emit('agent', a.id);

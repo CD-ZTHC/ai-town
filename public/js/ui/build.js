@@ -63,7 +63,7 @@ async function renderBuild() {
   try {
     if (tab === 'list') {
       const d = await app.api('/api/proposals');
-      const form = app.perms.interaction ? `<div class="pform"><textarea id="p-intent" rows="2" maxlength="120" placeholder="给小镇提个建设点子，例如：在码头边修一座可以看星星的小塔"></textarea>
+      const form = app.perms.canTry ? `<div class="pform"><textarea id="p-intent" rows="2" maxlength="120" placeholder="给小镇提个建设点子，例如：在码头边修一座可以看星星的小塔"></textarea>
         <button class="primary" id="p-go">交给世界架构师 ✨</button><span class="quota" id="p-msg">${d.admin ? '管理员不受频率限制' : '每小时最多 2 条 · 建议会经过审核'}</span></div>` : '';
       const queue = d.queue.length || d.thinking ? `<div class="dec">🧠 世界架构师${d.thinking ? '正在设计图纸' : ''}${d.queue.length ? `，还有 ${d.queue.length} 个点子排队：${d.queue.map((q) => esc(q.intent)).join('；')}` : ''}</div>` : '';
       const cards = d.proposals.map((p) => {
@@ -80,7 +80,7 @@ async function renderBuild() {
           ${p.result?.reason ? `<div class="pcanon">${esc(p.result.reason)}</div>` : ''}
           <div class="pact">
             ${open || p.tally.yes || p.tally.no ? `<span class="quota">赞成 ${p.tally.yes} · 反对 ${p.tally.no}</span>` : ''}
-            ${open && p.mine == null && app.perms.interaction ? `<button class="mini" data-pv="${p.id}" data-yes="1">👍 赞成</button><button class="mini" data-pv="${p.id}" data-yes="0">👎 反对</button>` : ''}
+            ${open && p.mine == null && app.perms.canTry ? `<button class="mini" data-pv="${p.id}" data-yes="1">👍 赞成</button><button class="mini" data-pv="${p.id}" data-yes="0">👎 反对</button>` : ''}
             ${p.mine != null ? `<span class="quota">你投了${p.mine ? '赞成' : '反对'}</span>` : ''}
             ${(open || p.status === 'queued') && d.admin ? `<button class="mini adm" data-pd="${p.id}" data-ok="1">✅ 批准</button><button class="mini adm" data-pd="${p.id}" data-ok="0">✖ 驳回</button>` : ''}
           </div></div>`;

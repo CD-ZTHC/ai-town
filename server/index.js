@@ -10,6 +10,7 @@ import { activeDir } from './timelines.js';
 import * as llm from './llm.js';
 import { config } from './guard.js';
 import { WorldHost } from './worlds/host.js';
+import { Accounts, installRefs } from './accounts/index.js';
 import { createApp } from './http/app.js';
 import { evolveConfig } from '../plugin-host/evolved.js';
 import { engineArgs } from '../evolution/common.js';
@@ -28,6 +29,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.resolve(settings.get('DATA_DIR'));
 // AI 插件与进化引擎的状态放在数据根目录（所有时间线共用）
 const EVO_DIR = path.join(DATA, 'evolution');
+
+// 账号：data/accounts.db；官方世界居民的名字不能被注册为昵称
+const accounts = new Accounts({ file: path.join(DATA, 'accounts.db'), reservedNames: () => host?.town.spec.personas.map((p) => p.name) || [] });
+installRefs(accounts);
+setInterval(() => accounts.sweepSessions(), 3600_000).unref();
 
 const host = new WorldHost({
   id: 'yunxi',
@@ -59,6 +65,7 @@ function restart() {
 const app = createApp({
   hostFor: () => host, publicDir: path.join(ROOT, 'public'), engineStatus: () => engineStatus(),
   admin: { restart, supervised: () => supervised },
+  accounts,
 });
 
 const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, () => {
@@ -105,6 +112,6 @@ function engineStatus() {
 startEngine();
 
 let shuttingDown = false;
-const shutdown = () => { shuttingDown = true; engine?.kill('SIGTERM'); host.town.save(); process.exit(0); };
+const shutdown = () => { shuttingDown = true; engine?.kill('SIGTERM'); host.town.save(); accounts.close(); process.exit(0); };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

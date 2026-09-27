@@ -56,7 +56,7 @@ function renderInspector(fresh) {
       <div class="ihead" id="ih"></div>
       <div class="inow" id="inow"></div>
       <div class="itabs">
-        ${[['sched', '🗓️ 日程'], ['mem', '🧠 记忆'], ['rel', '💞 关系'], ['diary', '📖 日记'], ...(app.perms.interaction ? [['chat', '💬 交谈']] : [])].map(([k, l]) => `<button data-t="${k}" class="${ui.tab === k ? 'on' : ''}">${l}</button>`).join('')}
+        ${[['sched', '🗓️ 日程'], ['mem', '🧠 记忆'], ['rel', '💞 关系'], ['diary', '📖 日记'], ...(app.perms.canTry ? [['chat', '💬 交谈']] : [])].map(([k, l]) => `<button data-t="${k}" class="${ui.tab === k ? 'on' : ''}">${l}</button>`).join('')}
       </div>
       <div class="ipane" id="ipane"></div>`;
     $$('.itabs button', body).forEach((b) => b.addEventListener('click', () => {
@@ -80,7 +80,7 @@ function renderInspector(fresh) {
       <div class="ibtns">
         <button id="b-follow" class="${app.follow === d.id ? 'on' : ''}">🎥 跟随</button>
         <button id="b-watch" class="${app.watch.has(d.id) ? 'on' : ''}" title="关注后，TA 有新动向时会提醒你；沉浸模式也会更常拍到 TA">🔔 ${app.watch.has(d.id) ? '已关注' : '关注'}</button>
-        ${app.perms.interaction ? '<button id="b-chat">💬 搭话</button><button id="b-whisper">💭 心声</button>' : ''}
+        ${app.perms.canTry ? '<button id="b-chat">💬 搭话</button><button id="b-whisper">💭 心声</button>' : ''}
       </div>
     </div>`;
   $('#b-follow').onclick = () => { app.follow = app.follow === d.id ? null : d.id; renderInspector(false); };
@@ -135,7 +135,9 @@ function renderPane(reset) {
     pane.innerHTML = d.relations.map((r) => {
       const v = r.affinity, w = Math.abs(v) / 2;
       const col = v >= 0 ? `linear-gradient(90deg,#5ad1c3,#7ddc8a)` : `linear-gradient(90deg,#ff7a7a,#ffae7a)`;
-      return `<div class="rel" data-agent="${r.id}"><img src="${face(r.id)}"><div class="rb"><div class="rn">${esc(r.name)}<span style="color:${v >= 0 ? 'var(--good)' : 'var(--bad)'}">${v > 0 ? '+' : ''}${v}</span></div>
+      // 认识的旅人（按账号记）：没有头像，用 🧳 标记
+      const pic = r.traveller ? '<span class="rel-trav">🧳</span>' : `<img src="${face(r.id)}">`;
+      return `<div class="rel" ${r.traveller ? '' : `data-agent="${r.id}"`}>${pic}<div class="rb"><div class="rn">${esc(r.name)}<span style="color:${v >= 0 ? 'var(--good)' : 'var(--bad)'}">${v > 0 ? '+' : ''}${v}</span></div>
         <div class="bar"><i style="left:${v >= 0 ? 50 : 50 - w}%;width:${w}%;background:${col}"></i></div><div class="note">${esc(r.note)}</div></div></div>`;
     }).join('') || '<div class="empty">还没有建立关系</div>';
   } else if (ui.tab === 'diary') {

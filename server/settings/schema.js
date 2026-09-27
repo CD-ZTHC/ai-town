@@ -61,8 +61,8 @@ export const SETTINGS = {
   EMBED_TIMEOUT_MS: { group: 'embed', ...int(100, 60000), default: 4000, apply: 'restart', label: 'embedding 超时（毫秒）' },
 
   // ---------- 频率与审核 ----------
-  RATE_CHAT_PER_HOUR: { group: 'limits', ...int(0, 10000), default: 30, apply: 'live', label: '每个账号每小时聊天句数', help: '另有每分钟 4 句的突发限制' },
-  RATE_EVENT_PER_HOUR: { group: 'limits', ...int(0, 1000), default: 3, apply: 'live', label: '每个账号每小时发布事件数' },
+  RATE_CHAT_PER_HOUR: { group: 'limits', ...int(0, 10000), default: 45, apply: 'live', label: '每个账号每小时聊天句数', help: '另有每分钟 4 句的突发限制' },
+  RATE_EVENT_PER_HOUR: { group: 'limits', ...int(0, 1000), default: 4, apply: 'live', label: '每个账号每小时发布事件数' },
   RATE_IP_FACTOR: { group: 'limits', ...num(1, 100), default: 3, apply: 'live', label: '同一 IP 的合计上限倍数', help: '同一 IP 下所有账号合计，不超过单账号额度的这个倍数' },
   EVENT_GLOBAL_COOLDOWN_SEC: { group: 'limits', ...int(0, 86400), default: 120, apply: 'live', label: '世界内两次事件的最短间隔（秒）' },
   WEATHER_COOLDOWN_SEC: { group: 'limits', ...int(0, 86400), default: 60, apply: 'live', label: '世界内两次改天气的最短间隔（秒）' },
@@ -75,6 +75,7 @@ export const SETTINGS = {
   REGISTER_OPEN: { group: 'accounts', ...bool(), default: true, apply: 'live', label: '开放注册' },
   REGISTER_PER_IP_HOUR: { group: 'accounts', ...int(0, 1000), default: 3, apply: 'live', label: '每个 IP 每小时可注册的账号数' },
   CAPTCHA_SECRET: { group: 'accounts', ...str(500), default: '', apply: 'live', secret: true, label: '人机验证密钥', help: '配置后注册需要通过人机验证（Cloudflare Turnstile）' },
+  CAPTCHA_SITEKEY: { group: 'accounts', ...str(200), default: '', apply: 'live', label: '人机验证站点密钥', help: 'Turnstile 的 site key，页面上显示验证组件时用' },
   LOCAL_NICKNAME: { group: 'accounts', ...str(8), default: '旅人', apply: 'live', label: '本地模式的昵称' },
 
   // ---------- 世界 ----------

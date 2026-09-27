@@ -58,8 +58,8 @@
 
 | 键 | 说明 | 取值 | 默认 | 生效 |
 | --- | --- | --- | --- | --- |
-| `RATE_CHAT_PER_HOUR` | 每个账号每小时聊天句数：另有每分钟 4 句的突发限制 | 整数 | `30` | 即时 |
-| `RATE_EVENT_PER_HOUR` | 每个账号每小时发布事件数 | 整数 | `3` | 即时 |
+| `RATE_CHAT_PER_HOUR` | 每个账号每小时聊天句数：另有每分钟 4 句的突发限制 | 整数 | `45` | 即时 |
+| `RATE_EVENT_PER_HOUR` | 每个账号每小时发布事件数 | 整数 | `4` | 即时 |
 | `RATE_IP_FACTOR` | 同一 IP 的合计上限倍数：同一 IP 下所有账号合计，不超过单账号额度的这个倍数 | 数字 | `3` | 即时 |
 | `EVENT_GLOBAL_COOLDOWN_SEC` | 世界内两次事件的最短间隔（秒） | 整数 | `120` | 即时 |
 | `WEATHER_COOLDOWN_SEC` | 世界内两次改天气的最短间隔（秒） | 整数 | `60` | 即时 |
@@ -75,6 +75,7 @@
 | `REGISTER_OPEN` | 开放注册 | 开关 | 开 | 即时 |
 | `REGISTER_PER_IP_HOUR` | 每个 IP 每小时可注册的账号数 | 整数 | `3` | 即时 |
 | `CAPTCHA_SECRET` | 人机验证密钥：配置后注册需要通过人机验证（Cloudflare Turnstile） **密钥** | 文本 | （空） | 即时 |
+| `CAPTCHA_SITEKEY` | 人机验证站点密钥：Turnstile 的 site key，页面上显示验证组件时用 | 文本 | （空） | 即时 |
 | `LOCAL_NICKNAME` | 本地模式的昵称 | 文本 | `旅人` | 即时 |
 
 ## 世界

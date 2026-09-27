@@ -40,22 +40,7 @@ export function clientIp(req) {
   return req.socket.remoteAddress || 'unknown';
 }
 
-function safeEqual(a, b) {
-  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
-  return x.length === y.length && crypto.timingSafeEqual(x, y);
-}
-
-/** 管理员：配置了 ADMIN_TOKEN 时需匹配；未配置时仅本地（非公网）模式下所有人都是管理员 */
-export function isAdmin(req) {
-  if (config.adminToken) return safeEqual(req.headers['x-admin-token'] || '', config.adminToken);
-  return !config.publicMode;
-}
-
-export function visitorId(req, ip) {
-  const v = String(req.headers['x-visitor'] || '');
-  // 访客 ID 仅用于隔离聊天记录，限流一律按 IP 计算（访客 ID 可以伪造）
-  return /^[a-z0-9]{8,40}$/i.test(v) ? v : `ip-${crypto.createHash('sha1').update(ip).digest('hex').slice(0, 12)}`;
-}
+// 身份（账号 / 会话 / 管理员令牌）见 http/identity.js；这里只剩按网络地址识别客户端
 
 // ---------- 限流：滑动窗口 ----------
 export class Limiter {

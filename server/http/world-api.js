@@ -8,26 +8,44 @@ import { ADMIN_OPS } from '../worldai/proposals.js';
 import { registry, forkTimeline, setActive } from '../timelines.js';
 import * as llm from '../llm.js';
 import { useAbility } from '../kernel/abilities.js';
-import { config, limits, sanitize, moderate } from '../guard.js';
-import { HttpError, take, fmtWait } from './util.js';
+import { config, sanitize, moderate } from '../guard.js';
+import { authorize } from '../accounts/authz.js';
+import { quota, remaining as quotaLeft } from '../accounts/quota.js';
+import { HttpError } from './util.js';
 
 function requireAdmin(c) {
   if (!c.get('admin')) throw new HttpError(403, '只有小镇管理员可以这样做');
 }
+/** 互动（现身、聊天、心声、事件、天气、投票、举报）：只有登录的用户；游客返回 401，页面弹出登录框后自动继续 */
+function requireUser(c) {
+  if (!config.allowInteraction && !c.get('admin')) throw new HttpError(403, '当前为只读观赏模式');
+  if (c.get('admin')) return;
+  const ok = authorize(c.get('who'), 'interact');
+  if (ok !== true) throw new HttpError(401, ok, { login: true });
+}
+/** 需要调用模型的互动：再检查模型、预算与队列 */
 function requireInteraction(c) {
+  requireUser(c);
   const admin = c.get('admin');
-  if (!config.allowInteraction && !admin) throw new HttpError(403, '当前为只读观赏模式');
   if (!llm.stats.enabled) throw new HttpError(503, 'AI 尚未配置');
-  if (llm.budgetLeft() <= 0) throw new HttpError(429, '今天小镇的 AI 额度已经用完了，明天再来吧 🌙');
+  if (llm.budgetLeft() <= 0) throw new HttpError(429, '今天的 AI 额度已经用完了，明天再来吧 🌙');
   if (llm.queueSize() > config.maxQueueForUser && !admin) throw new HttpError(503, '居民们正忙着思考，请稍后再试');
 }
-function remaining(ip, admin) {
-  if (admin) return { chat: null, event: null };
-  return { chat: limits.chat.check(ip, false).remaining, event: limits.event.check(ip, false).remaining };
+function take(c, bucket, opts = {}) {
+  const r = quota(c.get('who'), bucket, { world: c.get('host').id, ...opts });
+  if (!r.ok) throw new HttpError(429, r.message, { retryAfter: r.retryAfter });
+  return r;
 }
+function remaining(c) {
+  const who = c.get('who');
+  return { chat: quotaLeft(who, 'chat'), event: quotaLeft(who, 'event') };
+}
+/** 当前请求的旅人身份：账号 id + 当前昵称 */
+const visitor = (c) => ({ id: c.get('vid'), name: c.get('user')?.nickname || null });
 
 /**
  * @param {object} deps
+ * @param {import('../accounts/index.js').Accounts} [deps.accounts]
  * @param {() => object} [deps.engineStatus] 进化引擎状态（管理员可见）
  * @param {(c, host) => Response} deps.openStream SSE
  */
@@ -37,18 +55,22 @@ export function worldApi(deps) {
 
   api.get('/stream', (c) => deps.openStream(c, c.get('host')));
   api.get('/me', (c) => {
-    const admin = c.get('admin'), ip = c.get('ip');
+    const admin = c.get('admin'), user = c.get('user');
     return c.json({
-      admin, publicMode: config.publicMode, needToken: Boolean(config.adminToken),
-      interaction: config.allowInteraction || admin,
+      admin, publicMode: config.publicMode, needToken: Boolean(config.adminToken), accounts: Boolean(deps.accounts),
+      user: user ? { id: user.id, username: user.username, nickname: user.nickname, role: user.role, local: user.id === 'u_local' } : null,
+      grants: user && deps.accounts ? deps.accounts.grantsOf(user.id) : [],
+      interaction: (config.allowInteraction || admin) && Boolean(user || admin),
+      loginToInteract: config.allowInteraction && !user && !admin,
       limits: { chatPerHour: config.chatPerHour, eventPerHour: config.eventPerHour, weatherCooldownSec: config.weatherCooldownSec },
-      remaining: remaining(ip, admin),
-      avatar: town(c).avatars.mine(c.get('vid'))?.id || null,
+      remaining: remaining(c),
+      avatar: c.get('vid') ? town(c).avatars.mine(c.get('vid'))?.id || null : null,
       budget: { total: llm.stats.dailyBudget, left: Number.isFinite(llm.budgetLeft()) ? llm.budgetLeft() : null },
+      world: c.get('host').id,
     });
   });
   api.get('/agent/:id', (c) => {
-    const d = town(c).agentDetail(c.req.param('id'), c.get('vid'));
+    const d = town(c).agentDetail(c.req.param('id'), c.get('vid') || '-');
     return d ? c.json(d) : c.json({ error: '不存在' }, 404);
   });
   api.get('/relations', (c) => c.json(town(c).relationsGraph()));
@@ -56,8 +78,8 @@ export function worldApi(deps) {
   api.get('/metrics', (c) => c.json(town(c).metricsView()));
   api.get('/newspapers', (c) => c.json(town(c).newspapers));
   api.get('/world/history', (c) => c.json(town(c).worldHistory().slice(-200)));
-  api.get('/story', (c) => c.json({ ...town(c).storyView(c.get('ip')), admin: c.get('admin') }));
-  api.get('/proposals', (c) => c.json({ ...town(c).proposalsView(c.get('ip'), c.get('admin')), admin: c.get('admin') }));
+  api.get('/story', (c) => c.json({ ...town(c).storyView(c.get('vid') || '-'), admin: c.get('admin') }));
+  api.get('/proposals', (c) => c.json({ ...town(c).proposalsView(c.get('vid') || '-', c.get('admin')), admin: c.get('admin') }));
   api.get('/evolution', (c) => {
     const t = town(c), admin = c.get('admin');
     return c.json({ ...t.evolved.view(admin), builtin: t.plugins.view(), decisions: t.decisions.view(admin), engine: admin ? deps.engineStatus?.() : undefined, admin });
@@ -69,52 +91,47 @@ export function worldApi(deps) {
   // ---------- 写接口（请求体已由上层中间件解析为 c.get('body')）----------
   api.post('/chat', async (c) => {
     requireInteraction(c);
-    const t = town(c), b = c.get('body'), admin = c.get('admin'), ip = c.get('ip');
+    const t = town(c), b = c.get('body');
     const agent = t.byId[String(b.id)];
     if (!agent) throw new HttpError(404, '居民不存在');
     const mode = b.mode === 'whisper' ? 'whisper' : 'visitor';
     const text = sanitize(b.text, 200);
     if (text.length < 1) throw new HttpError(400, '说点什么吧');
-    if (!admin) { take(limits.chatBurst, ip, '说话'); take(limits.chat, ip, '说话'); }
+    take(c, 'chat');
     const m = await moderate(text, 'chat', t.spec.meta.rating);
     if (!m.ok) throw new HttpError(422, m.reason);
-    const r = await t.visitorChat(agent.id, text, mode, c.get('vid'));
-    return c.json({ ...r, remaining: remaining(ip, admin) });
+    // 心声对居民是匿名的，但日志里记下账号，便于管理员追查滥用
+    if (mode === 'whisper') console.log(`[whisper] ${c.get('host').id} ${c.get('vid')} → ${agent.id}: ${text}`);
+    const r = await t.visitorChat(agent.id, text, mode, visitor(c));
+    return c.json({ ...r, remaining: remaining(c) });
   });
 
   api.post('/event', async (c) => {
     requireInteraction(c);
-    const t = town(c), b = c.get('body'), admin = c.get('admin'), ip = c.get('ip');
+    const t = town(c), b = c.get('body');
     const text = sanitize(b.text, 120);
     if (text.length < 4) throw new HttpError(400, '事件描述太短了');
     const target = b.target === 'all' || !b.target ? 'all' : String(b.target);
     if (target !== 'all' && !t.byId[target]) throw new HttpError(404, '居民不存在');
-    if (!admin) {
-      // 先检查不扣次数，审核通过后再扣，避免被拒的内容也消耗额度
-      const g = limits.eventGlobal.check('all', false);
-      if (!g.ok) throw new HttpError(429, `小镇刚刚发生过一件事，请 ${fmtWait(g.retryAfter)}后再发布`);
-      const e = limits.event.check(ip, false);
-      if (!e.ok) throw new HttpError(429, `每小时最多发布 ${config.eventPerHour} 个事件，请 ${fmtWait(e.retryAfter)}后再试`);
-      take(limits.eventAttempt, ip, '尝试发布事件');
-    }
+    // 先检查不扣次数，审核通过后再扣，避免被拒的内容也消耗额度；尝试次数（含被拒的）单独计数
+    take(c, 'event', { take: false });
+    take(c, 'eventAttempt');
     const m = await moderate(text, 'event', t.spec.meta.rating);
     if (!m.ok) throw new HttpError(422, m.reason);
-    if (!admin) { take(limits.eventGlobal, 'all', '发布事件'); take(limits.event, ip, '发布事件'); }
-    console.log(`[event] ${ip} → ${target}: ${text}`);
+    take(c, 'event');
+    console.log(`[event] ${c.get('host').id} ${c.get('vid')}@${c.get('ip')} → ${target}: ${text}`);
     t.godEvent(text, target).catch((e) => console.warn('[event]', e.message));
-    return c.json({ ok: true, remaining: remaining(ip, admin) });
+    return c.json({ ok: true, remaining: remaining(c) });
   });
 
   api.post('/control', (c) => {
-    const t = town(c), b = c.get('body'), admin = c.get('admin');
+    const t = town(c), b = c.get('body');
     const out = {};
     if (b.weather != null) {
       const w = String(b.weather);
       if (w !== 'auto' && !Object.hasOwn(t.spec.weather, w)) throw new HttpError(400, '未知天气');
-      if (!admin) {
-        if (!config.allowInteraction) throw new HttpError(403, '当前为只读观赏模式');
-        take(limits.weather, 'all', '改变天气');
-      }
+      requireUser(c);
+      take(c, 'weather');
       t.setWeather(w);
       out.weather = w;
     }
@@ -162,7 +179,7 @@ export function worldApi(deps) {
     const t = town(c), b = c.get('body'), admin = c.get('admin');
     const text = sanitize(b.intent, 120);
     if (text.length < 4) throw new HttpError(400, '说得再具体一点吧');
-    if (!admin) take(limits.proposal, c.get('ip'), '提建议');
+    take(c, 'proposal');
     const m = await moderate(text, 'event', t.spec.meta.rating);
     if (!m.ok) throw new HttpError(422, m.reason);
     const err = t.architect ? t.architect.enqueue(text, admin ? 'admin' : 'visitor') : '世界架构师插件未启用';
@@ -182,7 +199,7 @@ export function worldApi(deps) {
   api.post('/proposals/vote', (c) => {
     voteGate(c);
     const b = c.get('body');
-    const err = town(c).proposalSystem.vote(String(b.id || ''), c.get('ip'), Boolean(b.yes));
+    const err = town(c).proposalSystem.vote(String(b.id || ''), c.get('vid'), Boolean(b.yes));
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
   });
@@ -207,7 +224,7 @@ export function worldApi(deps) {
   api.post('/evolution/vote', (c) => {
     voteGate(c);
     const b = c.get('body');
-    const err = town(c).evolved.vote(String(b.key || ''), c.get('ip'), Boolean(b.yes));
+    const err = town(c).evolved.vote(String(b.key || ''), c.get('vid'), Boolean(b.yes));
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
   });
@@ -222,7 +239,8 @@ export function worldApi(deps) {
   api.post('/p/:id/:name', async (c) => {
     const id = c.req.param('id'), name = c.req.param('name');
     if (!/^[a-z][a-z0-9-]{2,31}$/.test(id) || !/^[a-z][a-z0-9-]{1,23}$/.test(name)) throw new HttpError(404, '不存在');
-    if (!c.get('admin')) take(limits.plugin, c.get('ip'), '使用插件');
+    requireUser(c);
+    take(c, 'plugin');
     const result = await town(c).evolved.route(id, name, c.get('body').body ?? null);
     return c.json({ ok: true, result });
   });
@@ -286,18 +304,21 @@ export function worldApi(deps) {
 
   // 访客化身：现身 / 走动 / 离开（不调用模型）
   api.post('/avatar', async (c) => {
-    const t = town(c), b = c.get('body'), admin = c.get('admin'), ip = c.get('ip');
-    if (!config.allowInteraction && !admin) throw new HttpError(403, '当前为只读观赏模式');
-    if (!admin) take(limits.avatar, ip, '现身');
-    const name = sanitize(b.name, 8);
-    const m = await moderate(name, 'chat', t.spec.meta.rating);
-    if (!m.ok) throw new HttpError(422, m.reason);
-    const v = t.avatars.join(c.get('vid'), ip, { name, color: b.color });
+    const t = town(c), b = c.get('body'), user = c.get('user');
+    requireUser(c);
+    take(c, 'avatar');
+    // 旅人在所有世界里都用账号昵称出现；只有持令牌但没登录的管理员才自己起名字
+    const name = user?.nickname || sanitize(b.name, 8);
+    if (!user) {
+      const m = await moderate(name, 'chat', t.spec.meta.rating);
+      if (!m.ok) throw new HttpError(422, m.reason);
+    }
+    const v = t.avatars.join(c.get('vid'), c.get('ip'), { name, color: b.color });
     return c.json({ ok: true, avatar: { id: v.id, name: v.name, color: v.color } });
   });
-  api.post('/avatar/move', (c) => { town(c).avatars.move(c.get('vid'), String(c.get('body').location || '')); return c.json({ ok: true }); });
-  api.post('/avatar/goto', (c) => { const b = c.get('body'); town(c).avatars.goto(c.get('vid'), b.x, b.y); return c.json({ ok: true }); });
-  api.post('/avatar/leave', (c) => c.json({ ok: town(c).avatars.leave(c.get('vid')) }));
+  api.post('/avatar/move', (c) => { requireUser(c); town(c).avatars.move(c.get('vid'), String(c.get('body').location || '')); return c.json({ ok: true }); });
+  api.post('/avatar/goto', (c) => { requireUser(c); const b = c.get('body'); town(c).avatars.goto(c.get('vid'), b.x, b.y); return c.json({ ok: true }); });
+  api.post('/avatar/leave', (c) => c.json({ ok: c.get('vid') ? town(c).avatars.leave(c.get('vid')) : false }));
 
   // 打开 / 关闭异界区域（管理员）
   api.post('/region', (c) => {
@@ -311,7 +332,7 @@ export function worldApi(deps) {
   api.post('/vote', (c) => {
     voteGate(c);
     const b = c.get('body');
-    const err = town(c).votes.cast(String(b.id || ''), c.get('ip'), String(b.option || ''));
+    const err = town(c).votes.cast(String(b.id || ''), c.get('vid'), String(b.option || ''));
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
   });
@@ -368,8 +389,8 @@ export function worldApi(deps) {
 }
 
 function voteGate(c) {
-  if (!config.allowInteraction && !c.get('admin')) throw new HttpError(403, '当前为只读观赏模式');
-  if (!c.get('admin')) take(limits.vote, c.get('ip'), '投票');
+  requireUser(c);
+  take(c, 'vote');
 }
 
 /** 切换到另一条时间线：当前小镇存盘停下，换成目标时间线的小镇 */

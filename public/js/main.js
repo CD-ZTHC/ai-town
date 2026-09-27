@@ -4,16 +4,12 @@ import * as UI from './ui.js';
 import * as Modes from './modes.js';
 import * as Immerse from './immerse.js';
 import * as Play from './play.js';
+import { requireLogin } from './ui/auth.js';
 
 export const storage = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
 };
-function visitorId() {
-  let v = storage.get('town-vid');
-  if (!v) { v = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join(''); storage.set('town-vid', v); }
-  return v;
-}
 
 const canvas = document.getElementById('world');
 const minimap = document.getElementById('minimap');
@@ -40,21 +36,28 @@ export const app = {
   hover: null,
   forceFestival: false,
   renderer,
-  perms: { admin: false, interaction: true, publicMode: false },
+  perms: { admin: false, interaction: true, canTry: true, publicMode: false },
   // 相对路径：支持部署在子路径下（例如 https://example.com/town/）
-  api: async (path, body) => {
-    const headers = { 'X-Visitor': visitorId() };
+  api: async (path, body, { retried = false } = {}) => {
+    const headers = {};
     const token = storage.get('town-admin');
     if (token) headers['X-Admin-Token'] = token;
     const opts = body === undefined ? { headers } : { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
     const res = await fetch(path.replace(/^\//, ''), opts);
     let data = {};
     try { data = await res.json(); } catch {}
+    // 游客点了互动入口：弹出登录框，登录成功后自动继续刚才的操作
+    if (res.status === 401 && data.login && !retried) {
+      await requireLogin(data.error);
+      return app.api(path, body, { retried: true });
+    }
     if (!res.ok) { const e = new Error(data.error || `请求失败（${res.status}）`); e.status = res.status; throw e; }
     return data;
   },
   async refreshPerms() {
     try { app.perms = await app.api('/api/me'); } catch {}
+    // 能不能看到互动入口：能互动，或者登录之后就能互动（游客点下去会弹出登录框）
+    app.perms.canTry = Boolean(app.perms.interaction || app.perms.loginToInteract);
     UI.applyPerms();
   },
   select(id, { focus = true } = {}) {

@@ -12,6 +12,7 @@ export { onStory, storyModal, sparkline } from './ui/story.js';
 export { onProposals, buildModal } from './ui/build.js';
 export { onEvolution, evolveModal } from './ui/evolve.js';
 export { avatarModal, eventModal, newsModal, graphModal, helpModal, adminModal } from './ui/modals.js';
+export { accountModal, requireLogin } from './ui/auth.js';
 
 export function init(a, first) {
   setApp(a);
@@ -126,14 +127,18 @@ export function tooltip(id, x, y) {
 
 export function applyPerms() {
   const p = app.perms;
+  // 游客也能看到互动入口：点下去先弹出登录框
+  const canTry = p.interaction || p.loginToInteract;
   $('#speed').hidden = !p.admin;
   $('#mode-chip').hidden = p.admin;
-  $('#mode-chip').textContent = p.interaction ? '🌿 访客模式' : '👀 观赏模式';
-  $('#btn-event').hidden = !p.interaction;
-  $('#dock-play').hidden = !p.interaction;
+  $('#mode-chip').textContent = p.interaction ? '🌿 访客模式' : p.loginToInteract ? '👀 游客（登录后可互动）' : '👀 观赏模式';
+  $('#btn-event').hidden = !canTry;
+  $('#dock-play').hidden = !canTry;
   $('#more-admin').hidden = !p.needToken && !p.admin;
-  $('#btn-weather').hidden = !p.interaction;
-  if (!p.interaction && ui.tab === 'chat') ui.tab = 'sched';
+  $('#more-account').hidden = !p.accounts;
+  $('#more-account').textContent = p.user ? `👤 ${p.user.nickname}` : '👤 登录 / 注册';
+  $('#btn-weather').hidden = !canTry;
+  if (!canTry && ui.tab === 'chat') ui.tab = 'sched';
 }
 
 export const setSpeed = guarded(async (sp) => {

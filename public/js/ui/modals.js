@@ -8,14 +8,15 @@ export function avatarModal() {
   if (!mine) {
     const saved = app.storage.get('town-avatar-name') || '';
     let color = app.storage.get('town-avatar-color') || AV_COLORS[0];
+    const nick = app.perms.user?.nickname || '';
     const card = openModal(`<h2>👣 以旅人的身份现身</h2>
-      <div class="sub">起一个名字，你会以旅人的样子出现在中央广场。居民们看得见你、会跟你打招呼，和你聊过的话也会记住是你说的。20 分钟不操作会自动离开。</div>
-      <div class="pform"><input id="av-name" maxlength="8" placeholder="你的名字（≤8 字）" value="${esc(saved)}">
+      <div class="sub">${nick ? `你会以「${esc(nick)}」的样子出现在中央广场。` : '起一个名字，你会以旅人的样子出现在中央广场。'}居民们看得见你、会跟你打招呼，和你聊过的话也会记住是你说的。20 分钟不操作会自动离开。</div>
+      <div class="pform">${nick ? '' : `<input id="av-name" maxlength="8" placeholder="你的名字（≤8 字）" value="${esc(saved)}">`}
       <div class="av-colors">${AV_COLORS.map((c) => `<button class="av-c${c === color ? ' on' : ''}" data-c="${c}" style="background:${c}"></button>`).join('')}</div>
       <button class="primary" id="av-go">现身 ✨</button><span class="quota" id="av-msg"></span></div>`);
     $$('.av-c', card).forEach((b) => b.addEventListener('click', () => { color = b.dataset.c; $$('.av-c', card).forEach((x) => x.classList.toggle('on', x === b)); }));
     $('#av-go', card).onclick = async () => {
-      const name = $('#av-name', card).value.trim();
+      const name = nick || $('#av-name', card).value.trim();
       try {
         const r = await app.api('/api/avatar', { name, color });
         app.storage.set('town-avatar-name', r.avatar.name); app.storage.set('town-avatar-color', r.avatar.color);
@@ -234,12 +235,12 @@ export function helpModal() {
   <div class="help-modes">
     <button data-go="observe"><b>🔭 观察模式</b><small>点击居民查看日程、记忆、关系与日记；发布事件、改变天气、翻阅日报。</small></button>
     <button data-go="immerse"><b>🎬 沉浸模式</b><small>隐藏界面，镜头自动去有故事的地方，对白变成字幕。适合挂着慢慢看。</small></button>
-    ${app.perms.interaction ? '<button data-go="play"><b>🎮 游戏模式</b><small>以旅人的身份走进小镇，走到居民身边和 TA 聊天——TA 会记住你。</small></button>' : ''}
+    ${app.perms.canTry ? '<button data-go="play"><b>🎮 游戏模式</b><small>以旅人的身份走进小镇，走到居民身边和 TA 聊天——TA 会记住你。</small></button>' : ''}
   </div>
   <table class="keys"><thead><tr><th></th><th>🔭 观察</th><th>🎬 沉浸</th><th>🎮 游戏</th></tr></thead>
   <tbody>${rows.map(([key, ...c]) => `<tr><td>${k(key)}</td>${c.map((x) => `<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table>
   ${adm ? '<div class="sub" style="margin-top:8px">管理员：<kbd>1-4</kbd> 调速。</div>' : ''}
-  ${app.perms.publicMode && !adm ? `<div class="sub" style="margin-top:10px">🌿 你正以访客身份参观：可以搭话、发布事件和改变天气（有频率限制，内容会经过审核）；时间流速由小镇管理员掌管。</div>` : ''}
+  ${app.perms.publicMode && !adm ? `<div class="sub" style="margin-top:10px">${app.perms.user ? `🌿 你以「${esc(app.perms.user.nickname)}」的身份参观：可以现身、搭话、发布事件和改变天气（有频率限制，内容会经过审核）；时间流速由管理员掌管。` : '👀 你正以游客身份观看。<b>登录后</b>就可以现身、和居民聊天、化作心声、发布事件和投票——居民会记住你是谁。'}</div>` : ''}
   <div class="row" style="justify-content:flex-end"><button class="primary" id="help-ok">开始 ✨</button></div>`, 'help');
   $('#help-ok').onclick = closeModal;
   $$('.help-modes [data-go]').forEach((b) => b.addEventListener('click', () => { closeModal(); app.setMode(b.dataset.go); }));

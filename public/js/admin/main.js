@@ -1,9 +1,12 @@
 // 管理面板（多世界设计 §14.9）：按页组织，地址栏 #设置 这样的锚点记住当前页
 import { api, esc, $, storage, dialog, toast } from '../site/api.js';
+import { loginDialog } from '../site/auth.js';
 import { page as settingsPage } from './settings.js';
+import { page as usersPage } from './users.js';
+import { page as auditPage } from './audit.js';
 
 // 各页：{ id, title, render(el, ctx) }，每页一个模块
-export const PAGES = [settingsPage];
+export const PAGES = [settingsPage, usersPage, auditPage];
 
 const ctx = { me: null, refreshAlerts };
 
@@ -20,9 +23,19 @@ async function boot() {
 
 function askToken() {
   const d = dialog(`<h2>🔐 管理员登录</h2>
-    <p class="muted small">输入服务器上设置的管理员令牌（ADMIN_TOKEN）${ctx.me?.accounts ? '，或先在首页用管理员账号登录' : ''}。</p>
+    ${ctx.me?.accounts && ctx.me?.publicMode ? `<p>${ctx.me.user ? `你以「${esc(ctx.me.user.nickname)}」登录，但不是管理员。` : '<button class="primary" id="acct">用管理员账号登录</button>'}</p>
+    ${ctx.me.user ? '<p class="muted small">还没有超级管理员时，可以在下面输入 ADMIN_TOKEN 把这个账号认领为超级管理员。</p><button id="claim">认领为超级管理员</button>' : ''}` : ''}
+    <p class="muted small">或者输入服务器上设置的管理员令牌（ADMIN_TOKEN，应急入口，每次使用都会写审计）。</p>
     <label>管理员令牌</label><input id="tok" type="password" autocomplete="off" />
     <div class="actions"><a href="../">返回首页</a><span style="flex:1"></span><button class="primary" id="ok">进入</button></div>`);
+  const acct = $('#acct', d.el);
+  if (acct) acct.onclick = async () => { d.close(); if (await loginDialog({ reason: '用管理员账号登录' })) boot(); else askToken(); };
+  const claim = $('#claim', d.el);
+  if (claim) {
+    claim.onclick = async () => {
+      try { await api('api/auth/claim-admin', { token: $('#tok', d.el).value.trim() }); d.close(); toast('✅ 已认领为超级管理员'); boot(); } catch (e) { toast(esc(e.message)); }
+    };
+  }
   const submit = async () => {
     storage.set('town-admin', $('#tok', d.el).value.trim());
     const me = await api('api/me').catch(() => null);

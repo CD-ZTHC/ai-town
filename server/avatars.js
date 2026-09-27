@@ -1,5 +1,6 @@
-// 访客化身（设计文档 P6）：访客可以用一个名字在小镇里现身、走到公共地点；居民看得见，也会记住名字。
-// 化身只存在于内存（不进存档），长时间不操作会自动离开。每个 IP 同时最多一个化身，全镇最多 MAX 个。
+// 访客化身（设计文档 P6、多世界设计 §5.6）：登录的用户以账号昵称在世界里现身、走到公共地点；居民看得见，也会记住这个人。
+// 化身只存在于内存（不进存档），长时间不操作会自动离开。同一账号在同一个世界里只有一个化身（多个标签页看到的是同一个），
+// 每个世界最多 AVATAR_MAX 个。
 import { findPath } from './world.js';
 import { get as setting } from './settings/index.js';
 
@@ -18,20 +19,25 @@ export class AvatarSystem {
     this.seq = 0;
   }
 
-  mine(vid) { return this.list.find((v) => v.vid === vid) || null; }
+  mine(uid) { return this.list.find((v) => v.uid === uid) || null; }
 
-  join(vid, ip, { name, color } = {}) {
+  /** uid：账号 id；name：账号昵称（由服务端给出）。已经现身的账号再次现身时沿用同一个化身 */
+  join(uid, ip, { name, color } = {}) {
     const town = this.town;
     name = String(name ?? '').replace(/[\s<>{}[\]"'`\\]/g, '').slice(0, 8);
     if (name.length < 1) throw err(400, '起个名字吧');
-    if (town.agents.some((a) => a.name === name) || this.list.some((v) => v.name === name && v.vid !== vid && v.ip !== ip)) throw err(409, '这个名字已经有人用了');
-    const old = this.mine(vid) || this.list.find((v) => v.ip === ip);
-    if (old) this.remove(old, false);
-    if (this.list.length >= setting('AVATAR_MAX')) throw err(429, `小镇里的访客已经满了（最多 ${setting('AVATAR_MAX')} 位），稍后再来吧`);
+    if (this.list.some((v) => v.name === name && v.uid !== uid)) throw err(409, '这个名字已经有人用了');
+    const old = this.mine(uid);
+    if (old) {
+      Object.assign(old, { name, ip, seen: this.now(), ...(COLORS.includes(color) ? { color } : {}) });
+      town.emit('avatars');
+      return old;
+    }
+    if (this.list.length >= setting('AVATAR_MAX')) throw err(429, `这里的访客已经满了（最多 ${setting('AVATAR_MAX')} 位），稍后再来吧`);
     const spots = town.findLocation('square')?.spots || [];
     const s = spots.length ? spots[Math.floor(Math.random() * spots.length)] : town.locCenter('square') || { x: 50, y: 34 };
     const v = {
-      id: `v${++this.seq}`, vid, ip, name, color: COLORS.includes(color) ? color : COLORS[this.seq % COLORS.length],
+      id: `v${++this.seq}`, uid, ip, name, color: COLORS.includes(color) ? color : COLORS[this.seq % COLORS.length],
       x: s.x, y: s.y, dir: 'down', moving: false, region: 'town', locId: 'square', path: [], hop: null,
       seen: this.now(), movedAt: 0,
     };
@@ -41,9 +47,9 @@ export class AvatarSystem {
     return v;
   }
 
-  move(vid, locId) {
+  move(uid, locId) {
     const town = this.town;
-    const v = this.mine(vid);
+    const v = this.mine(uid);
     if (!v) throw err(404, '你还没有在小镇里现身');
     if (this.now() - (v.movedLocAt || 0) < MOVE_CD_MS) throw err(429, '慢一点，刚刚才动身');
     locId = String(locId || '');
@@ -54,9 +60,9 @@ export class AvatarSystem {
   }
 
   /** 游戏模式：走到当前区域里任意一个可以走到的格子 */
-  goto(vid, x, y) {
+  goto(uid, x, y) {
     const town = this.town;
-    const v = this.mine(vid);
+    const v = this.mine(uid);
     if (!v) throw err(404, '你还没有在小镇里现身');
     if (this.now() - v.movedAt < GOTO_CD_MS) throw err(429, '慢一点');
     const w = town.worldOf(v.region);
@@ -85,8 +91,8 @@ export class AvatarSystem {
     v.target = locId;
   }
 
-  leave(vid) {
-    const v = this.mine(vid);
+  leave(uid) {
+    const v = this.mine(uid);
     if (!v) return false;
     this.remove(v, true);
     return true;
@@ -98,7 +104,7 @@ export class AvatarSystem {
     this.town.emit('avatars');
   }
 
-  touch(vid) { const v = this.mine(vid); if (v) v.seen = this.now(); return v; }
+  touch(uid) { const v = this.mine(uid); if (v) v.seen = this.now(); return v; }
 
   /** dtReal：真实秒数 */
   tick(dtReal) {
@@ -134,7 +140,7 @@ export class AvatarSystem {
     // 认识的居民会打招呼（不调用模型）
     for (const a of town.agents) {
       if (a.kind === 'creature' || a.status !== 'acting' || a.convoId || a.bubble || !this.near(a, 4).includes(v)) continue;
-      const known = (a.visitorChats?.[v.vid] || []).length > 0;
+      const known = Boolean(a.travellers?.[v.uid]) || (a.visitorChats?.[v.uid] || []).length > 0;
       if (!known && Math.random() > 0.3) continue;
       town.say(a, known ? `又见面了，${v.name}！` : `你好呀，${v.name}，第一次来吗？`, 4000, 'say');
       break;

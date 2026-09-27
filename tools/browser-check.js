@@ -156,9 +156,9 @@ await step('11-immerse', async () => {
 }, { wait: 2500 });
 await step('12-charcard', async () => {
   await send('Page.navigate', { url: `${base}/?mode=play` });
-  // 第一次进游戏模式要先填角色卡
-  await waitFor(() => evaluate(`Boolean(document.querySelector('#cc-name'))`), 15000, '角色卡');
-  await evaluate(`document.querySelector('#cc-name').value = '测试旅人'`);
+  // 第一次进游戏模式要先填角色卡（本地模式用内置账号的昵称，只挑衣服）
+  await waitFor(() => evaluate(`Boolean(document.querySelector('#cc-go'))`), 15000, '角色卡');
+  await evaluate(`document.querySelector('#cc-name') && (document.querySelector('#cc-name').value = '测试旅人'), true`);
 });
 await step('13-play', async () => {
   await click('#cc-go');

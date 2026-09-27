@@ -71,7 +71,7 @@ async function renderStory() {
           <div class="vlab"><b>${esc(o.label)}</b><small>${esc(o.desc)}</small></div>
           <div class="vbar"><i style="width:${(t.total / total) * 100}%"></i></div>
           <div class="vnum">居民 ${t.residents} · 访客 ${t.visitors}</div>
-          ${open && !v.mine && app.perms.interaction ? `<button class="mini" data-vote="${v.id}" data-opt="${o.id}">投这个</button>` : ''}
+          ${open && !v.mine && app.perms.canTry ? `<button class="mini" data-vote="${v.id}" data-opt="${o.id}">投这个</button>` : ''}
           ${open && d.admin ? `<button class="mini adm" data-decide="${v.id}" data-opt="${o.id}">终审</button>` : ''}</div>`; }).join('')}</div>`;
     }).join('') || '<div class="empty">目前没有需要小镇抉择的事。剧情走到关键时刻时，这里会出现投票。</div>';
   } else if (tab === 'threads') {

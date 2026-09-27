@@ -14,6 +14,8 @@ import { HttpError } from './util.js';
  */
 export function adminApi(deps) {
   const api = new Hono();
+  const accounts = deps.accounts;
+  deps = { audit: accounts ? (e) => accounts.audit(e) : null, ...deps };
   api.use('*', async (c, next) => {
     if (!c.get('admin')) throw new HttpError(403, '只有管理员可以这样做');
     await next();
@@ -68,6 +70,34 @@ export function adminApi(deps) {
     deps.audit?.({ actor: actor(c), action: 'settings.restore', target: `v${r.version}`, detail: { from: c.get('body').version, changed: r.changed } });
     return c.json({ ok: true, ...r });
   });
+
+  // ---------- 用户（多世界设计 §5.2、§14.9）----------
+  const acc = () => { if (!accounts) throw new HttpError(503, '账号系统未启用'); return accounts; };
+  const userOr404 = (id) => { const u = acc().get(id); if (!u) throw new HttpError(404, '账号不存在'); return u; };
+  api.get('/users', (c) => c.json({ total: acc().count(), list: acc().list({ q: String(c.req.query('q') || '').slice(0, 40), offset: Number(c.req.query('offset') || 0) }) }));
+  api.get('/users/:id', (c) => {
+    const u = userOr404(c.req.param('id'));
+    return c.json({ ...u, grants: accounts.grantsOf(u.id), sessions: accounts.sessionsOf(u.id), audit: accounts.auditLog({ actor: u.id, limit: 30 }) });
+  });
+  api.post('/users/:id/grants', (c) => {
+    const b = c.get('body');
+    const u = userOr404(c.req.param('id'));
+    const quota = b.quota && typeof b.quota === 'object' ? b.quota : {};
+    const expiresAt = b.expiresAt ? Date.parse(b.expiresAt) || Number(b.expiresAt) || null : null;
+    return c.json({ ok: true, grant: accounts.setGrant(u.id, { cap: String(b.cap || ''), quota, expiresAt, note: String(b.note || '') }, actor(c)) });
+  });
+  api.delete('/users/:id/grants/:cap', (c) => c.json({ ok: acc().revokeGrant(c.req.param('id'), c.req.param('cap'), actor(c)) }));
+  api.post('/users/:id/disable', (c) => { acc().setDisabled(c.req.param('id'), true, actor(c), String(c.get('body').reason || '')); return c.json({ ok: true }); });
+  api.post('/users/:id/enable', (c) => { acc().setDisabled(c.req.param('id'), false, actor(c)); return c.json({ ok: true }); });
+  api.post('/users/:id/reset-link', (c) => c.json({ ok: true, token: acc().createResetToken(userOr404(c.req.param('id')).id, actor(c)) }));
+  api.post('/users/:id/role', (c) => {
+    // 只有超级管理员能任免管理员
+    if (c.get('user')?.role !== 'super' && c.get('user')) throw new HttpError(403, '只有超级管理员可以任免管理员');
+    return c.json({ ok: true, user: acc().setRole(c.req.param('id'), String(c.get('body').role || ''), actor(c)) });
+  });
+
+  // ---------- 审计 ----------
+  api.get('/audit', (c) => c.json(acc().auditLog({ actor: String(c.req.query('actor') || ''), action: String(c.req.query('action') || ''), before: c.req.query('before') ? Number(c.req.query('before')) : null })));
 
   api.post('/restart', (c) => {
     deps.audit?.({ actor: actor(c), action: 'server.restart', target: '', detail: { pending: settings.pendingRestart() } });

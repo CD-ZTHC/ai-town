@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>重置密码 · AI Town</title>
+  <link rel="stylesheet" href="site.css" />
+</head>
+<body>
+  <header class="site-top"><a class="brand" href="./">AI Town</a><span class="muted">重置密码</span></header>
+  <main class="site" style="max-width:420px">
+    <div class="card">
+      <h2>🔑 设置新密码</h2>
+      <p class="muted small">这个链接由管理员生成，只能使用一次。设置后你的所有设备都会退出登录。</p>
+      <form id="rf">
+        <label class="muted small">新密码（至少 10 位）</label>
+        <input name="password" type="password" autocomplete="new-password" style="width:100%" required>
+        <div class="row" style="margin-top:12px"><button class="primary">确定</button><span id="msg" class="small"></span></div>
+      </form>
+    </div>
+  </main>
+  <script type="module" src="js/site/reset.js"></script>
+</body>
+</html>

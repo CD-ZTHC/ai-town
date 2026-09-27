@@ -4,6 +4,7 @@ import * as llm from '../llm.js';
 import { addMemory, retrieve, fmtTime, fmtStamp, condenseCandidate, replaceWithSummary, ruleSummary } from '../memory.js';
 import { useAbility } from '../kernel/abilities.js';
 import { clampStr } from './util.js';
+import { renderRefs } from '../accounts/refs.js';
 
 const CONDENSE_AT = 300; // 记忆超过这么多条时，每晚整理一天的琐事
 const CONDENSE_MIN = 8; // 一天至少这么多条琐碎记忆才整理
@@ -24,7 +25,7 @@ export class Cognition {
 
   memBlock(a, query, k = 10, opts = undefined) {
     const ms = retrieve(a, query, this.t, k, opts);
-    return ms.length ? ms.map((m) => `- [${fmtStamp(m.t)}] ${m.text}`).join('\n') : '- （暂无）';
+    return ms.length ? ms.map((m) => `- [${fmtStamp(m.t)}] ${renderRefs(m.text)}`).join('\n') : '- （暂无）';
   }
 
   /** 提示词里的「相关记忆」：配置了 embedding 时先补齐向量（有超时），再按双字组 + 语义检索；没配置时等同 memBlock */
@@ -47,7 +48,7 @@ export class Cognition {
     let text = '';
     if (llm.stats.enabled && llm.budgetLeft() > 0) {
       try {
-        const list = c.items.map((m) => `- [${fmtTime(m.t)}] ${m.text}`).join('\n');
+        const list = c.items.map((m) => `- [${fmtTime(m.t)}] ${renderRefs(m.text)}`).join('\n');
         const res = await this.think(a, '整理记忆', () => llm.chatJSON([
           this.sys(),
           { role: 'user', content: `${this.personaBlock(a)}\n${a.name}第${c.day}天经历的这些小事：\n${list}\n\n请以${a.name}的第一人称，把它们浓缩成一两句记忆（≤80字），保留人名、地点、约定和让人在意的细节，省略重复与琐碎的部分。输出 JSON：{"summary":"..."}` },
@@ -121,7 +122,7 @@ ${this.abilityList(a)}
     a.lastReflectT = this.t;
     a.importanceAcc = 0;
     try {
-      const recent = a.memories.slice(-25).map((m) => `- [${fmtTime(m.t)}] ${m.text}`).join('\n');
+      const recent = a.memories.slice(-25).map((m) => `- [${fmtTime(m.t)}] ${renderRefs(m.text)}`).join('\n');
       const res = await this.think(a, '反思', () => llm.chatJSON([
         this.sys(),
         {
@@ -150,7 +151,7 @@ ${recent}
 
   async writeDiary(a) {
     const start = (this.day - 1) * 1440;
-    const today = a.memories.filter((m) => m.t >= start && m.type !== 'thought').slice(-30).map((m) => `- [${fmtTime(m.t)}] ${m.text}`).join('\n');
+    const today = a.memories.filter((m) => m.t >= start && m.type !== 'thought').slice(-30).map((m) => `- [${fmtTime(m.t)}] ${renderRefs(m.text)}`).join('\n');
     try {
       const res = await this.think(a, '写日记', () => llm.chatJSON([
         this.sys(),
