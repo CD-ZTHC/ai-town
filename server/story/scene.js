@@ -26,7 +26,7 @@ export class SceneManager {
     this.pending.push({
       id, title, location: b.location, members: members.map((a) => a.id), purpose: str(b.purpose, 160),
       fallback: b.fallback || null, assignments: b.assignments || [], choices: b.choices || null, fallbackChoice: b.fallbackChoice || null,
-      arc: b.arc || null, time: start,
+      arc: b.arc || null, time: start, ...(b.council ? { council: b.council } : {}),
     });
     town.log('scene_plan', `🗓️ ${members.map((a) => a.name).join('、')}约好 ${fmtTime(start)} 在${town.locName(b.location)}：${title}`, { agents: members.map((a) => a.id).slice(0, 4) });
     town.emit('story');
@@ -45,6 +45,7 @@ export class SceneManager {
       } else if (town.t >= sc.time + DEADLINE) {
         this.pending.splice(this.pending.indexOf(sc), 1);
         town.log('scene_plan', `「${sc.title}」没能凑齐人，只好作罢`, {});
+        if (sc.council) town.council?.onScene(sc, null);
       }
     }
   }
@@ -159,6 +160,7 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
     town.log('scene', summary, { agents: members.map((a) => a.id), convoId: sc.id, where: convo.where, lines: convo.lines, title: sc.title, commitments: commits, ...(fallback ? { fallback: true } : {}) });
     for (const c of commits) town.log('commit', `📌 新分工：${c}`, { agents: members.map((a) => a.id).slice(0, 2) });
     for (const a of members) town.emit('agent', a.id);
+    if (sc.council) town.council?.onScene(sc, res);
     town.emit('story');
   }
 }

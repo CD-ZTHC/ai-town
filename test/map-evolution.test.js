@@ -75,6 +75,8 @@ for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { Town } = await import('../server/sim.js');
 const { loadPack } = await import('../server/worlds/pack.js');
 const { manifestText } = await import('../server/worldai/manifest.js');
+const llm = await import('../server/llm.js');
+const { judge } = await import('../server/worldai/council.js');
 const redPack = loadPack(path.resolve('worlds/little-red'));
 const redTown = () => new Town({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'town-map-')), worldId: 'little-red', pack: redPack, instantTalk: true });
 const persona = (town, id) => town.spec.personas.find((p) => p.id === id);
@@ -152,8 +154,13 @@ test('拆除提案：大改、有施工期、在里面的人走到门口；保�
   assert.equal(p.construction.kind, 'demolish');
   assert.deepEqual(p.construction.site.id, 'red_house');
   assert.ok(p.construction.by.length > 0, '有施工队（不再写死云溪镇的人）');
-  // 设定考据是异步的：等它把提案送去审批
+  // 设定考据是异步的：等它把提案送去议事；当事人（小红帽、妈妈）同意、其余居民过半赞成
   for (let i = 0; i < 20 && p.status === 'review'; i++) await new Promise((r) => setImmediate(r));
+  assert.equal(p.status, 'council');
+  llm.setMock((m, o) => JSON.stringify(o?.label === '居民议事' ? { consent: { 小红帽: { yes: true }, 妈妈: { yes: true } }, votes: { 外婆: { yes: true }, 猎人: { yes: true }, 大灰狼: { yes: false } } } : {}));
+  t.after(() => llm.setMock(null));
+  await town.council.deliberate(p);
+  assert.equal(p.status, 'awaiting', p.result?.reason);
   assert.equal(ps.decide(p.id, true, 'admin'), null);
   assert.equal(p.status, 'building');
   town.t = p.finishT + 1;
@@ -161,7 +168,7 @@ test('拆除提案：大改、有施工期、在里面的人走到门口；保�
   assert.equal(p.status, 'applied', p.result?.reason);
   assert.equal(red.inside, null, '在里面的人走到了门口');
   assert.ok(town.spec.lore.canon.some((c) => c.text.includes('小红帽家') && c.text.includes('拆除')), '写进正典');
-  assert.ok(red.memories.some((m) => m.text.includes('小红帽家') && m.text.includes('搬到')));
+  assert.ok(red.memories.some((m) => m.importance === 9 && m.text.includes('小红帽家')), '当事人的重要记忆');
   // 两次拆除至少隔 3 天
   const r2 = ps.prepare([{ op: 'removeBuilding', args: { id: 'bakery' } }]);
   assert.match(r2.error, /3 天之内不再拆/);
@@ -170,4 +177,74 @@ test('拆除提案：大改、有施工期、在里面的人走到门口；保�
   const pl = findPlacement(town.spec, { id: 'shed', name: '小棚', w: 4, h: 4, near: 'village_square', within: 16 });
   town.applyWorldOp({ op: 'addBuilding', args: { id: 'shed', name: '小棚', kind: 'hut', w: 4, h: 4, x: pl.x, y: pl.y, builtDay: town.day } });
   assert.match(ps.prepare([{ op: 'removeBuilding', args: { id: 'shed' } }]).error, /不到 7 天/);
+});
+
+// ---------- E3 拆除的议事 ----------
+test('议事判定：当事人同意 + 过半数；当事人反对 + 全票；差一票否决；过半数反对否决；没有当事人只看过半数', () => {
+  const v = (...yes) => Object.fromEntries(yes.map((y, i) => [`v${i}`, { yes: y }]));
+  const voters = ['v0', 'v1', 'v2'];
+  const J = (consent, votes, stakeholders = ['s']) => judge({ stakeholders, voters, consent, votes });
+  assert.equal(J({ s: { yes: true } }, v(true, true, false)).pass, true);
+  assert.equal(J({ s: { yes: true } }, v(true, false, false)).pass, false);
+  const forced = J({ s: { yes: false } }, v(true, true, true));
+  assert.deepEqual([forced.pass, forced.forced], [true, true]);
+  assert.equal(J({ s: { yes: false } }, v(true, true, false)).pass, false, '差一票');
+  assert.equal(J({ s: { yes: false } }, { v0: { yes: true }, v1: { yes: true } }).pass, false, '有人没表态不算全票');
+  assert.equal(J({}, v(true, true, false), []).pass, true, '没有当事人：过半数');
+  assert.equal(J({}, v(true, false, false), []).pass, false);
+});
+
+test('议事：当事人不同意、其余全票赞成 → 拆除；当事人得到重要记忆、心情失落、记下谁赞成，并留下「旧居」线程', async (t) => {
+  const town = redTown();
+  t.after(() => { town.stop(); llm.setMock(null); });
+  llm.setMock((m, o) => JSON.stringify(o?.label === '居民议事' ? {
+    consent: { 小红帽: { yes: false, reason: '这是我长大的地方' }, 妈妈: { yes: true, reason: '为了修路' } },
+    votes: { 外婆: { yes: true, reason: '路修好了我走得动' }, 猎人: { yes: true }, 大灰狼: { yes: true } },
+    memories: { 小红帽: { agree: '我答应了。', forced: '我不想搬走，可大家都举了手。那扇红门，我再也推不开了。' } },
+    thread: { title: '红门的记忆', hook: '小红帽总在旧址那里发呆' },
+  } : {}));
+  const ps = town.proposalSystem;
+  const { proposal: p } = ps.submit({ title: '拆掉小红帽家修路', motive: '去外婆家的路太绕', ops: [{ op: 'removeBuilding', args: { id: 'red_house' } }] });
+  for (let i = 0; i < 20 && p.status === 'review'; i++) await new Promise((r) => setImmediate(r));
+  assert.equal(p.status, 'council');
+  assert.deepEqual(p.council.stakeholders.sort(), ['mom', 'red']);
+  assert.ok(town.pendingScenes.some((sc) => sc.council === p.id), '安排了议事会');
+  town.council.onScene({ council: p.id }, { summary: '大家在村口广场吵了一下午' });
+  await town.council.deliberate(p);
+  assert.equal(p.council.pass, true);
+  assert.equal(p.council.forced, true);
+  assert.equal(ps.decide(p.id, true, 'owner'), null);
+  town.t = p.finishT + 1;
+  ps.tick();
+  assert.equal(p.status, 'applied', p.result?.reason);
+  const red = town.byId.red;
+  assert.ok(red.memories.some((m) => m.importance === 9 && m.text.includes('红门')), '被全票通过的当事人的重要记忆');
+  assert.equal(red.mood.text, '失落');
+  assert.match(red.relations.grandma.note, /赞成拆了「小红帽家」/);
+  assert.ok(town.byId.mom.memories.some((m) => m.importance === 9 && m.text.includes('我答应了') && m.text.includes('小红帽家')), '同意的当事人用默认文案');
+  assert.ok(town.spec.threads.some((th) => th.title === '红门的记忆'));
+  assert.ok(ps.view(p).council.votes.every((x) => x.yes === true));
+  // 撤销：多一段「后来不拆了」
+  assert.equal(ps.undo(p), null);
+  assert.ok(red.memories.some((m) => m.text.includes('后来大家决定不拆')));
+});
+
+test('议事否决：差一票不拆；10 天之内不能再提；终审人不能推翻', async (t) => {
+  const town = redTown();
+  t.after(() => { town.stop(); llm.setMock(null); });
+  llm.setMock((m, o) => JSON.stringify(o?.label === '居民议事' ? {
+    consent: { 小红帽: { yes: false }, 妈妈: { yes: false } }, votes: { 外婆: { yes: false, reason: '舍不得' }, 猎人: { yes: true }, 大灰狼: { yes: true } },
+  } : {}));
+  const ps = town.proposalSystem;
+  const { proposal: p } = ps.submit({ title: '拆掉小红帽家', ops: [{ op: 'removeBuilding', args: { id: 'red_house' } }] });
+  for (let i = 0; i < 20 && p.status === 'review'; i++) await new Promise((r) => setImmediate(r));
+  town.council.onScene({ council: p.id }, null);
+  await town.council.deliberate(p);
+  assert.equal(p.status, 'rejected');
+  assert.match(p.result.reason, /居民否决/);
+  assert.match(ps.decide(p.id, true, 'admin'), /不能终审/);
+  assert.match(ps.prepare([{ op: 'removeBuilding', args: { id: 'red_house' } }]).error, /居民刚否决过/);
+  assert.ok(town.byId.grandma.memories.some((m) => m.text.includes('反对拆掉「小红帽家」')));
+  town.t += 10 * 1440;
+  assert.ok(!ps.prepare([{ op: 'removeBuilding', args: { id: 'red_house' } }]).error);
 });

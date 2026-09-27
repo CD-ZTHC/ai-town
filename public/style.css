@@ -408,6 +408,10 @@ button.mini.adm { background: rgba(255, 184, 107, 0.2); color: var(--accent); }
 .pbody ul { margin: 0; padding-left: 18px; }
 .pbody img.site { width: 150px; border-radius: 8px; image-rendering: pixelated; flex-shrink: 0; }
 .pcanon { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.pcouncil { font-size: 12px; margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); display: grid; gap: 4px; }
+.pcouncil .cv { display: inline-block; margin: 0 6px 2px 0; opacity: 0.9; }
+.pcouncil .cv.no { color: #ff9a8a; }
+.pcouncil small { color: var(--muted); margin-right: 8px; }
 .pact { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
 .dec.snap { display: flex; gap: 10px; align-items: center; }
 .dec.snap button { margin-left: auto; }

@@ -64,6 +64,18 @@ export const OPS = {
     },
     describe: (a) => (a.secret ? '一个秘密被写入了小镇的历史' : `写入设定集：${str(a.text, 40)}`),
   },
+  // 新的剧情线程（伏笔看板）：例如被全票通过拆掉旧居的人，之后可能有和解、纪念或补偿的故事
+  addThread: {
+    level: 'micro',
+    check(spec, a) {
+      if (!validId(a.id)) return 'id 不合法';
+      if ((spec.threads || []).some((t) => t.id === a.id)) return `线程已存在：${a.id}`;
+      if (!str(a.title, 20) || !str(a.hook, 80)) return 'title / hook 不能为空';
+      return (spec.threads || []).length >= 60 ? '剧情线程已达上限' : null;
+    },
+    apply(spec, a) { (spec.threads ||= []).push({ id: a.id, title: str(a.title, 20), hook: str(a.hook, 80) }); },
+    describe: (a) => `新的故事线索：${str(a.title, 20)}`,
+  },
   addCalendarEvent: {
     level: 'minor',
     check(spec, a) {

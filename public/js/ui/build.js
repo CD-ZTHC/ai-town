@@ -8,9 +8,20 @@ export function onProposals() {
 }
 
 const P_STATUS = {
-  review: ['🔎 考据中', 'rev'], voting: ['🗳️ 征求意见', 'vote'], awaiting: ['⏳ 等待终审', 'wait'], queued: ['📋 排队动工', 'wait'],
+  review: ['🔎 考据中', 'rev'], council: ['🏛️ 居民议事中', 'vote'], voting: ['🗳️ 征求意见', 'vote'], awaiting: ['⏳ 等待终审', 'wait'], queued: ['📋 排队动工', 'wait'],
   building: ['🚧 施工中', 'build'], applied: ['✅ 已落地', 'ok'], rejected: ['❌ 已驳回', 'no'], failed: ['⚠️ 未能实施', 'no'], expired: ['⌛ 已作废', 'no'], reverted: ['↩️ 已撤销', 'no'],
 };
+
+/** 拆除的议事：当事人是否同意、每位居民的表态与理由、判定结果 */
+function councilHTML(c) {
+  if (!c) return '';
+  const vote = (v) => `<span class="cv ${v.yes == null ? '' : v.yes ? 'yes' : 'no'}" title="${esc(v.reason)}">${v.yes == null ? '…' : v.yes ? '👍' : '👎'} ${esc(v.name)}</span>`;
+  const head = c.status === 'meeting' ? '议事会还没开' : c.status === 'deliberating' ? '大家正在表态' : c.pass ? `通过：${esc(c.why || '')}` : `否决：${esc(c.why || '')}`;
+  return `<div class="pcouncil"><div>🏛️ 议事「${esc(c.building)}」 · ${head}</div>
+    ${c.summary ? `<div class="quota">${esc(c.summary)}</div>` : ''}
+    ${c.stakeholders.length ? `<div>当事人：${c.stakeholders.map((v) => `${vote(v)}${v.reason ? `<small>「${esc(v.reason)}」</small>` : ''}`).join(' ')}</div>` : ''}
+    ${c.status === 'done' ? `<div>居民：${c.votes.map(vote).join(' ')}</div>` : ''}</div>`;
+}
 
 const P_LEVEL = { micro: '微调', minor: '小改', major: '大改' };
 
@@ -76,6 +87,7 @@ async function renderBuild() {
           <div class="pmeta">${esc(p.origin)} · 第${Math.floor(p.createdT / 1440) + 1}天 ${fmtTime(p.createdT)}${time ? ` · ${time}` : ''}</div>
           ${p.motive ? `<div class="pmot">${esc(p.motive)}</div>` : ''}
           <div class="pbody">${sitePreview(rects)}<ul>${p.ops.map((o) => `<li>${esc(o.desc)}</li>`).join('')}</ul></div>
+          ${councilHTML(p.council)}
           ${p.canon?.issues?.length ? `<div class="pcanon">📜 考据官：${p.canon.issues.map(esc).join('；')}</div>` : ''}
           ${p.result?.reason ? `<div class="pcanon">${esc(p.result.reason)}</div>` : ''}
           <div class="pact">

@@ -17,6 +17,7 @@ import { CreatureSystem } from './story/creatures.js';
 import { MigrationSystem } from './story/migration.js';
 import { AvatarSystem } from './avatars.js';
 import { ProposalSystem } from './worldai/proposals.js';
+import { Council } from './worldai/council.js';
 import { HookBus } from './kernel/hooks.js';
 import { DecisionQueue } from './kernel/decisions.js';
 import { PluginHost } from '../plugin-host/index.js';
@@ -130,6 +131,7 @@ export class Town extends EventEmitter {
     this.avatars = new AvatarSystem(this);
     // P4：建设提案（世界架构师、施工等功能由 plugins/builtin/ 下的插件提供）
     this.proposalSystem = new ProposalSystem(this);
+    this.council = new Council(this); // 拆除的议事（地图演变 §3.4）
     this.architect = null;
     // 自主演化 E0：钩子总线 + 插件宿主
     this.hooks = new HookBus();
@@ -255,6 +257,7 @@ export class Town extends EventEmitter {
       this.director.tick();
       this.migration.tick();
       this.proposalSystem.tick();
+      this.council.tick();
       this.decisions.tick();
       this.evolved.tick();
       this.hooks.emit('tick', dtGame);

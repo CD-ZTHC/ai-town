@@ -9,6 +9,7 @@
 | `setParam` | major | — | 仅管理员 / 剧情弧使用 |
 | `setMeta` | major | — | 仅管理员 / 剧情弧使用 |
 | `addCanon` | micro | ✅ | {"text":"写进小镇历史的事实（≤100字）","tags":["标签"]} |
+| `addThread` | micro | — | 仅管理员 / 剧情弧使用 |
 | `addCalendarEvent` | minor | ✅ | {"id","name":"≤16字","emoji","day":第几天（必须大于今天）,"from":"HH:MM","location":"地点id","hint":"≤60字","countdown":true} |
 | `addWeather` | minor | ✅ | {"id","name":"≤8字","emoji","weight":0~20,"render":{"base":"sunny/cloudy/rain/storm/fog/snow","tint":"#rrggbb","tintAlpha":0~0.5}} |
 | `addItem` | micro | ✅ | {"id","name":"≤8字","emoji","desc":"≤40字"} |

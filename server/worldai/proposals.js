@@ -65,8 +65,9 @@ export class ProposalSystem {
     if (p.status === 'applied') {
       const n = this.town.revertOps((r) => r.cause?.proposal === p.id);
       p.status = 'reverted';
+      this.town.council?.afterUndone(p);
       p.result = { t: Math.floor(this.town.t), reason: `撤销（回滚了 ${n} 项世界变化）` };
-    } else if (['building', 'queued'].includes(p.status)) {
+    } else if (['building', 'queued', 'council'].includes(p.status)) {
       this.finish(p, 'rejected', '被撤销');
     } else return '这个提案现在不能撤销';
     this.town.log('proposal', `↩️ 提案「${p.title}」被撤销`, {});
@@ -156,6 +157,8 @@ export class ProposalSystem {
 
   route(p) {
     const town = this.town;
+    // 拆除（或变成废墟）先经过居民议事，通过之后才走下面的终审
+    if (p.ops.some(isDemolition) && !p.council?.pass && town.council) return town.council.start(p);
     if (p.level === 'micro' || (!this.requireAdmin && p.level === 'minor')) return this.approve(p, 'auto');
     if (this.requireAdmin) {
       p.status = 'voting';
@@ -293,7 +296,8 @@ export class ProposalSystem {
     const tpl = run && spec.arcs.find((a) => a.id === run.template);
     if (tpl && JSON.stringify(tpl).includes(`"${id}"`)) return `「${b.name}」是进行中的剧情《${tpl.title}》里的地方，剧情落幕之后才能拆`;
     if (b.builtDay != null && town.day - b.builtDay < PROTECT_DAYS) return `「${b.name}」建成还不到 ${PROTECT_DAYS} 天，先用一段时间再说`;
-    if (b.vetoedUntil != null && town.day < b.vetoedUntil) return `居民刚否决过拆除「${b.name}」，第 ${b.vetoedUntil} 天之前不能再提`;
+    const veto = town.council?.vetoes[id];
+    if (veto != null && town.day < veto) return `居民刚否决过拆除「${b.name}」，第 ${veto} 天之前不能再提`;
     const last = this.list.filter((p) => p.status === 'applied' && p.ops.some(isDemolition)).map((p) => p.appliedDay).sort((x, y) => y - x)[0];
     if (last != null && town.day - last < DEMOLISH_GAP_DAYS) return `第 ${last} 天刚拆过房子，${DEMOLISH_GAP_DAYS} 天之内不再拆`;
     return null;
@@ -329,7 +333,7 @@ export class ProposalSystem {
     const im = impactOf(before, b.id);
     const text = ruin ? `第${town.day}天，「${b.name}」成了一片废墟。` : `第${town.day}天，「${b.name}」被拆除，原址成了一片空地。`;
     try { town.applyWorldOp({ op: 'addCanon', args: { text: `${text}${p.motive ? `（${p.motive}）` : ''}`.slice(0, 100), tags: [b.name] } }, { by: 'proposal', proposal: p.id }, { quiet: true }); } catch {}
-    if (p.council?.memories) return; // 议事过的提案：当事人的记忆由议事结果给出
+    if (p.council?.pass) return town.council.afterApplied(p); // 议事过的提案：当事人的重要记忆由议事结果给出
     for (const id of im.residents) {
       const a = town.byId[id];
       if (a) addMemory(a, { t: town.t, type: 'event', text: `「${b.name}」${ruin ? '成了废墟' : '拆了'}，我搬到了${town.locName(a.home)}`, importance: 7 });
@@ -351,7 +355,7 @@ export class ProposalSystem {
       createdT: p.createdT, voteUntil: p.voteUntil || null, finishT: p.finishT || null,
       decision: p.decision ? this.town.decisions?.get(p.decision) && { untilMs: this.town.decisions.get(p.decision).untilMs, status: this.town.decisions.get(p.decision).status } : null,
       ops: p.ops.map((o) => ({ op: o.op, desc: OPS[o.op].describe?.(o.args) || o.op, rect: o.op === 'addBuilding' ? { x: o.args.x, y: o.args.y, w: o.args.w, h: o.args.h } : null })),
-      canon: p.canon, tally: this.tally(p), mine: key ? p.votes[key] ?? null : null, result: p.result, construction: p.construction,
+      canon: p.canon, tally: this.tally(p), mine: key ? p.votes[key] ?? null : null, result: p.result, construction: p.construction, council: this.town.council?.view(p) || null,
     };
   }
 }
