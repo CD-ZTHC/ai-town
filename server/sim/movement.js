@@ -99,14 +99,17 @@ export class Movement {
       return;
     }
     let dest;
-    const indoorPreferred = loc.indoor && (!loc.spots.length || e.sleep || ['rain', 'storm', 'snow'].includes(this.weather) || this.minute > 19 * 60 || a.work === locId || Math.random() < 0.5);
-    if (loc.indoor && indoorPreferred) {
+    // 停业 / 受损的建筑：只有住在里面的人能进，其他人到门口
+    const canEnter = loc.indoor && (!loc.closed || a.home === locId);
+    const indoorPreferred = canEnter && (!loc.spots.length || e.sleep || ['rain', 'storm', 'snow'].includes(this.weather) || this.minute > 19 * 60 || a.work === locId || Math.random() < 0.5);
+    if (canEnter && indoorPreferred) {
       const b = here.buildings.find((x) => x.id === loc.indoor);
       dest = { locId, x: b.entrance.x, y: b.entrance.y, indoor: b.id };
     } else {
       const taken = new Set(this.agents.filter((o) => o !== a && o.dest).map((o) => `${o.dest.x},${o.dest.y}`));
       const free = loc.spots.filter((s) => !taken.has(`${s.x},${s.y}`));
-      const s = rand(free.length ? free : loc.spots);
+      const b = loc.indoor && here.buildings.find((x) => x.id === loc.indoor);
+      const s = rand(free.length ? free : loc.spots) || (b ? b.entrance : this.locCenter(locId));
       dest = { locId, x: s.x, y: s.y, indoor: null };
     }
     a.dest = dest;

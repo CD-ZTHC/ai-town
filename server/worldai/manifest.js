@@ -9,6 +9,10 @@ import { extensions } from '../../plugin-host/registry.js';
 // 世界架构师可以使用的操作及参数格式
 export const OP_DOCS = {
   addBuilding: '{"id":"英文小写id","name":"≤10字","kind":"英文小写类型，如 tower/shrine/shop/garden","w":3~7,"h":3~6,"place":{"near":"地点id","within":6~16},"roof":"#rrggbb","wall":"#rrggbb","sign":"一个emoji","desc":"≤60字","lightAtNight":true/false} —— 不要写坐标，系统会在 near 附近自动找空地；新建筑会成为居民可以去的地点',
+  renovateBuilding: '{"id":"现有建筑id","name":"新名字≤10字(可选)","kind":"新类型(可选)","desc":"≤60字(可选)","sign":"emoji(可选)","roof":"#rrggbb(可选)","public":true/false(可选)} —— 改建 / 换用途：占地不变，住户与所有引用照旧；闲置或不合用的建筑优先改建而不是拆',
+  setBuildingState: '{"id":"现有建筑id","state":"closed 停业 / damaged 受损 / ruin 废墟","reason":"≤30字"} —— 变成废墟与拆除一样要给出 remap（见 removeBuilding），并经过居民议事',
+  restoreBuilding: '{"id":"停业、受损或成了废墟的建筑id"} —— 修好、重新开门',
+  removeBuilding: '{"id":"现有建筑id","remap":{"residents":"住户搬去的建筑id","workers":"在这里工作的人改去的地点id","location":"节日、规则等引用的替代地点id"}} —— 拆除，原址变成空地；remap 不写时系统就近安排；要经过居民议事（住户不同意时需要其他居民全票同意）',
   addCalendarEvent: '{"id","name":"≤16字","emoji","day":第几天（必须大于今天）,"from":"HH:MM","location":"地点id","hint":"≤60字","countdown":true}',
   addWeather: '{"id","name":"≤8字","emoji","weight":0~20,"render":{"base":"sunny/cloudy/rain/storm/fog/snow","tint":"#rrggbb","tintAlpha":0~0.5}}',
   addItem: '{"id","name":"≤8字","emoji","desc":"≤40字"}',
@@ -43,7 +47,11 @@ ${exprText()}
 现有物品：${Object.entries(spec.items).map(([id, i]) => `${id}(${i.name})`).join('、')}
 现有构筑物：${Object.entries(spec.structures).map(([id, x]) => `${id}(${x.name})`).join('、')}
 现有能力：${spec.abilities.map((a) => `${a.id}(${a.name})`).join('、')}
-现有建筑：${spec.buildings.map((b) => b.name).join('、')}`;
+现有建筑（id(名字，状态，住着几人)）：${spec.buildings.filter((b) => !b.removed).map((b) => {
+    const n = spec.personas.filter((p) => p.home === b.id && p.status !== 'departed').length;
+    const st = { closed: '停业', damaged: '受损', ruin: '废墟' }[b.state];
+    return `${b.id}(${b.name}${st ? `，${st}` : ''}${n ? `，住着${n}人` : ''})`;
+  }).join('、')}`;
 }
 
 /** docs/capabilities.md：给人看的能力清单 */

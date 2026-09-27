@@ -4,8 +4,22 @@
 // 都可以写成新插件挂在同样的钩子上，不用修改内核。
 import { fmtTime } from '../../../server/memory.js';
 
+/** 拆除工地旁边最近的公共地点（工人在那里集合） */
+function nearestPublic(town, site) {
+  const cx = site.x + site.w / 2, cy = site.y + site.h;
+  let best = null;
+  for (const id of town.publicLocs()) {
+    if (id === site.id) continue;
+    const c = town.locCenter(id);
+    const d = c ? Math.hypot(c.x - cx, c.y - cy) : Infinity;
+    if (!best || d < best.d) best = { id, d };
+  }
+  return best?.id || null;
+}
+
 export function startConstruction(town, p) {
   const { site, hours, by } = p.construction;
+  const demolish = p.construction.kind === 'demolish';
   p.status = 'building';
   p.finishT = Math.floor(town.t) + hours * 60;
   town.spawnStructure('scaffold', { x: site.x + site.w / 2 - 0.5, y: site.y + site.h - 1, inside: null }, hours * 60);
@@ -14,9 +28,13 @@ export function startConstruction(town, p) {
   for (const name of by) {
     const a = town.agents.find((x) => x.name === name || x.id === name);
     if (!a || a.kind === 'creature') continue;
-    if (site.near && start < 22 * 60 && town.addCommitment(a, { time: fmtTime(start), duration: Math.min(hours * 60, 22 * 60 - start), location: site.near, activity: `施工：${p.title}`, emoji: '🚧' }, '（小镇的建设任务）')) workers.push(a.name);
+    // 拆除时施工地点就是那座建筑（到门口干活）
+    const where = demolish ? nearestPublic(town, site) : site.near;
+    if (where && start < 22 * 60 && town.addCommitment(a, { time: fmtTime(start), duration: Math.min(hours * 60, 22 * 60 - start), location: where, activity: `${demolish ? '拆除' : '施工'}：${p.title}`, emoji: '🚧' }, '（建设任务）')) workers.push(a.name);
   }
-  town.log('proposal', `🚧 「${p.title}」开工了${workers.length ? `，${workers.join('、')}负责施工` : ''}，预计 ${fmtTime(p.finishT)} 完工`, {});
+  town.log('proposal', demolish
+    ? `🚧 「${p.title}」开始拆除${workers.length ? `，${workers.join('、')}负责` : ''}，预计 ${fmtTime(p.finishT)} 拆完`
+    : `🚧 「${p.title}」开工了${workers.length ? `，${workers.join('、')}负责施工` : ''}，预计 ${fmtTime(p.finishT)} 完工`, {});
   town.emit('proposals');
 }
 

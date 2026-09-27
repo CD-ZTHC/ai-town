@@ -382,7 +382,9 @@ export class Terrain {
    *   decor chimney 烟囱 / flowers 花箱 / awning 遮阳篷 / lantern 门灯 / ivy 爬藤 / banner 旗帜 / bell 钟
    */
   drawBuilding(g, b) {
+    if (b.state === 'ruin') return this.drawRuin(g, b);
     const X = b.x * TS, Y = b.y * TS, w = b.w * TS, h = b.h * TS;
+    const closed = b.state === 'closed' || b.state === 'damaged'; // 停业 / 受损：夜里不亮灯、没有招牌
     const kind = b.kind;
     const st = b.style || null;
     const decor = new Set(st?.decor || []);
@@ -450,7 +452,11 @@ export class Terrain {
         g.fillStyle = '#8a5a3a'; g.fillRect(wx - 2, wyy + winH + 2, winW + 4, 4);
         for (let i = 0; i < 5; i++) { g.fillStyle = ['#ff6b8a', '#ffd166', '#ff9ec0'][i % 3]; g.fillRect(wx + i * 4, wyy + winH, 3, 3); }
       }
-      this.windows.push({ b: b.id, x: wx, y: wyy, w: winW, h: winH });
+      if (closed) {
+        // 钉上木板
+        g.fillStyle = '#8a6a48'; g.fillRect(wx - 3, wyy + 3, winW + 6, 4); g.fillRect(wx - 3, wyy + winH - 6, winW + 6, 4);
+        g.fillStyle = '#6a4a30'; g.fillRect(wx - 3, wyy + 5, winW + 6, 1); g.fillRect(wx - 3, wyy + winH - 4, winW + 6, 1);
+      } else this.windows.push({ b: b.id, x: wx, y: wyy, w: winW, h: winH });
     }
 
     // 门
@@ -462,7 +468,11 @@ export class Terrain {
     g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(dx + dW / 2 - 1, dy, 2, dH);
     g.fillStyle = '#f2c14e'; g.fillRect(dx + dW - 5, dy + 12, 2, 2);
     g.fillStyle = '#b8b0a0'; g.fillRect(dx - 4, Y + h - 4, dW + 8, 4);
-    this.windows.push({ b: b.id, x: dx, y: dy, w: dW, h: dH, door: true });
+    if (closed) {
+      // 门上交叉的封条
+      g.strokeStyle = '#c9b48a'; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(dx - 1, dy + 2); g.lineTo(dx + dW + 1, dy + dH - 4); g.moveTo(dx + dW + 1, dy + 2); g.lineTo(dx - 1, dy + dH - 4); g.stroke();
+    } else this.windows.push({ b: b.id, x: dx, y: dy, w: dW, h: dH, door: true });
 
     // 屋顶
     const ov = 5;
@@ -550,13 +560,53 @@ export class Terrain {
     // 招牌
     const signs = { cafe: '☕', library: '📚', tavern: '🍺', clinic: '', workshop: '🔨', farmhouse: '🌾' };
     if (!signs[kind] && b.sign) signs[kind] = b.sign; // 新增建筑的招牌
-    if (signs[kind]) {
+    if (signs[kind] && !closed) {
       const sx = doorX + 22, sy = dy + 2;
       g.fillStyle = '#5a3e28'; g.fillRect(sx - 1, sy - 4, 2, 6);
       g.fillStyle = '#e8d2a8'; roundRect(g, sx - 9, sy + 1, 18, 15, 3); g.fill();
       g.strokeStyle = '#6a4a30'; g.lineWidth = 1.5; g.stroke();
       g.font = '11px "Apple Color Emoji","Segoe UI Emoji",sans-serif';
       g.fillText(signs[kind], sx, sy + 9);
+    }
+    if (b.state === 'damaged') this.drawDamage(g, b, X, Y, w, h, roofH);
+  }
+
+  /** 受损：屋顶破洞、墙上的裂缝、靠在墙边的脚手架 */
+  drawDamage(g, b, X, Y, w, h, roofH) {
+    const hx = X + w * 0.3, hy = Y + roofH * 0.35;
+    g.fillStyle = '#2a1e18';
+    g.beginPath(); g.moveTo(hx, hy); g.lineTo(hx + 18, hy - 4); g.lineTo(hx + 26, hy + 8); g.lineTo(hx + 12, hy + 16); g.lineTo(hx - 4, hy + 10); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(40,28,20,.7)'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(X + w * 0.7, Y + roofH + 4); g.lineTo(X + w * 0.66, Y + roofH + 16); g.lineTo(X + w * 0.72, Y + roofH + 26); g.lineTo(X + w * 0.68, Y + roofH + 38); g.stroke();
+    g.fillStyle = '#b08a55';
+    const sx = X + w - 14;
+    g.fillRect(sx, Y + 10, 3, h - 10); g.fillRect(sx + 10, Y + 10, 3, h - 10);
+    for (let yy = Y + 16; yy < Y + h - 4; yy += 14) g.fillRect(sx - 2, yy, 17, 3);
+  }
+
+  /** 废墟：断墙、塌下来的屋顶、瓦砾和杂草（仍然占地、挡路） */
+  drawRuin(g, b) {
+    const X = b.x * TS, Y = b.y * TS, w = b.w * TS, h = b.h * TS;
+    const wallC = shade(b.wall || '#e8dcc4', -0.18);
+    g.fillStyle = 'rgba(20,30,20,.18)'; g.fillRect(X + 4, Y + h - 4, w, 8);
+    g.fillStyle = '#9c8a74'; g.fillRect(X + 2, Y + h * 0.55, w - 4, h * 0.45);
+    // 高低不一的断墙
+    for (let i = 0, xx = X + 2; xx < X + w - 2; i++, xx += 10) {
+      const hh = 10 + Math.floor(h2(b.x + i, b.y, 3) * (h * 0.5));
+      g.fillStyle = shade(wallC, h2(i, b.y) > 0.5 ? 0.05 : -0.06);
+      g.fillRect(xx, Y + h - 6 - hh, Math.min(10, X + w - 2 - xx), hh);
+    }
+    // 塌下的屋顶梁
+    g.fillStyle = shade(b.roof || '#8a6a4a', -0.25);
+    g.save(); g.translate(X + w * 0.45, Y + h * 0.62); g.rotate(-0.35); g.fillRect(-w * 0.3, -3, w * 0.6, 7); g.restore();
+    // 瓦砾与杂草
+    for (let i = 0; i < 18; i++) {
+      const rx = X + 4 + h2(b.x, i, 11) * (w - 10), ry = Y + h * 0.6 + h2(b.y, i, 13) * (h * 0.36);
+      g.fillStyle = i % 3 ? '#8e8272' : '#6f6558'; g.fillRect(rx, ry, 4 + (i % 3), 3);
+    }
+    for (let i = 0; i < 10; i++) {
+      const gx = X + 3 + h2(b.x, i, 17) * (w - 6), gy = Y + h - 8 - h2(b.y, i, 19) * 10;
+      g.fillStyle = i % 2 ? '#5a9640' : '#7fb85c'; g.fillRect(gx, gy, 2, 6); g.fillRect(gx + 2, gy + 2, 2, 4);
     }
   }
 

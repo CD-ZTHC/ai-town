@@ -69,7 +69,8 @@ export class Regions {
   }
 
   locListText() {
-    return ['home（自己家）', ...this.publicLocs().map((id) => `${id}（${this.spec.locations[id].name}：${this.spec.locations[id].desc}）`)].join('\n');
+    const state = (id) => { const l = this.findLocation(id); return l?.ruin ? '，现在是一片废墟' : l?.closed === 'closed' ? '，已停业，只能到门口' : l?.closed === 'damaged' ? '，房子受损了，只能到门口' : ''; };
+    return ['home（自己家）', ...this.publicLocs().map((id) => `${id}（${this.spec.locations[id].name}：${this.spec.locations[id].desc}${state(id)}）`)].join('\n');
   }
 
   locCenter(id) {

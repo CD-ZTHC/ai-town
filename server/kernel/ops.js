@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PARAM_BOUNDS, RATINGS, STORYTELLERS, validateSpec } from './spec.js';
 import { parseHM } from '../memory.js';
+import { checkRemap, applyRemap } from './impact.js';
 import { validateAbility } from './abilities.js';
 import { validateRule } from './rules.js';
-import { solveLayout, layoutProblems, BIOME_IDS, BUILDING_KINDS, OUTDOOR_KINDS } from '../worldgen/layout.js';
+import { solveLayout, layoutProblems, regionSize, BIOME_IDS, BUILDING_KINDS, OUTDOOR_KINDS } from '../worldgen/layout.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const ID_RE = /^[a-z][a-z0-9_]{1,23}$/;
@@ -14,6 +15,8 @@ const ID_RE = /^[a-z][a-z0-9_]{1,23}$/;
 const RESERVED = new Set(Object.getOwnPropertyNames(Object.prototype));
 const validId = (id) => ID_RE.test(id || '') && !RESERVED.has(id);
 const COLOR_RE = /^#[0-9a-f]{6}$/i;
+const building = (spec, id) => (spec.buildings || []).find((b) => b.id === id && !b.removed);
+const bName = (spec, id) => (spec?.buildings || []).find((b) => b.id === id)?.name || id;
 const pName = (spec, id) => spec?.personas?.find((p) => p.id === id)?.name || id;
 
 // 每个操作：level 决定审批等级（micro / minor / major），check 返回错误文本或 null，
@@ -153,11 +156,14 @@ export const OPS = {
     check(spec, a) {
       if (!validId(a.id)) return 'id 不合法';
       if (spec.buildings.some((b) => b.id === a.id) || Object.hasOwn(spec.locations, a.id)) return `建筑或地点已存在：${a.id}`;
-      if (spec.buildings.filter((b) => b.added).length >= 12) return '新增建筑已达上限（12 座）';
+      const region = spec.regions.find((r) => r.id === (a.region || 'town')) || spec.regions[0];
+      const [RW, RH] = regionSize(region);
+      const cap = Math.floor((RW * RH) / 120);
+      if (spec.buildings.filter((b) => !b.removed && (b.region || 'town') === region.id).length >= cap) return `这张地图上的建筑已经够多了（最多 ${cap} 座）`;
       if (!str(a.name, 10)) return 'name 不能为空（≤10字）';
       if (!/^[a-z]{2,16}$/.test(a.kind || '')) return 'kind 应为 2~16 个小写字母';
       if (!(Number.isInteger(a.w) && a.w >= 3 && a.w <= 7 && Number.isInteger(a.h) && a.h >= 3 && a.h <= 6)) return '尺寸应为宽 3~7、高 3~6';
-      const [W, H] = spec.regions[0].size;
+      const [W, H] = [RW, RH];
       if (!(Number.isInteger(a.x) && Number.isInteger(a.y) && a.x >= 1 && a.y >= 1 && a.x + a.w <= W - 1 && a.y + a.h <= H - 2)) return '位置超出地图';
       for (const k of ['roof', 'wall']) if (a[k] != null && !COLOR_RE.test(a[k])) return `${k} 应为 #rrggbb`;
       return null;
@@ -166,10 +172,95 @@ export const OPS = {
       spec.buildings.push({
         id: a.id, name: str(a.name, 10), kind: a.kind, x: a.x, y: a.y, w: a.w, h: a.h,
         roof: a.roof || '#8a6a4a', wall: a.wall || '#e8dcc4', ...(a.sign ? { sign: str(a.sign, 4) } : {}), lightAtNight: Boolean(a.lightAtNight), added: true,
+        ...(a.region && a.region !== 'town' ? { region: a.region } : {}), ...(a.builtDay != null ? { builtDay: a.builtDay } : {}),
       });
-      spec.locations[a.id] = { name: str(a.name, 10), emoji: str(a.emoji, 4) || str(a.sign, 4) || '🏠', desc: str(a.desc, 60) || str(a.name, 10), public: a.public !== false };
+      spec.locations[a.id] = { name: str(a.name, 10), emoji: str(a.emoji, 4) || str(a.sign, 4) || '🏠', desc: str(a.desc, 60) || str(a.name, 10), public: a.public !== false, ...(a.region && a.region !== 'town' ? { region: a.region } : {}) };
     },
     describe: (a) => `小镇上建起了新地方：${str(a.sign || a.emoji, 4)}「${str(a.name, 10)}」`,
+  },
+  // ---------- 建筑的一生（地图演变设计 §3）：状态、改建、拆除、修复 ----------
+  setBuildingState: {
+    level: 'minor',
+    levelOf: (a) => (a.state === 'ruin' ? 'major' : 'minor'),
+    check(spec, a) {
+      const b = building(spec, a.id);
+      if (!b) return `未知建筑：${a.id}`;
+      if (!['closed', 'damaged', 'ruin'].includes(a.state)) return 'state 只能是 closed / damaged / ruin（恢复营业用 restoreBuilding）';
+      if ((b.state || 'open') === a.state) return `「${b.name}」已经是这个状态了`;
+      // 变成废墟：住户和引用要有去处，与拆除相同
+      return a.state === 'ruin' ? checkRemap(spec, a.id, a.remap, { name: b.name }) : null;
+    },
+    apply(spec, a) {
+      const b = building(spec, a.id);
+      b.state = a.state;
+      if (a.state === 'ruin') applyRemap(spec, a.id, a.remap);
+    },
+    describe: (a, spec) => `「${bName(spec, a.id)}」${{ closed: '停业了', damaged: '受损了', ruin: '成了一片废墟' }[a.state] || a.state}`,
+  },
+  renovateBuilding: {
+    level: 'minor',
+    // 改建 / 换用途：占地不变，地点 id 不变，所有引用自然保留
+    check(spec, a) {
+      const b = building(spec, a.id);
+      if (!b) return `未知建筑：${a.id}`;
+      if (b.state === 'ruin') return `「${b.name}」是废墟，先修复（restoreBuilding）再改建`;
+      if (a.name != null && !str(a.name, 10)) return 'name 不能为空（≤10字）';
+      if (a.name && spec.buildings.some((x) => x.id !== a.id && !x.removed && x.name === str(a.name, 10))) return `「${str(a.name, 10)}」这个名字已经有了`;
+      if (a.kind != null && !/^[a-z]{2,16}$/.test(a.kind)) return 'kind 应为 2~16 个小写字母';
+      for (const k of ['roof', 'wall']) if (a[k] != null && !COLOR_RE.test(a[k])) return `${k} 应为 #rrggbb`;
+      if (!['name', 'kind', 'desc', 'emoji', 'sign', 'roof', 'wall', 'public', 'style'].some((k) => a[k] != null)) return '没有要改的内容';
+      return null;
+    },
+    apply(spec, a) {
+      const b = building(spec, a.id);
+      const was = b.name;
+      if (a.name) b.name = str(a.name, 10);
+      if (a.kind) b.kind = a.kind;
+      if (a.roof) b.roof = a.roof;
+      if (a.wall) b.wall = a.wall;
+      if (a.sign != null) b.sign = str(a.sign, 4);
+      if (a.style && typeof a.style === 'object') {
+        const s = a.style;
+        b.style = { ...(b.style || {}), ...(['gable', 'thatch', 'flat', 'spire', 'dome'].includes(s.roofShape) ? { roofShape: s.roofShape } : {}),
+          ...(['plaster', 'wood', 'stone', 'brick'].includes(s.material) ? { material: s.material } : {}),
+          ...(Array.isArray(s.decor) ? { decor: s.decor.filter((d) => ['chimney', 'flowers', 'awning', 'lantern', 'ivy', 'banner', 'bell'].includes(d)).slice(0, 4) } : {}) };
+      }
+      const l = (spec.locations[a.id] ||= { name: was, emoji: '🏠', desc: was, public: false });
+      if (a.name) l.name = str(a.name, 10);
+      if (a.emoji || a.sign) l.emoji = str(a.emoji || a.sign, 4);
+      if (a.desc) l.desc = str(a.desc, 60);
+      if (a.public != null) l.public = Boolean(a.public);
+      if (b.region && !l.region) l.region = b.region;
+    },
+    describe: (a, spec) => `「${bName(spec, a.id)}」改建${a.name && a.name !== bName(spec, a.id) ? `成了「${str(a.name, 10)}」` : '了'}`,
+  },
+  removeBuilding: {
+    level: 'major',
+    // 拆除：建筑消失、留下空地；remap 在同一个操作里把住户、工作地、节日、规则、出生点、渡口改指向，撤销时一起恢复
+    check(spec, a) {
+      const b = building(spec, a.id);
+      if (!b) return `未知建筑：${a.id}`;
+      return checkRemap(spec, a.id, a.remap, { name: b.name });
+    },
+    apply(spec, a) {
+      const b = building(spec, a.id);
+      applyRemap(spec, a.id, a.remap);
+      // 运行中新增的建筑直接删掉；世界包里的基础建筑留在数组里（基础生成要用），标记为已拆除
+      if (b.added) spec.buildings.splice(spec.buildings.indexOf(b), 1);
+      else { b.removed = true; delete b.state; }
+      delete spec.locations[a.id];
+    },
+    describe: (a, spec) => `「${a.name || bName(spec, a.id)}」被拆除了，原址成了一片空地`,
+  },
+  restoreBuilding: {
+    level: 'minor',
+    check(spec, a) {
+      const b = building(spec, a.id);
+      if (!b) return `未知建筑：${a.id}`;
+      return b.state && b.state !== 'open' ? null : `「${b.name}」好好的，不需要修复`;
+    },
+    apply(spec, a) { delete building(spec, a.id).state; },
+    describe: (a, spec) => `「${bName(spec, a.id)}」修好了，重新开门`,
   },
   // 开辟一个新区域（多世界设计 §3.2）：只描述语义布局，由生成器 layout-v1 落地；默认关闭，linkRegions 之后才能过去
   addRegion: {

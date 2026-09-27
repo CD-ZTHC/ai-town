@@ -189,6 +189,16 @@ await step('18b-people', async () => {
   await click('[data-prec="hunter"]');
   await waitFor(() => evaluate(`Boolean(document.querySelector('[data-pdep="hunter"]'))`), 8000, '召回');
 }, { wait: 800 });
+await step('18c-buildings', async () => {
+  // 地图演变：停业、受损、废墟的画面（本地模式即管理员，直接应用世界操作）
+  await closeModal();
+  await evaluate(`Promise.all([
+    app.api('/api/world/op', { op: 'setBuildingState', args: { id: 'bakery', state: 'closed' } }),
+    app.api('/api/world/op', { op: 'setBuildingState', args: { id: 'red_house', state: 'damaged' } }),
+    app.api('/api/world/op', { op: 'setBuildingState', args: { id: 'wolf_den', state: 'ruin', remap: { residents: 'hunter_cabin' } } }),
+  ]).then(() => true)`);
+  await waitFor(() => evaluate(`app.world.buildings.find((b) => b.id === 'wolf_den')?.state === 'ruin' && app.world.buildings.find((b) => b.id === 'bakery')?.state === 'closed'`), 8000, '地图重建');
+}, { wait: 1200 });
 await step('19-genesis', async () => {
   await send('Page.navigate', { url: `${base}/genesis.html` });
   await waitFor(() => evaluate(`Boolean(document.querySelector('#go'))`), 10000, '创世向导');

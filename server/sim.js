@@ -39,6 +39,8 @@ import { Metrics } from './sim/metrics.js';
 import { get as setting } from './settings/index.js';
 
 const MAX_STRUCTURES = 30;
+// 改变地图上建筑的世界操作：落地后重建地图（syncMap）
+const MAP_OPS = new Set(['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding']);
 
 export class Town extends EventEmitter {
   /**
@@ -476,12 +478,13 @@ export class Town extends EventEmitter {
       const err = checkPlacement(this.spec, rec.args);
       if (err) throw new OpError(`放不下：${err}`);
     }
+    const prev = this.spec;
     this.spec = applyOp(this.spec, rec, rec);
-    if (rec.op === 'addBuilding') this.rebuildWorld();
+    if (MAP_OPS.has(rec.op)) this.syncMap(prev);
     if (rec.op === 'addRegion' || rec.op === 'linkRegions') this.rebuildRegions();
     this.specOps.push(rec);
     this.journal.append(rec);
-    const desc = OPS[rec.op].describe?.(rec.args, this.spec) || rec.op;
+    const desc = OPS[rec.op].describe?.(rec.args, prev) || rec.op; // 用操作之前的规格描述（拆除、改建之后旧名字就找不到了）
     if (!quiet) this.log('world', `🌀 世界发生了变化：${desc}`, { op: rec.op, seq: rec.seq });
     this.emit('world', { spec: publicSpec(this.spec), op: rec, desc, ...(quiet ? { quiet: true } : {}) });
     return rec;
@@ -503,7 +506,7 @@ export class Town extends EventEmitter {
     const hadRegions = JSON.stringify(this.spec.regions);
     this.spec = r.spec;
     if (JSON.stringify(this.spec.regions) !== hadRegions) this.rebuildRegions();
-    else if (JSON.stringify(this.spec.buildings) !== hadBuildings) this.rebuildWorld();
+    else if (JSON.stringify(this.spec.buildings) !== hadBuildings) this.syncMap(null);
     for (const a of this.agents) a.abilities = a.abilities.filter((id) => findAbility(this.spec, id));
     this.emit('world', { spec: publicSpec(this.spec), op: null, desc: '世界规格已重新计算' });
     return r.skipped.length;
@@ -524,6 +527,33 @@ export class Town extends EventEmitter {
     this.overlays = this.overlays.filter((o) => o.id !== id);
     if (ops) this.overlays.push({ id, ops });
     this.rebuildSpec();
+  }
+
+  /**
+   * 建筑变化（新建、改建、停业、废墟、拆除、修复）之后：重建地图，并让运行时状态跟上——
+   * 居民的住处与工作地按规格同步（拆除时的搬迁）；待在进不去的建筑里的人走到门口；原定在已消失地点的场景取消。
+   */
+  syncMap(prev = null) {
+    const old = this.world;
+    this.rebuildWorld();
+    const personas = Object.fromEntries(this.spec.personas.map((p) => [p.id, p]));
+    for (const a of [...this.agents, ...this.away]) {
+      const p = personas[a.id];
+      if (p && p.kind !== 'creature') { a.home = p.home; a.work = p.work; }
+    }
+    for (const a of this.agents) {
+      if (!a.inside) continue;
+      const b = this.world.buildings.find((x) => x.id === a.inside);
+      const gone = !b || b.state === 'ruin' || (b.state && a.home !== b.id);
+      if (!gone) continue;
+      const e = (b || old.buildings.find((x) => x.id === a.inside))?.entrance;
+      Object.assign(a, { inside: null, curKey: null, path: [], dest: null, status: a.status === 'sleeping' ? 'idle' : a.status, ...(e ? { x: e.x, y: e.y } : {}) });
+    }
+    const lost = (this.pendingScenes || []).filter((sc) => !this.findLocation(sc.location));
+    if (lost.length) {
+      this.pendingScenes = this.pendingScenes.filter((sc) => !lost.includes(sc));
+      for (const sc of lost) this.log('scene_plan', `🗓️ 原定在${prev?.locations?.[sc.location]?.name || '那里'}的「${sc.title}」取消了：那个地方已经不在了`, { agents: sc.members || [] });
+    }
   }
 
   /** 世界结构变化（新增建筑）后重建地图；正在走路的角色与生物重新寻路 */

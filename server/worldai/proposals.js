@@ -5,14 +5,22 @@ import { OPS, applyOp, OpError } from '../kernel/ops.js';
 import { findPlacement, checkPlacement } from '../kernel/placement.js';
 import { addMemory, fmtTime } from '../memory.js';
 import { review } from './canon.js';
+import { impactOf } from '../kernel/impact.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const LEVELS = ['micro', 'minor', 'major'];
 const VOTE_MINUTES = 60;
 const DAILY_QUOTA = { minor: 3, major: 1 };
 const MAX_OPEN = 10;
+const PROTECT_DAYS = 7; // 建成不满这么多天的建筑不能拆（地图演变 §6.3）
+const DEMOLISH_GAP_DAYS = 3; // 两次拆除至少间隔
+const RESIDENTIAL = new Set(['hut', 'cabin', 'cottage', 'house', 'farmhouse', 'inn', 'tavern']);
+/** 操作的审批等级：有的操作按参数决定（变成废墟是大改） */
+export const levelOf = (o) => OPS[o.op].levelOf?.(o.args) || OPS[o.op].level;
+/** 会让建筑消失（或变成废墟）的操作：需要搬迁去处、施工、居民议事 */
+export const isDemolition = (o) => o.op === 'removeBuilding' || (o.op === 'setBuildingState' && o.args?.state === 'ruin');
 // 架构师（以及导演、居民、访客的点子）可以提出的操作；管理员直接提交时还可以调参数、改分级
-export const ARCHITECT_OPS = ['addBuilding', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'addRule', 'addCanon'];
+export const ARCHITECT_OPS = ['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'addRule', 'addCanon'];
 export const ADMIN_OPS = [...ARCHITECT_OPS, 'setParam', 'setMeta'];
 const FINAL = new Set(['applied', 'rejected', 'failed', 'expired', 'reverted']);
 
@@ -97,6 +105,11 @@ export class ProposalSystem {
         const e = OPS.addBuilding.check(spec, args) || checkPlacement(spec, args);
         if (e) return { error: `第 ${i + 1} 个操作（${args.name || args.id}）：${e}` };
       }
+      if (isDemolition({ op: name, args })) {
+        const err = this.demolitionProblem(spec, args.id);
+        if (err) return { error: `第 ${i + 1} 个操作：${err}` };
+        args.remap = this.suggestRemap(spec, args.id, args.remap);
+      }
       try { spec = applyOp(spec, { op: name, args }); } catch (e) {
         return { error: `第 ${i + 1} 个操作（${name}）：${e instanceof OpError ? e.message : '无法应用'}` };
       }
@@ -110,15 +123,18 @@ export class ProposalSystem {
     if (this.open().length >= MAX_OPEN) return { error: '待处理的提案太多了，请先处理已有的提案' };
     const r = this.prepare(rawOps, allowed);
     if (r.error) return r;
-    const level = r.ops.reduce((lv, o) => (LEVELS.indexOf(OPS[o.op].level) > LEVELS.indexOf(lv) ? OPS[o.op].level : lv), 'micro');
+    const level = r.ops.reduce((lv, o) => (LEVELS.indexOf(levelOf(o)) > LEVELS.indexOf(lv) ? levelOf(o) : lv), 'micro');
     const building = r.ops.find((o) => o.op === 'addBuilding');
+    const demolish = !building && r.ops.find(isDemolition);
+    const site = building ? { x: building.args.x, y: building.args.y, w: building.args.w, h: building.args.h, near: building.args.near || null }
+      : demolish ? this.siteOf(demolish.args.id) : null;
     const p = {
       id: `wp${++town.seq}`, title: str(title, 24) || '小镇建设', motive: str(motive, 80), origin, ops: r.ops, level,
       status: 'review', createdT: Math.floor(town.t), votes: {}, canon: null, result: null,
-      construction: building ? {
-        by: (Array.isArray(construction?.by) ? construction.by : ['赵铁柱']).map((n) => str(n, 12)).slice(0, 3),
+      construction: site ? {
+        by: (Array.isArray(construction?.by) && construction.by.length ? construction.by : this.defaultCrew()).map((n) => str(n, 12)).slice(0, 3),
         hours: Math.max(1, Math.min(12, Math.round(Number(construction?.hours) || 4))),
-        site: { x: building.args.x, y: building.args.y, w: building.args.w, h: building.args.h, near: building.args.near || null },
+        site, ...(demolish ? { kind: 'demolish' } : {}),
       } : null,
     };
     this.list.push(p);
@@ -205,6 +221,8 @@ export class ProposalSystem {
       r = this.prepare(p.ops.map((o) => (o.op === 'addBuilding' && o.args.near ? { op: o.op, args: { ...o.args, x: undefined, y: undefined, place: { near: o.args.near } } } : o)), ADMIN_OPS);
     }
     if (r.error) return this.finish(p, 'failed', r.error);
+    for (const o of r.ops) if (o.op === 'addBuilding') o.args.builtDay = town.day;
+    const before = town.spec;
     try {
       for (const o of r.ops) town.applyWorldOp(o, { by: 'proposal', proposal: p.id, origin: p.origin });
     } catch (e) {
@@ -218,6 +236,7 @@ export class ProposalSystem {
     if (built) {
       for (const a of town.agents) if (a.kind !== 'creature') addMemory(a, { t: town.t, type: 'event', text: `镇上新建了「${built.args.name}」`, importance: 5 });
     }
+    for (const o of r.ops.filter(isDemolition)) this.afterDemolition(p, o, before);
     if (p.origin.startsWith('agent:')) {
       const a = town.byId[p.origin.slice(6)];
       if (a) addMemory(a, { t: town.t, type: 'event', text: `我提议的「${p.title}」实现了！`, importance: 7 });
@@ -250,6 +269,74 @@ export class ProposalSystem {
       } else if (p.status === 'queued' && this.appliedToday(p.level) < (DAILY_QUOTA[p.level] ?? Infinity)) {
         this.approve(p, p.approvedBy || 'auto');
       }
+    }
+  }
+
+  /** 施工队：没指定时找两位在场、不是生物的居民（优先在工坊一类地方工作的人） */
+  defaultCrew() {
+    const people = this.town.agents.filter((a) => a.kind !== 'creature' && a.kind !== 'traveller');
+    const handy = people.filter((a) => /匠|木工|铁|建筑|工坊|修/.test(a.role));
+    return (handy.length ? handy : people).slice(0, 2).map((a) => a.name);
+  }
+
+  siteOf(id) {
+    const b = this.town.world.buildings.find((x) => x.id === id);
+    return b ? { x: b.x, y: b.y, w: b.w, h: b.h, near: b.id, id: b.id } : null;
+  }
+
+  /** 拆除（或变成废墟）在运行时的限制：进行中的剧情用到的地点、保护期、两次拆除的间隔 */
+  demolitionProblem(spec, id) {
+    const town = this.town;
+    const b = spec.buildings.find((x) => x.id === id && !x.removed);
+    if (!b) return `未知建筑：${id}`;
+    const run = town.arcs?.active();
+    const tpl = run && spec.arcs.find((a) => a.id === run.template);
+    if (tpl && JSON.stringify(tpl).includes(`"${id}"`)) return `「${b.name}」是进行中的剧情《${tpl.title}》里的地方，剧情落幕之后才能拆`;
+    if (b.builtDay != null && town.day - b.builtDay < PROTECT_DAYS) return `「${b.name}」建成还不到 ${PROTECT_DAYS} 天，先用一段时间再说`;
+    if (b.vetoedUntil != null && town.day < b.vetoedUntil) return `居民刚否决过拆除「${b.name}」，第 ${b.vetoedUntil} 天之前不能再提`;
+    const last = this.list.filter((p) => p.status === 'applied' && p.ops.some(isDemolition)).map((p) => p.appliedDay).sort((x, y) => y - x)[0];
+    if (last != null && town.day - last < DEMOLISH_GAP_DAYS) return `第 ${last} 天刚拆过房子，${DEMOLISH_GAP_DAYS} 天之内不再拆`;
+    return null;
+  }
+
+  /** 模型没给（或给错）搬迁去处时，补上最近的合适地点：住处找住得下的住宅，工作地与节日等找最近的公共地点 */
+  suggestRemap(spec, id, remap = {}) {
+    const town = this.town;
+    const out = { ...(remap && typeof remap === 'object' ? remap : {}) };
+    const im = impactOf(spec, id);
+    const at = town.locCenter(id) || { x: 0, y: 0 };
+    const dist = (loc) => { const c = town.locCenter(loc); return c ? Math.hypot(c.x - at.x, c.y - at.y) : 999; };
+    const occ = (bid) => spec.personas.filter((p) => p.status !== 'departed' && p.kind !== 'creature' && p.home === bid).length;
+    const moving = spec.personas.filter((p) => p.status !== 'departed' && im.residents.includes(p.id)).length;
+    const okHome = (bid) => { const b = spec.buildings.find((x) => x.id === bid && !x.removed); return b && b.id !== id && b.state !== 'ruin' && (b.region || 'town') === 'town' && occ(bid) + moving <= 3; };
+    if (im.residents.length && !okHome(out.residents)) {
+      const homes = spec.buildings.filter((b) => okHome(b.id) && (RESIDENTIAL.has(b.kind) || occ(b.id) > 0)).sort((x, y) => dist(x.id) - dist(y.id));
+      if (homes[0]) out.residents = homes[0].id;
+    }
+    const pub = Object.keys(spec.locations).filter((l) => l !== id && spec.locations[l].public && !spec.locations[l].region).sort((x, y) => dist(x) - dist(y));
+    const isLoc = (l) => l && l !== id && (Object.hasOwn(spec.locations, l) || spec.buildings.some((b) => b.id === l && !b.removed));
+    if (im.workers.length && !isLoc(out.workers)) out.workers = pub[0];
+    if ((im.events.length || im.rules.length || im.spawn || im.gates.length) && !isLoc(out.location)) out.location = pub[0];
+    return out;
+  }
+
+  /** 拆除落地之后：原址写进正典，住过、在那里工作过的人记得它（议事时当事人的重要记忆见 council.js） */
+  afterDemolition(p, o, before) {
+    const town = this.town;
+    const b = before.buildings.find((x) => x.id === o.args.id);
+    if (!b) return;
+    const ruin = o.op === 'setBuildingState';
+    const im = impactOf(before, b.id);
+    const text = ruin ? `第${town.day}天，「${b.name}」成了一片废墟。` : `第${town.day}天，「${b.name}」被拆除，原址成了一片空地。`;
+    try { town.applyWorldOp({ op: 'addCanon', args: { text: `${text}${p.motive ? `（${p.motive}）` : ''}`.slice(0, 100), tags: [b.name] } }, { by: 'proposal', proposal: p.id }, { quiet: true }); } catch {}
+    if (p.council?.memories) return; // 议事过的提案：当事人的记忆由议事结果给出
+    for (const id of im.residents) {
+      const a = town.byId[id];
+      if (a) addMemory(a, { t: town.t, type: 'event', text: `「${b.name}」${ruin ? '成了废墟' : '拆了'}，我搬到了${town.locName(a.home)}`, importance: 7 });
+    }
+    for (const id of im.workers) {
+      const a = town.byId[id];
+      if (a) addMemory(a, { t: town.t, type: 'event', text: `「${b.name}」${ruin ? '成了废墟' : '拆了'}，以后我在${town.locName(a.work)}做事`, importance: 6 });
     }
   }
 

@@ -15,6 +15,10 @@
 | `addStructure` | minor | ✅ | {"id","name":"≤8字","emoji","ttl":10~240,"tags":["light"],"light":{"r":20~160,"color":"255,200,100"}} |
 | `addAbility` | minor | ✅ | {"id","name":"≤8字","emoji","target":"self/agent/area","desc":"≤50字","aiHint":"≤50字","cost":{"stamina":0~40,"items":{"物品id":1~3}},"cooldown":0~1440,"requires":"表达式(可选)","effects":[效果，最多8个],"learn":{"teach":true,"research":{"location":"地点id","keywords":["关键词"]}}} |
 | `addBuilding` | minor | ✅ | {"id":"英文小写id","name":"≤10字","kind":"英文小写类型，如 tower/shrine/shop/garden","w":3~7,"h":3~6,"place":{"near":"地点id","within":6~16},"roof":"#rrggbb","wall":"#rrggbb","sign":"一个emoji","desc":"≤60字","lightAtNight":true/false} —— 不要写坐标，系统会在 near 附近自动找空地；新建筑会成为居民可以去的地点 |
+| `setBuildingState` | minor | ✅ | {"id":"现有建筑id","state":"closed 停业 / damaged 受损 / ruin 废墟","reason":"≤30字"} —— 变成废墟与拆除一样要给出 remap（见 removeBuilding），并经过居民议事 |
+| `renovateBuilding` | minor | ✅ | {"id":"现有建筑id","name":"新名字≤10字(可选)","kind":"新类型(可选)","desc":"≤60字(可选)","sign":"emoji(可选)","roof":"#rrggbb(可选)","public":true/false(可选)} —— 改建 / 换用途：占地不变，住户与所有引用照旧；闲置或不合用的建筑优先改建而不是拆 |
+| `removeBuilding` | major | ✅ | {"id":"现有建筑id","remap":{"residents":"住户搬去的建筑id","workers":"在这里工作的人改去的地点id","location":"节日、规则等引用的替代地点id"}} —— 拆除，原址变成空地；remap 不写时系统就近安排；要经过居民议事（住户不同意时需要其他居民全票同意） |
+| `restoreBuilding` | minor | ✅ | {"id":"停业、受损或成了废墟的建筑id"} —— 修好、重新开门 |
 | `addRegion` | major | — | 仅管理员 / 剧情弧使用 |
 | `linkRegions` | minor | — | 仅管理员 / 剧情弧使用 |
 | `addPersona` | major | — | 仅管理员 / 剧情弧使用 |
