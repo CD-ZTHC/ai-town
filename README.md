@@ -39,7 +39,7 @@ mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实
 
 详见 [多世界设计方案](docs/design/multi-world.md) 与 [实施汇报](docs/reports/2026-09-27-multi-world.md)。
 
-- **世界是数据**：一个世界 = 世界包（`world.json` 设定与居民、`map.json` 语义布局、`arcs/` 剧情弧、`bible.json` 世界圣经）+ 操作历史。官方世界在仓库的 `worlds/`（云溪镇、手写的示例「小红帽」），用户创世的在 `data/worlds/<id>/pack/`。
+- **世界是数据**：一个世界 = 世界包（`world.json` 设定与居民、`map.json` 语义布局、`arcs/` 剧情弧、`bible.json` 世界圣经）+ 操作历史。官方世界在仓库的 `worlds/`（云溪镇、手写的示例「小红帽」、黑暗题材的示例「夜巡」），用户创世的在 `data/worlds/<id>/pack/`。
 - **多世界运行时**：`/` 是世界大厅，`/w/<短名>/` 是世界页面。世界按需加载，同时运行的上限 `MAX_ACTIVE_WORLDS`（默认 4）；无人观看先休眠、再卸载（不消耗 token），都有人在看时显示「世界满员」页；`PINNED_WORLDS` 常驻。每个世界的磁盘有上限（全局 → 授予 → 按世界），超出时先回收旧快照。
 - **账号**：公网模式下公开注册（用户名、昵称、密码）；游客只能观看，点任何互动入口时弹出登录框，登录后自动继续。昵称全站唯一，居民记住的是账号（改名后仍然认得）。互动额度按账号计，另有按 IP 的兜底。首次部署后用 `ADMIN_TOKEN` 把自己的账号认领为超级管理员（管理面板里操作）。本地模式不需要注册。
 - **创世**（需要管理员授予，带配额）：`/genesis.html` 上传原文或写一段设定 → 阅读、整理世界圣经、确定改编方案、生成地图 / 居民 / 剧情线、考据与无头试跑 → 预览（人物卡、地点、设定可以编辑或「重新生成这一项」）→ 发布时自动审核（结构、文本、试跑、分级）→ 公开。创世的模型调用走统一队列、从创世额度里扣。
@@ -290,7 +290,7 @@ public/
   style.css, modes.css  样式（modes.css 为 Dock、各模式与手机布局）
   lobby.html, genesis.html, draft.html, mine.html, reset.html, admin/  大厅、创世向导、预览与编辑、我的世界、密码重置、管理面板
   site.css, js/site/, js/admin/  这些表单类页面的样式与脚本（原生 ES Modules，没有构建步骤）
-worlds/        官方世界包：yunxi/（云溪镇）、little-red/（手写的示例世界「小红帽」）
+worlds/        官方世界包：yunxi/（云溪镇）、little-red/（手写的示例世界「小红帽」）、night-watch/（黑暗分级的示例世界「夜巡」，见 docs/design/night-watch.md）
 deploy/        Caddy / Nginx / systemd 部署模板
 Dockerfile, docker-compose.yml, .env.example
 plugin-host/   插件宿主：内置插件加载、AI 插件（哈希锁定、覆盖层、沙箱、灰度与熔断）、静态检查、沙箱运行器
