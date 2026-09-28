@@ -34,13 +34,16 @@ import { withContext } from './scheduler/context.js';
 import { CLASS_NAMES } from './scheduler/classes.js';
 import { sampleWorld } from './worlds/review.js';
 
-// 设置中心：环境变量 > 面板保存的值（data/settings.json）> 默认值。环境变量写错时直接报错退出，不悄悄用默认值
+// 设置中心：保存的值（data/settings.json）> 环境变量（只作初始值）> 默认值。
+// 还起作用的环境变量写错时直接报错退出，不悄悄用默认值；先读设置文件，才知道哪些环境变量已经不起作用
+settings.load();
 const bad = settings.envProblems();
 if (bad.length) {
   console.error(`[settings] 环境变量不合法：\n  ${bad.join('\n  ')}`);
   process.exit(1);
 }
-settings.load();
+// 环境变量只作初始值：还没保存过的项导入设置文件，之后以保存的值为准（与已保存的值不同的环境变量会被忽略并提示）
+settings.seedFromEnv();
 const PORT = settings.get('PORT');
 const HOST = settings.get('HOST') || undefined;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
