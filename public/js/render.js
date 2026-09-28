@@ -6,6 +6,7 @@ import { Terrain } from './render/terrain.js';
 import { Objects } from './render/objects.js';
 import { Atmosphere } from './render/atmosphere.js';
 import { Overlays } from './render/overlays.js';
+import { DarkLayer } from './render/dark.js';
 
 // 其他模块与测试从这里导入
 export { TS, skyAt, h2, vnoise, hexToRgb, mix, lerp, clamp01 } from './render/util.js';
@@ -121,6 +122,7 @@ export class Renderer {
     if (sw > 0 && sh > 0) ctx.drawImage(this.static, sx, sy, sw, sh, sx, sy, sw, sh);
 
     this.drawWater(ctx, vx0, vy0, vx1, vy1);
+    this.drawZones(ctx, S);
 
     // y 排序
     const items = [];
@@ -140,8 +142,11 @@ export class Renderer {
     }
     for (const c of S.creatures || []) items.push({ y: c.dy * TS + TS * 0.9, c });
     for (const v of S.avatars || []) items.push({ y: v.dy * TS + TS * 0.9, v });
+    for (const th of S.dark?.threats || []) items.push({ y: th.dy * TS + TS * 0.9, th });
+    for (const g of S.dark?.graves || []) items.push({ y: g.y * TS + TS * 0.9, g });
+    for (const p of this.crowdFigures(S)) items.push({ y: p.y * TS + TS * 0.9, p });
     items.sort((p, q) => p.y - q.y);
-    for (const it of items) it.v ? this.drawAvatar(ctx, it.v, S) : it.o ? this.drawObject(ctx, it.o, S) : it.e ? (it.e.kind === 'portal' ? this.drawPortal(ctx, it.e) : this.drawEntity(ctx, it.e)) : it.c ? this.drawCreature(ctx, it.c) : this.drawAgent(ctx, it.a, S);
+    for (const it of items) it.th ? this.drawThreat(ctx, it.th) : it.g ? this.drawGrave(ctx, it.g) : it.p ? this.drawPasserby(ctx, it.p) : it.v ? this.drawAvatar(ctx, it.v, S) : it.o ? this.drawObject(ctx, it.o, S) : it.e ? (it.e.kind === 'portal' ? this.drawPortal(ctx, it.e) : this.drawEntity(ctx, it.e)) : it.c ? this.drawCreature(ctx, it.c) : this.drawAgent(ctx, it.a, S);
     this.drawVfx(ctx);
     this.drawPluginOverlay(ctx, S);
 
@@ -170,7 +175,7 @@ export class Renderer {
 }
 
 // 把各部分的方法挂到 Renderer 上；重名直接报错，避免悄悄覆盖
-for (const part of [Terrain, Objects, Atmosphere, Overlays]) {
+for (const part of [Terrain, Objects, Atmosphere, Overlays, DarkLayer]) {
   for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) {
     if (name === 'constructor') continue;
     if (Object.hasOwn(Renderer.prototype, name)) throw new Error(`Renderer.${name} 重复定义（${part.name}）`);

@@ -103,8 +103,19 @@ export function bodyHTML(d) {
   const bar = (label, v, cls) => `<div class="meter ${cls}"><span>${label}</span><i><b style="width:${Math.max(0, Math.min(100, v))}%"></b></i><em>${v}</em></div>`;
   const inv = (d.inventory || []).map((x) => `<span class="chip-item" title="${esc(x.name)}">${esc(x.emoji)} ${esc(x.name)}×${x.n}</span>`).join('');
   const abs = (d.abilities || []).map((x) => `<span class="chip-ab${x.cooldown ? ' cd' : ''}" title="${esc(x.desc)}${x.cooldown ? `（冷却 ${x.cooldown} 分钟）` : ''}">${esc(x.emoji)} ${esc(x.name)}${x.cooldown ? ' ⏳' : ''}</span>`).join('');
+  // 黑暗叙事：伤势、负担值、寄宿、禁忌姿态、立场
+  const POSTURE = { eyesClosed: '闭着眼', silent: '不出声', noOpen: '不开门', stayLit: '待在亮处', notAlone: '不落单' };
+  const dark = [
+    d.alignment === 'villain' ? '<span class="dk vil">反派</span>' : '',
+    d.marked ? '<span class="dk mark">👁️ 被盯上了</span>' : '',
+    d.captive ? `<span class="dk">⛓️ 被${esc(typeof d.captive === 'string' ? d.captive : '人')}关着</span>` : '',
+    ...(d.hosted || []).map((h) => `<span class="dk host">${esc(h.emoji)} 寄宿：${esc(h.name)}</span>`),
+    ...(d.posture || []).map((p) => `<span class="dk">🤐 ${esc(POSTURE[p] || p)}</span>`),
+  ].join('');
   return `<div class="ibody">
+    ${d.body.hp < 100 ? bar('伤势', Math.round(d.body.hp), 'hp') : ''}${(d.burdens || []).map((b) => bar(b.name, Math.round((b.value / b.max) * 100), 'bu')).join('')}
     ${bar('体力', d.body.stamina, 'st')}${bar('勇气', d.body.courage, 'co')}
+    ${dark ? `<div class="conds dark">${dark}</div>` : ''}
     ${d.body.conditions.length ? `<div class="conds">${d.body.conditions.map((c) => `<span>${esc(c)}</span>`).join('')}</div>` : ''}
     ${d.researching ? `<div class="goal"><b>研究中</b> ${esc(d.researching)}</div>` : ''}
     ${abs ? `<div class="chips"><b>能力</b>${abs}</div>` : ''}

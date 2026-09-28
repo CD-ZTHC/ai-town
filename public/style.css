@@ -324,6 +324,17 @@ body.no-minimap #minimap-wrap { display: none; }
 .ibody .meter.st b { background: linear-gradient(90deg, #7ddc8a, #5ad1c3); }
 .ibody .meter.co b { background: linear-gradient(90deg, #ffb86b, #ffd76a); }
 .ibody .meter em { font-style: normal; text-align: right; }
+/* 黑暗叙事：伤势、负担值、寄宿与禁忌 */
+.ibody .meter.hp b { background: linear-gradient(90deg, #e04848, #f08a5d); }
+.ibody .meter.bu b { background: linear-gradient(90deg, #4b3a6b, #8a4bd6); }
+.ibody .conds.dark span { background: rgba(120, 90, 200, 0.2); color: #d4c6ff; }
+.ibody .conds.dark span.vil { background: rgba(200, 60, 60, 0.25); color: #ffb0b0; }
+.ibody .conds.dark span.mark { background: rgba(140, 20, 40, 0.35); color: #ff9aa8; }
+.dec.inc.hot b { color: #ff9a9a; }
+.dec.inc.done { opacity: 0.7; }
+.pops { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); }
+.pops b { color: var(--text); }
+.pops em { font-style: normal; color: #ff9a9a; }
 .ibody .conds span { display: inline-block; margin-right: 4px; padding: 0 7px; border-radius: 8px; background: rgba(255, 122, 122, 0.18); color: #ffb4b4; font-size: 11px; }
 .ibody .chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 11.5px; }
 .ibody .chips b { color: var(--accent); margin-right: 2px; font-weight: 600; }

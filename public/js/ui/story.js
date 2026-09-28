@@ -15,7 +15,7 @@ export function storyModal(tab) {
   ui.storyTab = tab || ui.storyTab || 'story';
   const card = openModal(`<h2>🎭 ${esc(voice().place || '小镇')}的故事</h2>
     <div class="sub">叙事导演根据小镇的「张力」安排伏笔、冲突与喘息；剧情弧在关键时刻交给小镇（和你）来抉择。</div>
-    <div class="tabs stabs">${[['story', '📖 剧情'], ['vote', '🗳️ 抉择'], ['threads', '🧵 伏笔'], ['people', '🧳 人来人往'], ['crisis', '⚔️ 危机'], ['bestiary', '👾 图鉴']].map(([k, l]) => `<button data-t="${k}" class="${ui.storyTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div class="tabs stabs">${[['story', '📖 剧情'], ...(app.spec?.threats && Object.keys(app.spec.threats).length ? [['incidents', '🕯️ 事件']] : []), ['vote', '🗳️ 抉择'], ['threads', '🧵 伏笔'], ['people', '🧳 人来人往'], ['crisis', '⚔️ 危机'], ['bestiary', '👾 图鉴']].map(([k, l]) => `<button data-t="${k}" class="${ui.storyTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div id="story-body" class="story-body"><div class="empty">正在翻开故事书……</div></div>`, 'story-wrap');
   card.style.width = 'min(760px, 94vw)';
   $$('.stabs button', card).forEach((b) => b.addEventListener('click', () => {
@@ -46,8 +46,8 @@ async function renderStory() {
   try { d = await app.api('/api/story'); } catch (e) { body.innerHTML = `<div class="empty">⚠️ ${esc(e.message)}</div>`; return; }
   if (!$('#story-body')) return;
   const tab = ui.storyTab;
-  const ST = { gentle: '🌸 静水', voyage: '🗺️ 远航', chaos: '🎲 掷骰' };
-  const RT = { cozy: '温馨', adventure: '冒险', epic: '史诗' };
+  const ST = { gentle: '🌸 静水', voyage: '🗺️ 远航', chaos: '🎲 掷骰', horror: '🕯️ 恐怖' };
+  const RT = { cozy: '温馨', adventure: '冒险', epic: '史诗', dark: '黑暗', tragic: '悲剧' };
   let html = '';
   if (tab === 'story') {
     const arcs = d.arcs.map((a) => `<div class="arc ${a.status}">
@@ -90,6 +90,17 @@ async function renderStory() {
       ${gone.length ? `<h3>出门在外</h3>${gone.map((p) => { const a = m.away.find((x) => x.id === p.id); return `<div class="dec">🧳 <b>${esc(p.name)}</b> · ${esc(p.role)}${a?.where ? ` · 在${esc(a.where)}` : ''}${a?.returnDay ? ` · 约好第${a.returnDay}天回来` : ''}${d.admin ? ` <button class="mini adm" data-prec="${esc(p.id)}">召回</button>` : ''}</div>`; }).join('')}` : ''}
       ${d.admin ? `<h3>在场的人</h3>${here.map((p) => `<div class="dec">${p.kind === 'traveller' ? '🧳' : '🏠'} <b>${esc(p.name)}</b> · ${esc(p.role)}${p.arrivedDay ? ` · 第${p.arrivedDay}天从${esc(p.from || '远方')}来` : ''} <button class="mini adm" data-pdep="${esc(p.id)}">请离</button></div>`).join('')}
         <div class="sub">「请离」和「召回」互为撤销；剧情弧里的角色由剧情安排，不在这里。</div>` : ''}`;
+  } else if (tab === 'incidents') {
+    const k = d.dark || { incidents: [], deaths: [], population: [], contained: [], crowdDead: 0 };
+    const STAGE = { omen: 'omen', outbreak: 'hot', spread: 'hot', handled: 'done', abandoned: 'done', aftermath: 'done' };
+    const OUT = { contained: '已收容', resolved: '已化解', slain: '已消灭', abandoned: '划为封锁区', hosted: '被人寄宿' };
+    html = `<div class="srow"><span>🕯️ 群众遇害 <b>${k.crowdDead}</b></span><span>🪦 居民遇害 <b>${k.deaths.length}</b></span><span>📦 收容中 <b>${k.contained.length}</b></span></div>
+      <h3>事件</h3>${k.incidents.map((i) => `<div class="dec inc ${STAGE[i.stage] || ''}">📍 <b>${esc(i.locName)}</b> · ${esc(i.name)} · 第${i.day}天起 · <b>${esc(i.stageName)}</b>${i.outcome ? `（${OUT[i.outcome] || esc(i.outcome)}）` : ''}
+        <div class="sub">遇害：居民 ${i.victims} · 群众 ${i.crowd}${i.assigned.length ? ` · 派去处理：${i.assigned.map(esc).join('、')}` : ''}</div></div>`).join('') || '<div class="empty">暂时平静。</div>'}
+      ${k.deaths.length ? `<h3>逝者</h3>${k.deaths.map((x) => `<div class="dec">🪦 <b>${esc(x.name)}</b> · 第${x.day}天 · ${esc(x.text || '')}</div>`).join('')}` : ''}
+      ${k.contained.length ? `<h3>收容中</h3>${k.contained.map((c) => `<div class="dec">📦 ${esc(c.name)} · 由 ${esc(c.holder)} 保管</div>`).join('')}` : ''}
+      ${k.population.length ? `<h3>各处人口</h3><div class="pops">${k.population.map((p) => `<span>${esc(p.name)} <b>${p.alive}</b>${p.dead ? ` <em>−${p.dead}</em>` : ''}</span>`).join('')}</div>` : ''}
+      <div class="sub">规律只有世界自己知道；居民只能从目击、幸存和调查里拼凑出自己的看法，看法可能是错的。</div>`;
   } else if (tab === 'crisis') {
     const c = d.crisis;
     const meter = (label, v, cls) => `<div class="cmeter ${cls}"><span>${label}</span><i><b style="width:${v}%"></b></i><em>${v}</em></div>`;

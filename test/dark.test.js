@@ -475,3 +475,55 @@ test('通用：反派的欲望压力累积到头会逼他行动；打倒对方�
   assert.ok(red.relations.hunter.affinity >= 50);
 });
 
+// ---------- 创世：参考模式与威胁生成（设计 §4.12）----------
+test('创世参考模式：只借题材要素生成原创世界，威胁的规律编译进内核（写坏的让模型改一次），避免清单里的词会被拦下', { timeout: 60_000 }, async (t) => {
+  const { runGenesis } = await import('../server/genesis/pipeline.js');
+  const prompts = {};
+  let leakName = false;
+  const threat = (over = {}) => ({
+    name: '灯下人', emoji: '🕯️', kind: '怪谈', mortal: false, origin: '守夜人死在熄灯的那一刻', haunt: ['lane'], movement: 'stationary', active: ['20:00', '05:00'],
+    rule: { trigger: "night() && entered(e, 'lane') && !nearStructure(e, 'lamp', 3)", mark: { delay: [10, 60], sign: '灯芯噼啪响了一声' }, outcome: [{ op: 'kill', target: 'self' }] },
+    counters: [{ type: 'ward', with: 'lamp', radius: 3 }, { type: 'suppress', power: 2 }], clues: ['在没有灯的巷子里'], decoys: ['穿了黑衣服'], ...over,
+  });
+  const answers = {
+    '创世：全书': () => ({ title: '雾巷', summary: '一座被雾吞没的港口小城，夜里的巷子有自己的规矩。', genre: '规律怪谈', tone: '压抑', elements: [{ element: '规律杀人', here: '雾巷的巷规' }] }),
+    '创世：圣经': () => ({ characters: [{ name: '阿岚', role: '守灯人', traits: '沉默', goal: '让灯一直亮着' }, { name: leakName ? '杨间' : '周渡', role: '渡船工', traits: '莽撞', goal: '找到失踪的哥哥' }], places: [{ name: '雾巷', desc: '最窄的巷子' }], rules: [], timeline: [], style: '冷' }),
+    '创世：改编': () => ({ summary: '雾巷的夜晚有规矩。', start: '起雾的第一晚', pillars: ['巷子里的东西杀不死'], breakers: '', era: { tech: '民国港口', forbidden: ['手机'] }, fateNodes: [{ text: '不应该有命运节点', day: 2 }], voice: { place: '雾巷' }, calendar: {} }),
+    '创世：地图': () => ({ areas: [{ id: 'port', name: '港口', biome: 'old_town', size: 'medium', places: [
+      { id: 'lane', kind: 'alley', name: '雾巷', public: true }, { id: 'lamp_house', kind: 'house', name: '守灯人的屋子', public: false }, { id: 'ferry', kind: 'house', name: '渡船工的屋子', public: false }, { id: 'pier', kind: 'dock', name: '码头', public: true },
+    ] }], links: [] }),
+    '创世：居民': () => ({ personas: [
+      { id: 'lan', name: '阿岚', age: 40, role: '守灯人', tier: 'lead', home: 'lamp_house', work: 'lane', persona: '沉默', goal: '让灯一直亮着', look: {}, memories: ['灯不能灭'] },
+      { id: 'du', name: leakName ? '杨间' : '周渡', age: 22, role: '渡船工', tier: 'lead', home: 'ferry', work: 'pier', persona: '莽撞', goal: '找哥哥', look: {}, memories: [] },
+    ] }),
+    '创世：剧情线': () => ({ threads: [], items: [], abilities: [] }),
+    '创世：威胁': () => ({ items: {}, structures: { lamp: { name: '灯', emoji: '🏮', tags: ['light'] } }, threats: { lamp_man: threat(), bad_one: threat({ rule: { trigger: "eval('x')", mark: { delay: [1, 2] }, outcome: [{ op: 'kill' }] } }) }, start: ['lamp_man'] }),
+    '创世：威胁修正': () => ({ structures: { lamp: { name: '灯', emoji: '🏮', tags: ['light'] } }, threats: { lamp_man: threat(), fog_voice: threat({ name: '雾里的声音', haunt: ['pier'], rule: { trigger: "night() && speaking(e)", mark: { delay: [10, 30] }, outcome: [{ op: 'wound', amount: 40, target: 'self' }] } }) }, start: ['lamp_man'] }),
+    '创世：考据': () => ({ conflicts: [] }),
+  };
+  llm.setMock((messages, opts) => {
+    prompts[opts.label] = messages.at(-1).content;
+    const f = answers[opts.label];
+    if (!f) throw new Error(`没想到的调用：${opts.label}`);
+    return JSON.stringify(f());
+  });
+  t.after(() => llm.setMock(null));
+  const run = () => runGenesis({ worldId: 'fog-lane', tokens: 0, log: [], options: { mode: 'inspire', inspiration: '规律怪谈', avoid: ['杨间', '大昌'], description: '一座被雾吞没的港口小城，夜里有规矩，破了规矩的人会消失。', rating: 'dark', storyteller: 'horror', threats: true, leads: 2 } }, { source: null, budgetLeft: () => 1e9 });
+  const { pack, report } = await run();
+  assert.match(prompts['创世：全书'], /原创/);
+  assert.match(prompts['创世：全书'], /杨间、大昌/, '避免清单写进了提示词');
+  assert.deepEqual(pack.world.adaptation.fateNodes, [], '原创世界没有命运节点');
+  assert.match(pack.world.source.title, /原创/);
+  assert.match(pack.world.lore.breakers, /杨间\|大昌/);
+  assert.deepEqual(Object.keys(pack.world.threats).sort(), ['fog_voice', 'lamp_man'], '第一次写坏了，带着错误改了一次');
+  assert.deepEqual(pack.world.incidents.start, [{ threat: 'lamp_man' }]);
+  assert.deepEqual(validateSpec(packSpec(pack)), []);
+  assert.equal(report.problems.length, 0, report.problems.join('；'));
+  // 生成的世界能直接运行，规律在引擎里生效
+  const town = new Town({ dataDir: tmp(), worldId: 'fog-lane', pack: { ...pack, hash: 'x' }, instantTalk: true, mods: [] });
+  t.after(() => town.stop());
+  assert.ok(town.threats.enabled && town.dark.threats.length === 1);
+  leakName = true;
+  const second = await run();
+  assert.ok(second.report.problems.some((p) => /避免清单/.test(p)), '文本里出现了避免清单里的词');
+});

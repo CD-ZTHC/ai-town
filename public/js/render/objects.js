@@ -439,5 +439,6 @@ export class Objects {
     }
     const img = spr[a.dir]?.[fi] || spr.down[0];
     ctx.drawImage(img, Math.round(cx - (SPR_W * SCALE) / 2), Math.round(fy - SPR_H * SCALE + 4 + bob), SPR_W * SCALE, SPR_H * SCALE);
+    this.drawAgentStatus(ctx, a);
   }
 }

@@ -367,6 +367,18 @@ function loop(now) {
       d.dx += (c.x - d.dx) * k; d.dy += (c.y - d.dy) * k;
       return { ...c, dx: d.dx, dy: d.dy };
     });
+    // 黑暗叙事：威胁（平滑插值）、区域、墓碑
+    const dk = s.dark;
+    const dark = dk ? {
+      threats: (dk.threats || []).filter(here).map((th) => {
+        let d = (app.tdisp ||= {})[th.id];
+        if (!d || Math.hypot(th.x - d.dx, th.y - d.dy) > 4) d = app.tdisp[th.id] = { dx: th.x, dy: th.y };
+        const k = 1 - Math.exp(-dt * 8);
+        d.dx += (th.x - d.dx) * k; d.dy += (th.y - d.dy) * k;
+        return { ...th, dx: d.dx, dy: d.dy };
+      }),
+      zones: (dk.zones || []).filter(here), graves: (dk.graves || []).filter(here), crowd: app.view === 'town' ? dk.crowd || null : null,
+    } : null;
     // 访客化身
     const mine = app.perms.avatar;
     const avatars = (s.avatars || []).filter(here).map((v) => {
@@ -403,7 +415,7 @@ function loop(now) {
       cam: app.cam, t: tt, day, region: app.view,
       weather: app.view === 'town' ? winfo.render?.base || weatherId : 'sunny', weatherId: app.view === 'town' ? weatherId : 'sunny', weatherTint: app.view === 'town' && winfo.render?.tint ? winfo.render : null,
       overlay: (s.overlay || []).filter((o) => (o.region || 'town') === app.view),
-      agents, agentMap, occupancy, convos: s.convos, entities: (s.entities || []).filter((e) => e.kind === 'portal' ? app.view === 'town' : here(e)), creatures, avatars,
+      agents, agentMap, occupancy, convos: s.convos, entities: (s.entities || []).filter((e) => e.kind === 'portal' ? app.view === 'town' : here(e)), creatures, avatars, dark,
       selected: app.selected, hover: app.hover, boardCount: app.board.length,
       festival: app.view === 'town' && ((app.forceFestival && app.spec?.calendar.events?.some((e) => e.vfx === 'festival_lanterns')) || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns')),
       mode: app.mode, subtitles: app.mode === 'immerse' && Immerse.subsOn(),

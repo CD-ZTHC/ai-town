@@ -3,7 +3,7 @@ import { api, esc, $, $$, toast, ROOT, fmtNum } from './api.js';
 import { loginDialog } from './auth.js';
 
 const STAGES = { queued: '排队中', G1: '阅读原文', G2: '整理世界圣经', G3: '确定改编方案', G4: '生成地图、居民与剧情线', G5: '验证：考据、试跑、审核', done: '完成', failed: '失败' };
-const RATING = { cozy: '温馨', adventure: '冒险', epic: '史诗', tragic: '悲剧（允许离别与死亡作为叙事事件）' };
+const RATING = { cozy: '温馨', adventure: '冒险', epic: '史诗', dark: '黑暗（允许战斗、怪异与死亡作为叙事事件）', tragic: '悲剧（允许离别与死亡作为叙事事件）' };
 const app = $('#app');
 const state = { source: 'paste', text: '', file: null };
 
@@ -24,10 +24,15 @@ function wizard(q) {
     <p class="muted">你的配额：还能创建 ${q.quota.maxWorlds - q.used.worlds} 个世界 · 原文最多 ${fmtNum(q.quota.maxSourceChars)} 字 · 创世额度剩余 ${fmtNum(left)} tokens</p>
     <div class="card stack">
       <h2>1 · 来源</h2>
-      <div class="tabs">${[['paste', '粘贴原文'], ['file', '上传 .txt'], ['desc', '只写一段设定']].map(([k, l]) => `<button data-src="${k}" class="${state.source === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="tabs">${[['paste', '粘贴原文'], ['file', '上传 .txt'], ['desc', '只写一段设定'], ['inspire', '参考题材（原创）']].map(([k, l]) => `<button data-src="${k}" class="${state.source === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div id="src-paste" ${state.source === 'paste' ? '' : 'hidden'}><textarea id="text" rows="10" placeholder="把童话、小说或剧本粘贴在这里">${esc(state.text)}</textarea><div class="small muted" id="count"></div></div>
       <div id="src-file" ${state.source === 'file' ? '' : 'hidden'}><input type="file" id="file" accept=".txt,text/plain"><div class="small muted" id="fcount"></div></div>
-      <div id="src-desc" ${state.source === 'desc' ? '' : 'hidden'}><textarea id="desc" rows="5" maxlength="2000" placeholder="例如：一座漂在云上的小城，住着会修风车的猫、怕高的鸟和一个捡到星星的孩子……"></textarea></div>
+      <div id="src-desc" ${state.source === 'desc' || state.source === 'inspire' ? '' : 'hidden'}><textarea id="desc" rows="5" maxlength="2000" placeholder="${state.source === 'inspire' ? '写下你想要的世界：在哪里、什么基调、有哪些人、害怕什么……' : '例如：一座漂在云上的小城，住着会修风车的猫、怕高的鸟和一个捡到星星的孩子……'}"></textarea></div>
+      <div id="src-inspire" class="stack" ${state.source === 'inspire' ? '' : 'hidden'}>
+        <div class="small muted">参考模式不改编原著：只借用参考作品的类型要素（比如「规律怪谈」「代价沉重的力量」），人名、地名、专有名词和情节全部原创。</div>
+        <input id="inspiration" maxlength="200" placeholder="题材参考，例如：像某部作品那样的规律怪谈">
+        <textarea id="avoid" rows="2" maxlength="600" placeholder="避免清单：原作里的人名、地名、专有名词，用逗号隔开；生成的文本里出现它们会被拦下"></textarea>
+      </div>
     </div>
     <div class="card stack" style="margin-top:14px">
       <h2>2 · 声明</h2>
@@ -39,6 +44,8 @@ function wizard(q) {
       <div class="setting"><div class="k">开局时间点<div class="help">从原著的哪里开始</div></div><div class="v"><input id="start" maxlength="60" placeholder="故事开始之前"></div></div>
       <div class="setting"><div class="k">忠实度</div><div class="v"><select id="fidelity"><option value="faithful">忠实：尽量回到原著的关键情节</option><option value="drift" selected>偏离：关键节点以变形的方式出现</option><option value="free">自由：原著只当背景</option></select></div></div>
       <div class="setting"><div class="k">内容分级</div><div class="v"><select id="rating">${q.quota.ratings.map((r) => `<option value="${r}" ${r === 'adventure' ? 'selected' : ''}>${RATING[r] || r}</option>`).join('')}</select></div></div>
+      <div class="setting"><div class="k">叙事者</div><div class="v"><select id="storyteller"><option value="voyage" selected>远航：每 7 天一个完整的故事</option><option value="gentle">静水：以日常为主</option><option value="chaos">掷骰：出人意料的小事频繁发生</option><option value="horror">恐怖：平静 → 征兆 → 受害者 → 恐慌 → 对抗</option></select></div></div>
+      <div class="setting"><div class="k">生成按规律行事的威胁<div class="help">它们按各自的规律伤人，居民要靠线索、禁忌和对抗活下去（黑暗、悲剧分级默认开启）</div></div><div class="v"><label class="row"><input type="checkbox" id="threats"> 开启</label></div></div>
       <div class="setting"><div class="k">主角数量<div class="help">主角有完整的思考与反思，其余是配角</div></div><div class="v"><input id="leads" type="number" min="1" max="8" value="4"></div></div>
       <div class="setting"><div class="k">允许这个世界自主进化<div class="help">AI 可以为这个世界长出新功能（上线前由你终审）</div></div><div class="v"><label class="row"><input type="checkbox" id="evo"> 开启</label></div></div>
     </div>
@@ -63,6 +70,10 @@ function wizard(q) {
       $('#wid-msg').innerHTML = r.ok ? `<span class="good">✓ 可以用：${esc(new URL(`w/${v}/`, ROOT).href)}</span>` : `<span class="bad">${esc(r.reason)}</span>`;
     }, 300);
   });
+  // 黑暗、悲剧分级默认生成威胁（用户可以取消）
+  const syncThreats = () => { $('#threats').checked = ['dark', 'tragic'].includes($('#rating').value); };
+  $('#rating').addEventListener('change', syncThreats);
+  syncThreats();
   $('#go').onclick = async () => {
     const btn = $('#go');
     btn.disabled = true;
@@ -78,7 +89,11 @@ function wizard(q) {
       }
       const r = await api('api/genesis', {
         id: $('#wid').value.trim(), sourceId, declaration: $('#decl').checked,
-        options: { description: $('#desc')?.value || '', start: $('#start').value, fidelity: $('#fidelity').value, rating: $('#rating').value, leads: Number($('#leads').value), evolution: $('#evo').checked },
+        options: {
+          description: $('#desc')?.value || '', start: $('#start').value, fidelity: $('#fidelity').value, rating: $('#rating').value, leads: Number($('#leads').value), evolution: $('#evo').checked,
+          storyteller: $('#storyteller').value, threats: $('#threats').checked,
+          ...(state.source === 'inspire' ? { mode: 'inspire', inspiration: $('#inspiration').value, avoid: $('#avoid').value } : {}),
+        },
       });
       history.replaceState(null, '', `?job=${r.jobId}`);
       progress(r.jobId);
