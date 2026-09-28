@@ -11,6 +11,7 @@ import { authApi } from './auth-api.js';
 import { identity } from './identity.js';
 import { withContext } from '../scheduler/context.js';
 import { get as setting } from '../settings/index.js';
+import { Assets, etagMatches } from './assets.js';
 
 export const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 // 冻结：@hono/node-server 的轻量 Response 会往传入的 headers 对象里写 content-length，
@@ -49,10 +50,13 @@ export function singleWorld(host) {
  * @param {object} [o.admin] 管理员接口的依赖（见 admin-api.js）
  * @param {import('../accounts/index.js').Accounts} [o.accounts] 账号（不传时只有本地模式可用）
  * @param {Array<[string, Hono]>} [o.routes] 其他全站接口（大厅、创世……），挂在 /api/<前缀> 下
+ * @param {string|null} [o.revision] 部署时写入的 REVISION（git 短哈希，只用于展示）
  */
-export function createApp({ worlds = null, hostFor = null, publicDir, engineStatus, admin = {}, accounts = null, routes = [] }) {
+export function createApp({ worlds = null, hostFor = null, publicDir, engineStatus, admin = {}, accounts = null, routes = [], revision = null }) {
   const PUBLIC = path.resolve(publicDir);
   const app = new Hono();
+  // 前端资源版本（重构方案 §7）：内容哈希、HTML 改写与 import map、构建号
+  const assets = new Assets(PUBLIC, { enabled: () => setting('ASSET_VERSIONING'), revision });
   if (!worlds) {
     worlds = {
       defaultId: () => null,
@@ -75,15 +79,24 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
     return withHeaders(c.json({ error: '居民们一时没反应过来，请稍后再试' }, 502), { ...SECURITY_HEADERS });
   });
 
-  // 配置了人机验证时，页面的 CSP 放行 Turnstile 的脚本与 iframe（没配置时保持最严格的 CSP）
+  // 所有响应带上构建号：已打开的旧页面调用接口时就能发现前端已经更新（§7.4）
+  app.use('*', async (c, next) => {
+    c.set('build', assets.build);
+    await next();
+    try { c.res.headers.set('X-Build', assets.build); } catch { /* 不可改的响应头 */ }
+  });
+
+  // 配置了人机验证时，页面的 CSP 放行 Turnstile 的脚本与 iframe（没配置时保持最严格的 CSP）。
+  // 在页面当前的 CSP 上改（HTML 里注入的 import map 带着自己的哈希）
   app.use('*', async (c, next) => {
     await next();
     if (setting('CAPTCHA_SITEKEY') && /text\/html/.test(c.res.headers.get('content-type') || '')) {
-      c.res.headers.set('Content-Security-Policy', SECURITY_HEADERS['Content-Security-Policy'].replace("script-src 'self'", "script-src 'self' https://challenges.cloudflare.com").replace("frame-ancestors", "frame-src https://challenges.cloudflare.com; frame-ancestors").replace("connect-src 'self'", "connect-src 'self' https://challenges.cloudflare.com"));
+      const csp = c.res.headers.get('Content-Security-Policy') || SECURITY_HEADERS['Content-Security-Policy'];
+      c.res.headers.set('Content-Security-Policy', csp.replace("script-src 'self'", "script-src 'self' https://challenges.cloudflare.com").replace("frame-ancestors", "frame-src https://challenges.cloudflare.com; frame-ancestors").replace("connect-src 'self'", "connect-src 'self' https://challenges.cloudflare.com"));
     }
   });
 
-  app.get('/healthz', (c) => c.json({ ok: true, ...worlds.health() }));
+  app.get('/healthz', (c) => c.json({ ok: true, build: assets.build, revision: assets.revision, ...worlds.health() }));
 
   // ---------- 接口：身份、兜底限流、JSON 请求体（全站接口与世界接口共用）----------
   const apiPrefixes = ['/api/*', '/w/:world/api/*'];
@@ -103,6 +116,8 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
       await next();
     });
   }
+  // 构建号（页面定时比对；世界页面用相对路径 api/build，所以两种前缀都有）
+  for (const p of ['/api/build', '/w/:world/api/build']) app.get(p, (c) => c.json({ build: assets.build, revision: assets.revision }));
   app.route('/api/auth', authApi({ accounts }));
   app.route('/api/admin', adminApi({ ...admin, accounts }));
   for (const [prefix, sub] of routes) app.route(`/api/${prefix}`, sub);
@@ -128,23 +143,24 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
   app.all('/w/:world/api/*', notFound);
 
   // ---------- AI 插件面板 ----------
-  app.get('/plugin-ui/*', (c) => servePluginUi(c, worlds.resolve(c, worlds.defaultId()), c.req.path));
-  app.get('/w/:world/plugin-ui/*', (c) => servePluginUi(c, worlds.resolve(c, c.req.param('world')), c.req.path.replace(/^\/w\/[^/]+/, '')));
+  const bridge = () => (setting('ASSET_VERSIONING') ? assets.hash('js/plugin-bridge.js') : null);
+  app.get('/plugin-ui/*', (c) => servePluginUi(c, worlds.resolve(c, worlds.defaultId()), c.req.path, bridge()));
+  app.get('/w/:world/plugin-ui/*', (c) => servePluginUi(c, worlds.resolve(c, c.req.param('world')), c.req.path.replace(/^\/w\/[^/]+/, ''), bridge()));
 
   // ---------- 页面：/ 大厅，/w/:world/ 世界页面（与原来的单世界页面相同，资源用相对路径）----------
   app.get('/w/:world', (c) => c.redirect(`${c.req.path}/`, 301));
   app.get('/w/:world/', identity({ accounts }), async (c) => {
     const p = await worlds.page(c, c.req.param('world'));
     if (!p.ok) return new Response(p.html, { status: p.status, headers: { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store', ...SECURITY_HEADERS } });
-    return serveStatic(c, PUBLIC, '/index.html');
+    return serveStatic(c, PUBLIC, '/index.html', assets);
   });
   app.all('/w/:world/*', (c) => {
     let rel;
     try { rel = decodeURIComponent(c.req.path).replace(/^\/w\/[^/]+/, ''); } catch { return c.json({ error: 'bad path' }, 400); }
-    return serveStatic(c, PUBLIC, rel);
+    return serveStatic(c, PUBLIC, rel, assets);
   });
-  app.get('/', (c) => serveStatic(c, PUBLIC, worlds.lobby ? '/lobby.html' : '/index.html'));
-  app.all('*', (c) => serveStatic(c, PUBLIC));
+  app.get('/', (c) => serveStatic(c, PUBLIC, worlds.lobby ? '/lobby.html' : '/index.html', assets));
+  app.all('*', (c) => serveStatic(c, PUBLIC, null, assets));
   return app;
 }
 
@@ -165,7 +181,7 @@ export function openStream(c, host) {
   const stream = new ReadableStream({
     start() {
       client.write('retry: 3000\n\n');
-      client.write(`event: init\ndata: ${JSON.stringify(host.town.initPayload())}\n\n`);
+      client.write(`event: init\ndata: ${JSON.stringify({ ...host.town.initPayload(), build: c.get('build') || null })}\n\n`);
       leave = host.join(client);
       ka = setInterval(() => client.write(': ka\n\n'), 15000);
     },
@@ -237,7 +253,7 @@ export function sseClient(ip, onClose = () => {}) {
   return client;
 }
 
-function servePluginUi(c, host, p) {
+function servePluginUi(c, host, p, bridgeHash = null) {
   const m = /^\/plugin-ui\/([a-z][a-z0-9-]{2,31})\/(ui\.js|boot\.js)?$/.exec(p);
   const [, id, f] = m || [];
   const file = m && host.town.evolved.uiFile(id);
@@ -247,11 +263,15 @@ function servePluginUi(c, host, p) {
   const js = { ...headers, 'Content-Type': MIME['.js'], 'Access-Control-Allow-Origin': '*' };
   if (f === 'ui.js') return new Response(fs.readFileSync(file), { headers: js });
   if (f === 'boot.js') return new Response("import * as ui from './ui.js';\nif (typeof ui.default === 'function') ui.default();\n", { headers: js });
-  return new Response(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:14px/1.6 system-ui,sans-serif;margin:10px;color:#3a3226;background:#fffaf0}button{font:inherit;cursor:pointer}</style></head><body><div id="app"></div><script src="../../js/plugin-bridge.js"></script><script type="module" src="boot.js"></script></body></html>`, { headers: { ...headers, 'Content-Type': MIME['.html'] } });
+  return new Response(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:14px/1.6 system-ui,sans-serif;margin:10px;color:#3a3226;background:#fffaf0}button{font:inherit;cursor:pointer}</style></head><body><div id="app"></div><script src="../../js/plugin-bridge.js${bridgeHash ? `?v=${bridgeHash}` : ''}"></script><script type="module" src="boot.js"></script></body></html>`, { headers: { ...headers, 'Content-Type': MIME['.html'] } });
 }
 
-/** 静态文件：禁止路径穿越与点开头的文件；弱 ETag + no-cache */
-export function serveStatic(c, root, rel = null) {
+/**
+ * 静态文件：禁止路径穿越与点开头的文件。
+ * 有 assets（资源清单）时按 §7.3 给缓存头：HTML 改写后 no-cache + 强 ETag；带正确 ?v= 的资源 immutable；其余 no-cache + 内容哈希 ETag。
+ * 没有 assets 或 ASSET_VERSIONING 关闭时：全部 no-cache。
+ */
+export function serveStatic(c, root, rel = null, assets = null) {
   const notFound = () => new Response('not found', { status: 404, headers: { ...SECURITY_HEADERS } });
   if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return withHeaders(c.json({ error: '不支持的方法' }, 405), { ...SECURITY_HEADERS });
   if (rel == null) {
@@ -263,9 +283,29 @@ export function serveStatic(c, root, rel = null) {
   let st;
   try { st = fs.statSync(file); } catch { return notFound(); }
   if (!st.isFile()) return notFound();
-  const etag = `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
-  const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', ETag: etag, ...SECURITY_HEADERS };
-  if (c.req.header('if-none-match') === etag) return new Response(null, { status: 304, headers });
+  const type = MIME[path.extname(file)] || 'application/octet-stream';
+  const on = Boolean(assets && assets.enabled());
+  const relPosix = path.relative(root, file).split(path.sep).join('/');
+  const inm = c.req.header('if-none-match');
+
+  // HTML：改写入口 URL、注入构建号与 import map；CSP 放行注入的 import map（按内容哈希）
+  if (on && path.extname(file) === '.html') {
+    const p = assets.page(relPosix, c.req.path);
+    if (p) {
+      const csp = p.csp ? SECURITY_HEADERS['Content-Security-Policy'].replace("script-src 'self'", `script-src 'self' ${p.csp}`) : SECURITY_HEADERS['Content-Security-Policy'];
+      const headers = { 'Content-Type': type, 'Cache-Control': 'no-cache', ETag: p.etag, ...SECURITY_HEADERS, 'Content-Security-Policy': csp };
+      if (etagMatches(inm, p.etag)) return new Response(null, { status: 304, headers });
+      return new Response(c.req.method === 'HEAD' ? null : p.body, { status: 200, headers: { ...headers, 'Content-Length': String(p.body.length) } });
+    }
+  }
+
+  const e = assets?.entry(relPosix);
+  const etag = e ? `"${e.hash}"` : `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
+  // 带 v 且与当前内容一致：内容与 URL 一一对应，永不重新验证；v 不一致（旧页面在请求旧版本）只给当前内容、不许长缓存
+  const v = c.req.query('v');
+  const cache = on && e && v && v === e.hash ? 'public, max-age=31536000, immutable' : 'no-cache';
+  const headers = { 'Content-Type': type, 'Cache-Control': cache, ETag: etag, ...SECURITY_HEADERS };
+  if (etagMatches(inm, etag)) return new Response(null, { status: 304, headers });
   if (c.req.method === 'HEAD') return new Response(null, { status: 200, headers: { ...headers, 'Content-Length': String(st.size) } });
   return new Response(Readable.toWeb(fs.createReadStream(file)), { status: 200, headers: { ...headers, 'Content-Length': String(st.size) } });
 }

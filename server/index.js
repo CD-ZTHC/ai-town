@@ -271,6 +271,7 @@ function impactOf(changes) {
 
 const app = createApp({
   publicDir: path.join(ROOT, 'public'),
+  revision: (() => { try { return fs.readFileSync(path.join(ROOT, 'REVISION'), 'utf8').trim() || null; } catch { return null; } })(),
   accounts,
   engineStatus: (worldId) => engineStatus(worldId),
   admin: {

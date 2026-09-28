@@ -66,12 +66,19 @@ await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
 let seq = 0;
 const pending = new Map();
 const problems = [];
+const net = []; // 资源版本检查用：页面加载时的每个响应 { url, status, cached }
+const cachedIds = new Set();
 ws.onmessage = (ev) => {
   const msg = JSON.parse(ev.data);
   if (msg.id && pending.has(msg.id)) {
     const { resolve, reject } = pending.get(msg.id);
     pending.delete(msg.id);
     msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result);
+  } else if (msg.method === 'Network.responseReceived') {
+    const r = msg.params.response;
+    net.push({ id: msg.params.requestId, url: r.url, status: r.status, cached: Boolean(r.fromDiskCache || r.fromMemoryCache) });
+  } else if (msg.method === 'Network.requestServedFromCache') {
+    cachedIds.add(msg.params.requestId);
   } else if (msg.method === 'Runtime.exceptionThrown') {
     const d = msg.params.exceptionDetails;
     problems.push(`异常：${d.exception?.description || d.text}（${d.url || ''}:${d.lineNumber}）`);
@@ -299,6 +306,35 @@ await step('28-genesis-ai', async () => {
   await waitFor(() => evaluate(`Boolean(document.querySelector('#ai-pick [name="source"]'))`), 10000, '创世向导 · 选择模型');
   await evaluate(`document.querySelector('#ai-pick').scrollIntoView({ block: 'center' }), true`);
 });
+// 前端资源版本（重构方案 §7.6）：二次打开页面时脚本与样式全部命中浏览器缓存；发现新版本时出现提示条
+await step('29-asset-cache', async () => {
+  await send('Network.enable');
+  for (const page of ['lobby.html', 'admin/', 'w/yunxi/?mode=observe']) {
+    await send('Page.navigate', { url: `${base}/${page}` });
+    await waitFor(() => evaluate(`document.readyState === 'complete'`), 15000, '页面加载');
+    await sleep(800);
+    // 先离开再回来（同一个 URL 直接导航会被当成「刷新」）
+    await send('Page.navigate', { url: 'about:blank' });
+    await sleep(300);
+    net.length = 0;
+    await send('Page.navigate', { url: `${base}/${page}` });
+    await waitFor(() => evaluate(`document.readyState === 'complete'`), 15000, '再次加载');
+    await sleep(800);
+    const fetched = net.filter((r) => /\.(js|css)(\?|$)/.test(r.url) && r.url.startsWith(base) && !r.cached && !cachedIds.has(r.id));
+    if (fetched.length) throw new Error(`${page} 二次打开时仍从服务器取了 ${fetched.length} 个脚本 / 样式：${fetched.slice(0, 3).map((r) => r.url.replace(base, '')).join('、')}`);
+    const unversioned = net.filter((r) => /\.(js|css)(\?|$)/.test(r.url) && r.url.startsWith(base) && !/[?&]v=[0-9a-f]{10}/.test(r.url));
+    if (unversioned.length) throw new Error(`${page} 有没带版本的资源（import map 漏项？）：${unversioned.slice(0, 3).map((r) => r.url.replace(base, '')).join('、')}`);
+    // 版本没变：不能误报「已更新」（等页面发出过接口请求、收到过 SSE 的 init）
+    await sleep(1500);
+    if (await evaluate(`Boolean(document.querySelector('#version-bar'))`)) throw new Error(`${page} 版本没变却出现了更新提示`);
+  }
+  await send('Network.disable');
+}, { screenshot: false });
+await step('30-update-notice', async () => {
+  // 模拟服务端换了版本（真实场景来自 SSE init / X-Build / api/build）：提示条出现；有输入内容时不自动刷新
+  await evaluate(`import('./js/version.js').then((v) => { v.seen('ffffffffff'); return true; })`);
+  await waitFor(() => evaluate(`Boolean(document.querySelector('#version-bar'))`), 3000, '更新提示条');
+}, { wait: 300 });
 // 公网模式：游客点互动入口 → 弹出登录框 → 注册 → 自动继续刚才的操作（现身）
 const pubPort = port + 100;
 const pub = spawn(process.execPath, ['server/index.js'], { env: { ...env, PORT: String(pubPort), PUBLIC_MODE: '1', DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'town-bc-pub-')) }, stdio: ['ignore', 'pipe', 'pipe'] });

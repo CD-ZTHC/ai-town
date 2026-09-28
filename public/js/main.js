@@ -5,6 +5,7 @@ import * as Modes from './modes.js';
 import * as Immerse from './immerse.js';
 import * as Play from './play.js';
 import { requireLogin } from './ui/auth.js';
+import * as Version from './version.js';
 
 export const storage = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -43,7 +44,7 @@ export const app = {
     const token = storage.get('town-admin');
     if (token) headers['X-Admin-Token'] = token;
     const opts = body === undefined ? { headers } : { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
-    const res = await fetch(path.replace(/^\//, ''), opts);
+    const res = Version.fromResponse(await fetch(path.replace(/^\//, ''), opts));
     let data = {};
     try { data = await res.json(); } catch {}
     // 游客点了互动入口：弹出登录框，登录成功后自动继续刚才的操作
@@ -153,6 +154,7 @@ function connect() {
   const es = new EventSource('api/stream');
   es.addEventListener('init', (e) => {
     const d = JSON.parse(e.data);
+    Version.seen(d.build);
     const first = !app.world;
     app.regionWorlds = { town: d.world, ...(d.regions || {}) };
     app.regionsOpen = d.regionsOpen || {};
