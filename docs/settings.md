@@ -29,7 +29,7 @@
 
 | 键 | 说明 | 取值 | 默认 | 生效 |
 | --- | --- | --- | --- | --- |
-| `LLM_PROVIDER` | 模型服务类型：openai：OpenAI 兼容接口；pi：经 pi-ai 接入 40 多家服务（需要安装可选依赖） | `openai` / `pi` | `openai` | 重启 |
+| `LLM_PROVIDER` | 模型服务类型：openai：OpenAI 兼容接口；anthropic / google：官方接口；aisdk：模型名写成「服务商/模型」，可以混用多家（密钥从 ANTHROPIC_API_KEY 等环境变量读取）。后三种经 AI SDK 接入（可选依赖） | `openai` / `anthropic` / `google` / `aisdk` | `openai` | 重启 |
 | `BASE_URL` | 接口地址：OpenAI 兼容接口，例如 https://example.com/v1 | 文本 | （空） | 即时 |
 | `API_KEY` | 密钥 **密钥** | 文本 | （空） | 即时 |
 | `MODEL` | 默认模型：模型名写错时会自动匹配最接近的可用模型 | 文本 | （空） | 即时 |

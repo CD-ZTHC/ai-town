@@ -14,21 +14,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 22：package.json 声明的最低版本，不装可选依赖（pi-ai 相关测试会跳过）
-        # 26：mise.toml 使用的版本，装上可选依赖 pi-ai 一起测
+        # 22：package.json 声明的最低版本，不装可选依赖（AI SDK 相关测试会跳过）
+        # 26：mise.toml 使用的版本，装上可选依赖 AI SDK 一起测
         include:
           - node: 22
-            pi: false
+            sdk: false
           - node: 26
-            pi: true
-    name: Node ${{ matrix.node }}${{ matrix.pi && ' + pi-ai' || '' }}
+            sdk: true
+    name: Node ${{ matrix.node }}${{ matrix.sdk && ' + AI SDK' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - name: 安装依赖（Node 26 连同可选依赖 pi-ai 一起装）
-        run: npm ci --no-audit --no-fund ${{ !matrix.pi && '--omit=optional' || '' }}
+      - name: 安装依赖（Node 26 连同可选依赖 AI SDK 一起装）
+        run: npm ci --no-audit --no-fund ${{ !matrix.sdk && '--omit=optional' || '' }}
       - name: 语法检查
         run: node tools/check.js
       - name: 测试（含 7 个游戏日的无头回放，不调用 LLM）
@@ -36,10 +36,10 @@ jobs:
       - name: AI 模块流程检查（录制回复，不联网）
         run: node tools/smoke-llm.js --mock
       - name: 前端冒烟检查（无头 Chrome：各个面板与三种模式没有控制台错误）
-        if: matrix.pi
+        if: matrix.sdk
         run: node tools/browser-check.js --out shots
       - name: 保存截图
-        if: matrix.pi && always()
+        if: matrix.sdk && always()
         uses: actions/upload-artifact@v4
         with:
           name: browser-check-shots

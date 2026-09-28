@@ -38,7 +38,11 @@ export const SETTINGS = {
   AVATAR_MAX: { group: 'site', ...int(0, 200), default: 8, apply: 'live', label: '每个世界同时现身的旅人上限' },
 
   // ---------- 模型 ----------
-  LLM_PROVIDER: { group: 'llm', ...oneOf(['openai', 'pi']), default: 'openai', apply: 'restart', label: '模型服务类型', help: 'openai：OpenAI 兼容接口；pi：经 pi-ai 接入 40 多家服务（需要安装可选依赖）' },
+  LLM_PROVIDER: {
+    group: 'llm', ...oneOf(['openai', 'anthropic', 'google', 'aisdk']), default: 'openai', apply: 'restart', label: '模型服务类型',
+    help: 'openai：OpenAI 兼容接口；anthropic / google：官方接口；aisdk：模型名写成「服务商/模型」，可以混用多家（密钥从 ANTHROPIC_API_KEY 等环境变量读取）。后三种经 AI SDK 接入（可选依赖）',
+    parse: (s) => (s === 'pi' ? 'aisdk' : s), // 旧名字：pi-ai 已换成 AI SDK
+  },
   BASE_URL: { group: 'llm', ...url(), default: '', apply: 'live', label: '接口地址', help: 'OpenAI 兼容接口，例如 https://example.com/v1' },
   API_KEY: { group: 'llm', ...str(500), default: '', apply: 'live', secret: true, label: '密钥' },
   MODEL: { group: 'llm', ...str(200), default: '', apply: 'live', label: '默认模型', help: '模型名写错时会自动匹配最接近的可用模型' },
