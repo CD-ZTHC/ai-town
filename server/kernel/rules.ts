@@ -2,16 +2,31 @@
 // 触发器：every（每隔 N 游戏分钟）、at（每天某时刻）、weather（天气变为某种）、enter（居民到达某地点）。
 import { compile, evaluate } from './expr.ts';
 import { EXPR_FNS, EXT_FNS, checkEffects, checkExpr, runEffects, posOf, agentsNear } from './effects.ts';
+import type { ExprFns } from './expr.ts';
+import type { AgentLike, TownLike } from '../types/town.ts';
+import type { Rule, WorldSpec } from '../types/spec.ts';
+import { parseHM } from '../memory.ts';
+
+/** 黑暗叙事给居民加的运行时字段（sim/dark.js） */
+type DarkAgent = AgentLike & {
+  posture?: { until: number; holds: string[] };
+  openedAt?: number;
+};
+/** 表达式函数收到的是 agentView 的快照（或任意值），通过 id 回查真实居民 */
+type Arg = unknown;
+/** 有坐标的东西（威胁、声音、区域） */
+type Spot = { x: number; y: number; region?: string; r?: number; id?: string; threat?: string; t?: number };
 
 /** 居民是否正保持着某种禁忌姿态（黑暗叙事设计 §4.1） */
-export const hasPosture = (town, a, name) => Boolean(a?.posture && a.posture.until > town.t && a.posture.holds.includes(name));
-import { parseHM } from '../memory.ts';
+export const hasPosture = (town: TownLike, a: DarkAgent | null | undefined, name: string): boolean => Boolean(a?.posture && a.posture.until > town.t && a.posture.holds.includes(name));
 
 const ID_RE = /^[a-z][a-z0-9_]{1,31}$/;
 const MAX_MATCHES = 12; // 一次触发最多影响的实体数，防止「雪崩」规则
 
 /** 表达式里看到的居民：只读的普通对象快照 */
-export function agentView(a) {
+export type AgentView = ReturnType<typeof agentView>;
+
+export function agentView(a: AgentLike | null | undefined) {
   if (!a) return null;
   return {
     id: a.id, name: a.name, kind: a.kind, role: a.role, loc: a.locId || '', region: a.region || 'town', status: a.status, inside: Boolean(a.inside),
@@ -20,44 +35,52 @@ export function agentView(a) {
 }
 
 /** 表达式运行环境：变量 + 白名单函数（函数只接收快照，通过 id 回查真实居民） */
-export function exprEnv(town, { self = null, target = null, e = null, threat = null } = {}) {
-  const real = (v) => (v && typeof v === 'object' ? town.byId[v.id] : null);
-  const dark = town.dark;
-  const recent = (v, k, win) => { const a = real(v); return Boolean(a) && a[k] != null && town.t - a[k] <= win; };
-  const distTo = (a, x) => (a && x && (a.region || 'town') === (x.region || 'town') ? Math.hypot((posOf(town, a)?.x ?? a.x) - x.x, (posOf(town, a)?.y ?? a.y) - x.y) : Infinity);
-  const fns = {
-    has: (v, item, n = 1) => (real(v)?.inventory[item] || 0) >= n,
-    count: (v, item) => real(v)?.inventory[item] || 0,
-    knows: (v, ability) => Boolean(real(v)?.abilities.includes(ability)),
-    hasCondition: (v, name) => Boolean(real(v)?.body.conditions.includes(name)),
-    nearStructure: (v, tag, r = 3) => {
+export interface ExprBindings {
+  self?: AgentLike | null;
+  target?: AgentLike | null;
+  e?: AgentLike | null;
+  /** 正在判定规律的威胁实例（不在威胁里时为 null） */
+  threat?: (Spot & { id: string }) | null;
+}
+
+export function exprEnv(town: TownLike, { self = null, target = null, e = null, threat = null }: ExprBindings = {}): { vars: Record<string, unknown>; fns: ExprFns } {
+  const real = (v: Arg): DarkAgent | null => (v && typeof v === 'object' ? town.byId[(v as { id: string }).id] ?? null : null);
+  const dark: { sounds?: Spot[]; zones?: Spot[] } | undefined = town.dark;
+  const recent = (v: Arg, k: 'openedAt' | 'spokeAt' | 'namedAt', win: number): boolean => { const a = real(v); const at = a?.[k]; return at != null && town.t - at <= win; };
+  const distTo = (a: DarkAgent | null, x: Spot | null): number => (a && x && (a.region || 'town') === (x.region || 'town') ? Math.hypot((posOf(town, a)?.x ?? a.x) - x.x, (posOf(town, a)?.y ?? a.y) - x.y) : Infinity);
+  const fns: ExprFns = {
+    has: (v: Arg, item: string, n = 1) => (real(v)?.inventory[item] || 0) >= n,
+    count: (v: Arg, item: string) => real(v)?.inventory[item] || 0,
+    knows: (v: Arg, ability: string) => Boolean(real(v)?.abilities.includes(ability)),
+    hasCondition: (v: Arg, name: string) => Boolean(real(v)?.body.conditions.includes(name)),
+    nearStructure: (v: Arg, tag: string, r = 3) => {
       const p = posOf(town, real(v));
-      return Boolean(p) && town.entities.some((s) => s.tags.includes(tag) && (s.region || 'town') === p.region && Math.hypot(s.x - p.x, s.y - p.y) <= r);
+      return Boolean(p) && town.entities.some((s: Spot & { tags: string[] }) => s.tags.includes(tag) && (s.region || 'town') === p!.region && Math.hypot(s.x - p!.x, s.y - p!.y) <= r);
     },
-    nearAgents: (v, r = 3) => { const a = real(v); return a ? agentsNear(town, posOf(town, a), r, a).length : 0; },
+    nearAgents: (v: Arg, r = 3) => { const a = real(v); return a ? agentsNear(town, posOf(town, a), r, a).length : 0; },
     min: Math.min, max: Math.max, abs: Math.abs, rand: Math.random,
     // ---- 黑暗叙事的行为原语（threat 是正在判定规律的威胁实例，不在威胁里时为 null）----
-    seen: (v) => { const a = real(v); return Boolean(threat && a) && !a.inside && a.status !== 'sleeping' && !hasPosture(town, a, 'eyesClosed') && distTo(a, threat) <= 6; },
-    near: (v, r = 3) => Boolean(threat) && distTo(real(v), threat) <= r,
-    heard: (v, id) => { const a = real(v); return Boolean(a) && (dark?.sounds || []).some((s) => s.id === id && town.t - s.t <= 10 && distTo(a, s) <= s.r); },
-    opened: (v) => recent(v, 'openedAt', 10),
-    entered: (v, loc) => real(v)?.locId === loc,
-    speaking: (v) => recent(v, 'spokeAt', 2) && !hasPosture(town, real(v), 'silent'),
-    named: (v) => recent(v, 'namedAt', 30),
-    alone: (v) => { const a = real(v); return Boolean(a) && agentsNear(town, posOf(town, a), 4, a).length === 0; },
-    asleep: (v) => real(v)?.status === 'sleeping',
+    seen: (v: Arg) => { const a = real(v); return Boolean(threat && a) && !a!.inside && a!.status !== 'sleeping' && !hasPosture(town, a, 'eyesClosed') && distTo(a, threat) <= 6; },
+    near: (v: Arg, r = 3) => Boolean(threat) && distTo(real(v), threat) <= r,
+    heard: (v: Arg, id: string) => { const a = real(v); return Boolean(a) && (dark?.sounds || []).some((s) => s.id === id && town.t - (s.t ?? 0) <= 10 && distTo(a, s) <= (s.r ?? 0)); },
+    opened: (v: Arg) => recent(v, 'openedAt', 10),
+    entered: (v: Arg, loc: string) => real(v)?.locId === loc,
+    speaking: (v: Arg) => recent(v, 'spokeAt', 2) && !hasPosture(town, real(v), 'silent'),
+    named: (v: Arg) => recent(v, 'namedAt', 30),
+    alone: (v: Arg) => { const a = real(v); return Boolean(a) && agentsNear(town, posOf(town, a), 4, a).length === 0; },
+    asleep: (v: Arg) => real(v)?.status === 'sleeping',
     night: () => town.minute >= 20 * 60 || town.minute < 5 * 60,
-    marked: (v) => (real(v)?.marks || []).some((m) => !threat || m.threat === threat.id),
-    inZone: (v) => { const a = real(v); return Boolean(a) && (dark?.zones || []).some((z) => (!threat || z.threat === threat.id) && distTo(a, z) <= z.r); },
-    posture: (v, name) => hasPosture(town, real(v), name),
-    burden: (v, id) => real(v)?.burdens?.[id] || 0,
-    anchors: (v, th = 50) => { const a = real(v); return a ? Object.entries(a.relations).filter(([id, r]) => r.affinity >= th && town.agents.includes(town.byId[id])).length : 0; },
-    believes: (v, about) => real(v)?.beliefs.find((b) => b.about === about)?.confidence || 0,
-    flag: (name) => Boolean(town.worldFlags[name]),
-    hosts: (v, id) => (real(v)?.hosted || []).some((h) => h.threat === id),
+    marked: (v: Arg) => (real(v)?.marks || []).some((m) => !threat || m.threat === threat.id),
+    inZone: (v: Arg) => { const a = real(v); return Boolean(a) && (dark?.zones || []).some((z) => (!threat || z.threat === threat.id) && distTo(a, z) <= (z.r ?? 0)); },
+    posture: (v: Arg, name: string) => hasPosture(town, real(v), name),
+    burden: (v: Arg, id: string) => real(v)?.burdens?.[id] || 0,
+    anchors: (v: Arg, th = 50) => { const a = real(v); return a ? Object.entries(a.relations).filter(([id, r]) => r.affinity >= th && town.agents.includes(town.byId[id])).length : 0; },
+    believes: (v: Arg, about: string) => real(v)?.beliefs.find((b) => b.about === about)?.confidence || 0,
+    flag: (name: string) => Boolean(town.worldFlags[name]),
+    hosts: (v: Arg, id: string) => (real(v)?.hosted || []).some((h) => h.threat === id),
   };
   // 扩展函数：拿到小镇与「快照 → 真实居民」的换算，返回普通值
-  for (const [name, impl] of Object.entries(EXT_FNS)) fns[name] = (...args) => impl({ town, real }, ...args);
+  for (const [name, impl] of Object.entries(EXT_FNS)) fns[name] = (...args: unknown[]) => impl({ town, real }, ...args);
   const vars = {
     self: agentView(self), target: agentView(target), e: agentView(e),
     weather: town.weather, hour: Math.floor(town.minute / 60), minute: Math.floor(town.minute), day: town.day,
@@ -66,18 +89,18 @@ export function exprEnv(town, { self = null, target = null, e = null, threat = n
   return { vars, fns };
 }
 
-export function testExpr(town, src, bindings) {
+export function testExpr(town: TownLike, src: string | null | undefined, bindings?: ExprBindings): boolean {
   if (!src) return true;
   const { vars, fns } = exprEnv(town, bindings);
   return Boolean(evaluate(compile(src, EXPR_FNS), vars, fns));
 }
 
-export function validateRule(r, spec) {
+export function validateRule(r: Rule, spec: WorldSpec): string | null {
   if (!r || typeof r !== 'object') return '规则不是对象';
   if (!ID_RE.test(r.id || '')) return 'id 不合法';
   if (!String(r.name || '').trim() || String(r.name).length > 16) return 'name 缺失或过长（≤16字）';
-  const w = r.when || {};
-  const kinds = ['every', 'at', 'weather', 'enter'].filter((k) => w[k] != null);
+  const w: Rule['when'] & { weather?: string; enter?: string } = r.when || {};
+  const kinds = (['every', 'at', 'weather', 'enter'] as const).filter((k) => w[k] != null);
   if (kinds.length !== 1) return 'when 必须且只能包含 every / at / weather / enter 之一';
   if (w.every != null && !(Number.isInteger(w.every) && w.every >= 10 && w.every <= 1440)) return 'every 应为 10~1440 的整数（游戏分钟）';
   if (w.at != null && parseHM(w.at) == null) return 'at 应为 HH:MM';
@@ -89,12 +112,15 @@ export function validateRule(r, spec) {
 }
 
 export class RuleEngine {
-  constructor(town) { this.town = town; this.broken = new Set(); }
+  town: TownLike;
+  /** 表达式运行出错、已停用的规则（直到重启） */
+  broken = new Set<string>();
+  constructor(town: TownLike) { this.town = town; }
 
-  get state() { return (this.town.ruleState ||= { every: {}, at: {} }); }
+  get state(): { every: Record<string, number>; at: Record<string, number> } { return (this.town.ruleState ||= { every: {}, at: {} }); }
 
   /** 每次模拟推进时调用 */
-  tick() {
+  tick(): void {
     const { town } = this;
     for (const r of town.spec.rules) {
       const w = r.when;
@@ -103,30 +129,30 @@ export class RuleEngine {
         if (last == null) { this.state.every[r.id] = town.t; continue; }
         if (town.t - last >= w.every) { this.state.every[r.id] = town.t; this.fire(r); }
       } else if (w.at != null) {
-        if (town.minute >= parseHM(w.at) && this.state.at[r.id] !== town.day) { this.state.at[r.id] = town.day; this.fire(r); }
+        if (town.minute >= (parseHM(w.at) ?? 0) && this.state.at[r.id] !== town.day) { this.state.at[r.id] = town.day; this.fire(r); }
       }
     }
   }
 
-  onWeather(weather) {
+  onWeather(weather: string): void {
     for (const r of this.town.spec.rules) if (r.when.weather === weather || r.when.weather === '*') this.fire(r);
   }
 
-  onEnter(agent, locId) {
+  onEnter(agent: AgentLike, locId: string): void {
     for (const r of this.town.spec.rules) if (r.when.enter === locId || r.when.enter === '*') this.fire(r, agent);
   }
 
-  fire(r, bound = null) {
+  fire(r: Rule & { when: { weather?: string; enter?: string } }, bound: AgentLike | null = null): number {
     if (this.broken.has(r.id)) return 0;
     const town = this.town;
-    const candidates = bound ? [bound] : r.forEach === 'agent' ? town.agents : [null];
+    const candidates: Array<AgentLike | null> = bound ? [bound] : r.forEach === 'agent' ? town.agents : [null];
     let n = 0;
     for (const e of candidates) {
       if (n >= MAX_MATCHES) break;
-      let ok;
+      let ok: boolean;
       try { ok = testExpr(town, r.if, { self: e, e }); } catch (err) {
         // 表达式运行出错的规则停用（直到重启），避免每个 tick 刷屏
-        console.warn(`[rule] ${r.id} 条件出错，已停用：`, err.message);
+        console.warn(`[rule] ${r.id} 条件出错，已停用：`, (err as Error).message);
         this.broken.add(r.id);
         return n;
       }

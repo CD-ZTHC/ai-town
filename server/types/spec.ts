@@ -116,13 +116,15 @@ export interface Ability {
   target: 'self' | 'agent' | 'area' | 'location' | (string & {});
   desc: string;
   aiHint?: string;
-  cost?: { stamina?: number; items?: Record<string, number>; [k: string]: unknown };
+  /** target 为 agent 时的作用距离（1~6 格） */
+  range?: number;
+  cost?: { stamina?: number; items?: Record<string, number>; burden?: { id: string; amount: number } };
   /** 游戏分钟 */
   cooldown?: number;
-  /** 表达式（kernel/expr.js） */
+  /** 表达式（kernel/expr.ts） */
   requires?: string;
   effects: Effect[];
-  learn?: Record<string, unknown>;
+  learn?: { research?: { location: string; keywords: string[] }; [k: string]: unknown };
 }
 
 export interface Rule {
@@ -236,7 +238,7 @@ export interface WorldSpec {
   abilities: Ability[];
   rules: Rule[];
   factions?: Faction[];
-  burdens?: Record<string, unknown>;
+  burdens?: Record<string, { name?: string; [k: string]: unknown }>;
   threats?: Record<string, ThreatType>;
   incidents?: unknown[];
   params: Params;

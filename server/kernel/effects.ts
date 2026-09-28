@@ -3,6 +3,42 @@
 // ctx：{ self, target, e, at: {x, y, inside}, source }，self / target / e 为居民对象（可能为空）。
 import { parse, ExprError } from './expr.ts';
 import { addMemory } from '../memory.ts';
+import type { WorldSpec } from '../types/spec.ts';
+import type { AgentLike, TownLike } from '../types/town.ts';
+
+/** 效果参数：来自世界包、AI 或插件的数据，由各原语的 check() 在运行时逐项校验，所以静态上不约束字段 */
+export type EffectArgs = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/** 位置：户外坐标，或所在建筑（入口坐标） */
+export interface Pos {
+  x: number;
+  y: number;
+  inside: string | null;
+  region: string;
+}
+
+/** 效果执行的上下文 */
+export interface EffectCtx {
+  self?: AgentLike | null;
+  target?: AgentLike | null;
+  e?: AgentLike | null;
+  at?: Pos | null;
+  source?: string | null;
+  /** 在威胁的规律里执行时：这个威胁 */
+  threat?: { type: string; [k: string]: unknown } | null;
+  [k: string]: unknown;
+}
+
+export interface EffectDef {
+  /** 给 AI 看的写法说明（能力清单） */
+  doc: string;
+  /** 静态校验：返回错误文本或 null */
+  check(a: EffectArgs, spec: WorldSpec): string | null;
+  /** 运行时执行 */
+  apply(town: TownLike, ctx: EffectCtx, a: EffectArgs): void;
+  /** 由插件提供的效果：来源 */
+  plugin?: string;
+}
 
 // 表达式里可以调用的函数名（实现见 rules.js 的 exprEnv）
 export const EXPR_FNS = new Set(['has', 'count', 'knows', 'hasCondition', 'nearStructure', 'nearAgents', 'min', 'max', 'abs', 'rand',
@@ -10,7 +46,7 @@ export const EXPR_FNS = new Set(['has', 'count', 'knows', 'hasCondition', 'nearS
   'seen', 'near', 'heard', 'opened', 'entered', 'speaking', 'named', 'alone', 'asleep', 'night', 'marked', 'inZone', 'posture',
   'burden', 'anchors', 'believes', 'flag', 'hosts']);
 // 表达式函数的说明（用于自动生成能力清单）
-export const EXPR_FN_DOCS = {
+export const EXPR_FN_DOCS: Record<string, string> = {
   has: "has(e, '物品id', 数量=1) 身上是否有某物品", count: "count(e, '物品id') 物品数量", knows: "knows(e, '能力id') 是否会某能力",
   hasCondition: "hasCondition(e, '状态') 是否处于某状态", nearStructure: "nearStructure(e, '标签', 半径=3) 附近是否有带该标签的构筑物",
   nearAgents: 'nearAgents(e, 半径=3) 附近醒着的人数', min: 'min(a, b…)', max: 'max(a, b…)', abs: 'abs(x)', rand: 'rand() 0~1 随机数',
@@ -24,19 +60,19 @@ export const EXPR_FN_DOCS = {
   believes: "believes(e, '话题') e 对某个话题的确信度（0~1，没有这个看法时为 0）", flag: "flag('标记名') 世界标记是否为真", hosts: "hosts(e, '威胁id') e 身上寄宿着某个威胁",
 };
 // 扩展目录（server/ext/）注册的表达式函数实现：name → (helpers, ...args) => value
-export const EXT_FNS = {};
-export const STATS = ['hp', 'stamina', 'courage'];
-export const TARGETS = ['self', 'target', 'e', 'nearby', 'all'];
-export const VFX = ['glow_ring', 'sparkle', 'heal', 'notes', 'burst', 'ripple'];
+export const EXT_FNS: Record<string, (helpers: unknown, ...args: any[]) => unknown> = {}; // eslint-disable-line @typescript-eslint/no-explicit-any
+export const STATS: readonly string[] = ['hp', 'stamina', 'courage'];
+export const TARGETS: readonly string[] = ['self', 'target', 'e', 'nearby', 'all'];
+export const VFX: readonly string[] = ['glow_ring', 'sparkle', 'heal', 'notes', 'burst', 'ripple'];
 export const MAX_EFFECTS = 8;
 
-const str = (v, max) => String(v ?? '').trim().slice(0, max);
-const num = (v) => typeof v === 'number' && Number.isFinite(v);
-const inRange = (v, lo, hi) => num(v) && v >= lo && v <= hi;
+const str = (v: unknown, max: number): string => String(v ?? '').trim().slice(0, max);
+const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const inRange = (v: unknown, lo: number, hi: number): boolean => num(v) && v >= lo && v <= hi;
 const COLOR_RE = /^#[0-9a-f]{6}$/i;
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 
-export function checkTarget(a, allowed = TARGETS) {
+export function checkTarget(a: EffectArgs, allowed: readonly string[] = TARGETS): string | null {
   const t = a.target ?? 'self';
   if (!allowed.includes(t)) return `target 只能是 ${allowed.join('/')}`;
   if (a.radius != null && !inRange(a.radius, 1, 6)) return 'radius 应在 1~6';
@@ -44,36 +80,36 @@ export function checkTarget(a, allowed = TARGETS) {
 }
 
 /** 位置：居民在室内时取建筑入口，并记下所在建筑 */
-export function posOf(town, a) {
+export function posOf(town: TownLike, a: AgentLike | null | undefined): Pos | null {
   if (!a) return null;
   if (a.inside) {
-    const b = (town.worldOf?.(a.region) || town.world).buildings.find((x) => x.id === a.inside);
+    const b = (town.worldOf?.(a.region) || town.world).buildings.find((x: { id: string }) => x.id === a.inside);
     if (b) return { x: b.x + b.w / 2, y: b.y + b.h - 1, inside: a.inside, region: a.region || 'town' };
   }
   return { x: a.x, y: a.y, inside: null, region: a.region || 'town' };
 }
 
 /** 附近的居民：同一建筑内，或都在户外且距离不超过 r 格。睡着的人不算。 */
-export function agentsNear(town, at, r = 3, except = null) {
+export function agentsNear(town: TownLike, at: Pos | null | undefined, r = 3, except: AgentLike | null = null): AgentLike[] {
   if (!at) return [];
-  return town.agents.filter((o) => o !== except && o.status !== 'sleeping' && (o.region || 'town') === (at.region || 'town') &&
+  return town.agents.filter((o: AgentLike) => o !== except && o.status !== 'sleeping' && (o.region || 'town') === (at.region || 'town') &&
     (at.inside ? o.inside === at.inside : !o.inside && Math.hypot(o.x - at.x, o.y - at.y) <= r));
 }
 
 /** 按效果参数里的 target / radius 解析出受影响的居民（扩展也可以复用） */
-export function resolveTargets(town, ctx, a) {
+export function resolveTargets(town: TownLike, ctx: EffectCtx, a: EffectArgs): AgentLike[] {
   const t = a.target ?? 'self';
-  if (t === 'self') return [ctx.self].filter(Boolean);
-  if (t === 'target') return [ctx.target].filter(Boolean);
+  if (t === 'self') return ctx.self ? [ctx.self] : [];
+  if (t === 'target') return ctx.target ? [ctx.target] : [];
   if (t === 'e') return ctx.e?.kind === 'resident' ? [ctx.e] : [];
   if (t === 'nearby') return agentsNear(town, ctx.at, a.radius ?? 3, a.includeSelf ? null : ctx.self);
   if (t === 'all') return town.agents;
   return [];
 }
 
-const fill = (text, ctx) => text.replace(/\{self\}/g, ctx.self?.name || '有人').replace(/\{target\}/g, ctx.target?.name || '有人');
+const fill = (text: string, ctx: EffectCtx): string => text.replace(/\{self\}/g, ctx.self?.name || '有人').replace(/\{target\}/g, ctx.target?.name || '有人');
 
-export const EFFECTS = {
+export const EFFECTS: Record<string, EffectDef> = {
   stat: {
     doc: '{"op":"stat","stat":"hp/stamina/courage","add":-30~30 或 "set":0~100,"target":"self/target/e/nearby/all","radius":1~6} 改变体力、勇气等',
     check(a) {
@@ -85,8 +121,9 @@ export const EFFECTS = {
     },
     apply(town, ctx, a) {
       for (const x of resolveTargets(town, ctx, a)) {
-        const v = a.set != null ? a.set : (x.body[a.stat] ?? 0) + a.add;
-        x.body[a.stat] = clamp(Math.round(v), 0, 100);
+        const stat = a.stat as 'hp' | 'stamina' | 'courage'; // check() 已限定在 STATS 之内
+        const v = a.set != null ? a.set : (x.body[stat] ?? 0) + a.add;
+        x.body[stat] = clamp(Math.round(v), 0, 100);
       }
     },
   },
@@ -288,7 +325,7 @@ export const EFFECTS = {
     },
     apply(town, ctx, a) {
       for (const x of resolveTargets(town, ctx, a)) {
-        if (a.freeze != null) ((x.burdenFreeze ||= {})[a.id] = town.t + a.freeze);
+        if (a.freeze != null) (((x as AgentLike & { burdenFreeze?: Record<string, number> }).burdenFreeze ||= {})[a.id] = town.t + a.freeze);
         if (a.amount != null) town.addBurden?.(x, a.id, a.amount);
       }
     },
@@ -325,24 +362,24 @@ export const EFFECTS = {
 };
 
 /** 校验一组效果，返回错误文本或 null */
-export function checkEffects(list, spec) {
+export function checkEffects(list: unknown, spec: WorldSpec): string | null {
   if (!Array.isArray(list) || !list.length) return 'effects 至少需要一个效果';
   if (list.length > MAX_EFFECTS) return `effects 最多 ${MAX_EFFECTS} 个`;
   for (const [i, ef] of list.entries()) {
     if (!ef || typeof ef !== 'object' || !Object.hasOwn(EFFECTS, ef.op ?? '')) return `effects[${i}]：未知效果 ${ef?.op}`;
-    const e = EFFECTS[ef.op].check(ef, spec);
+    const e = EFFECTS[ef.op]!.check(ef, spec);
     if (e) return `effects[${i}]（${ef.op}）：${e}`;
   }
   return null;
 }
 
-export function checkExpr(src) {
-  try { parse(src, EXPR_FNS); return null; } catch (e) { return e instanceof ExprError ? `表达式错误：${e.message}` : String(e.message); }
+export function checkExpr(src: unknown): string | null {
+  try { parse(src, EXPR_FNS); return null; } catch (e) { return e instanceof ExprError ? `表达式错误：${e.message}` : String((e as Error).message); }
 }
 
 /** 依次执行效果；单个效果出错不影响其他效果 */
-export function runEffects(town, ctx, list) {
+export function runEffects(town: TownLike, ctx: EffectCtx, list: EffectArgs[]): void {
   for (const ef of list.slice(0, MAX_EFFECTS)) {
-    try { EFFECTS[ef.op]?.apply(town, ctx, ef); } catch (e) { console.warn(`[effect] ${ef.op} 失败：`, e.message); }
+    try { EFFECTS[ef.op]?.apply(town, ctx, ef); } catch (e) { console.warn(`[effect] ${ef.op} 失败：`, (e as Error).message); }
   }
 }

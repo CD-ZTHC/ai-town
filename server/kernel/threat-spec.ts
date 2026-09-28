@@ -3,21 +3,25 @@
 import { checkEffects, checkExpr } from './effects.ts';
 import { RATINGS } from './ratings.ts';
 import { parseHM } from '../memory.ts';
+import type { WorldSpec } from '../types/spec.ts';
+
+/** 未经校验的世界包数据：这里逐字段检查，所以静态上不约束字段 */
+type Raw = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 const ID_RE = /^[a-z][a-z0-9_]{1,23}$/;
-const isStr = (v, max = 200) => typeof v === 'string' && v.length > 0 && v.length <= max;
-const num = (v) => typeof v === 'number' && Number.isFinite(v);
-const inRange = (v, lo, hi) => num(v) && v >= lo && v <= hi;
+const isStr = (v: unknown, max = 200): boolean => typeof v === 'string' && v.length > 0 && v.length <= max;
+const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const inRange = (v: unknown, lo: number, hi: number): boolean => num(v) && v >= lo && v <= hi;
 
-export const MOVEMENTS = ['wander', 'stalk_marked', 'stationary', 'patrol'];
-export const COUNTER_TYPES = ['slay', 'contain', 'suppress', 'ward', 'delay', 'exploit', 'resolve'];
-export const POSTURES = ['eyesClosed', 'silent', 'noOpen', 'stayLit', 'notAlone'];
-export const EQUIP_SLOTS = ['weapon', 'armor', 'trinket'];
-export const ALIGNMENTS = ['villain', 'neutral'];
-export const CLUE_KINDS = ['rule', 'next_victim', 'origin'];
-export const BURDEN_EVENTS = ['anchor_lost', 'anchor_gained', 'ability_used'];
+export const MOVEMENTS: readonly string[] = ['wander', 'stalk_marked', 'stationary', 'patrol'];
+export const COUNTER_TYPES: readonly string[] = ['slay', 'contain', 'suppress', 'ward', 'delay', 'exploit', 'resolve'];
+export const POSTURES: readonly string[] = ['eyesClosed', 'silent', 'noOpen', 'stayLit', 'notAlone'];
+export const EQUIP_SLOTS: readonly string[] = ['weapon', 'armor', 'trinket'];
+export const ALIGNMENTS: readonly string[] = ['villain', 'neutral'];
+export const CLUE_KINDS: readonly string[] = ['rule', 'next_victim', 'origin'];
+export const BURDEN_EVENTS: readonly string[] = ['anchor_lost', 'anchor_gained', 'ability_used'];
 
-function checkCounter(c, spec) {
+function checkCounter(c: Raw, spec: WorldSpec): string | null {
   if (!c || !COUNTER_TYPES.includes(c.type)) return `type 只能是 ${COUNTER_TYPES.join('/')}`;
   if (c.type === 'contain') {
     if (!Object.hasOwn(spec.items || {}, c.with)) return `contain.with 未知物品：${c.with}`;
@@ -40,7 +44,7 @@ function checkCounter(c, spec) {
   return null;
 }
 
-export function validateThreat(id, t, spec) {
+export function validateThreat(id: string, t: Raw, spec: WorldSpec): string | null {
   if (!ID_RE.test(id)) return 'id 不合法';
   if (!t || typeof t !== 'object') return '不是对象';
   if (!isStr(t.name, 12) || !isStr(t.emoji, 8)) return 'name（≤12字）/ emoji 缺失';
@@ -53,8 +57,8 @@ export function validateThreat(id, t, spec) {
   if (t.movement != null && !MOVEMENTS.includes(t.movement)) return `movement 只能是 ${MOVEMENTS.join('/')}`;
   if (!Array.isArray(t.haunt) || !t.haunt.length || t.haunt.length > 6) return 'haunt 应为 1~6 个地点 id';
   for (const l of t.haunt) if (!Object.hasOwn(spec.locations, l)) return `haunt 未知地点：${l}`;
-  if (t.active != null && !(Array.isArray(t.active) && t.active.length === 2 && t.active.every((x) => parseHM(x) != null))) return 'active 应为 ["HH:MM","HH:MM"]';
-  if (t.minRating != null && !RATINGS.includes(t.minRating)) return 'minRating 不合法';
+  if (t.active != null && !(Array.isArray(t.active) && t.active.length === 2 && t.active.every((x: unknown) => parseHM(x) != null))) return 'active 应为 ["HH:MM","HH:MM"]';
+  if (t.minRating != null && !(RATINGS as readonly string[]).includes(t.minRating)) return 'minRating 不合法';
   const r = t.rule;
   if (r != null) {
     if (!isStr(r.trigger, 300)) return 'rule.trigger 需要条件表达式';
@@ -77,7 +81,7 @@ export function validateThreat(id, t, spec) {
   if (t.counters != null) {
     if (!Array.isArray(t.counters) || t.counters.length > 8) return 'counters 应为数组（≤8）';
     for (const [i, c] of t.counters.entries()) { const e = checkCounter(c, spec); if (e) return `counters[${i}] ${e}`; }
-    if (!t.mortal && t.counters.some((c) => c.type === 'slay')) return '杀不死的威胁不能有 slay';
+    if (!t.mortal && t.counters.some((c: Raw) => c.type === 'slay')) return '杀不死的威胁不能有 slay';
   }
   const z = t.zone;
   if (z != null) {
@@ -87,10 +91,10 @@ export function validateThreat(id, t, spec) {
   }
   const h = t.hostable;
   if (h != null) {
-    if (!Array.isArray(h.grants) || h.grants.some((g) => !spec.abilities.some((a) => a.id === g))) return 'hostable.grants 里有未知能力';
+    if (!Array.isArray(h.grants) || h.grants.some((g: string) => !spec.abilities.some((a) => a.id === g))) return 'hostable.grants 里有未知能力';
     if (!Object.hasOwn(spec.burdens || {}, h.burden)) return `hostable.burden 未知负担值：${h.burden}`;
     if (h.rate != null && !inRange(h.rate, 0, 5)) return 'hostable.rate 应在 0~5';
-    for (const [k, v] of Object.entries(h.offsets || {})) if (!Object.hasOwn(spec.threats, k) || !inRange(v, -1, 1)) return `hostable.offsets 不合法：${k}`;
+    for (const [k, v] of Object.entries<Raw>(h.offsets || {})) if (!Object.hasOwn(spec.threats || {}, k) || !inRange(v, -1, 1)) return `hostable.offsets 不合法：${k}`;
     for (const v of h.via || []) {
       const e = checkExpr(v.when || 'true');
       if (e) return `hostable.via ${e}`;
@@ -99,7 +103,7 @@ export function validateThreat(id, t, spec) {
     }
   }
   for (const k of ['clues', 'decoys']) {
-    if (t[k] != null && (!Array.isArray(t[k]) || t[k].length > 8 || t[k].some((x) => !isStr(x, 40)))) return `${k} 应为 ≤8 条、每条 ≤40 字`;
+    if (t[k] != null && (!Array.isArray(t[k]) || t[k].length > 8 || t[k].some((x: unknown) => !isStr(x, 40)))) return `${k} 应为 ≤8 条、每条 ≤40 字`;
   }
   if (t.rule && !(t.clues || []).length) return '有规律的威胁至少要有一条真线索（clues）';
   for (const l of t.research || []) if (!Object.hasOwn(spec.locations, l)) return `research 未知地点：${l}`;
@@ -108,7 +112,7 @@ export function validateThreat(id, t, spec) {
   return null;
 }
 
-export function validateBurden(id, b, spec) {
+export function validateBurden(id: string, b: Raw, spec: WorldSpec): string | null {
   if (!ID_RE.test(id)) return 'id 不合法';
   if (!isStr(b?.name, 8)) return 'name 缺失或过长（≤8字）';
   if (b.max != null && !inRange(b.max, 10, 1000)) return 'max 应在 10~1000';
@@ -126,11 +130,12 @@ export function validateBurden(id, b, spec) {
 }
 
 /** 黑暗叙事字段的校验；返回 [路径, 错误] 列表 */
-export function validateDark(s) {
-  const errs = [];
-  const err = (p, m) => errs.push([p, m]);
-  for (const [id, b] of Object.entries(s.burdens || {})) { const e = validateBurden(id, b, s); if (e) err(`burdens.${id}`, e); }
-  for (const [id, t] of Object.entries(s.threats || {})) { const e = validateThreat(id, t, s); if (e) err(`threats.${id}`, e); }
+export function validateDark(spec: WorldSpec): Array<[string, string]> {
+  const s: Raw = spec;
+  const errs: Array<[string, string]> = [];
+  const err = (p: string, m: string) => errs.push([p, m]);
+  for (const [id, b] of Object.entries<Raw>(s.burdens || {})) { const e = validateBurden(id, b, s); if (e) err(`burdens.${id}`, e); }
+  for (const [id, t] of Object.entries<Raw>(s.threats || {})) { const e = validateThreat(id, t, s); if (e) err(`threats.${id}`, e); }
   const inc = s.incidents;
   if (inc != null) {
     for (const x of inc.start || []) {
@@ -139,26 +144,26 @@ export function validateDark(s) {
     }
     if (inc.autoEveryDays != null && !(Number.isInteger(inc.autoEveryDays) && inc.autoEveryDays >= 1 && inc.autoEveryDays <= 14)) err('incidents.autoEveryDays', '应为 1~14 的整数');
   }
-  for (const [id, n] of Object.entries(s.population || {})) {
+  for (const [id, n] of Object.entries<Raw>(s.population || {})) {
     if (!Object.hasOwn(s.locations || {}, id)) err(`population.${id}`, '未知地点');
     else if (!Number.isInteger(n) || n < 0 || n > 100000) err(`population.${id}`, '应为 0~100000 的整数');
   }
   for (const [i, f] of (s.factions || []).entries()) {
     const p = `factions[${i}]`;
     if (!f || !ID_RE.test(f.id || '') || !isStr(f.name, 12)) { err(p, 'id / name 不合法'); continue; }
-    if (f.authority != null && !(Array.isArray(f.authority) && f.authority.every((x) => x === 'dispatch'))) err(p, 'authority 只能包含 dispatch');
+    if (f.authority != null && !(Array.isArray(f.authority) && f.authority.every((x: unknown) => x === 'dispatch'))) err(p, 'authority 只能包含 dispatch');
     if (f.stipend != null) {
       const { every, ...items } = f.stipend;
       if (!inRange(every, 60, 10080)) err(p, 'stipend.every 应在 60~10080（游戏分钟）');
-      for (const [k, n] of Object.entries(items)) if (!Object.hasOwn(s.items || {}, k) || !(Number.isInteger(n) && n >= 1 && n <= 10)) err(p, `stipend 物品不合法：${k}`);
+      for (const [k, n] of Object.entries<Raw>(items)) if (!Object.hasOwn(s.items || {}, k) || !(Number.isInteger(n) && n >= 1 && n <= 10)) err(p, `stipend 物品不合法：${k}`);
     }
-    for (const m of f.members || []) if (!(s.personas || []).some((x) => x.id === m)) err(p, `members 未知居民：${m}`);
+    for (const m of f.members || []) if (!(s.personas || []).some((x: Raw) => x.id === m)) err(p, `members 未知居民：${m}`);
     if (f.head != null && !(f.members || []).includes(f.head)) err(p, 'head 必须是成员');
-    for (const h of f.hostile || []) if (!(s.factions || []).some((x) => x.id === h && x !== f)) err(p, `hostile 未知阵营：${h}`);
+    for (const h of f.hostile || []) if (!(s.factions || []).some((x: Raw) => x.id === h && x !== f)) err(p, `hostile 未知阵营：${h}`);
   }
-  for (const [id, it] of Object.entries(s.items || {})) {
+  for (const [id, it] of Object.entries<Raw>(s.items || {})) {
     if (it.equip != null && !EQUIP_SLOTS.includes(it.equip)) err(`items.${id}`, `equip 只能是 ${EQUIP_SLOTS.join('/')}`);
-    for (const [k, v] of Object.entries(it.mods || {})) if (!['atk', 'def', 'hp'].includes(k) || !inRange(v, -20, 40)) err(`items.${id}`, 'mods 只能有 atk / def / hp（-20~40）');
+    for (const [k, v] of Object.entries<Raw>(it.mods || {})) if (!['atk', 'def', 'hp'].includes(k) || !inRange(v, -20, 40)) err(`items.${id}`, 'mods 只能有 atk / def / hp（-20~40）');
     if (it.use != null) { const e = checkEffects(it.use, s); if (e) err(`items.${id}.use`, e); }
   }
   for (const p of s.personas || []) {
@@ -167,8 +172,8 @@ export function validateDark(s) {
     if (p.redemption != null) { const e = checkExpr(p.redemption); if (e) err(path, `redemption ${e}`); }
     for (const d of p.drives || []) if (!isStr(d.text, 40) || !inRange(d.perDay ?? 25, 0, 100)) err(path, 'drives 应为 [{text: ≤40字, perDay: 0~100}]');
     for (const t of p.start?.hosted || []) if (!s.threats?.[t]?.hostable) err(path, `start.hosted 不是可寄宿的威胁：${t}`);
-    for (const [k, v] of Object.entries(p.start?.burdens || {})) if (!Object.hasOwn(s.burdens || {}, k) || !inRange(v, 0, 1000)) err(path, `start.burdens 不合法：${k}`);
-    if (p.combat != null) for (const [k, v] of Object.entries(p.combat)) if (!['atk', 'def'].includes(k) || !inRange(v, 0, 60)) err(path, 'combat 只能有 atk / def（0~60）');
+    for (const [k, v] of Object.entries<Raw>(p.start?.burdens || {})) if (!Object.hasOwn(s.burdens || {}, k) || !inRange(v, 0, 1000)) err(path, `start.burdens 不合法：${k}`);
+    if (p.combat != null) for (const [k, v] of Object.entries<Raw>(p.combat)) if (!['atk', 'def'].includes(k) || !inRange(v, 0, 60)) err(path, 'combat 只能有 atk / def（0~60）');
   }
   return errs;
 }
