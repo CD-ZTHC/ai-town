@@ -5,22 +5,62 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { SETTINGS, parseString, toEnvString, checkValue } from './schema.ts';
+import type { SettingDef, SettingKey, SettingValue } from './schema.ts';
+
+export type { SettingKey, SettingValue } from './schema.ts';
+type Values = Record<string, unknown>;
+
+/** 设置文件里的一个版本 */
+export interface Version {
+  v: number;
+  at: string;
+  by: string;
+  note: string;
+  changed: string[];
+  values: Values;
+  /** 用这个版本启动成功过 */
+  good: boolean;
+}
+
+export interface Rollback {
+  at: string;
+  from: number;
+  to: number;
+  reason: string;
+}
+
+/** data/settings.json */
+export interface Store {
+  current: number;
+  versions: Version[];
+  /** 已经从环境变量导入过初始值的项（导入过就不再导入，即使之后被恢复成默认值） */
+  seeded?: string[];
+  rollback?: Rollback;
+}
+
+export type Source = 'panel' | 'env' | 'default';
 
 const KEEP_VERSIONS = 20;
-const warned = new Set();
+const warned = new Set<string>();
+/** 按字符串访问的声明表（遍历、面板提交的键） */
+const DEFS: Record<string, SettingDef> = SETTINGS;
+const defOf = (key: string): SettingDef => {
+  const def = Object.hasOwn(DEFS, key) ? DEFS[key] : undefined;
+  if (!def) throw new Error(`未声明的设置项：${key}`);
+  return def;
+};
 
 // 设置文件：只有显式 load() 之后才读取（测试不调用 load，只看环境变量与默认值）。
-// store.seeded：已经从环境变量导入过初始值的项（导入过就不再导入，即使之后被恢复成默认值）
-let file = null;
-let store = { current: 0, versions: [] };
-let values = {}; // 当前版本里保存的值
-let bootValues = null; // 进程启动时 restart 类设置的生效值（判断「待重启」）
+let file: string | null = null;
+let store: Store = { current: 0, versions: [] };
+let values: Values = {}; // 当前版本里保存的值
+let bootValues: Record<string, string> | null = null; // 进程启动时 restart 类设置的生效值（判断「待重启」）
 
-const emptyStore = () => ({ current: 0, versions: [] });
+const emptyStore = (): Store => ({ current: 0, versions: [] });
 
-export function settingsFile(dataDir = process.env.DATA_DIR || 'data') { return path.join(path.resolve(dataDir), 'settings.json'); }
+export function settingsFile(dataDir: string = process.env.DATA_DIR || 'data'): string { return path.join(path.resolve(dataDir), 'settings.json'); }
 
-export function readStore(f) {
+export function readStore(f: string): Store {
   try {
     const s = JSON.parse(fs.readFileSync(f, 'utf8'));
     if (Array.isArray(s.versions)) return s;
@@ -28,32 +68,33 @@ export function readStore(f) {
   return emptyStore();
 }
 
-export function writeStore(f, s) {
+export function writeStore(f: string, s: Store): void {
   fs.mkdirSync(path.dirname(f), { recursive: true });
   fs.writeFileSync(`${f}.tmp`, JSON.stringify(s, null, 1), { mode: 0o600 });
   fs.renameSync(`${f}.tmp`, f);
   try { fs.chmodSync(f, 0o600); } catch { /* 某些文件系统不支持 */ }
 }
 
-const currentVersion = (s) => s.versions.find((v) => v.v === s.current) || null;
+const currentVersion = (s: Store): Version | null => s.versions.find((v) => v.v === s.current) || null;
 
 /** 读取设置文件（进程启动时调用一次）；返回当前版本号 */
-export function load({ dataDir, file: f } = {}) {
-  file = f || settingsFile(dataDir);
-  store = readStore(file);
+export function load({ dataDir, file: f }: { dataDir?: string; file?: string } = {}): number {
+  const target = f || settingsFile(dataDir);
+  file = target;
+  store = readStore(target);
   values = { ...(currentVersion(store)?.values || {}) };
   bootValues = null;
-  bootValues = Object.fromEntries(Object.keys(SETTINGS).filter((k) => SETTINGS[k].apply === 'restart').map((k) => [k, JSON.stringify(get(k))]));
+  bootValues = Object.fromEntries(Object.keys(DEFS).filter((k) => defOf(k).apply === 'restart').map((k) => [k, JSON.stringify(get(k))]));
   return store.current;
 }
 
 /** 只在测试里用：换一份内存中的设置（不落盘） */
-export function _setForTest(v) { file = null; store = emptyStore(); values = { ...v }; bootValues = null; }
+export function _setForTest(v: Values): void { file = null; store = emptyStore(); values = { ...v }; bootValues = null; }
 
-function fromEnv(key) {
+function fromEnv(key: string): { value: unknown; invalid?: undefined } | { value?: undefined; invalid: string } | undefined {
   const raw = process.env[key];
   if (raw === undefined || raw === '') return undefined;
-  const def = SETTINGS[key];
+  const def = defOf(key);
   const r = checkValue(def, parseString(def, raw));
   if (r.ok) return { value: r.value };
   if (!warned.has(key)) { warned.add(key); console.warn(`[settings] 环境变量 ${key}=${def.secret ? '***' : raw} 不合法（${r.error}），已忽略`); }
@@ -61,9 +102,10 @@ function fromEnv(key) {
 }
 
 /** 设置的当前值：保存的值优先；没有保存过的才看环境变量（初始值）；都没有用默认值。启动必需的项只看环境变量 */
-export function get(key) {
-  const def = SETTINGS[key];
-  if (!def) throw new Error(`未声明的设置项：${key}`);
+export function get<K extends SettingKey>(key: K): SettingValue<K>;
+export function get(key: string): unknown;
+export function get(key: string): unknown {
+  const def = defOf(key);
   if (def.bootstrap !== true && Object.hasOwn(values, key)) return values[key];
   if (def.bootstrap === true || !(store.seeded || []).includes(key)) {
     const e = fromEnv(key);
@@ -73,8 +115,8 @@ export function get(key) {
 }
 
 /** 值来自哪里：panel（保存的值）/ env（环境变量：启动必需的项，或还没导入的初始值）/ default */
-export function source(key) {
-  const def = SETTINGS[key];
+export function source(key: string): Source {
+  const def = defOf(key);
   if (!def.bootstrap && Object.hasOwn(values, key)) return 'panel';
   if ((def.bootstrap || !(store.seeded || []).includes(key)) && fromEnv(key)?.value !== undefined) return 'env';
   return 'default';
@@ -84,12 +126,12 @@ export function source(key) {
  * 把环境变量作为初始值导入设置文件（服务入口在 load 之后调用一次）：只导入还没有保存过、也没有导入过的项，
  * 生成一个新版本。已经保存过的项，环境变量与它不同时只提示，不覆盖。返回 { imported, ignored }
  */
-export function seedFromEnv({ by = 'env' } = {}) {
-  const imported = [];
-  const ignored = [];
+export function seedFromEnv({ by = 'env' }: { by?: string } = {}): { imported: string[]; ignored: string[] } {
+  const imported: string[] = [];
+  const ignored: string[] = [];
   const seeded = new Set(store.seeded || []);
-  const next = { ...values };
-  for (const [k, def] of Object.entries(SETTINGS)) {
+  const next: Values = { ...values };
+  for (const [k, def] of Object.entries(DEFS)) {
     if (def.bootstrap || def.scope === 'world' || def.dev) continue;
     const e = fromEnv(k);
     if (e?.value === undefined) continue;
@@ -110,8 +152,8 @@ export function seedFromEnv({ by = 'env' } = {}) {
 }
 
 /** 环境变量与保存的值不同（面板上提示「环境变量已被忽略」） */
-function envIgnored(key) {
-  const def = SETTINGS[key];
+function envIgnored(key: string): boolean {
+  const def = defOf(key);
   if (def.bootstrap) return false;
   const e = fromEnv(key);
   return e?.value !== undefined && source(key) !== 'env' && JSON.stringify(get(key)) !== JSON.stringify(e.value);
@@ -121,9 +163,9 @@ function envIgnored(key) {
  * 当前生效的设置，写成环境变量的字符串形式。给仍然接受 env 对象的模块（createProvider、defaultSpec 等）用，
  * 也用来启动子进程（进化引擎），让它们看到面板里保存的值。
  */
-export function env(extra = process.env) {
-  const out = { ...extra };
-  for (const [k, def] of Object.entries(SETTINGS)) {
+export function env(extra: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...extra };
+  for (const [k, def] of Object.entries(DEFS)) {
     if (def.scope === 'world' || def.bootstrap) continue;
     const s = source(k);
     if (s === 'panel') out[k] = toEnvString(def, get(k));
@@ -137,10 +179,10 @@ export function env(extra = process.env) {
  * 启动时检查：环境变量里不合法的值。只检查还起作用的环境变量：启动必需的项，以及还没保存过、要作为初始值导入的项
  * （已经保存过的项，环境变量本来就会被忽略，写错了也不影响启动）
  */
-export function envProblems() {
-  const out = [];
-  for (const k of Object.keys(SETTINGS)) {
-    if (!SETTINGS[k].bootstrap && (Object.hasOwn(values, k) || (store.seeded || []).includes(k))) continue;
+export function envProblems(): string[] {
+  const out: string[] = [];
+  for (const k of Object.keys(DEFS)) {
+    if (!defOf(k).bootstrap && (Object.hasOwn(values, k) || (store.seeded || []).includes(k))) continue;
     const e = fromEnv(k);
     if (e?.invalid) out.push(`${k}：${e.invalid}`);
   }
@@ -148,22 +190,25 @@ export function envProblems() {
 }
 
 /** 有哪些 restart 类设置在启动之后变了（需要重启才能生效） */
-export function pendingRestart() {
-  if (!bootValues) return [];
-  return Object.keys(bootValues).filter((k) => JSON.stringify(get(k)) !== bootValues[k]);
+export function pendingRestart(): string[] {
+  const boot = bootValues;
+  if (!boot) return [];
+  return Object.keys(boot).filter((k) => JSON.stringify(get(k)) !== boot[k]);
 }
 
 export class SettingsError extends Error {
-  constructor(errors) { super(Object.entries(errors).map(([k, e]) => `${k}：${e}`).join('；')); this.errors = errors; this.status = 422; }
+  errors: Record<string, string>;
+  status = 422;
+  constructor(errors: Record<string, string>) { super(Object.entries(errors).map(([k, e]) => `${k}：${e}`).join('；')); this.errors = errors; }
 }
 
 /** 校验一组改动（面板提交的值可以是字符串或已解析的值；null 表示恢复默认）。返回 { next, changed } */
-export function validateChanges(changes) {
-  const errors = {};
-  const next = { ...values };
-  const changed = [];
+export function validateChanges(changes: Record<string, unknown> | null | undefined): { next: Values; changed: string[] } {
+  const errors: Record<string, string> = {};
+  const next: Values = { ...values };
+  const changed: string[] = [];
   for (const [k, raw] of Object.entries(changes || {})) {
-    const def = SETTINGS[k];
+    const def = Object.hasOwn(DEFS, k) ? DEFS[k] : undefined;
     if (!def || def.dev || def.scope === 'world') { errors[k] = '未知的设置项'; continue; }
     if (def.bootstrap) { errors[k] = '启动必需的设置只能用环境变量修改'; continue; }
     if (raw === null) { if (Object.hasOwn(next, k)) { delete next[k]; changed.push(k); } continue; }
@@ -176,7 +221,7 @@ export function validateChanges(changes) {
   return { next, changed };
 }
 
-function pushVersion(nextValues, { by, note, changed }) {
+function pushVersion(nextValues: Values, { by, note, changed }: { by: string; note?: string; changed: string[] }): number {
   const v = Math.max(0, ...store.versions.map((x) => x.v)) + 1;
   const lastGood = store.versions.filter((x) => x.good).at(-1);
   store.versions.push({ v, at: new Date().toISOString(), by, note: note || '', changed, values: nextValues, good: false });
@@ -193,7 +238,7 @@ function pushVersion(nextValues, { by, note, changed }) {
  * 保存一组改动为新版本。返回 { version, changed, restart }（restart：需要重启才能生效的项）。
  * 改动为空时不产生新版本。
  */
-export function save(changes, { by = 'admin', note = '' } = {}) {
+export function save(changes: Record<string, unknown>, { by = 'admin', note = '' }: { by?: string; note?: string } = {}): { version: number; changed: string[]; restart: string[] } {
   const { next, changed } = validateChanges(changes);
   if (!changed.length) return { version: store.current, changed, restart: pendingRestart() };
   const version = pushVersion(next, { by, note, changed });
@@ -201,7 +246,7 @@ export function save(changes, { by = 'admin', note = '' } = {}) {
 }
 
 /** 恢复到历史版本（生成一个内容相同的新版本） */
-export function restore(v, { by = 'admin' } = {}) {
+export function restore(v: number | string, { by = 'admin' }: { by?: string } = {}): { version: number; changed: string[]; restart: string[] } {
   const target = store.versions.find((x) => x.v === Number(v));
   if (!target) throw Object.assign(new Error('没有这个版本'), { status: 404 });
   const before = values;
@@ -211,7 +256,7 @@ export function restore(v, { by = 'admin' } = {}) {
 }
 
 /** 启动成功后把当前版本标记为「正常」 */
-export function markGood() {
+export function markGood(): void {
   if (!file) return;
   const s = readStore(file);
   const cur = currentVersion(s);
@@ -225,7 +270,7 @@ export function markGood() {
  * 守护进程在连续启动失败后调用：回退到最近一个「正常」的版本（没有的话回到空设置）。
  * 返回回退的说明，或 null（当前版本本来就是正常的，不是设置的问题）。
  */
-export function rollbackToGood(f, reason) {
+export function rollbackToGood(f: string, reason: unknown): Rollback | null {
   const s = readStore(f);
   const cur = currentVersion(s);
   if (!cur || cur.good) return null;
@@ -236,18 +281,18 @@ export function rollbackToGood(f, reason) {
   return s.rollback;
 }
 
-export function lastRollback() { return store.rollback || null; }
+export function lastRollback(): Rollback | null { return store.rollback || null; }
 
-export function history() {
+export function history(): Array<Omit<Version, 'values'> & { current: boolean }> {
   return store.versions.slice().reverse().map(({ v, at, by, note, changed, good }) => ({ v, at, by, note, changed, good, current: v === store.current }));
 }
 
-const mask = (v) => (v ? `●●●● ${String(v).slice(-4)}` : '');
+const mask = (v: unknown): string => (v ? `●●●● ${String(v).slice(-4)}` : '');
 
 /** 面板用：所有设置项的声明、当前值（密钥只给末 4 位）、来源、是否待重启 */
 export function view() {
   const pending = new Set(pendingRestart());
-  return Object.entries(SETTINGS).filter(([, d]) => !d.dev && d.scope !== 'world').map(([key, d]) => {
+  return Object.entries(DEFS).filter(([, d]) => !d.dev && d.scope !== 'world').map(([key, d]) => {
     const value = get(key);
     const def = typeof d.default === 'function' ? d.default(get) : d.default;
     return {
@@ -258,8 +303,8 @@ export function view() {
 }
 
 /** 导出（不含密钥） */
-export function exportValues() {
-  return Object.fromEntries(Object.entries(values).filter(([k]) => !SETTINGS[k]?.secret));
+export function exportValues(): Values {
+  return Object.fromEntries(Object.entries(values).filter(([k]) => !(Object.hasOwn(DEFS, k) && DEFS[k]?.secret)));
 }
 
 export const settings = { get, source, seedFromEnv, env, load, save, restore, markGood, history, view, pendingRestart, envProblems, exportValues, lastRollback };

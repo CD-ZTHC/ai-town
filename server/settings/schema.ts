@@ -7,15 +7,41 @@
 //   secret  密钥：面板只写不读；scope: 'world' 属于世界的设置（在世界设置页里改，不在全站面板里）；dev：只做开发与测试用，不在面板显示
 import { z } from 'zod';
 
-const int = (min, max) => ({ kind: 'int', type: z.number().int().min(min).max(max) });
-const num = (min, max) => ({ kind: 'number', type: z.number().min(min).max(max) });
-const bool = () => ({ kind: 'bool', type: z.boolean() });
-const str = (max = 500) => ({ kind: 'string', type: z.string().max(max) });
-const oneOf = (values) => ({ kind: 'enum', values, type: z.enum(values) });
-const list = (item = z.string().min(1).max(64)) => ({ kind: 'list', type: z.array(item).max(64) });
-const url = () => ({ kind: 'string', type: z.union([z.literal(''), z.string().url().max(500)]) });
+export type SettingKind = 'int' | 'number' | 'bool' | 'string' | 'enum' | 'list';
 
-export const GROUPS = {
+/** 读取其他设置的当前值（用于按其他设置推导默认值；参数是 SettingKey，这里写 string 以免与 SETTINGS 的类型互相引用） */
+export type SettingGetter = (key: string) => unknown;
+
+/** 一个设置项的声明 */
+export interface SettingDef<T extends z.ZodType = z.ZodType> {
+  group: keyof typeof GROUPS;
+  kind: SettingKind;
+  type: T;
+  /** enum 的可选值 */
+  values?: readonly string[];
+  default: z.infer<T> | ((get: SettingGetter) => z.infer<T>);
+  apply: 'live' | 'restart';
+  bootstrap?: boolean;
+  secret?: boolean;
+  scope?: 'world';
+  dev?: boolean;
+  label: string;
+  help?: string;
+  /** 环境变量字符串的特殊解析（兼容旧写法） */
+  parse?: (s: string) => unknown;
+}
+
+const int = (min: number, max: number) => ({ kind: 'int' as const, type: z.number().int().min(min).max(max) });
+const num = (min: number, max: number) => ({ kind: 'number' as const, type: z.number().min(min).max(max) });
+const bool = () => ({ kind: 'bool' as const, type: z.boolean() });
+const str = (max = 500) => ({ kind: 'string' as const, type: z.string().max(max) });
+const oneOf = <const V extends readonly [string, ...string[]]>(values: V) => ({ kind: 'enum' as const, values, type: z.enum(values) });
+function list(): { kind: 'list'; type: z.ZodArray<z.ZodString> };
+function list<T extends z.ZodType>(item: T): { kind: 'list'; type: z.ZodArray<T> };
+function list(item: z.ZodType = z.string().min(1).max(64)) { return { kind: 'list' as const, type: z.array(item).max(64) }; }
+const url = () => ({ kind: 'string' as const, type: z.union([z.literal(''), z.string().url().max(500)]) });
+
+export const GROUPS: Record<string, string> = {
   site: '站点', llm: '模型', userLlm: '自带模型', embed: '语义检索', limits: '频率与审核', accounts: '账号', worlds: '世界',
   genesis: '创世', decisions: '决策', evolution: '自主进化', world: '世界级（在世界设置里修改）', dev: '开发',
 };
@@ -59,7 +85,7 @@ export const SETTINGS = {
     help: '同时发给模型服务的请求上限，所有世界共用。其中 1 个名额留给交互（旅人聊天、心声、审核等有人在等结果的调用），居民、导演、日报等后台调用最多同时用「设置值 − 1」个：例如设 4 时后台最多 3 个并行，想要后台 2 个并行就设 3（设 1 时不保留）。创世与进化合计最多占 1 个。遇到限流会自动退避并临时降低并发',
   },
   LLM_TIMEOUT_MS: { group: 'llm', ...int(5000, 600000), default: 150000, apply: 'live', label: '单次请求超时（毫秒）' },
-  LLM_DAILY_TOKENS: { group: 'llm', ...int(0, 1e12), default: (get) => (get('PUBLIC_MODE') ? 3_000_000 : 0), apply: 'live', label: '每日 token 预算', help: '全站共用，0 = 不限；公网模式默认 300 万' },
+  LLM_DAILY_TOKENS: { group: 'llm', ...int(0, 1e12), default: (get: SettingGetter) => (get('PUBLIC_MODE') ? 3_000_000 : 0), apply: 'live', label: '每日 token 预算', help: '全站共用，0 = 不限；公网模式默认 300 万' },
   LLM_JSON_MODE: { group: 'llm', ...bool(), default: true, apply: 'restart', label: 'JSON 模式', help: '网关不支持时会自动关闭' },
   LLM_JSON_SCHEMA: { group: 'llm', ...bool(), default: false, apply: 'restart', label: '结构化输出（json_schema）', help: '网关不支持时自动退回普通 JSON 模式' },
   PACE_WITH_LLM: { group: 'llm', ...bool(), default: true, apply: 'restart', label: '随 AI 负载放慢时间' },
@@ -77,7 +103,7 @@ export const SETTINGS = {
     group: 'userLlm', ...list(z.enum(['openai', 'anthropic', 'google'])), default: ['openai', 'anthropic', 'google'], apply: 'live', label: '可以选的服务类型',
     help: 'openai：OpenAI 兼容接口；anthropic / google 需要安装 AI SDK（可选依赖）',
   },
-  USER_LLM_PRIVATE_NET: { group: 'userLlm', ...bool(), default: (get) => !get('PUBLIC_MODE'), apply: 'live', label: '允许内网地址与 http', help: '默认只在非公网模式下允许（例如本机的 Ollama）；公网模式下开启有 SSRF 风险' },
+  USER_LLM_PRIVATE_NET: { group: 'userLlm', ...bool(), default: (get: SettingGetter) => !get('PUBLIC_MODE'), apply: 'live', label: '允许内网地址与 http', help: '默认只在非公网模式下允许（例如本机的 Ollama）；公网模式下开启有 SSRF 风险' },
   USER_LLM_MAX_CONCURRENCY: { group: 'userLlm', ...int(1, 32), default: 4, apply: 'live', label: '单个自带通道的并发上限', help: '世界自带的模型服务可设的并发上限；和站点通道一样，其中 1 个名额留给交互' },
   USER_LLM_TOTAL_CONCURRENCY: { group: 'userLlm', ...int(0, 1000), default: 0, apply: 'live', label: '所有自带通道合计的并发上限', help: '0 = 不限' },
   USER_LLM_MAX_TIMEOUT_MS: { group: 'userLlm', ...int(5000, 600000), default: 300000, apply: 'live', label: '自带通道可设的最长超时（毫秒）' },
@@ -156,10 +182,16 @@ export const SETTINGS = {
   LLM_RECORD: { group: 'dev', dev: true, ...str(500), default: '', apply: 'restart', label: '录制模型回复到文件' },
   CHROME: { group: 'dev', dev: true, ...str(500), default: '', apply: 'restart', label: '浏览器检查用的 Chrome 路径' },
   EVOLVE_DAEMON: { group: 'dev', dev: true, ...bool(), default: true, apply: 'restart', label: '随服务启动进化引擎' },
-};
+} satisfies Record<string, SettingDef<any>>; // TODO(types): SettingDef<any>——每项的 T 不同，逐项推导由下面的 SettingValue 负责
+
+export type SettingKey = keyof typeof SETTINGS;
+/** 设置项的值类型（由声明里的 zod 定义推导） */
+export type SettingValue<K extends SettingKey> = z.infer<(typeof SETTINGS)[K]['type']>;
+/** 按字符串访问声明（面板、环境变量导入等遍历场景） */
+export const settingDef = (key: string): SettingDef | undefined => (Object.hasOwn(SETTINGS, key) ? (SETTINGS as Record<string, SettingDef>)[key] : undefined);
 
 /** 把环境变量 / 设置文件里的字符串解析成声明的类型（不做范围校验） */
-export function parseString(def, s) {
+export function parseString(def: SettingDef, s: string): unknown {
   if (def.parse) return def.parse(s);
   switch (def.kind) {
     case 'int': case 'number': return s.trim() === '' ? NaN : Number(s);
@@ -173,15 +205,15 @@ export function parseString(def, s) {
 }
 
 /** 把值写回环境变量字符串（给仍然接受 env 对象的模块用） */
-export function toEnvString(def, v) {
+export function toEnvString(def: SettingDef, v: unknown): string | undefined {
   if (v === undefined || v === null) return undefined;
   if (def.kind === 'bool') return v ? '1' : '0';
-  if (def.kind === 'list') return v.join(',');
+  if (def.kind === 'list') return (v as unknown[]).join(',');
   return String(v);
 }
 
 /** 校验一个值：返回 { ok, value } 或 { ok: false, error } */
-export function checkValue(def, v) {
+export function checkValue(def: SettingDef, v: unknown): { ok: true; value: unknown } | { ok: false; error: string } {
   const r = def.type.safeParse(v);
   if (r.success) return { ok: true, value: r.data };
   const issue = r.error.issues[0];

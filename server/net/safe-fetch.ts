@@ -8,29 +8,32 @@ import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import zlib from 'node:zlib';
+import type { LookupAddress, LookupOptions } from 'node:dns';
 
 const MAX_BODY = 8 * 1024 * 1024;
 
 // 不允许访问的地址：回环、私有、链路本地（含云厂商元数据地址）、CGNAT、保留、文档、组播、未指定……
 const blocked = new net.BlockList();
-for (const [a, p] of [
+const V4: Array<[string, number]> = [
   ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
   ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.88.99.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24],
   ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4],
-]) blocked.addSubnet(a, p, 'ipv4');
-for (const [a, p] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8], ['2001:db8::', 32], ['100::', 64]]) blocked.addSubnet(a, p, 'ipv6');
+];
+for (const [a, p] of V4) blocked.addSubnet(a, p, 'ipv4');
+const V6: Array<[string, number]> = [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8], ['2001:db8::', 32], ['100::', 64]];
+for (const [a, p] of V6) blocked.addSubnet(a, p, 'ipv6');
 
 /** IPv6 里嵌着的 IPv4（::ffff:a.b.c.d、64:ff9b::a.b.c.d、::a.b.c.d） */
-function embeddedV4(ip) {
+function embeddedV4(ip: string): string | null {
   const m = /^(?:::ffff:|64:ff9b::|::)(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
-  if (m) return m[1];
+  if (m) return m[1]!;
   const h = /^(?:::ffff:|64:ff9b::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(ip);
-  if (h) { const a = parseInt(h[1], 16), b = parseInt(h[2], 16); return `${a >> 8}.${a & 255}.${b >> 8}.${b & 255}`; }
+  if (h) { const a = parseInt(h[1]!, 16), b = parseInt(h[2]!, 16); return `${a >> 8}.${a & 255}.${b >> 8}.${b & 255}`; }
   return null;
 }
 
 /** 这个 IP 是否不允许访问 */
-export function isBlockedAddress(ip) {
+export function isBlockedAddress(ip: string): boolean {
   const fam = net.isIP(ip);
   if (!fam) return true;
   if (fam === 4) return blocked.check(ip, 'ipv4');
@@ -40,12 +43,13 @@ export function isBlockedAddress(ip) {
 }
 
 export class AddressError extends Error {
-  constructor(msg) { super(msg); this.code = 'ADDRESS'; }
+  code = 'ADDRESS';
+  constructor(msg: string) { super(msg); }
 }
 
 /** 地址本身的检查（保存凭据时用；真正的防线在连接时）：返回问题描述或 null */
-export function urlProblem(raw, { allowPrivate = false } = {}) {
-  let u;
+export function urlProblem(raw: string, { allowPrivate = false }: { allowPrivate?: boolean } = {}): string | null {
+  let u: URL;
   try { u = new URL(raw); } catch { return '接口地址不是合法的网址'; }
   if (u.username || u.password) return '接口地址里不能带用户名或密码';
   if (u.protocol !== 'https:' && !(allowPrivate && u.protocol === 'http:')) return allowPrivate ? '接口地址只能是 http 或 https' : '接口地址必须是 https';
@@ -54,17 +58,21 @@ export function urlProblem(raw, { allowPrivate = false } = {}) {
   return null;
 }
 
-function checkedLookup(hostname, options, cb) {
+type LookupCb = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void;
+
+function checkedLookup(hostname: string, options: LookupOptions, cb: LookupCb): void {
   dns.lookup(hostname, { all: true, family: options?.family || 0 }, (err, addrs) => {
-    if (err) return cb(err);
+    if (err) return cb(err, '');
     const bad = addrs.find((a) => isBlockedAddress(a.address));
-    if (bad) return cb(new AddressError(`不允许访问内网地址（${hostname} → ${bad.address}）`));
+    if (bad) return cb(new AddressError(`不允许访问内网地址（${hostname} → ${bad.address}）`), '');
     if (options?.all) return cb(null, addrs);
-    cb(null, addrs[0].address, addrs[0].family);
+    const first = addrs[0];
+    if (!first) return cb(Object.assign(new Error(`无法解析 ${hostname}`), { code: 'ENOTFOUND' }), '');
+    cb(null, first.address, first.family);
   });
 }
 
-function bodyOf(b) {
+function bodyOf(b: RequestInit['body']): Buffer | null {
   if (b == null) return null;
   if (typeof b === 'string' || Buffer.isBuffer(b)) return Buffer.from(b);
   if (b instanceof Uint8Array) return Buffer.from(b.buffer, b.byteOffset, b.byteLength);
@@ -73,12 +81,8 @@ function bodyOf(b) {
   throw new Error('safeFetch 不支持这种请求体');
 }
 
-/**
- * @param {{ allowPrivate?: boolean | (() => boolean), maxBody?: number }} [o]
- * @returns {typeof fetch}
- */
-export function makeSafeFetch({ allowPrivate = false, maxBody = MAX_BODY } = {}) {
-  return async function safeFetch(input, init = {}) {
+export function makeSafeFetch({ allowPrivate = false, maxBody = MAX_BODY }: { allowPrivate?: boolean | (() => boolean); maxBody?: number } = {}): typeof fetch {
+  return async function safeFetch(input: string | URL | Request, init: RequestInit = {}): Promise<Response> {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
     const priv = typeof allowPrivate === 'function' ? allowPrivate() : allowPrivate;
     const problem = urlProblem(url.href, { allowPrivate: priv });
@@ -87,7 +91,7 @@ export function makeSafeFetch({ allowPrivate = false, maxBody = MAX_BODY } = {})
     headers.set('accept-encoding', 'gzip, deflate, br');
     const body = bodyOf(init.body);
     if (body) headers.set('content-length', String(body.length));
-    const signal = init.signal;
+    const signal = init.signal ?? undefined;
     if (signal?.aborted) throw signal.reason ?? new DOMException('This operation was aborted', 'AbortError');
     const mod = url.protocol === 'https:' ? https : http;
     return new Promise((resolve, reject) => {
@@ -97,9 +101,9 @@ export function makeSafeFetch({ allowPrivate = false, maxBody = MAX_BODY } = {})
       }, (res) => {
         const enc = String(res.headers['content-encoding'] || '').toLowerCase();
         const stream = enc === 'gzip' ? res.pipe(zlib.createGunzip()) : enc === 'deflate' ? res.pipe(zlib.createInflate()) : enc === 'br' ? res.pipe(zlib.createBrotliDecompress()) : res;
-        const chunks = [];
+        const chunks: Buffer[] = [];
         let size = 0;
-        stream.on('data', (c) => {
+        stream.on('data', (c: Buffer) => {
           size += c.length;
           if (size > maxBody) { req.destroy(new Error(`响应超过 ${Math.round(maxBody / 1048576)} MB`)); return; }
           chunks.push(c);
@@ -109,7 +113,7 @@ export function makeSafeFetch({ allowPrivate = false, maxBody = MAX_BODY } = {})
           const h = new Headers();
           for (const [k, v] of Object.entries(res.headers)) {
             if (k === 'content-encoding' || k === 'content-length' || v == null) continue;
-            for (const x of [].concat(v)) h.append(k, x);
+            for (const x of ([] as string[]).concat(v)) h.append(k, x);
           }
           const status = res.statusCode || 500;
           const noBody = status === 204 || status === 304 || (init.method || 'GET').toUpperCase() === 'HEAD';

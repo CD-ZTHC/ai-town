@@ -8,9 +8,9 @@ import path from 'node:path';
 const KEY_BYTES = 32;
 
 /** 解析 base64 / base64url / hex 写法的 32 字节主密钥 */
-export function parseMasterKey(s) {
+export function parseMasterKey(s: unknown): Buffer {
   const t = String(s || '').trim();
-  for (const enc of ['base64url', 'base64', 'hex']) {
+  for (const enc of ['base64url', 'base64', 'hex'] as const) {
     try {
       const b = Buffer.from(t, enc);
       if (b.length === KEY_BYTES) return b;
@@ -23,9 +23,8 @@ export const generateMasterKey = () => crypto.randomBytes(KEY_BYTES).toString('b
 
 /**
  * 主密钥：优先用 SECRETS_KEY；否则读 / 生成 <dataDir>/secret.key。
- * 返回 { key, source: 'env' | 'file' | 'generated', file? }
  */
-export function loadMasterKey({ envValue = '', dataDir }) {
+export function loadMasterKey({ envValue = '', dataDir }: { envValue?: string; dataDir: string }): { key: Buffer; source: 'env' | 'file' | 'generated'; file?: string } {
   if (envValue) return { key: parseMasterKey(envValue), source: 'env' };
   const file = path.join(path.resolve(dataDir), 'secret.key');
   if (fs.existsSync(file)) return { key: parseMasterKey(fs.readFileSync(file, 'utf8')), source: 'file', file };
@@ -35,7 +34,7 @@ export function loadMasterKey({ envValue = '', dataDir }) {
 }
 
 /** 加密：返回 iv.tag.ciphertext（base64url） */
-export function seal(key, plaintext, aad) {
+export function seal(key: Buffer, plaintext: unknown, aad: unknown): string {
   const iv = crypto.randomBytes(12);
   const c = crypto.createCipheriv('aes-256-gcm', key, iv);
   c.setAAD(Buffer.from(String(aad)));
@@ -43,16 +42,16 @@ export function seal(key, plaintext, aad) {
   return [iv, c.getAuthTag(), ct].map((b) => b.toString('base64url')).join('.');
 }
 
-export function open(key, sealed, aad) {
+export function open(key: Buffer, sealed: unknown, aad: unknown): string {
   const [iv, tag, ct] = String(sealed).split('.').map((s) => Buffer.from(s, 'base64url'));
-  const d = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  const d = crypto.createDecipheriv('aes-256-gcm', key, iv!);
   d.setAAD(Buffer.from(String(aad)));
-  d.setAuthTag(tag);
-  return Buffer.concat([d.update(ct), d.final()]).toString('utf8');
+  d.setAuthTag(tag!);
+  return Buffer.concat([d.update(ct!), d.final()]).toString('utf8');
 }
 
 /** 错误信息脱敏：去掉密钥原文，以及 sk-… / Bearer … / key=… 这类片段 */
-export function scrub(text, secrets = []) {
+export function scrub(text: unknown, secrets: Array<string | null | undefined> = []): string {
   let s = String(text || '');
   for (const k of secrets) if (k && k.length >= 4) s = s.split(k).join('***');
   return s
