@@ -23,6 +23,8 @@ export interface Voice {
   resident: string;
   chronicle: { name: string; kind: string; editor: string; style: string };
   ui: { tagline: string; welcome: string; sampleEvents: string[] };
+  /** 新来的人出现的地点 */
+  spawn?: string;
 }
 
 export interface CalendarEvent {
@@ -69,6 +71,9 @@ export interface Building {
   roof?: string;
   state?: BuildingState;
   removed?: boolean;
+  /** 运行中加上的（不是世界包里的） */
+  added?: boolean;
+  region?: string;
   [k: string]: unknown;
 }
 
@@ -91,6 +96,9 @@ export interface Persona {
   memories: string[];
   alignment?: string;
   combat?: Record<string, unknown>;
+  /** 旅人：从哪里来、对这里不了解什么 */
+  traveller?: { origin: string; knowledgeGap?: string[]; [k: string]: unknown };
+  origin?: string;
 }
 
 export interface Item {
@@ -130,7 +138,8 @@ export interface Ability {
 export interface Rule {
   id: string;
   name: string;
-  when: { every?: number; at?: string; [k: string]: unknown };
+  /** 四种触发器之一：every（每隔 N 游戏分钟）、at（每天某时刻）、weather（天气变为某种，* 为任意）、enter（到达某地点，* 为任意） */
+  when: { every?: number; at?: string; weather?: string; enter?: string };
   forEach?: 'agent' | (string & {});
   if?: string;
   then: Effect[];
@@ -143,6 +152,23 @@ export interface Thread {
   owners?: string[];
 }
 
+export type Side = 'north' | 'south' | 'east' | 'west';
+
+/** 地形编辑（地图演变 §4）：修路、架桥、清地、种树、新户外地点 */
+export interface RegionEdit {
+  kind: string;
+  id?: string | null;
+  placeKind?: string | null;
+  cells?: number[][];
+  trees?: Array<[number, number, string]>;
+  rect?: { x: number; y: number; w: number; h: number };
+  seed?: number;
+  [k: string]: unknown;
+}
+
+/** 相邻地图之间的通道入口 */
+export interface RegionEntry { side: Side; at: number; to: string; key: string }
+
 export interface Region {
   id: string;
   name: string;
@@ -150,8 +176,23 @@ export interface Region {
   seed?: number;
   size: [number, number];
   biome?: string;
-  gate?: unknown;
+  /** 通往这个区域的渡口（小镇里的地点 id） */
+  gate?: string;
   gateName?: string;
+  /** 已经向玩家开放 */
+  open?: boolean;
+  /** layout-v1：区域块与连接 */
+  areas?: Array<{ id: string; biome?: string; size?: string; places: Array<{ id: string; kind: string; name: string; [k: string]: unknown }> }>;
+  links?: Array<{ from: string; to: string; via: string }>;
+  /** 运行中加上的地形编辑、扩展块 */
+  edits?: RegionEdit[];
+  extensions?: Array<{ rect: { x: number; y: number; w: number; h: number }; [k: string]: unknown }>;
+  /** 与相邻地图相通的入口 */
+  entries?: RegionEntry[];
+  /** 相邻地图：接在哪张地图的哪一侧 */
+  adjacent?: { to: string; side: Side };
+  /** 向西 / 向北扩展时世界包基础内容的平移 */
+  offset?: { x: number; y: number };
   [k: string]: unknown;
 }
 
@@ -242,6 +283,6 @@ export interface WorldSpec {
   threats?: Record<string, ThreatType>;
   incidents?: unknown[];
   params: Params;
-  regions?: Region[];
+  regions: Region[];
   arcs?: Arc[];
 }

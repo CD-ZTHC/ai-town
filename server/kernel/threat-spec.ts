@@ -94,7 +94,7 @@ export function validateThreat(id: string, t: Raw, spec: WorldSpec): string | nu
     if (!Array.isArray(h.grants) || h.grants.some((g: string) => !spec.abilities.some((a) => a.id === g))) return 'hostable.grants 里有未知能力';
     if (!Object.hasOwn(spec.burdens || {}, h.burden)) return `hostable.burden 未知负担值：${h.burden}`;
     if (h.rate != null && !inRange(h.rate, 0, 5)) return 'hostable.rate 应在 0~5';
-    for (const [k, v] of Object.entries<Raw>(h.offsets || {})) if (!Object.hasOwn(spec.threats || {}, k) || !inRange(v, -1, 1)) return `hostable.offsets 不合法：${k}`;
+    for (const [k, v] of Object.entries<Raw>(h.offsets || {})) if (!Object.hasOwn(spec.threats!, k) || !inRange(v, -1, 1)) return `hostable.offsets 不合法：${k}`;
     for (const v of h.via || []) {
       const e = checkExpr(v.when || 'true');
       if (e) return `hostable.via ${e}`;

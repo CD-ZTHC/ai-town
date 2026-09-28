@@ -44,10 +44,10 @@ export interface ExprBindings {
 }
 
 export function exprEnv(town: TownLike, { self = null, target = null, e = null, threat = null }: ExprBindings = {}): { vars: Record<string, unknown>; fns: ExprFns } {
-  const real = (v: Arg): DarkAgent | null => (v && typeof v === 'object' ? town.byId[(v as { id: string }).id] ?? null : null);
+  const real = (v: Arg): DarkAgent | null | undefined => (v && typeof v === 'object' ? town.byId[(v as { id: string }).id] : null);
   const dark: { sounds?: Spot[]; zones?: Spot[] } | undefined = town.dark;
   const recent = (v: Arg, k: 'openedAt' | 'spokeAt' | 'namedAt', win: number): boolean => { const a = real(v); const at = a?.[k]; return at != null && town.t - at <= win; };
-  const distTo = (a: DarkAgent | null, x: Spot | null): number => (a && x && (a.region || 'town') === (x.region || 'town') ? Math.hypot((posOf(town, a)?.x ?? a.x) - x.x, (posOf(town, a)?.y ?? a.y) - x.y) : Infinity);
+  const distTo = (a: DarkAgent | null | undefined, x: Spot | null): number => (a && x && (a.region || 'town') === (x.region || 'town') ? Math.hypot((posOf(town, a)?.x ?? a.x) - x.x, (posOf(town, a)?.y ?? a.y) - x.y) : Infinity);
   const fns: ExprFns = {
     has: (v: Arg, item: string, n = 1) => (real(v)?.inventory[item] || 0) >= n,
     count: (v: Arg, item: string) => real(v)?.inventory[item] || 0,
@@ -62,7 +62,7 @@ export function exprEnv(town: TownLike, { self = null, target = null, e = null, 
     // ---- 黑暗叙事的行为原语（threat 是正在判定规律的威胁实例，不在威胁里时为 null）----
     seen: (v: Arg) => { const a = real(v); return Boolean(threat && a) && !a!.inside && a!.status !== 'sleeping' && !hasPosture(town, a, 'eyesClosed') && distTo(a, threat) <= 6; },
     near: (v: Arg, r = 3) => Boolean(threat) && distTo(real(v), threat) <= r,
-    heard: (v: Arg, id: string) => { const a = real(v); return Boolean(a) && (dark?.sounds || []).some((s) => s.id === id && town.t - (s.t ?? 0) <= 10 && distTo(a, s) <= (s.r ?? 0)); },
+    heard: (v: Arg, id: string) => { const a = real(v); return Boolean(a) && (dark?.sounds || []).some((s) => s.id === id && town.t - s.t! <= 10 && distTo(a, s) <= s.r!); },
     opened: (v: Arg) => recent(v, 'openedAt', 10),
     entered: (v: Arg, loc: string) => real(v)?.locId === loc,
     speaking: (v: Arg) => recent(v, 'spokeAt', 2) && !hasPosture(town, real(v), 'silent'),
@@ -71,7 +71,7 @@ export function exprEnv(town: TownLike, { self = null, target = null, e = null, 
     asleep: (v: Arg) => real(v)?.status === 'sleeping',
     night: () => town.minute >= 20 * 60 || town.minute < 5 * 60,
     marked: (v: Arg) => (real(v)?.marks || []).some((m) => !threat || m.threat === threat.id),
-    inZone: (v: Arg) => { const a = real(v); return Boolean(a) && (dark?.zones || []).some((z) => (!threat || z.threat === threat.id) && distTo(a, z) <= (z.r ?? 0)); },
+    inZone: (v: Arg) => { const a = real(v); return Boolean(a) && (dark?.zones || []).some((z) => (!threat || z.threat === threat.id) && distTo(a, z) <= z.r!); },
     posture: (v: Arg, name: string) => hasPosture(town, real(v), name),
     burden: (v: Arg, id: string) => real(v)?.burdens?.[id] || 0,
     anchors: (v: Arg, th = 50) => { const a = real(v); return a ? Object.entries(a.relations).filter(([id, r]) => r.affinity >= th && town.agents.includes(town.byId[id])).length : 0; },
@@ -99,7 +99,7 @@ export function validateRule(r: Rule, spec: WorldSpec): string | null {
   if (!r || typeof r !== 'object') return '规则不是对象';
   if (!ID_RE.test(r.id || '')) return 'id 不合法';
   if (!String(r.name || '').trim() || String(r.name).length > 16) return 'name 缺失或过长（≤16字）';
-  const w: Rule['when'] & { weather?: string; enter?: string } = r.when || {};
+  const w: Rule['when'] = r.when || {};
   const kinds = (['every', 'at', 'weather', 'enter'] as const).filter((k) => w[k] != null);
   if (kinds.length !== 1) return 'when 必须且只能包含 every / at / weather / enter 之一';
   if (w.every != null && !(Number.isInteger(w.every) && w.every >= 10 && w.every <= 1440)) return 'every 应为 10~1440 的整数（游戏分钟）';
@@ -142,7 +142,7 @@ export class RuleEngine {
     for (const r of this.town.spec.rules) if (r.when.enter === locId || r.when.enter === '*') this.fire(r, agent);
   }
 
-  fire(r: Rule & { when: { weather?: string; enter?: string } }, bound: AgentLike | null = null): number {
+  fire(r: Rule, bound: AgentLike | null = null): number {
     if (this.broken.has(r.id)) return 0;
     const town = this.town;
     const candidates: Array<AgentLike | null> = bound ? [bound] : r.forEach === 'agent' ? town.agents : [null];

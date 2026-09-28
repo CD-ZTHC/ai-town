@@ -1,9 +1,27 @@
 // 拆除的连带影响（地图演变设计 §3.3）：列出世界规格里所有引用某座建筑（及其地点 id）的地方。
 // removeBuilding / setBuildingState(ruin) 用它检查搬迁去处（remap）是否齐全；撤销扩展时也会用到。
 // 这里只看规格；运行中的剧情弧、线程、约定由调用方（小镇）另外检查。
+import type { Building, WorldSpec } from '../types/spec.ts';
+
+/** 搬迁去处：residents 搬去哪座建筑、workers 去哪里工作、location 替代被引用的地点 */
+export interface Remap {
+  residents?: string;
+  workers?: string;
+  location?: string;
+}
+
+export interface Impact {
+  residents: string[];
+  workers: string[];
+  liveWork: string[];
+  events: string[];
+  rules: string[];
+  spawn: boolean;
+  gates: string[];
+}
 
 /** 返回 { residents, workers, events, rules, spawn, gates } */
-export function impactOf(spec, id) {
+export function impactOf(spec: WorldSpec, id: string): Impact {
   const personas = spec.personas || [];
   return {
     residents: personas.filter((p) => p.kind !== 'creature' && p.home === id).map((p) => p.id),
@@ -18,16 +36,16 @@ export function impactOf(spec, id) {
 }
 
 const HOME_CAP = 3;
-const liveBuilding = (spec, id) => (spec.buildings || []).find((b) => b.id === id && !b.removed);
+const liveBuilding = (spec: WorldSpec, id: string): Building | undefined => (spec.buildings || []).find((b) => b.id === id && !b.removed);
 
 /**
  * 检查 remap 能不能覆盖所有引用。返回错误文本或 null。
  * remap: { residents: 建筑id, workers: 地点id, location: 地点id }
  */
-export function checkRemap(spec, id, remap = {}, { name = id } = {}) {
+export function checkRemap(spec: WorldSpec, id: string, remap: Remap = {}, { name = id }: { name?: string } = {}): string | null {
   const im = impactOf(spec, id);
-  const names = (ids) => ids.map((x) => spec.personas.find((p) => p.id === x)?.name || x).join('、');
-  const isLoc = (x) => x && x !== id && (Object.hasOwn(spec.locations || {}, x) || liveBuilding(spec, x));
+  const names = (ids: string[]): string => ids.map((x) => spec.personas.find((p) => p.id === x)?.name || x).join('、');
+  const isLoc = (x: string | undefined) => x && x !== id && (Object.hasOwn(spec.locations || {}, x) || liveBuilding(spec, x));
   if (im.residents.length) {
     const to = remap.residents;
     const b = to && to !== id && liveBuilding(spec, to);
@@ -44,15 +62,17 @@ export function checkRemap(spec, id, remap = {}, { name = id } = {}) {
 }
 
 /** 在规格副本上把所有引用改指向（与删除建筑在同一个操作里，撤销时一起恢复） */
-export function applyRemap(spec, id, remap = {}) {
+export function applyRemap(spec: WorldSpec, id: string, remap: Remap = {}): void {
   const im = impactOf(spec, id);
+  // 调用方先用 checkRemap 确认过需要的去处都给了；这里按原样写入
+  const { residents, workers, location } = remap as Required<Remap>;
   for (const p of spec.personas) {
-    if (im.residents.includes(p.id) || im.liveWork.includes(p.id)) p.home = remap.residents;
-    if (im.liveWork.includes(p.id)) p.work = remap.workers && remap.workers !== id ? remap.workers : remap.residents;
-    if (im.workers.includes(p.id)) p.work = remap.workers;
+    if (im.residents.includes(p.id) || im.liveWork.includes(p.id)) p.home = residents;
+    if (im.liveWork.includes(p.id)) p.work = workers && workers !== id ? workers : residents;
+    if (im.workers.includes(p.id)) p.work = workers;
   }
-  for (const e of spec.calendar?.events || []) if (e.location === id) e.location = remap.location;
-  for (const r of spec.rules || []) if (r.when?.enter === id) r.when.enter = remap.location;
-  if (spec.voice?.spawn === id) spec.voice.spawn = remap.location;
-  for (const r of spec.regions || []) if (r.gate === id) r.gate = remap.location;
+  for (const e of spec.calendar?.events || []) if (e.location === id) e.location = location;
+  for (const r of spec.rules || []) if (r.when?.enter === id) r.when.enter = location;
+  if (spec.voice?.spawn === id) spec.voice.spawn = location;
+  for (const r of spec.regions || []) if (r.gate === id) r.gate = location;
 }
