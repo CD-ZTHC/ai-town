@@ -18,6 +18,7 @@ export class Views {
         id: a.id, x: +a.x.toFixed(3), y: +a.y.toFixed(3), dir: a.dir, moving: a.moving, status: a.status, region: a.region || 'town',
         inside: a.inside, emoji: a.action.emoji, action: a.action.text, loc: a.locId, mood: a.mood.emoji,
         thinking: a.thinking > 0 ? a.thinkingLabel : '', convo: a.convoId,
+        ...(a.body.hp < 100 ? { hp: Math.round(a.body.hp) } : {}), ...(a.marks?.length ? { marked: true } : {}), ...(a.hosted?.length ? { hosted: true } : {}),
         bubble: a.bubble && a.bubble.until > now ? { id: a.bubble.id, text: a.bubble.text, kind: a.bubble.kind } : null,
       })),
       convos: [...this.convos.values()].map((c) => ({ id: c.id, a: c.a, b: c.b, state: c.state })),
@@ -26,6 +27,7 @@ export class Views {
         ...(this.portalState ? [{ id: 'portal', kind: 'portal', type: 'portal', stage: this.portalState.stage, name: this.portalState.name, x: this.portalState.x, y: this.portalState.y, inside: null, light: { r: 140, color: '170,120,255' } }] : []),
       ],
       creatures: this.creatures.view(),
+      ...(this.threats.enabled || this.dark.graves.length ? { dark: this.threats.view() } : {}),
       avatars: this.avatars.view(),
       overlay: this.evolved.snapshotExtra(),
       story: { tension: this.story?.now?.value ?? null, arc: this.arcs.active()?.phase || null, vote: this.votes.list.some((v) => v.status !== 'closed') },
@@ -54,6 +56,13 @@ export class Views {
         id: ab.id, name: ab.name, emoji: ab.emoji, desc: ab.desc, cooldown: Math.max(0, Math.ceil((a.cooldowns?.[ab.id] || 0) - this.t)),
       })),
       researching: a.researching?.topic || null,
+      // 黑暗叙事：负担值、寄宿、禁忌姿态、立场（规律本身从不下发）
+      burdens: Object.entries(a.burdens || {}).map(([k, n]) => ({ id: k, name: this.spec.burdens?.[k]?.name || k, value: Math.round(n), max: this.spec.burdens?.[k]?.max ?? 100 })),
+      hosted: (a.hosted || []).map((h) => ({ id: h.threat, name: this.spec.threats?.[h.threat]?.name || h.threat, emoji: this.spec.threats?.[h.threat]?.emoji || '🌑' })),
+      posture: a.posture && a.posture.until > this.t ? a.posture.holds : [],
+      marked: Boolean(a.marks?.length),
+      alignment: a.alignment || null,
+      captive: a.captive ? this.byId[a.captive.by]?.name || true : null,
     };
   }
 
@@ -124,6 +133,7 @@ export class Views {
       bestiary: Object.entries(this.spec.creatures).map(([id, c]) => (this.discovered.includes(id) || (c.leader && this.spec.personas.some((p) => p.creature === id))
         ? { id, known: true, name: c.name, emoji: c.emoji, origin: c.origin, lore: c.lore, weakness: c.weakness, temperament: c.temperament, look: c.look }
         : { id, known: false })),
+      dark: this.threats.enabled ? this.threats.panel() : null,
       travellers: this.spec.personas.filter((p) => p.kind === 'traveller').map((p) => ({ id: p.id, name: p.name, role: p.role, origin: p.traveller?.origin, status: p.status || 'active' })),
     };
   }

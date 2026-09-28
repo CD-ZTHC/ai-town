@@ -20,7 +20,7 @@ export class Cognition {
     const origin = tr ? `\n来历：来自${tr.origin}，刚来到这里；不认识这些东西：${tr.knowledgeGap.join('、')}（遇到时会误解、好奇或害怕）` : '';
     const b = a.body;
     const status = `体力${Math.round(b.stamina)}，勇气${Math.round(b.courage)}${b.conditions.length ? `，${b.conditions.join('、')}` : ''}`;
-    return `姓名：${a.name}，${a.age}岁，${a.role}。\n性格：${a.persona}${growth ? `\n成长经历：${growth}` : ''}\n当前目标：${a.goal}\n心情：${a.mood.text}；状态：${status}${beliefs ? `\n相信：${beliefs}` : ''}${origin}\n人际关系：${rel || '暂无'}`;
+    return `姓名：${a.name}，${a.age}岁，${a.role}。\n性格：${a.persona}${growth ? `\n成长经历：${growth}` : ''}\n当前目标：${a.goal}\n心情：${a.mood.text}；状态：${status}${beliefs ? `\n相信：${beliefs}` : ''}${origin}${this.darkPersonaBlock(a)}\n人际关系：${rel || '暂无'}`;
   }
 
   memBlock(a, query, k = 10, opts = undefined) {
@@ -72,7 +72,7 @@ export class Cognition {
 
   sys(extra = '') {
     const place = this.spec.voice?.place || '小镇';
-    const rating = { cozy: '', adventure: `\n本${place}允许奇幻冒险与紧张的对抗（例如异界生物），但没有死亡、血腥与残酷。`, epic: `\n本${place}允许重大挑战与损失，但没有死亡与血腥描写。`, tragic: `\n本${place}允许离别与死亡作为叙事事件，但不描写细节，没有血腥与残酷。` }[this.spec.meta.rating] || '';
+    const rating = { cozy: '', adventure: `\n本${place}允许奇幻冒险与紧张的对抗（例如异界生物），但没有死亡、血腥与残酷。`, epic: `\n本${place}允许重大挑战与损失，但没有死亡与血腥描写。`, dark: `\n本${place}是黑暗题材：冲突、危险、战斗与死亡都可能发生；死亡作为叙事事件一笔带过，不描写血腥与残酷的细节。反派有自己的欲望，不会因为几句好话就改变主意；恐惧是真实的。`, tragic: `\n本${place}允许离别与死亡作为叙事事件，但不描写细节，没有血腥与残酷。` }[this.spec.meta.rating] || '';
     const era = this.spec.era?.forbidden?.length ? `\n时代：${this.spec.era.tech}，不要出现${this.spec.era.forbidden.join('、')}这类不属于这个时代的东西。` : '';
     const pillars = this.pack ? `\n不可违背的设定：${this.spec.lore.pillars.join('；')}` : '';
     return { role: 'system', content: `你是「${this.spec.meta.name}」生成式智能体${place}的角色大脑。${this.spec.lore.summary}${rating}${era}${pillars}\n要求：角色要鲜活、口语化、符合人设，推动各自的目标与人际关系发展；中文输出；只输出 JSON，不要任何解释或 markdown。${extra}` };

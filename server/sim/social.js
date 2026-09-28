@@ -9,7 +9,7 @@ export class Social {
   checkConversations() {
     const m = this.minute;
     if (m < 6 * 60 + 40 || m > this.dayEnd || this.convos.size >= this.params.maxConvos) return;
-    const free = this.agents.filter((a) => !a.convoId && (a.status === 'acting' || a.status === 'walking') && this.t - a.lastConvoEnd > 25);
+    const free = this.agents.filter((a) => !a.convoId && (a.status === 'acting' || a.status === 'walking') && this.t - a.lastConvoEnd > 25 && !this.hasPosture(a, 'silent'));
     const pairs = [];
     for (let i = 0; i < free.length; i++) {
       for (let j = i + 1; j < free.length; j++) {
@@ -79,6 +79,11 @@ export class Social {
 
     for (const line of convo.lines) {
       const sp = this.byId[line.speaker];
+      if (a.status === 'dead' || b.status === 'dead') break; // 对话中途有人遇害
+      // 规律型威胁会读到「谁在说话」「谁被叫了名字」（黑暗叙事设计 §4.1）
+      sp.spokeAt = this.t;
+      for (const o of [a, b]) if (o !== sp && line.text.includes(o.name)) o.namedAt = this.t;
+      for (const o of this.agents) if (o !== a && o !== b && o.name.length >= 2 && line.text.includes(o.name) && this.near?.(o, sp, 4)) o.namedAt = this.t;
       const ms = Math.max(2600, Math.min(7000, 1600 + line.text.length * 110)) / (this.speed >= 5 ? 1.6 : 1);
       this.say(sp, line.text, ms + 400, 'say');
       this.emit('say', { convo: id, speaker: sp.id, text: line.text });
@@ -133,7 +138,7 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
       if (note) r.note = clampStr(note, 40);
       x.convoId = null;
       x.lastConvoEnd = this.t;
-      x.status = 'acting';
+      if (x.status !== 'dead') x.status = 'acting';
       x.curKey = null;
     }
     const commits = [];

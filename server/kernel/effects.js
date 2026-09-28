@@ -5,12 +5,23 @@ import { parse, ExprError } from './expr.js';
 import { addMemory } from '../memory.js';
 
 // 表达式里可以调用的函数名（实现见 rules.js 的 exprEnv）
-export const EXPR_FNS = new Set(['has', 'count', 'knows', 'hasCondition', 'nearStructure', 'nearAgents', 'min', 'max', 'abs', 'rand']);
+export const EXPR_FNS = new Set(['has', 'count', 'knows', 'hasCondition', 'nearStructure', 'nearAgents', 'min', 'max', 'abs', 'rand',
+  // 黑暗叙事（设计 §4.1 行为原语、§4.4 负担值、§4.2 信念）：没有威胁的世界里也能用，只是多数时候为假
+  'seen', 'near', 'heard', 'opened', 'entered', 'speaking', 'named', 'alone', 'asleep', 'night', 'marked', 'inZone', 'posture',
+  'burden', 'anchors', 'believes', 'flag', 'hosts']);
 // 表达式函数的说明（用于自动生成能力清单）
 export const EXPR_FN_DOCS = {
   has: "has(e, '物品id', 数量=1) 身上是否有某物品", count: "count(e, '物品id') 物品数量", knows: "knows(e, '能力id') 是否会某能力",
   hasCondition: "hasCondition(e, '状态') 是否处于某状态", nearStructure: "nearStructure(e, '标签', 半径=3) 附近是否有带该标签的构筑物",
   nearAgents: 'nearAgents(e, 半径=3) 附近醒着的人数', min: 'min(a, b…)', max: 'max(a, b…)', abs: 'abs(x)', rand: 'rand() 0~1 随机数',
+  seen: 'seen(e) 在威胁的规律里：e 看得见这个威胁（6 格内、没闭眼、没睡着）', near: 'near(e, 半径=3) 在威胁的规律里：e 离这个威胁不超过半径',
+  heard: "heard(e, '声音id') e 最近 10 分钟内听到了某种声音（威胁发出的）", opened: 'opened(e) e 最近 10 分钟内开门进过屋',
+  entered: "entered(e, '地点id') e 此刻在某地点", speaking: 'speaking(e) e 最近 2 分钟内在对话里说过话', named: 'named(e) e 最近 30 分钟内被人当面叫了名字',
+  alone: 'alone(e) e 身边 4 格内没有醒着的人', asleep: 'asleep(e) e 在睡觉', night: 'night() 现在是夜里（20:00~05:00）',
+  marked: 'marked(e) e 被这个威胁（不在威胁的规律里时：任何威胁）标记了', inZone: 'inZone(e) e 在这个威胁（或任何威胁）的区域里',
+  posture: "posture(e, 'eyesClosed/silent/noOpen/stayLit/notAlone') e 正保持着某种禁忌姿态",
+  burden: "burden(e, '负担id') e 的负担值", anchors: 'anchors(e, 好感阈值=50) e 身边好感达到阈值、还活着的人数',
+  believes: "believes(e, '话题') e 对某个话题的确信度（0~1，没有这个看法时为 0）", flag: "flag('标记名') 世界标记是否为真", hosts: "hosts(e, '威胁id') e 身上寄宿着某个威胁",
 };
 // 扩展目录（server/ext/）注册的表达式函数实现：name → (helpers, ...args) => value
 export const EXT_FNS = {};
@@ -235,6 +246,81 @@ export const EFFECTS = {
       return checkTarget(a);
     },
     apply(town, ctx, a) { for (const x of resolveTargets(town, ctx, a)) town.learnAbility(x, a.ability, ctx.self && ctx.self !== x ? `从${ctx.self.name}那里` : ''); },
+  },
+  // ---------- 黑暗叙事（设计 §4.1、§4.3、§4.4、§4.5、§4.10）：没有对应系统的世界里这些效果什么也不做 ----------
+  kill: {
+    doc: '{"op":"kill","target":"self/target/e","text":"≤40字，一笔带过的描写，可用 {self}"} 让人死去（分级不允许、死亡预算用完或有主角光环时降为重伤）',
+    check(a) { return a.text != null && !str(a.text, 40) ? 'text 过长' : checkTarget(a, ['self', 'target', 'e']); },
+    apply(town, ctx, a) { for (const x of resolveTargets(town, ctx, a)) town.killAgent?.(x, { cause: ctx.source || '', text: a.text ? fill(str(a.text, 40), { ...ctx, self: x }) : '', threat: ctx.threat }); },
+  },
+  wound: {
+    doc: '{"op":"wound","amount":5~100,"target":…} 受伤（hp 降到 30 以下为重伤，送去休养）',
+    check(a) { return !inRange(a.amount, 5, 100) ? 'amount 应在 5~100' : checkTarget(a); },
+    apply(town, ctx, a) { for (const x of resolveTargets(town, ctx, a)) town.woundAgent?.(x, a.amount, { cause: ctx.source || '' }); },
+  },
+  heal: {
+    doc: '{"op":"heal","amount":5~100,"target":…} 治疗伤势',
+    check(a) { return !inRange(a.amount, 5, 100) ? 'amount 应在 5~100' : checkTarget(a); },
+    apply(town, ctx, a) { for (const x of resolveTargets(town, ctx, a)) town.healAgent?.(x, a.amount); },
+  },
+  casualties: {
+    doc: '{"op":"casualties","min":0~50,"max":0~50,"text":"≤30字"} 当地的群众伤亡（只记数字）',
+    check(a) { return !(inRange(a.min, 0, 50) && inRange(a.max, a.min, 50)) ? 'min / max 应在 0~50' : a.text != null && !str(a.text, 30) ? 'text 过长' : null; },
+    apply(town, ctx, a) { town.casualties?.(ctx.at, a.min + Math.floor(Math.random() * (a.max - a.min + 1)), { cause: ctx.source || '', text: str(a.text, 30) }); },
+  },
+  clue: {
+    doc: '{"op":"clue","kind":"rule/next_victim/origin","threat":"威胁id(可选)","target":…} 得到一条关于威胁的线索（规律 / 下一个受害者 / 来历）',
+    check(a, spec) {
+      if (!['rule', 'next_victim', 'origin'].includes(a.kind)) return 'kind 只能是 rule / next_victim / origin';
+      if (a.threat != null && !Object.hasOwn(spec.threats || {}, a.threat)) return `未知威胁：${a.threat}`;
+      return checkTarget(a);
+    },
+    apply(town, ctx, a) { for (const x of resolveTargets(town, ctx, a)) town.threats?.giveClue(x, a.kind, a.threat || ctx.threat?.type || null, ctx); },
+  },
+  burden: {
+    doc: '{"op":"burden","id":"负担id","amount":-100~100 或 "freeze":10~1440,"target":…} 改变或冻结负担值',
+    check(a, spec) {
+      if (!Object.hasOwn(spec.burdens || {}, a.id)) return `未知负担值：${a.id}`;
+      if (a.amount == null && a.freeze == null) return '需要 amount 或 freeze';
+      if (a.amount != null && !inRange(a.amount, -100, 100)) return 'amount 应在 -100~100';
+      if (a.freeze != null && !inRange(a.freeze, 10, 1440)) return 'freeze 应在 10~1440';
+      return checkTarget(a);
+    },
+    apply(town, ctx, a) {
+      for (const x of resolveTargets(town, ctx, a)) {
+        if (a.freeze != null) ((x.burdenFreeze ||= {})[a.id] = town.t + a.freeze);
+        if (a.amount != null) town.addBurden?.(x, a.id, a.amount);
+      }
+    },
+  },
+  spawnThreat: {
+    doc: '{"op":"spawnThreat","threat":"威胁id" 或 "from":"host","target":"self/target"} 在某人身边出现一个威胁；from 为 host 时，是这个人身上寄宿的威胁脱出',
+    check(a, spec) {
+      if (a.from === 'host') return checkTarget(a, ['self', 'target']);
+      if (!Object.hasOwn(spec.threats || {}, a.threat)) return `未知威胁：${a.threat}`;
+      return checkTarget(a, ['self', 'target']);
+    },
+    apply(town, ctx, a) {
+      const who = (a.target ?? 'self') === 'target' ? ctx.target : ctx.self;
+      if (a.from === 'host') { if (who) town.threats?.releaseHosted(who); return; }
+      const at = posOf(town, who) || ctx.at;
+      if (at) town.threats?.spawn(a.threat, { at, cause: ctx.source || '' });
+    },
+  },
+  host: {
+    doc: '{"op":"host","threat":"威胁id","target":…} 让某人成为某个威胁的宿主（寄宿后获得它的能力，也背上它的负担值）',
+    check(a, spec) { return !spec.threats?.[a.threat]?.hostable ? `不是可寄宿的威胁：${a.threat}` : checkTarget(a); },
+    apply(town, ctx, a) { for (const x of resolveTargets(town, ctx, a)) town.hostThreat?.(x, a.threat, ctx.threat?.type === a.threat ? ctx.threat : null); },
+  },
+  suppress: {
+    doc: '{"op":"suppress","power":1~10,"minutes":5~240,"radius":1~8} 压制身边的威胁：强度够的话，它在这段时间里不能移动，规律也不生效',
+    check(a) { return !(inRange(a.power, 1, 10) && inRange(a.minutes, 5, 240) && inRange(a.radius ?? 4, 1, 8)) ? 'power 1~10、minutes 5~240、radius 1~8' : null; },
+    apply(town, ctx, a) { town.threats?.suppressNear(posOf(town, ctx.self) || ctx.at, a.power, a.minutes, a.radius ?? 4, ctx.self); },
+  },
+  damage: {
+    doc: '{"op":"damage","amount":1~100,"tags":["弱点标签"],"radius":1~8} 攻击身边会死的威胁（杀不死的威胁只会停顿一会儿）',
+    check(a) { return !(inRange(a.amount, 1, 100) && inRange(a.radius ?? 3, 1, 8)) ? 'amount 1~100、radius 1~8' : a.tags != null && !Array.isArray(a.tags) ? 'tags 应为数组' : null; },
+    apply(town, ctx, a) { town.threats?.damageNear(posOf(town, ctx.self) || ctx.at, a.amount, a.tags || [], a.radius ?? 3, ctx.self); },
   },
 };
 

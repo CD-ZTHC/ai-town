@@ -14,6 +14,7 @@ import { ArcEngine } from './story/arcs.js';
 import { SceneManager } from './story/scene.js';
 import { VoteSystem } from './story/votes.js';
 import { CreatureSystem } from './story/creatures.js';
+import { ThreatSystem, freshDark } from './story/threats.js';
 import { MigrationSystem } from './story/migration.js';
 import { AvatarSystem } from './avatars.js';
 import { ProposalSystem } from './worldai/proposals.js';
@@ -38,6 +39,8 @@ import { Social } from './sim/social.js';
 import { Views } from './sim/views.js';
 import { Persistence } from './sim/persistence.js';
 import { Metrics } from './sim/metrics.js';
+import { Dark } from './sim/dark.js';
+import { Combat } from './sim/combat.js';
 import { get as setting } from './settings/index.js';
 
 const MAX_STRUCTURES = 30;
@@ -95,7 +98,8 @@ export class Town extends EventEmitter {
     this.t = 6 * 60 + 15;
     this.speed = 1;
     this.paused = false;
-    this.weather = 'sunny';
+    // 没有「晴」的世界（例如夜巡）用它的第一种天气作为开局天气
+    this.weather = Object.hasOwn(this.spec.weather, 'sunny') ? 'sunny' : Object.keys(this.spec.weather)[0];
     this.weatherLock = false;
     this.nextWeatherT = this.t + 180;
     // agents：在场的角色；away：离开小镇的角色（数据保留，可以回来）
@@ -128,6 +132,10 @@ export class Town extends EventEmitter {
     this.scenes = new SceneManager(this);
     this.votes = new VoteSystem(this);
     this.creatures = new CreatureSystem(this);
+    // 黑暗叙事：规律型威胁、事件、人口、死亡（世界包没有 threats 时不运行）
+    this.dark = freshDark();
+    this.fights = [];
+    this.threats = new ThreatSystem(this, { random: opts.random });
     this.migration = new MigrationSystem(this, { random: opts.random });
     this.avatars = new AvatarSystem(this);
     // P4：建设提案（世界架构师、施工等功能由 plugins/builtin/ 下的插件提供）
@@ -141,6 +149,7 @@ export class Town extends EventEmitter {
     this.evolved.init();
     this.load(saved);
     this.syncAgents(false);
+    this.threats.init();
   }
 
   get day() { return Math.floor(this.t / 1440) + 1; }
@@ -193,6 +202,7 @@ export class Town extends EventEmitter {
       cooldowns: {}, kit: 1, // kit：已发放初始物品与能力（旧存档读档时补发）
     };
     for (const [id, [aff, note]] of Object.entries(p.relations)) a.relations[id] = { affinity: aff, note };
+    this.initDarkAgent(a, p);
     for (const text of p.memories) addMemory(a, { t: Math.max(0, this.t - 60 * (1 + Math.random() * 5)), type: 'obs', text, importance: 6 });
     a.importanceAcc = 0;
     return a;
@@ -253,6 +263,9 @@ export class Town extends EventEmitter {
       this.expire();
       this.rules.tick();
       this.creatures.tick(dtGame);
+      this.threats.tick(dtGame);
+      this.combatTick();
+      this.darkHourly();
       this.scenes.tick();
       this.votes.tick();
       this.arcs.tick();
@@ -375,12 +388,13 @@ export class Town extends EventEmitter {
         this.agents.push(a);
         changed = true;
       }
-      const gone = p.status === 'departed';
+      // 离开的人和死去的人都不在场（死者的数据留在 away 里，状态是 dead）
+      const gone = p.status === 'departed' || p.status === 'dead';
       const here = this.agents.includes(a);
       if (gone && here) {
         this.agents.splice(this.agents.indexOf(a), 1);
         this.away.push(a);
-        Object.assign(a, { status: 'away', convoId: null, path: [], dest: null, bubble: null, pendingAct: null });
+        Object.assign(a, { status: p.status === 'dead' ? 'dead' : 'away', convoId: null, path: [], dest: null, bubble: null, pendingAct: null });
         changed = true;
       } else if (!gone && !here) {
         this.away = this.away.filter((x) => x !== a);
@@ -630,7 +644,7 @@ export class Town extends EventEmitter {
 }
 
 // 把各职责模块的方法挂到 Town 上；重名直接报错，避免悄悄覆盖
-for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics]) {
+for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat]) {
   for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) {
     if (name === 'constructor') continue;
     if (Object.hasOwn(Town.prototype, name)) throw new Error(`Town.${name} 重复定义（${part.name}）`);

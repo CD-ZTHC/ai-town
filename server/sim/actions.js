@@ -1,8 +1,9 @@
 // 行动（P1）：使用能力、送东西、传授、研究
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
-import { addMemory } from '../memory.js';
+import { addMemory, parseHM } from '../memory.js';
 import { useAbility, describeAbility, findAbility, matchResearch } from '../kernel/abilities.js';
-import { agentsNear, posOf } from '../kernel/effects.js';
+import { agentsNear, posOf, runEffects } from '../kernel/effects.js';
+import { POSTURE_NAMES } from './dark.js';
 import { clamp, clampStr } from './util.js';
 
 export class Actions {
@@ -20,6 +21,27 @@ export class Actions {
     }
     if (type === 'teach' && findAbility(this.spec, act.ability) && to) return { type, ability: act.ability, to };
     if (type === 'research' && clampStr(act.topic, 20)) return { type, topic: clampStr(act.topic, 20) };
+    return this.normalizeDarkAct(type, act);
+  }
+
+  /** 黑暗叙事的行动（设计 §4.1 禁忌姿态、§4.3 对抗、§4.8 派遣、§4.9 敌对行动）；世界里没有对应内容时不接受 */
+  normalizeDarkAct(type, act) {
+    const spec = this.spec;
+    const threats = Object.keys(spec.threats || {}).length > 0;
+    const name = clampStr(act.target ?? act.to, 12);
+    if (type === 'taboo' && threats) {
+      const holds = (Array.isArray(act.hold) ? act.hold : [act.hold]).filter((h) => Object.hasOwn(POSTURE_NAMES, h));
+      return holds.length ? { type, hold: [...new Set(holds)], ...(parseHM(act.until) != null ? { until: act.until } : {}) } : undefined;
+    }
+    if ((type === 'contain' || type === 'hunt') && threats && clampStr(act.threat, 12)) return { type, threat: clampStr(act.threat, 12) };
+    if (type === 'useItem' && spec.items[act.item]?.use) return { type, item: act.item, ...(name ? { target: name } : {}) };
+    if (type === 'dispatch' && clampStr(act.who, 12) && clampStr(act.incident, 32)) return { type, who: clampStr(act.who, 12), incident: clampStr(act.incident, 32) };
+    if (!this.canBeHostile()) return undefined;
+    if (type === 'attack' && name) return { type, target: name, intent: ['subdue', 'drive_off', 'kill', 'capture'].includes(act.intent) ? act.intent : 'subdue' };
+    const from = clampStr(act.from ?? act.target, 12);
+    if (type === 'steal' && from && Object.hasOwn(spec.items, act.item)) return { type, item: act.item, from };
+    if (type === 'threaten' && name) return { type, target: name, demand: clampStr(act.demand, 30) };
+    if (type === 'rescue' && name) return { type, target: name };
     return undefined;
   }
 
@@ -36,12 +58,55 @@ export class Actions {
     } else if (act.type === 'use') r = useAbility(this, a, act.ability, act.target, '（按计划）');
     else if (act.type === 'give') r = this.giveItem(a, act);
     else if (act.type === 'teach') r = this.teach(a, act);
+    else r = this.runDarkAct(a, act, e);
     if (r?.ok || !r) { a.pendingAct = null; return; }
     if (r.retry) {
       const tries = (a.pendingAct?.key === e.key ? a.pendingAct.tries : 0) + 1;
       a.pendingAct = tries <= 6 ? { key: e.key, next: this.t + 10, tries } : null;
     } else a.pendingAct = null;
     if (!a.pendingAct) addMemory(a, { t: this.t, type: 'obs', text: `本想${e.activity}，可惜没成：${r.reason}`, importance: 2 });
+  }
+
+  runDarkAct(a, act, e) {
+    switch (act.type) {
+      case 'taboo': {
+        const until = act.until ? parseHM(act.until) + (this.day - 1) * 1440 : this.t + (e ? e.end - this.minute : 120);
+        a.posture = { holds: act.hold, until: Math.max(this.t + 10, until) };
+        this.log('taboo', `🤐 ${a.name}开始${act.hold.map((h) => POSTURE_NAMES[h]).join('、')}`, { agents: [a.id] });
+        return { ok: true };
+      }
+      case 'contain': return this.threats.startContain(a, act.threat);
+      case 'hunt': return this.hunt(a, act);
+      case 'useItem': return this.useItem(a, act);
+      case 'attack': return this.attack(a, act);
+      case 'steal': return this.steal(a, act);
+      case 'threaten': return this.threaten(a, act);
+      case 'rescue': return this.rescue(a, act);
+      case 'dispatch': {
+        const f = this.factionOf(a);
+        if (!f || f.head !== a.id || !(f.authority || []).includes('dispatch')) return { ok: false, reason: `${a.name}没有派人的权力` };
+        const who = this.agents.find((o) => o.name === act.who || o.id === act.who);
+        if (!who || !(f.members || []).includes(who.id)) return { ok: false, reason: `${act.who}不是${f.name}的人` };
+        return this.dispatch(who, act.incident, a) ? { ok: true } : { ok: false, reason: '那里没有需要处理的事' };
+      }
+      default: return undefined;
+    }
+  }
+
+  /** 使用物品（items[].use）：执行物品的效果，用掉一个 */
+  useItem(a, { item, target }) {
+    const it = this.spec.items[item];
+    if (!it?.use) return { ok: false, reason: '这东西没法用' };
+    if ((a.inventory[item] || 0) < 1) return { ok: false, reason: `身上没有${it.name}` };
+    const t = target ? this.findNear(a, target) : null;
+    if (target && !t) return { ok: false, reason: `${target}不在身边`, retry: true };
+    a.inventory[item] -= 1;
+    if (!a.inventory[item]) delete a.inventory[item];
+    runEffects(this, { self: a, target: t, at: posOf(this, a), source: `item:${item}` }, it.use);
+    addMemory(a, { t: this.t, type: 'obs', text: `用了${it.name}${t ? `（对${t.name}）` : ''}`, importance: 4 });
+    this.log('ability', `${it.emoji} ${a.name}用了${it.name}`, { agents: [a.id, t?.id].filter(Boolean) });
+    this.emit('agent', a.id);
+    return { ok: true };
   }
 
   findNear(a, ref, r = 3) {
@@ -93,6 +158,7 @@ export class Actions {
     if (!r || this.t - r.since < 45) return;
     const ab = r.loc && matchResearch(this.spec, a, r.loc, r.topic);
     if (ab) this.learnAbility(a, ab.id, '通过研究');
+    else if (this.threats?.research(a, r)) { /* 查到了关于威胁的线索 */ }
     else addMemory(a, { t: this.t, type: 'obs', text: `在${this.locName(r.loc)}研究了「${r.topic}」，有了些头绪`, importance: 3 });
   }
 
@@ -120,6 +186,6 @@ export class Actions {
 {"type":"use","ability":"能力id","target":"对象姓名"} 使用能力（要在合适的地点；对别人使用时要和对方在同一地点）
 {"type":"give","item":"物品id","to":"姓名","count":1} 把身上的东西送人（要和对方在同一地点）
 ${teachable.length ? `{"type":"teach","ability":"能力id","to":"姓名"} 把会的本事教给别人（可教：${teachable.join('、')}）\n` : ''}{"type":"research","topic":"课题"} 在当前地点研究一个课题（至少一小时）
-`;
+${this.darkActionBlock(a)}`;
   }
 }

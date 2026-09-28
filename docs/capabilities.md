@@ -53,6 +53,16 @@
 | `log` | 内核 | {"op":"log","text":"≤60字"} 在动态栏记一笔 |
 | `paramMod` | 内核 | {"op":"paramMod","name":"参数名","mul":0.5~2 或 "add":-60~60,"ttl":10~600} 临时调整内核参数 |
 | `grantAbility` | 内核 | {"op":"grantAbility","ability":"能力id","target":…} 授予能力 |
+| `kill` | 内核 | {"op":"kill","target":"self/target/e","text":"≤40字，一笔带过的描写，可用 {self}"} 让人死去（分级不允许、死亡预算用完或有主角光环时降为重伤） |
+| `wound` | 内核 | {"op":"wound","amount":5~100,"target":…} 受伤（hp 降到 30 以下为重伤，送去休养） |
+| `heal` | 内核 | {"op":"heal","amount":5~100,"target":…} 治疗伤势 |
+| `casualties` | 内核 | {"op":"casualties","min":0~50,"max":0~50,"text":"≤30字"} 当地的群众伤亡（只记数字） |
+| `clue` | 内核 | {"op":"clue","kind":"rule/next_victim/origin","threat":"威胁id(可选)","target":…} 得到一条关于威胁的线索（规律 / 下一个受害者 / 来历） |
+| `burden` | 内核 | {"op":"burden","id":"负担id","amount":-100~100 或 "freeze":10~1440,"target":…} 改变或冻结负担值 |
+| `spawnThreat` | 内核 | {"op":"spawnThreat","threat":"威胁id" 或 "from":"host","target":"self/target"} 在某人身边出现一个威胁；from 为 host 时，是这个人身上寄宿的威胁脱出 |
+| `host` | 内核 | {"op":"host","threat":"威胁id","target":…} 让某人成为某个威胁的宿主（寄宿后获得它的能力，也背上它的负担值） |
+| `suppress` | 内核 | {"op":"suppress","power":1~10,"minutes":5~240,"radius":1~8} 压制身边的威胁：强度够的话，它在这段时间里不能移动，规律也不生效 |
+| `damage` | 内核 | {"op":"damage","amount":1~100,"tags":["弱点标签"],"radius":1~8} 攻击身边会死的威胁（杀不死的威胁只会停顿一会儿） |
 | `goTo` | 扩展 | {"op":"goTo","location":"地点id","activity":"≤14字","minutes":30~180,"target":"self/target/e/nearby/all","radius":1~6} 让对象立刻动身前往某地（插入一段即时日程；睡着或正在交谈的人不受影响） |
 
 ## 表达式函数
@@ -67,12 +77,30 @@
 - `max`：max(a, b…)
 - `abs`：abs(x)
 - `rand`：rand() 0~1 随机数
+- `seen`：seen(e) 在威胁的规律里：e 看得见这个威胁（6 格内、没闭眼、没睡着）
+- `near`：near(e, 半径=3) 在威胁的规律里：e 离这个威胁不超过半径
+- `heard`：heard(e, '声音id') e 最近 10 分钟内听到了某种声音（威胁发出的）
+- `opened`：opened(e) e 最近 10 分钟内开门进过屋
+- `entered`：entered(e, '地点id') e 此刻在某地点
+- `speaking`：speaking(e) e 最近 2 分钟内在对话里说过话
+- `named`：named(e) e 最近 30 分钟内被人当面叫了名字
+- `alone`：alone(e) e 身边 4 格内没有醒着的人
+- `asleep`：asleep(e) e 在睡觉
+- `night`：night() 现在是夜里（20:00~05:00）
+- `marked`：marked(e) e 被这个威胁（不在威胁的规律里时：任何威胁）标记了
+- `inZone`：inZone(e) e 在这个威胁（或任何威胁）的区域里
+- `posture`：posture(e, 'eyesClosed/silent/noOpen/stayLit/notAlone') e 正保持着某种禁忌姿态
+- `burden`：burden(e, '负担id') e 的负担值
+- `anchors`：anchors(e, 好感阈值=50) e 身边好感达到阈值、还活着的人数
+- `believes`：believes(e, '话题') e 对某个话题的确信度（0~1，没有这个看法时为 0）
+- `flag`：flag('标记名') 世界标记是否为真
+- `hosts`：hosts(e, '威胁id') e 身上寄宿着某个威胁
 
 ## 其他可用资源
 
 - 特效预设：glow_ring、sparkle、heal、notes、burst、ripple
 - 生物体型：wisp、hound、warden
-- 可调参数：`walkSpeed`（2~5）、`maxConvos`（1~6）、`convoBaseProb`（0.05~0.6）、`reflectThreshold`（20~80）、`dayEnd`（1260~1500）
+- 可调参数：`walkSpeed`（2~5）、`maxConvos`（1~6）、`convoBaseProb`（0.05~0.6）、`reflectThreshold`（20~80）、`dayEnd`（1260~1500）、`deathNamed`（0~20）、`deathDays`（1~14）
 - 地点：`cafe` 星光咖啡馆、`library` 云溪图书馆、`tavern` 月光酒馆、`clinic` 云溪诊所、`workshop` 铁柱工坊、`square` 中央广场、`market` 广场集市、`park` 樱花公园、`farm` 陈家农场、`pier` 镜湖码头
 - 异界地点（不能建房）：`moon_gate` 月之渡口·彼岸（moonrealm）、`moon_plaza` 暗月广场（moonrealm）、`moon_garden` 月光花园（moonrealm）、`moon_lookout` 星坠崖（moonrealm）
 - 物品：`lantern` 萤火灯、`wood` 木材、`herb` 草药、`melon` 西瓜、`county_record` 县志残页、`moonstone` 月石、`moon_dew` 月露、`moon_lantern` 双月灯

@@ -56,6 +56,11 @@ export class Movement {
     const rate = a.status === 'sleeping' ? 0.2 : a.status === 'walking' ? -0.05 : -0.025;
     b.stamina = clamp(b.stamina + rate * dt, 0, 100);
     b.courage = clamp(b.courage + (50 - b.courage) * 0.002 * dt, 0, 100);
+    // 伤势慢慢恢复（睡觉时快一些），恢复到一半就不再是重伤
+    if (b.hp < 100) {
+      b.hp = clamp(b.hp + (a.status === 'sleeping' ? 0.02 : 0.008) * dt, 0, 100);
+      if (b.hp >= 50 && b.conditions.includes('重伤')) b.conditions = b.conditions.filter((c) => c !== '重伤');
+    }
     const tired = b.conditions.includes('疲惫');
     if (!tired && b.stamina < 20) b.conditions = [...b.conditions, '疲惫'];
     else if (tired && b.stamina > 40) b.conditions = b.conditions.filter((c) => c !== '疲惫');
@@ -69,7 +74,8 @@ export class Movement {
     a.status = e.sleep ? 'sleeping' : 'acting';
     a.action = { text: e.activity, emoji: e.emoji || '🙂' };
     this.noteSettle(a, e);
-    if (e.sleep) {
+    // 保持「不开门」的人不进屋，在门口熬一夜
+    if (e.sleep && !this.hasPosture(a, 'noOpen')) {
       const home = this.world.locations[a.home];
       a.inside = home.indoor;
       const b = this.world.buildings.find((x) => x.id === home.indoor);
@@ -102,7 +108,7 @@ export class Movement {
     }
     let dest;
     // 停业 / 受损的建筑：只有住在里面的人能进，其他人到门口
-    const canEnter = loc.indoor && (!loc.closed || a.home === locId);
+    const canEnter = loc.indoor && (!loc.closed || a.home === locId) && !this.hasPosture(a, 'noOpen');
     const indoorPreferred = canEnter && (!loc.spots.length || e.sleep || ['rain', 'storm', 'snow'].includes(this.weather) || this.minute > 19 * 60 || a.work === locId || Math.random() < 0.5);
     if (canEnter && indoorPreferred) {
       const b = here.buildings.find((x) => x.id === loc.indoor);
@@ -126,7 +132,7 @@ export class Movement {
   }
 
   step(a, dt) {
-    let dist = this.params.walkSpeed * dt;
+    let dist = this.params.walkSpeed * dt * (this.hasPosture(a, 'eyesClosed') ? 0.4 : 1);
     while (dist > 0 && a.path.length) {
       const n = a.path[0];
       const dx = n.x - a.x, dy = n.y - a.y;
@@ -163,7 +169,7 @@ export class Movement {
     }
     a.moving = false;
     a.locId = a.dest.locId;
-    if (a.dest.indoor) a.inside = a.dest.indoor;
+    if (a.dest.indoor) { a.inside = a.dest.indoor; a.openedAt = this.t; }
     this.settle(a, e);
     if (!e.sleep) this.rules.onEnter(a, a.locId);
     this.runAct(a, e);

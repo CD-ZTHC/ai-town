@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { PARAM_BOUNDS, RATINGS, STORYTELLERS, validateSpec } from './spec.js';
+import { lethal } from './ratings.js';
 import { parseHM } from '../memory.js';
 import { checkRemap, applyRemap } from './impact.js';
 import { stripOf, packStrip, SIDES, MAX_SIZE } from '../worldgen/extend.js';
@@ -565,11 +566,13 @@ export const OPS = {
     check(spec, a) {
       const p = spec.personas.find((x) => x.id === a.id);
       if (!p) return `未知角色：${a.id}`;
-      if (!['active', 'departed'].includes(a.status)) return 'status 只能是 active / departed';
+      if (!['active', 'departed', 'dead'].includes(a.status)) return 'status 只能是 active / departed / dead';
+      if (a.status === 'dead' && !lethal(spec.meta.rating)) return '这个世界的分级不允许死亡';
+      if (p.status === 'dead') return `${p.name}已经不在人世了`;
       return null;
     },
     apply(spec, a) { spec.personas.find((x) => x.id === a.id).status = a.status; },
-    describe: (a, spec) => { const n = pName(spec, a.id); const place = spec?.voice?.place || '小镇'; return a.status === 'departed' ? `${n}离开了${place}` : `${n}回到了${place}`; },
+    describe: (a, spec) => { const n = pName(spec, a.id); const place = spec?.voice?.place || '小镇'; return a.status === 'dead' ? `${n}死了` : a.status === 'departed' ? `${n}离开了${place}` : `${n}回到了${place}`; },
   },
   // 外来者定居，成为常住居民（人员流动）；来历保留在 origin
   settlePersona: {

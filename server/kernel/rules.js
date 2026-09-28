@@ -2,6 +2,9 @@
 // 触发器：every（每隔 N 游戏分钟）、at（每天某时刻）、weather（天气变为某种）、enter（居民到达某地点）。
 import { compile, evaluate } from './expr.js';
 import { EXPR_FNS, EXT_FNS, checkEffects, checkExpr, runEffects, posOf, agentsNear } from './effects.js';
+
+/** 居民是否正保持着某种禁忌姿态（黑暗叙事设计 §4.1） */
+export const hasPosture = (town, a, name) => Boolean(a?.posture && a.posture.until > town.t && a.posture.holds.includes(name));
 import { parseHM } from '../memory.js';
 
 const ID_RE = /^[a-z][a-z0-9_]{1,31}$/;
@@ -17,8 +20,11 @@ export function agentView(a) {
 }
 
 /** 表达式运行环境：变量 + 白名单函数（函数只接收快照，通过 id 回查真实居民） */
-export function exprEnv(town, { self = null, target = null, e = null } = {}) {
+export function exprEnv(town, { self = null, target = null, e = null, threat = null } = {}) {
   const real = (v) => (v && typeof v === 'object' ? town.byId[v.id] : null);
+  const dark = town.dark;
+  const recent = (v, k, win) => { const a = real(v); return Boolean(a) && a[k] != null && town.t - a[k] <= win; };
+  const distTo = (a, x) => (a && x && (a.region || 'town') === (x.region || 'town') ? Math.hypot((posOf(town, a)?.x ?? a.x) - x.x, (posOf(town, a)?.y ?? a.y) - x.y) : Infinity);
   const fns = {
     has: (v, item, n = 1) => (real(v)?.inventory[item] || 0) >= n,
     count: (v, item) => real(v)?.inventory[item] || 0,
@@ -30,6 +36,25 @@ export function exprEnv(town, { self = null, target = null, e = null } = {}) {
     },
     nearAgents: (v, r = 3) => { const a = real(v); return a ? agentsNear(town, posOf(town, a), r, a).length : 0; },
     min: Math.min, max: Math.max, abs: Math.abs, rand: Math.random,
+    // ---- 黑暗叙事的行为原语（threat 是正在判定规律的威胁实例，不在威胁里时为 null）----
+    seen: (v) => { const a = real(v); return Boolean(threat && a) && !a.inside && a.status !== 'sleeping' && !hasPosture(town, a, 'eyesClosed') && distTo(a, threat) <= 6; },
+    near: (v, r = 3) => Boolean(threat) && distTo(real(v), threat) <= r,
+    heard: (v, id) => { const a = real(v); return Boolean(a) && (dark?.sounds || []).some((s) => s.id === id && town.t - s.t <= 10 && distTo(a, s) <= s.r); },
+    opened: (v) => recent(v, 'openedAt', 10),
+    entered: (v, loc) => real(v)?.locId === loc,
+    speaking: (v) => recent(v, 'spokeAt', 2) && !hasPosture(town, real(v), 'silent'),
+    named: (v) => recent(v, 'namedAt', 30),
+    alone: (v) => { const a = real(v); return Boolean(a) && agentsNear(town, posOf(town, a), 4, a).length === 0; },
+    asleep: (v) => real(v)?.status === 'sleeping',
+    night: () => town.minute >= 20 * 60 || town.minute < 5 * 60,
+    marked: (v) => (real(v)?.marks || []).some((m) => !threat || m.threat === threat.id),
+    inZone: (v) => { const a = real(v); return Boolean(a) && (dark?.zones || []).some((z) => (!threat || z.threat === threat.id) && distTo(a, z) <= z.r); },
+    posture: (v, name) => hasPosture(town, real(v), name),
+    burden: (v, id) => real(v)?.burdens?.[id] || 0,
+    anchors: (v, th = 50) => { const a = real(v); return a ? Object.entries(a.relations).filter(([id, r]) => r.affinity >= th && town.agents.includes(town.byId[id])).length : 0; },
+    believes: (v, about) => real(v)?.beliefs.find((b) => b.about === about)?.confidence || 0,
+    flag: (name) => Boolean(town.worldFlags[name]),
+    hosts: (v, id) => (real(v)?.hosted || []).some((h) => h.threat === id),
   };
   // 扩展函数：拿到小镇与「快照 → 真实居民」的换算，返回普通值
   for (const [name, impl] of Object.entries(EXT_FNS)) fns[name] = (...args) => impl({ town, real }, ...args);

@@ -6,6 +6,7 @@ import { validateAbility } from './abilities.js';
 import { validateRule } from './rules.js';
 import { officialPack, packSpec } from '../worlds/pack.js';
 import { RATINGS } from './ratings.js';
+import { validateDark } from './threat-spec.js';
 
 export const SPEC_VERSION = 2;
 export { RATINGS } from './ratings.js';
@@ -21,6 +22,9 @@ export const PARAM_BOUNDS = {
   convoBaseProb: [0.05, 0.6],
   reflectThreshold: [20, 80],
   dayEnd: [21 * 60, 25 * 60], // 分钟，可以晚到次日 01:00
+  // 死亡预算（黑暗叙事设计 §4.10）：每 deathDays 天最多 deathNamed 名具名角色死亡；世界设置可以覆盖 deathNamed
+  deathNamed: [0, 20],
+  deathDays: [1, 14],
 };
 
 /**
@@ -143,7 +147,7 @@ export function validateSpec(s) {
     pIds.add(p.id);
     if (!isStr(p.name, 12) || !isStr(p.persona, 400) || !isStr(p.role, 30)) err(path, 'name/persona/role 缺失或过长');
     if (p.kind != null && !PERSONA_KINDS.includes(p.kind)) err(path, `kind 只能是 ${PERSONA_KINDS.join('/')}`);
-    if (p.status != null && !['active', 'departed'].includes(p.status)) err(path, 'status 只能是 active / departed');
+    if (p.status != null && !['active', 'departed', 'dead'].includes(p.status)) err(path, 'status 只能是 active / departed / dead');
     if (p.kind === 'creature') {
       if (!Object.hasOwn(locs, p.home)) err(path, `异界角色的 home 应为地点：${p.home}`);
       if (!BODY_PLANS.includes(p.look?.bodyPlan)) err(path, 'look.bodyPlan 不合法');
@@ -157,6 +161,8 @@ export function validateSpec(s) {
   for (const p of s.personas || []) {
     for (const rid of Object.keys(p.relations || {})) if (!pIds.has(rid)) err(`personas.${p.id}.relations`, `未知居民：${rid}`);
   }
+
+  for (const [path, msg] of validateDark(s)) err(path, msg);
 
   for (const [k, v] of Object.entries(s.params || {})) {
     const b = Object.hasOwn(PARAM_BOUNDS, k) && PARAM_BOUNDS[k];
@@ -213,5 +219,8 @@ export function publicSpec(spec) {
     threads: spec.threads,
     abilities: spec.abilities.map(({ id, name, emoji, desc, target }) => ({ id, name, emoji, desc, target })),
     rules: spec.rules.map(({ id, name }) => ({ id, name })),
+    // 威胁只下发名字和外观：规律、线索、对抗方式都不给前端（真相由引擎掌握）
+    threats: Object.fromEntries(Object.entries(spec.threats || {}).map(([id, t]) => [id, { name: t.name, emoji: t.emoji, kind: t.kind || null, mortal: t.mortal, look: t.look || null }])),
+    burdens: Object.fromEntries(Object.entries(spec.burdens || {}).map(([id, b]) => [id, { name: b.name, max: b.max ?? 100 }])),
   };
 }

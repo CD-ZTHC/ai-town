@@ -7,6 +7,7 @@ import * as llm from '../llm.js';
 import { fmtStamp } from '../memory.js';
 import { findAbility } from '../kernel/abilities.js';
 import { OpJournal } from '../kernel/ops.js';
+import { freshDark } from '../story/threats.js';
 
 const SAVE_VERSION = 2;
 const SNAPSHOT_KEEP = 24; // 保留最近 24 个游戏小时的快照
@@ -32,7 +33,7 @@ export class Persistence {
       });
       const data = { v: SAVE_VERSION, worldId: this.worldId, packHash: this.packHash, t: this.t, weather: this.weather, weatherLock: this.weatherLock, specOps: this.specOps, agents, entities: this.entities, worldFlags: this.worldFlags, paramMods: this.paramMods, ruleState: this.ruleState,
         threadState: this.threadState, crisis: this.crisis, discovered: this.discovered, story: this.story, migrationState: this.migrationState, mapState: this.mapState, arcRuns: this.arcRuns, voteState: this.voteState,
-        pendingScenes: this.pendingScenes, creatureList: this.creatureList, portalState: this.portalState, swarmGoal: this.swarmGoal || null,
+        pendingScenes: this.pendingScenes, creatureList: this.creatureList, dark: this.dark, fights: this.fights, portalState: this.portalState, swarmGoal: this.swarmGoal || null,
         proposals: this.proposals, decisionState: this.decisionState, architectQueue: this.architectQueue, gaps: this.gaps, architectUsage: this.architectUsage,
         usage: this.usage ? { days: this.usage.days } : undefined, metricsState: this.metricsState, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens } };
       const text = JSON.stringify(data);
@@ -73,12 +74,12 @@ export class Persistence {
         fs.copyFileSync(this.saveFile, bak);
         console.log(`[save] 旧版存档已备份为 ${path.basename(bak)}，将升级到 v${SAVE_VERSION}`);
       }
-      Object.assign(this, { t: d.t, weather: Object.hasOwn(this.spec.weather, d.weather) ? d.weather : 'sunny', weatherLock: d.weatherLock, logs: d.logs || [], convoLog: d.convoLog || [], newspapers: d.newspapers || [], board: d.board || [], pairCd: d.pairCd || {}, flags: d.flags || {}, seq: d.seq || 0 });
+      Object.assign(this, { t: d.t, weather: Object.hasOwn(this.spec.weather, d.weather) ? d.weather : this.weather, weatherLock: d.weatherLock, logs: d.logs || [], convoLog: d.convoLog || [], newspapers: d.newspapers || [], board: d.board || [], pairCd: d.pairCd || {}, flags: d.flags || {}, seq: d.seq || 0 });
       this.nextWeatherT = this.t + 60;
       Object.assign(this, { entities: d.entities || [], worldFlags: d.worldFlags || {}, paramMods: d.paramMods || [], ruleState: d.ruleState || { every: {}, at: {} } });
       Object.assign(this, {
         threadState: d.threadState || {}, crisis: d.crisis || { morale: 70, supplies: 80 }, discovered: d.discovered || [], story: d.story || undefined, migrationState: d.migrationState || undefined, mapState: d.mapState || undefined,
-        arcRuns: d.arcRuns || [], voteState: d.voteState || [], pendingScenes: d.pendingScenes || [], creatureList: d.creatureList || [], portalState: d.portalState || null, swarmGoal: d.swarmGoal || null,
+        arcRuns: d.arcRuns || [], voteState: d.voteState || [], pendingScenes: d.pendingScenes || [], creatureList: d.creatureList || [], dark: d.dark ? { ...freshDark(), ...d.dark } : freshDark(), fights: d.fights || [], portalState: d.portalState || null, swarmGoal: d.swarmGoal || null,
         proposals: d.proposals || [], decisionState: (d.decisionState || []).map((x) => (x.status === 'arbitrating' ? { ...x, status: 'waiting' } : x)), architectQueue: d.architectQueue || [], gaps: d.gaps || [], architectUsage: d.architectUsage || undefined,
         usage: { days: d.usage?.days || {}, mark: null }, // 进程内计数重启后归零，重新开始标记
         metricsState: d.metricsState || { days: {} },
