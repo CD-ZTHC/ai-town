@@ -52,7 +52,7 @@ export function exprEnv(town: TownLike, { self = null, target = null, e = null, 
     hasCondition: (v: Arg, name: string) => Boolean(real(v)?.body.conditions.includes(name)),
     nearStructure: (v: Arg, tag: string, r = 3) => {
       const p = posOf(town, real(v));
-      return Boolean(p) && town.entities.some((s: Spot & { tags: string[] }) => s.tags.includes(tag) && (s.region || 'town') === p!.region && Math.hypot(s.x - p!.x, s.y - p!.y) <= r);
+      return Boolean(p) && town.entities.some((s) => s.tags!.includes(tag) && (s.region || 'town') === p!.region && Math.hypot(s.x - p!.x, s.y - p!.y) <= r);
     },
     nearAgents: (v: Arg, r = 3) => { const a = real(v); return a ? agentsNear(town, posOf(town, a), r, a).length : 0; },
     min: Math.min, max: Math.max, abs: Math.abs, rand: Math.random,

@@ -4,7 +4,7 @@
 import { parse, ExprError } from './expr.ts';
 import { addMemory } from '../memory.ts';
 import type { WorldSpec } from '../types/spec.ts';
-import type { AgentLike, TownLike } from '../types/town.ts';
+import type { AgentLike, ThreatInstance, TownLike } from '../types/town.ts';
 
 /** 效果参数：来自世界包、AI 或插件的数据，由各原语的 check() 在运行时逐项校验，所以静态上不约束字段 */
 export type EffectArgs = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -25,7 +25,7 @@ export interface EffectCtx {
   at?: Pos | null;
   source?: string | null;
   /** 在威胁的规律里执行时：这个威胁 */
-  threat?: { type: string; [k: string]: unknown } | null;
+  threat?: ThreatInstance | null;
   [k: string]: unknown;
 }
 
@@ -341,7 +341,7 @@ export const EFFECTS: Record<string, EffectDef> = {
       const who = (a.target ?? 'self') === 'target' ? ctx.target : ctx.self;
       if (a.from === 'host') { if (who) town.threats?.releaseHosted(who); return; }
       const at = posOf(town, who) || ctx.at;
-      if (at) town.threats?.spawn(a.threat, { at, cause: ctx.source || '' });
+      if (at) town.threats?.spawn(a.threat, { at: at as never, cause: ctx.source || '' }); // TODO(types): B6 迁移 story/threats 后去掉断言（JS 推断出的参数类型过窄）
     },
   },
   host: {
@@ -352,12 +352,12 @@ export const EFFECTS: Record<string, EffectDef> = {
   suppress: {
     doc: '{"op":"suppress","power":1~10,"minutes":5~240,"radius":1~8} 压制身边的威胁：强度够的话，它在这段时间里不能移动，规律也不生效',
     check(a) { return !(inRange(a.power, 1, 10) && inRange(a.minutes, 5, 240) && inRange(a.radius ?? 4, 1, 8)) ? 'power 1~10、minutes 5~240、radius 1~8' : null; },
-    apply(town, ctx, a) { town.threats?.suppressNear(posOf(town, ctx.self) || ctx.at, a.power, a.minutes, a.radius ?? 4, ctx.self); },
+    apply(town, ctx, a) { town.threats?.suppressNear(posOf(town, ctx.self) || ctx.at, a.power, a.minutes, a.radius ?? 4, ctx.self as never); }, // TODO(types): B6
   },
   damage: {
     doc: '{"op":"damage","amount":1~100,"tags":["弱点标签"],"radius":1~8} 攻击身边会死的威胁（杀不死的威胁只会停顿一会儿）',
     check(a) { return !(inRange(a.amount, 1, 100) && inRange(a.radius ?? 3, 1, 8)) ? 'amount 1~100、radius 1~8' : a.tags != null && !Array.isArray(a.tags) ? 'tags 应为数组' : null; },
-    apply(town, ctx, a) { town.threats?.damageNear(posOf(town, ctx.self) || ctx.at, a.amount, a.tags || [], a.radius ?? 3, ctx.self); },
+    apply(town, ctx, a) { town.threats?.damageNear(posOf(town, ctx.self) || ctx.at, a.amount, a.tags || [], a.radius ?? 3, ctx.self as never); }, // TODO(types): B6
   },
 };
 

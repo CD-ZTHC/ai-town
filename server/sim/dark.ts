@@ -117,7 +117,7 @@ export class Dark {
   }
 
   /** 群众伤亡（只记数字，设计 §4.10）：at 可以是地点 id 或坐标；记在最近的、有人口的地点上 */
-  casualties(this: Town, at: Pos | string | null, n: number, { cause = '', text = '' }: { cause?: string; text?: string } = {}) {
+  casualties(this: Town, at: Pos | string | null | undefined, n: number, { cause = '', text = '' }: { cause?: string; text?: string } = {}) {
     if (!(n > 0)) return 0;
     const st = this.darkState;
     let loc: string | null = typeof at === 'string' ? at : null;

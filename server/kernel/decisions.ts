@@ -272,7 +272,7 @@ export class DecisionQueue {
       : `输出 JSON：{"decision":"adopt 或 reject${forced ? '' : ' 或 defer'}","confidence":0~1,"reasons":["≤3条，每条≤40字"]}${forced ? '\n这是第二次超时，必须在 adopt / reject 中选择。' : ''}`;
     const content = `${town.timeBlock()}
 ${town.storyContext()}
-小镇的支柱设定：${town.spec.lore.pillars.join('；')}
+小镇的支柱设定：${town.spec.lore.pillars!.join('；')}
 
 管理员在终审窗口内没有处理下面这件事，现在由你来决定。
 类型：${d.kind}；风险：${d.risk}

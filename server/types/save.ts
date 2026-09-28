@@ -25,6 +25,7 @@ export interface Entity {
   region?: string;
   light?: { r: number; color: string } | null;
   until?: number;
+  tags?: string[];
   [k: string]: unknown;
 }
 
