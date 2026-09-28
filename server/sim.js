@@ -325,10 +325,13 @@ export class Town extends EventEmitter {
     this.hooks.emit('hour', { day: this.day, hour: hour % 24 });
   }
 
+  /** 停下并释放（重构方案 §6.5）：主循环、对话等待的计时器、插件沙箱、embedding 数据库、事件监听 */
   stop() {
     this.plugins?.stop();
     this.evolved?.stop();
     clearInterval(this.timer);
+    this.timer = null;
+    for (const done of [...(this.sleepers || [])]) done();
     this.removeAllListeners();
     this.stopped = true;
     if (!this.opts?.embedder) this.embedder?.close();

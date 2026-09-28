@@ -88,6 +88,7 @@ export class Social {
       this.say(sp, line.text, ms + 400, 'say');
       this.emit('say', { convo: id, speaker: sp.id, text: line.text });
       await this.sleepReal(ms);
+      if (this.stopped) return; // 世界已经停下（重置、回溯、卸载）：旧的 Town 不再记忆、反思
     }
     this.finishConvo(convo, a, b, res);
   }
@@ -164,10 +165,13 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
     if (this.instantTalk) return Promise.resolve();
     return new Promise((resolve) => {
       let left = ms;
+      // 世界停下（重置、回溯、卸载）时立即结束：休眠中的世界不倒计时，否则这个计时器会一直留着旧的 Town
+      const done = () => { clearInterval(iv); this.sleepers?.delete(done); resolve(); };
       const iv = setInterval(() => {
         if (!this.paused && !this.idle) left -= 100;
-        if (left <= 0) { clearInterval(iv); resolve(); }
+        if (left <= 0 || this.stopped) done();
       }, 100);
+      (this.sleepers ||= new Set()).add(done);
     });
   }
 

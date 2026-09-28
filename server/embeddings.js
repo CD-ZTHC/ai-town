@@ -11,7 +11,8 @@ import { env as settingsEnv } from './settings/index.js';
 
 const BATCH = 64; // 一次请求最多多少条文本
 const MAX_PER_CALL = 128; // 一次检索最多补算多少条记忆（其余下次再算）
-const MEM_CACHE_MAX = 20_000;
+// 进程内缓存的条数上限（LRU）：有 SQLite 持久层时只需缓存常用的（1024 维约 4KB 一条），没有时多留一些免得重算
+const MEM_CACHE_MAX = { persistent: 2000, memoryOnly: 5000 };
 
 /** OpenAI 兼容的 /embeddings 接口（世界自带的模型服务注入 safeFetch） */
 export function openaiEmbeddings({ baseUrl, apiKey, model, fetch: f = null }) {
@@ -33,7 +34,7 @@ export function openaiEmbeddings({ baseUrl, apiKey, model, fetch: f = null }) {
   };
 }
 
-/** 向量缓存：node:sqlite（可用时）+ 进程内 Map */
+/** 向量缓存：node:sqlite（可用时）+ 进程内 LRU */
 async function openStore(dir) {
   const mem = new Map();
   let db = null;
@@ -50,20 +51,27 @@ async function openStore(dir) {
   }
   const get = db?.prepare('SELECT data FROM vec WHERE key = ?');
   const put = db?.prepare('INSERT OR REPLACE INTO vec (key, dim, data) VALUES (?, ?, ?)');
+  const max = db ? MEM_CACHE_MAX.persistent : MEM_CACHE_MAX.memoryOnly;
+  // Map 保持插入顺序：命中时移到末尾，满了淘汰最前面的（最久没用的）
+  const remember = (key, v) => {
+    mem.delete(key);
+    mem.set(key, v);
+    if (mem.size > max) mem.delete(mem.keys().next().value);
+    return v;
+  };
   return {
     persistent: Boolean(db),
+    get size() { return mem.size; },
     get(key) {
-      if (mem.has(key)) return mem.get(key);
+      const hit = mem.get(key);
+      if (hit) return remember(key, hit);
       const row = get?.get(key);
       if (!row) return undefined;
-      const v = new Float32Array(Uint8Array.from(row.data).buffer); // 复制一份：BLOB 的偏移不一定按 4 字节对齐
-      mem.set(key, v);
-      return v;
+      return remember(key, new Float32Array(Uint8Array.from(row.data).buffer)); // 复制一份：BLOB 的偏移不一定按 4 字节对齐
     },
     set(key, arr) {
       const v = Float32Array.from(arr);
-      if (mem.size >= MEM_CACHE_MAX) mem.delete(mem.keys().next().value);
-      mem.set(key, v);
+      remember(key, v);
       put?.run(key, v.length, new Uint8Array(v.buffer));
       return v;
     },

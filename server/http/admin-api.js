@@ -181,12 +181,12 @@ export function adminApi(deps) {
   api.get('/overview', (c) => {
     const view = deps.manager?.view() || [];
     const openReports = deps.registry ? reg().db.prepare('SELECT COUNT(*) AS n FROM reports WHERE handled_at IS NULL').get().n : 0;
-    const alerts = accounts ? accounts.auditLog({ limit: 200 }).filter((a) => /^(world\.(unlisted|suspend|sample-hit|publish-rejected)|settings\.rollback|disk\.full|genesis\.failed|admin\.token)/.test(a.action)).slice(0, 12) : [];
+    const alerts = accounts ? accounts.auditLog({ limit: 200 }).filter((a) => /^(world\.(unlisted|suspend|sample-hit|publish-rejected)|settings\.rollback|disk\.full|genesis\.failed|admin\.token|memory\.high)/.test(a.action)).slice(0, 12) : [];
     const rb = settings.lastRollback();
     return c.json({
       online: view.reduce((s, w) => s + w.viewers, 0), running: view, max: settings.get('MAX_ACTIVE_WORLDS'),
       worlds: deps.registry ? Object.fromEntries(['public', 'preview', 'unlisted', 'suspended', 'paused'].map((st) => [st, reg().list({ status: st }).length])) : {},
-      users: accounts?.count() ?? 0, openReports, llm: deps.llmView?.() || null,
+      users: accounts?.count() ?? 0, openReports, llm: deps.llmView?.() || null, memory: deps.memory?.() || null,
       alerts: [...(rb ? [{ at: Date.parse(rb.at), action: 'settings.rollback', target: `v${rb.from} → v${rb.to}`, detail: { reason: rb.reason } }] : []), ...alerts],
     });
   });

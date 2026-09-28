@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { ROOT } from './common.js';
 import { activeDir } from '../server/timelines.js';
 import { get as setting } from '../server/settings/index.js';
+import { withTrialSlot } from '../server/trial-lock.js';
 
 const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
 
@@ -19,7 +20,7 @@ function runOne(P, job, timeoutMs) {
     // 路径里有符号链接时（例如 macOS 的 /var → /private/var），权限模型有的地方按原路径、有的按真实路径比对，两种都放行
     const both = (flag, p) => [...new Set([p, real(p)])].map((x) => `${flag}=${x}`);
     const packRead = P.world?.packDir ? both('--allow-fs-read', P.world.packDir) : [];
-    const args = ['--no-warnings', '--permission', ...both('--allow-fs-read', ROOT), ...both('--allow-fs-read', P.evo), ...packRead, ...both('--allow-fs-read', job.workDir), ...both('--allow-fs-write', job.workDir), '--allow-child-process', path.join(ROOT, 'evolution', 'shadow-runner.js'), JSON.stringify(job)];
+    const args = ['--no-warnings', `--max-old-space-size=${setting('CHILD_HEAP_MB')}`, '--permission', ...both('--allow-fs-read', ROOT), ...both('--allow-fs-read', P.evo), ...packRead, ...both('--allow-fs-read', job.workDir), ...both('--allow-fs-write', job.workDir), '--allow-child-process', path.join(ROOT, 'evolution', 'shadow-runner.js'), JSON.stringify(job)];
     const child = spawn(process.execPath, args, { cwd: ROOT, env: { PATH: process.env.PATH || '', NODE_ENV: 'shadow' }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
@@ -43,10 +44,11 @@ export async function runShadow(P, candidate, { hours = setting('EVOLVE_SHADOW_H
   fs.rmSync(root, { recursive: true, force: true });
   let saveFile = null;
   try { saveFile = path.join(activeDir(P.data), 'save.json'); } catch { /* 没有存档就从第一天开始 */ }
-  const [base, trial] = await Promise.all([
-    runOne(P, { workDir: path.join(root, 'base'), saveFile, candidate: null, hours, packDir: P.world?.packDir || null }, timeoutMs),
-    runOne(P, { workDir: path.join(root, 'trial'), saveFile, candidate, hours, packDir: P.world?.packDir || null }, timeoutMs),
-  ]);
+  // 对照组与插件组依次运行（不同时占两份内存），并与创世试跑共用全站的试运行锁（重构方案 §6.4）
+  const { base, trial } = await withTrialSlot(P.global, async () => ({
+    base: await runOne(P, { workDir: path.join(root, 'base'), saveFile, candidate: null, hours, packDir: P.world?.packDir || null }, timeoutMs),
+    trial: await runOne(P, { workDir: path.join(root, 'trial'), saveFile, candidate, hours, packDir: P.world?.packDir || null }, timeoutMs),
+  }), { what: `evolve ${P.world?.id || ''} ${candidate.key}` });
   fs.rmSync(root, { recursive: true, force: true });
   const metrics = { base, trial };
   if (base.failed) return { passed: false, reason: `对照组没能运行：${base.error}`, metrics };

@@ -3,6 +3,7 @@ import { fork } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { trackChild } from '../../server/memstat.js';
 
 const RUNNER = path.join(path.dirname(fileURLToPath(import.meta.url)), 'runner.js');
 // 路径里有符号链接时（例如 macOS 的 /var → /private/var），权限模型有的地方按原路径、有的按真实路径比对，两种都放行
@@ -15,12 +16,12 @@ export function sandboxArgs(pluginDir, memMb = 64) {
 }
 
 function spawn(pluginDir, mode) {
-  return fork(RUNNER, [real(pluginDir), mode], { // 真实路径：模块加载器给出的 URL 也是真实路径，运行器据此判断「插件目录里的文件」
+  return trackChild(mode === 'test' ? 'sandbox-test' : 'sandbox', fork(RUNNER, [real(pluginDir), mode], { // 真实路径：模块加载器给出的 URL 也是真实路径，运行器据此判断「插件目录里的文件」
     execArgv: sandboxArgs(pluginDir),
     env: {}, // 不继承任何环境变量：没有密钥、没有代理
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     serialization: 'json',
-  });
+  }));
 }
 
 /** 在沙箱里运行插件自带的测试（test.js），返回 { ok, results, error } */

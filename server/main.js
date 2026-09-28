@@ -6,9 +6,10 @@
 // 服务进程启动成功（端口监听、默认世界加载完成）后通过 IPC 发来 ready，并把当前设置版本标记为「正常」。
 // 如果新保存的设置导致连续 2 次启动失败，自动回退到上一个「正常」的版本再启动，面板上会显示回退原因。
 import { fork } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rollbackToGood, settingsFile } from './settings/index.js';
+import { rollbackToGood, settingsFile, load, get as setting } from './settings/index.js';
 
 export const RESTART_CODE = 75;
 const ENTRY = path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.js');
@@ -20,10 +21,26 @@ let backoff = 0;
 let stopping = false;
 let lastErr = '';
 
+/**
+ * 服务进程的额外启动参数：接近堆上限时在 <数据目录>/diag/ 留一份堆快照（重构方案 §6.2），旧快照只保留最近 2 份。
+ * 堆上限本身来自 NODE_OPTIONS（--max-old-space-size），由部署环境设置
+ */
+function childExecArgv() {
+  try { load(); } catch { /* 设置文件损坏：按默认值 */ }
+  if (!setting('HEAP_SNAPSHOT')) return [];
+  const diag = path.join(path.resolve(setting('DATA_DIR')), 'diag');
+  try {
+    fs.mkdirSync(diag, { recursive: true });
+    const old = fs.readdirSync(diag).filter((f) => f.endsWith('.heapsnapshot')).map((f) => ({ f, t: fs.statSync(path.join(diag, f)).mtimeMs })).sort((a, b) => b.t - a.t);
+    for (const { f } of old.slice(2)) fs.rmSync(path.join(diag, f), { force: true });
+  } catch (e) { console.warn('[main] 无法准备诊断目录：', e.message); return []; }
+  return ['--heapsnapshot-near-heap-limit=1', `--diagnostic-dir=${diag}`];
+}
+
 function start() {
   let ready = false;
   lastErr = '';
-  child = fork(ENTRY, process.argv.slice(2), { stdio: ['inherit', 'inherit', 'pipe', 'ipc'] });
+  child = fork(ENTRY, process.argv.slice(2), { stdio: ['inherit', 'inherit', 'pipe', 'ipc'], execArgv: [...process.execArgv, ...childExecArgv()] });
   // 转发错误输出，同时留下最后一段，作为回退原因
   child.stderr.on('data', (d) => { process.stderr.write(d); lastErr = (lastErr + d.toString()).slice(-600); });
   child.on('message', (m) => {

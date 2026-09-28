@@ -10,6 +10,8 @@ import { runGenesis, runRegenerate } from './pipeline.js';
 import { writePack, loadPack } from '../worlds/pack.js';
 import { withContext } from '../scheduler/context.js';
 import { get as setting } from '../settings/index.js';
+import { trackChild } from '../memstat.js';
+import { withTrialSlot } from '../trial-lock.js';
 
 const SHADOW = path.join(path.dirname(fileURLToPath(import.meta.url)), 'shadow.js');
 const readJSON = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
@@ -19,7 +21,7 @@ const writeJSON = (f, v) => { fs.mkdirSync(path.dirname(f), { recursive: true })
 export function shadowRun(packDir, { timeoutMs = 120_000 } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'genesis-shadow-'));
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [SHADOW, packDir, work], { env: { PATH: process.env.PATH || '' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = trackChild('genesis-trial', spawn(process.execPath, [`--max-old-space-size=${setting('CHILD_HEAP_MB')}`, SHADOW, packDir, work], { env: { PATH: process.env.PATH || '' }, stdio: ['ignore', 'pipe', 'pipe'] }));
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
@@ -119,7 +121,8 @@ export class GenesisJobs {
           // 先把包写到临时目录试跑，通过了再写进世界目录
           const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'genesis-pack-'));
           writePack(tmp, p);
-          try { return await this.shadow(tmp); } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+          // 全站同时最多一个试运行（与进化的影子试运行共用一把锁）
+          try { return await withTrialSlot(path.join(this.data, 'evolution'), () => this.shadow(tmp), { what: `genesis ${job.worldId}` }); } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
         },
       }));
       if (report.problems.length) throw Object.assign(new Error(report.problems.join('；')), { report });

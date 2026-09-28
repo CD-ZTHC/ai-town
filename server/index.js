@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import v8 from 'node:v8';
 import { serve } from '@hono/node-server';
 import * as settings from './settings/index.js';
 import { Town, llmPublic } from './sim.js';
@@ -33,6 +34,7 @@ import { Ledger, budgetPolicy, LEVEL_NAMES } from './scheduler/budget.js';
 import { withContext } from './scheduler/context.js';
 import { CLASS_NAMES } from './scheduler/classes.js';
 import { sampleWorld } from './worlds/review.js';
+import { trackChild, memoryView, processMem, watchMemory } from './memstat.js';
 
 // 设置中心：保存的值（data/settings.json）> 环境变量（只作初始值）> 默认值。
 // 还起作用的环境变量写错时直接报错退出，不悄悄用默认值；先读设置文件，才知道哪些环境变量已经不起作用
@@ -273,6 +275,7 @@ const app = createApp({
   engineStatus: (worldId) => engineStatus(worldId),
   admin: {
     restart, supervised: () => supervised, impactOf, manager, registry, llmView, budget, ledger, engineStatus: () => engineStatus(),
+    memory: () => ({ ...memoryView([...manager.loaded.values()]), alertMb: settings.get('MEM_ALERT_MB'), heapLimitMb: Math.round(v8.getHeapStatistics().heap_size_limit / 1048576) }),
     siteCredentials: credentialsApi({ credentials, worldLlm, accounts, scope: 'site' }), aiSummary,
   },
   routes: [
@@ -289,7 +292,7 @@ const app = createApp({
     defaultId: () => settings.get('DEFAULT_WORLD'),
     resolve: resolveWorld,
     page: (c, id) => worldPage({ c, id, registry, manager }),
-    health: () => ({ worlds: manager.view().map(({ id, viewers, idle }) => ({ id, viewers, idle })), clients: manager.view().reduce((s, w) => s + w.viewers, 0) }),
+    health: () => ({ worlds: manager.view().map(({ id, viewers, idle }) => ({ id, viewers, idle })), clients: manager.view().reduce((s, w) => s + w.viewers, 0), rssMb: processMem().rss }),
   },
 });
 
@@ -299,6 +302,14 @@ const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, () => {
   process.send?.({ type: 'ready' });
   const mode = config.publicMode ? `公网模式${config.adminToken ? '（已设置管理员令牌）' : '（⚠️ 未设置 ADMIN_TOKEN，无法认领超级管理员）'}` : '本地模式（所有访问者均为管理员，请勿直接暴露到公网）';
   console.log(`\n  🌸 AI Town 已开放： http://${HOST || 'localhost'}:${PORT}（${registry.list({ status: 'public' }).length} 个公开世界，运行中 ${manager.loaded.size}）\n  🔐 ${mode}\n  🧠 LLM: ${llm.stats.enabled ? `${llm.stats.model}（快：${llm.stats.models.fast} · 强：${llm.stats.models.smart}）${llm.stats.dailyBudget ? ` · 每日预算 ${llm.stats.dailyBudget.toLocaleString()} tokens` : ''}` : '未配置（使用规则兜底）'}\n`);
+});
+// 内存告警（重构方案 §6.2）：常驻内存超过 MEM_ALERT_MB 时写审计，概览页会显示
+watchMemory({
+  limitMb: () => settings.get('MEM_ALERT_MB'),
+  onHigh: (mem) => {
+    console.warn(`[mem] 服务进程常驻内存 ${mem.rss}MB，超过告警阈值`);
+    accounts.audit({ actor: 'system', action: 'memory.high', target: `${mem.rss}MB`, detail: { ...mem, sse: memoryView([...manager.loaded.values()]).sse } });
+  },
 });
 server.headersTimeout = 20_000;
 server.requestTimeout = 30_000;
@@ -331,9 +342,9 @@ function startEngine() {
   const dirs = list.flatMap((w) => [path.join(manager.root(w.id), 'plugins'), path.join(manager.root(w.id), 'evolution')]);
   for (const d of [...dirs, EVO_DIR]) fs.mkdirSync(d, { recursive: true });
   // 引擎不联网：模型调用经 IPC 交给主进程，放进统一队列的 P4 级（§7.5）
-  const args = [...engineArgs({ root: ROOT, data: DATA, evolvedDir: dirs[0], evoDir: EVO_DIR, extraWrite: dirs.slice(1), net: false }), path.join(ROOT, 'evolution', 'daemon.js')];
+  const args = [`--max-old-space-size=${settings.get('CHILD_HEAP_MB')}`, ...engineArgs({ root: ROOT, data: DATA, evolvedDir: dirs[0], evoDir: EVO_DIR, extraWrite: dirs.slice(1), net: false }), path.join(ROOT, 'evolution', 'daemon.js')];
   engine = spawn(process.execPath, args, { cwd: ROOT, env: settings.env({ ...process.env, DATA_DIR: DATA, EVOLVE_IPC: '1', EVOLVE_LLM: llm.stats.enabled || list.some((w) => worldLlm.isOwn(w.id)) ? '1' : '0' }), stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
-  const proc = engine;
+  const proc = trackChild('evolve', engine);
   proc.on('message', async (m) => {
     if (m?.type !== 'llm') return;
     let reply;
