@@ -5,10 +5,10 @@
 //   4 分级  世界声明的分级必须在创世者被授予的范围内（平台底线不可覆盖）
 // 以及运行时抽样审核（§10.2）：公开的用户世界里，编年与动态按低比例抽样送审，命中后隐藏该条，累计多次转为不公开。
 import * as llm from '../llm.ts';
-import { keywordCheck } from '../guard.js';
-import { loadPack } from './pack.js';
-import { checkPack, visibleTexts } from '../genesis/pipeline.js';
-import { shadowRun } from '../genesis/jobs.js';
+import { keywordCheck } from '../guard.ts';
+import { loadPack } from './pack.ts';
+import { checkPack, visibleTexts } from '../genesis/pipeline.ts';
+import { shadowRun } from '../genesis/jobs.ts';
 import { reviewRating } from '../kernel/ratings.ts';
 
 const MAX_PERSONAS = 16;

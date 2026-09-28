@@ -5,8 +5,8 @@
   "type": "module",
   "description": "云溪镇 · 由 LLM 驱动的生成式智能体小镇",
   "scripts": {
-    "start": "node server/main.js",
-    "dev": "node --watch server/index.js",
+    "start": "node server/main.ts",
+    "dev": "node --watch server/index.ts",
     "test": "node --test test/*.test.js",
     "check": "node tools/check.js",
     "typecheck": "tsc -p ."

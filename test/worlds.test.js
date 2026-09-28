@@ -9,17 +9,17 @@ const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const settings = await import('../server/settings/index.ts');
 const { Town } = await import('../server/sim.ts');
-const { openDb } = await import('../server/accounts/db.js');
-const { Accounts } = await import('../server/accounts/index.js');
-const { WorldRegistry } = await import('../server/worlds/registry.js');
-const { WorldManager, WorldFullError } = await import('../server/worlds/manager.js');
-const { migrateLegacy, needsMigration } = await import('../server/worlds/migrate.js');
-const { officialPack, loadPack, writePack } = await import('../server/worlds/pack.js');
-const { diskUsage, reclaim } = await import('../server/worlds/disk.js');
+const { openDb } = await import('../server/accounts/db.ts');
+const { Accounts } = await import('../server/accounts/index.ts');
+const { WorldRegistry } = await import('../server/worlds/registry.ts');
+const { WorldManager, WorldFullError } = await import('../server/worlds/manager.ts');
+const { migrateLegacy, needsMigration } = await import('../server/worlds/migrate.ts');
+const { officialPack, loadPack, writePack } = await import('../server/worlds/pack.ts');
+const { diskUsage, reclaim } = await import('../server/worlds/disk.ts');
 const { activeDir } = await import('../server/timelines.ts');
-const { createApp } = await import('../server/http/app.js');
-const { worldPage } = await import('../server/http/pages.js');
-const { authorize } = await import('../server/accounts/authz.js');
+const { createApp } = await import('../server/http/app.ts');
+const { worldPage } = await import('../server/http/pages.ts');
+const { authorize } = await import('../server/accounts/authz.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-worlds-'));
 
@@ -212,7 +212,7 @@ test('路由：/api/w/:world/*、/w/:world/api/*、旧路径 /api/* 映射到默
       health: () => ({}),
     },
   });
-  const { config } = await import('../server/guard.js');
+  const { config } = await import('../server/guard.ts');
   config.publicMode = true;
   t.after(() => { config.publicMode = undefined; });
   assert.equal((await (await app.request('/api/w/moon-town/me')).json()).world, 'moon-town');

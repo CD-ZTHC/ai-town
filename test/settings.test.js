@@ -174,10 +174,10 @@ const n = Number(fs.existsSync(${JSON.stringify(counter)}) ? fs.readFileSync(${J
 fs.writeFileSync(${JSON.stringify(counter)}, String(n));
 process.exit(n === 1 ? 75 : 0);
 `);
-  const main = fs.readFileSync('server/main.js', 'utf8')
-    .replace("path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.js')", JSON.stringify(fake))
+  const main = fs.readFileSync('server/main.ts', 'utf8')
+    .replace("path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.ts')", JSON.stringify(fake))
     .replace("from './settings/index.ts'", `from ${JSON.stringify(path.resolve('server/settings/index.ts'))}`);
-  const mainFile = path.join(dir, 'main.mjs');
+  const mainFile = path.join(dir, 'main.mts');
   fs.writeFileSync(mainFile, main);
   const out = await new Promise((resolve) => {
     let log = '';

@@ -6,11 +6,11 @@
 //   GET  /api/genesis/:jobId   进度、排队位置、用量
 import { Hono } from 'hono';
 import * as llm from '../llm.ts';
-import { authorize } from '../accounts/authz.js';
+import { authorize } from '../accounts/authz.ts';
 import { get as setting } from '../settings/index.ts';
-import { normalizeSource, screenSource, sampleParagraphs } from '../genesis/source.js';
-import { GenesisJobs } from '../genesis/jobs.js';
-import { HttpError } from './util.js';
+import { normalizeSource, screenSource, sampleParagraphs } from '../genesis/source.ts';
+import { GenesisJobs } from '../genesis/jobs.ts';
+import { HttpError } from './util.ts';
 import { STORYTELLERS } from '../kernel/spec.ts';
 
 const RATINGS_DEFAULT = ['cozy', 'adventure'];
@@ -33,8 +33,8 @@ export function genesisQuota(grant) {
 
 /**
  * @param {object} deps
- * @param {import('../accounts/index.js').Accounts} deps.accounts
- * @param {import('../worlds/registry.js').WorldRegistry} deps.registry
+ * @param {import('../accounts/index.ts').Accounts} deps.accounts
+ * @param {import('../worlds/registry.ts').WorldRegistry} deps.registry
  * @param {GenesisJobs} deps.jobs
  * @param {(userId) => number} deps.used 创世已用 token（P3，按创世者累计）
  * @param {() => number} [deps.userDiskTotal]

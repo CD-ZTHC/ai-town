@@ -38,7 +38,7 @@ id aitown >/dev/null 2>&1 || useradd --system --home-dir "$DST" --no-create-home
 
 # ---------- 3. 停止旧进程、复制 ----------
 echo "▶ 停止 nohup 方式运行的旧进程（会先存档）"
-for pat in 'node server/main.js' 'node server/index.js'; do
+for pat in 'node server/main\.[jt]s' 'node server/index\.[jt]s'; do
   for p in $(pgrep -f "$pat" || true); do
     [ "$(readlink "/proc/$p/cwd")" = "$SRC" ] || continue
     kill -TERM "$p"

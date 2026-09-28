@@ -1,5 +1,5 @@
 // 世界页面的入口检查：世界不存在、已下架、满员时给一个说明页，而不是让页面打开后反复报错
-import { authorize } from '../accounts/authz.js';
+import { authorize } from '../accounts/authz.ts';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 

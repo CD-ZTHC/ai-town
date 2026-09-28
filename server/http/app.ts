@@ -3,15 +3,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { Hono } from 'hono';
-import { config, limits } from '../guard.js';
-import { HttpError, readJson } from './util.js';
-import { worldApi } from './world-api.js';
-import { adminApi } from './admin-api.js';
-import { authApi } from './auth-api.js';
-import { identity } from './identity.js';
+import { config, limits } from '../guard.ts';
+import { HttpError, readJson } from './util.ts';
+import { worldApi } from './world-api.ts';
+import { adminApi } from './admin-api.ts';
+import { authApi } from './auth-api.ts';
+import { identity } from './identity.ts';
 import { withContext } from '../scheduler/context.ts';
 import { get as setting } from '../settings/index.ts';
-import { Assets, etagMatches } from './assets.js';
+import { Assets, etagMatches } from './assets.ts';
 
 export const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 // 冻结：@hono/node-server 的轻量 Response 会往传入的 headers 对象里写 content-length，
@@ -30,7 +30,7 @@ const withHeaders = (res, headers) => { for (const [k, v] of Object.entries(head
 
 /**
  * 只有一个世界时的适配器（测试用）：所有路径都指向这个 host
- * @param {import('../worlds/host.js').WorldHost} host
+ * @param {import('../worlds/host.ts').WorldHost} host
  */
 export function singleWorld(host) {
   return {
@@ -44,11 +44,11 @@ export function singleWorld(host) {
 /**
  * @param {object} o
  * @param {object} [o.worlds] 世界解析：{ defaultId(), resolve(c, id) → WorldHost（检查可见性、按需加载）, page(c, id) → { ok } | { status, html }, health() }
- * @param {(c) => import('../worlds/host.js').WorldHost} [o.hostFor] 旧接口：只有一个世界（等同 worlds: singleWorld(host)）
+ * @param {(c) => import('../worlds/host.ts').WorldHost} [o.hostFor] 旧接口：只有一个世界（等同 worlds: singleWorld(host)）
  * @param {string} o.publicDir 静态资源目录
  * @param {() => object} [o.engineStatus]
  * @param {object} [o.admin] 管理员接口的依赖（见 admin-api.js）
- * @param {import('../accounts/index.js').Accounts} [o.accounts] 账号（不传时只有本地模式可用）
+ * @param {import('../accounts/index.ts').Accounts} [o.accounts] 账号（不传时只有本地模式可用）
  * @param {Array<[string, Hono]>} [o.routes] 其他全站接口（大厅、创世……），挂在 /api/<前缀> 下
  * @param {string|null} [o.revision] 部署时写入的 REVISION（git 短哈希，只用于展示）
  */

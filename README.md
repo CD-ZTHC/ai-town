@@ -31,7 +31,7 @@ mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实
 所有设置在**管理面板 `/admin` → 设置**里修改：按组编辑，保存前校验取值范围，模型相关的改动可以先「测试连接」，每次保存生成一个版本（可以查看历史、一键恢复）。只有 7 项「启动必需」的设置必须用环境变量（`PORT`、`HOST`、`DATA_DIR`、`PUBLIC_MODE`、`TRUST_PROXY`、`ADMIN_TOKEN`、`SECRETS_KEY`，见 `.env.example`）。
 
 - 值的来源：**面板保存的值（`data/settings.json`）> 环境变量（只作初始值）> 默认值**。环境变量只在还没保存过时作为初始值导入设置文件，之后一律以保存的值为准，面板上没有被环境变量锁定的项；再改 `.env` 不会生效（启动日志与面板会提示「已忽略」）。从旧版本升级时，`.env` 里的值会在第一次启动时导入。
-- 大部分设置保存后立即生效；少数（例如服务类型、embedding）需要重启——面板顶部会提示，点「立即重启」即可。服务由守护进程 `server/main.js` 拉起：新设置如果连续两次启动失败，会自动回退到上一个正常的版本。
+- 大部分设置保存后立即生效；少数（例如服务类型、embedding）需要重启——面板顶部会提示，点「立即重启」即可。服务由守护进程 `server/main.ts` 拉起：新设置如果连续两次启动失败，会自动回退到上一个正常的版本。
 - 全部设置项、默认值与取值范围见 [docs/settings.md](docs/settings.md)（由 `mise run settings:doc` 从声明表生成）。
 
 依赖保持很少：`hono`（路由与中间件）、`zod`（校验）；账号与账本用 Node 内置的 `node:sqlite`。默认的 OpenAI 兼容接口零依赖；Anthropic、Google 等其他服务商经 [Vercel AI SDK](https://ai-sdk.dev)（`ai` + `@ai-sdk/*`，可选依赖，默认安装）接入，只在用到时加载。`LLM_PROVIDER=aisdk` 时模型名写成「服务商/模型」，不同档位可以混用多家；旧的 `LLM_PROVIDER=pi` 自动按 `aisdk` 处理。前端是原生 Canvas + ES Modules，没有构建步骤，所有像素美术均为程序化生成。

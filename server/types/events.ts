@@ -1,4 +1,4 @@
-// Town 发出的事件与负载（重构方案 §8.1）：WorldHost 把它们转成 SSE 推给页面（worlds/host.js 的 wire）。
+// Town 发出的事件与负载（重构方案 §8.1）：WorldHost 把它们转成 SSE 推给页面（worlds/host.ts 的 wire）。
 // 用法：class Town extends (EventEmitter as new () => TypedEmitter<TownEvents>)，或在 on/emit 处标注。
 import type { LogItem, Newspaper } from './save.ts';
 import type { WorldSpec } from './spec.ts';

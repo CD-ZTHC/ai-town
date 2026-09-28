@@ -21,7 +21,7 @@ Environment=NODE_OPTIONS=--max-old-space-size=384
 EnvironmentFile=/opt/ai-town/.env
 # 不经过 mise：直接用 Node 26（官方二进制解压到 /opt/node，见 migrate-to-systemd.sh）。
 # 守护进程只负责拉起服务进程，自己的堆限制在 64MB（不会传给服务进程）
-ExecStart=/opt/node/bin/node --max-old-space-size=64 server/main.js
+ExecStart=/opt/node/bin/node --max-old-space-size=64 server/main.ts
 # SIGTERM 时各个世界会先存档；给足时间
 KillSignal=SIGTERM
 TimeoutStopSec=40

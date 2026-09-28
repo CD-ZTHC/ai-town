@@ -1,11 +1,11 @@
 // 账号接口（多世界设计 §5.4、§11）：注册、登录、登出、改昵称、改密码、重置密码、管理员认领
 import crypto from 'node:crypto';
 import { Hono } from 'hono';
-import { config, moderateNickname } from '../guard.js';
+import { config, moderateNickname } from '../guard.ts';
 import { get as setting } from '../settings/index.ts';
-import { quota } from '../accounts/quota.js';
-import { HttpError } from './util.js';
-import { setSessionCookie, clearSessionCookie, sessionToken } from './identity.js';
+import { quota } from '../accounts/quota.ts';
+import { HttpError } from './util.ts';
+import { setSessionCookie, clearSessionCookie, sessionToken } from './identity.ts';
 
 const str = (v, max) => String(v ?? '').slice(0, max);
 

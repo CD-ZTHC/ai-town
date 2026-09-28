@@ -1,10 +1,10 @@
 // 账号（多世界设计 §5）：注册、登录、会话、昵称、授予、禁用、重置链接、管理员认领、审计。
-// 三个独立的函数：identify（谁在请求，见 http/identity.js）、authorize（能不能做，见 authz.js）、quota（还剩多少，见 quota.js）。
+// 三个独立的函数：identify（谁在请求，见 http/identity.ts）、authorize（能不能做，见 authz.ts）、quota（还剩多少，见 quota.ts）。
 import crypto from 'node:crypto';
-import { openDb, tx } from './db.js';
-import { hashPassword, verifyPassword, passwordProblem } from './passwords.js';
-import { nicknameKey, cleanNickname, nicknameProblem, usernameProblem } from './nickname.js';
-import { setResolver, encodeRefs } from './refs.js';
+import { openDb, tx } from './db.ts';
+import { hashPassword, verifyPassword, passwordProblem } from './passwords.ts';
+import { nicknameKey, cleanNickname, nicknameProblem, usernameProblem } from './nickname.ts';
+import { setResolver, encodeRefs } from './refs.ts';
 import { memoryHooks } from '../memory.ts';
 
 const DAY = 86400_000;

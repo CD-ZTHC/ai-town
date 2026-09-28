@@ -39,7 +39,7 @@ const port = 3900 + Math.floor(Math.random() * 90);
 const env = { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'town-bc-')) };
 // 不受开发机 .env 的影响：只保留上面的几项
 for (const k of Object.keys(SETTINGS)) if (!['PORT', 'HOST', 'DATA_DIR'].includes(k)) delete env[k];
-const server = spawn(process.execPath, ['server/index.js'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+const server = spawn(process.execPath, ['server/index.ts'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
 procs.push(server);
 let serverLog = '';
 server.stdout.on('data', (d) => (serverLog += d));
@@ -337,7 +337,7 @@ await step('30-update-notice', async () => {
 }, { wait: 300 });
 // 公网模式：游客点互动入口 → 弹出登录框 → 注册 → 自动继续刚才的操作（现身）
 const pubPort = port + 100;
-const pub = spawn(process.execPath, ['server/index.js'], { env: { ...env, PORT: String(pubPort), PUBLIC_MODE: '1', DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'town-bc-pub-')) }, stdio: ['ignore', 'pipe', 'pipe'] });
+const pub = spawn(process.execPath, ['server/index.ts'], { env: { ...env, PORT: String(pubPort), PUBLIC_MODE: '1', DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'town-bc-pub-')) }, stdio: ['ignore', 'pipe', 'pipe'] });
 procs.push(pub);
 pub.stdout.on('data', (d) => (serverLog += d));
 pub.stderr.on('data', (d) => (serverLog += d));

@@ -9,8 +9,8 @@ import path from 'node:path';
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
-const { WorldHost } = await import('../server/worlds/host.js');
-const { createApp } = await import('../server/http/app.js');
+const { WorldHost } = await import('../server/worlds/host.ts');
+const { createApp } = await import('../server/http/app.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-http-'));
 
@@ -55,7 +55,7 @@ test('接口：身份、世界数据、错误码与安全响应头', async (t) =
 test('公网模式：没有令牌不能做管理操作', async (t) => {
   const { app, host } = setup();
   t.after(() => host.close({ save: false }));
-  const { config } = await import('../server/guard.js');
+  const { config } = await import('../server/guard.ts');
   Object.assign(config, { publicMode: true, adminToken: 'secret-token' });
   t.after(() => Object.assign(config, { publicMode: undefined, adminToken: undefined }));
   assert.equal((await post(app, '/api/control', { speed: 2 })).status, 403);
@@ -102,7 +102,7 @@ test('SSE 背压：不读数据的观众只留最新一帧 tick，其他事件�
 });
 
 test('SSE 关闭：已排队的消息（例如 closed）发完再断开', async () => {
-  const { sseClient } = await import('../server/http/app.js');
+  const { sseClient } = await import('../server/http/app.ts');
   let left = 0;
   const c = sseClient('1.1.1.1', () => left++);
   const stream = new ReadableStream({ pull: (ctrl) => c.pull(ctrl) }, { highWaterMark: 0 });
@@ -177,7 +177,7 @@ test('管理员接口 · 设置：查看、校验、试算、保存、历史与�
   assert.equal(r.status, 200);
   assert.equal(settings.get('MAX_ACTIVE_WORLDS'), 3);
   // 公网模式下没有管理员身份：403
-  const { config } = await import('../server/guard.js');
+  const { config } = await import('../server/guard.ts');
   config.publicMode = true;
   config.adminToken = 'tok';
   t.after(() => { config.publicMode = undefined; config.adminToken = undefined; });

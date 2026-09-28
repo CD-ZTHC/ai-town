@@ -7,11 +7,11 @@ import path from 'node:path';
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const { withTrialSlot } = await import('../server/trial-lock.js');
+const { withTrialSlot } = await import('../server/trial-lock.ts');
 const { createEmbedder } = await import('../server/embeddings.ts');
-const { memoryView, trackChild, sseStats } = await import('../server/memstat.js');
+const { memoryView, trackChild, sseStats } = await import('../server/memstat.ts');
 const { Town } = await import('../server/sim.ts');
-const { WorldHost } = await import('../server/worlds/host.js');
+const { WorldHost } = await import('../server/worlds/host.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-mem-'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

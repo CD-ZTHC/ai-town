@@ -1,6 +1,6 @@
 // 昵称（多世界设计 §5.6）：全站唯一。比较前做 NFKC 归一化、去掉空白与不可见字符、忽略大小写，
 // 防止用全角字母或零宽字符造出「看起来一样」的名字。
-import { keywordCheck } from '../guard.js';
+import { keywordCheck } from '../guard.ts';
 
 // 控制字符、零宽字符与双向文本控制符
 const INVISIBLE = new RegExp(`[${[[0x00, 0x1f], [0x7f, 0x9f], [0x200b, 0x200f], [0x2028, 0x202e], [0x2060, 0x206f], [0xfe00, 0xfe0f], [0xfeff, 0xfeff]]

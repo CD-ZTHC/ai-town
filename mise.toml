@@ -19,11 +19,11 @@ _.file = ".env"
 
 [tasks.start]
 description = "启动 AI 小镇 (http://localhost:3000)；由守护进程拉起，管理面板里可以一键重启"
-run = "node server/main.js"
+run = "node server/main.ts"
 
 [tasks.dev]
 description = "开发模式（文件变更自动重启）"
-run = "node --watch-path=server server/index.js"
+run = "node --watch-path=server server/index.ts"
 
 [tasks.reset]
 description = "清空云溪镇的存档，从第一天重新开始"
@@ -31,7 +31,7 @@ run = "rm -rf data/worlds/yunxi/save.json data/worlds/yunxi/timelines data/world
 
 [tasks.public]
 description = "以公网模式启动（需在 .env 中设置 ADMIN_TOKEN）"
-run = "PUBLIC_MODE=1 node server/main.js"
+run = "PUBLIC_MODE=1 node server/main.ts"
 
 [tasks.token]
 description = "生成一个随机的管理员令牌"

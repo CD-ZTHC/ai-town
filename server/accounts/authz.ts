@@ -1,5 +1,5 @@
 // 授权（多世界设计 §5.1）：authorize(who, action, world?) → true | 理由。业务代码只问「能不能做」，不读请求头或 IP。
-//   who：{ user, admin }（由 http/identity.js 解析）
+//   who：{ user, admin }（由 http/identity.ts 解析）
 //   world：世界登记项 { id, ownerId, status, official, ... }（多世界之后传入）
 export const ADMIN_ROLES = new Set(['admin', 'super']);
 

@@ -76,7 +76,7 @@ if [ "$MODE" = systemd ]; then
 else
   stop() {
     # 先停守护进程（它会带着服务进程一起退出），再停没有守护进程的旧版本
-    for pat in 'node server/main.js' 'node server/index.js'; do
+    for pat in 'node server/main\.[jt]s' 'node server/index\.[jt]s'; do
       for p in $(pgrep -f "$pat" || true); do
         [ "$(readlink "/proc/$p/cwd")" = "$1" ] || continue
         kill -TERM "$p"

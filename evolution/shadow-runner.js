@@ -8,7 +8,7 @@ let warnings = 0;
 console.warn = () => { warnings++; };
 console.log = () => {};
 const { Town } = await import('../server/sim.ts');
-const { loadPack } = await import('../server/worlds/pack.js');
+const { loadPack } = await import('../server/worlds/pack.ts');
 
 fs.mkdirSync(job.workDir, { recursive: true });
 const town = new Town({

@@ -19,7 +19,7 @@ export class WorldHost {
     this.onWire = onWire;
     this._idle = idlePauseSec;
     this.now = now;
-    this.clients = new Set(); // { push(event, bytes) | write(text), ip }：见 http/app.js 的 openStream
+    this.clients = new Set(); // { push(event, bytes) | write(text), ip }：见 http/app.ts 的 openStream
     this.clientsPerIp = new Map();
     this.lastViewer = now();
     this.town = null;

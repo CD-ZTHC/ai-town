@@ -6,7 +6,7 @@ import path from 'node:path';
 import { buildRegions, buildRegion } from './worldgen/index.ts';
 import * as llm from './llm.ts';
 import { addMemory, parseHM } from './memory.ts';
-import { officialPack, packSpec } from './worlds/pack.js';
+import { officialPack, packSpec } from './worlds/pack.ts';
 import { defaultSpec, validateSpec, weekdayOf, calendarHint, pickWeather, publicSpec, PARAM_BOUNDS } from './kernel/spec.ts';
 import { RuleEngine } from './kernel/rules.ts';
 import { Director } from './story/director.ts';
@@ -172,7 +172,7 @@ export class Town extends EventEmitter {
   declare hooks: HookBus;
   declare plugins: PluginHost;
   declare evolved: EvolvedManager;
-  // ---- 主循环与托管方设置的状态（worlds/host.ts、worlds/manager.js） ----
+  // ---- 主循环与托管方设置的状态（worlds/host.ts、worlds/manager.ts） ----
   declare timer: NodeJS.Timeout | null;
   declare acc?: { convo: number; snapshot: number; save: number };
   declare faults?: Map<string, number>;

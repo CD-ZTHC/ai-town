@@ -9,7 +9,7 @@ import { defaultSpec } from '../server/kernel/spec.ts';
 import { replay } from '../server/kernel/ops.ts';
 import { manifestText } from '../server/worldai/manifest.ts';
 import { activeDir } from '../server/timelines.ts';
-import { loadPack, packSpec } from '../server/worlds/pack.js';
+import { loadPack, packSpec } from '../server/worlds/pack.ts';
 import { runGate } from './gate.js';
 import { runShadow } from './shadow.js';
 import { hostApiDoc, pluginCapabilities } from './prompts.js';

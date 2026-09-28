@@ -8,10 +8,10 @@ import { ADMIN_OPS } from '../worldai/proposals.ts';
 import { registry, forkTimeline, setActive } from '../timelines.ts';
 import * as llm from '../llm.ts';
 import { useAbility } from '../kernel/abilities.ts';
-import { config, sanitize, moderate, targetsResident } from '../guard.js';
-import { authorize } from '../accounts/authz.js';
-import { quota, remaining as quotaLeft } from '../accounts/quota.js';
-import { HttpError } from './util.js';
+import { config, sanitize, moderate, targetsResident } from '../guard.ts';
+import { authorize } from '../accounts/authz.ts';
+import { quota, remaining as quotaLeft } from '../accounts/quota.ts';
+import { HttpError } from './util.ts';
 import { get as setting } from '../settings/index.ts';
 
 function requireAdmin(c) {
@@ -64,7 +64,7 @@ const visitor = (c) => ({ id: c.get('vid'), name: c.get('user')?.nickname || nul
 
 /**
  * @param {object} deps
- * @param {import('../accounts/index.js').Accounts} [deps.accounts]
+ * @param {import('../accounts/index.ts').Accounts} [deps.accounts]
  * @param {() => object} [deps.engineStatus] 进化引擎状态（管理员可见）
  * @param {(c, host) => Response} deps.openStream SSE
  */

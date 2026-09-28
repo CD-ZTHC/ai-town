@@ -4,9 +4,9 @@
 // 新人先以「外来者」（traveller）身份住下，和大家熟悉之后转为常住居民（settlePersona）。
 import * as llm from '../llm.ts';
 import { addMemory } from '../memory.ts';
-import { keywordCheck } from '../guard.js';
+import { keywordCheck } from '../guard.ts';
 import { ruleCheck } from '../worldai/canon.ts';
-import { normalizeLook } from '../genesis/assemble.js';
+import { normalizeLook } from '../genesis/assemble.ts';
 import { get as setting } from '../settings/index.ts';
 import { MAX_PERSONAS } from '../kernel/spec.ts';
 import { reviewRating } from '../kernel/ratings.ts';

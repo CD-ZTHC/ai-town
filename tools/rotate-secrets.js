@@ -5,8 +5,8 @@
 // 旧主密钥来自 SECRETS_KEY 环境变量，或 <数据目录>/secret.key。用环境变量时，运行完要把 SECRETS_KEY 换成新值。
 import fs from 'node:fs';
 import path from 'node:path';
-import { openDb } from '../server/accounts/db.js';
-import { LlmCredentials } from '../server/accounts/llm-credentials.js';
+import { openDb } from '../server/accounts/db.ts';
+import { LlmCredentials } from '../server/accounts/llm-credentials.ts';
 import { loadMasterKey, parseMasterKey, generateMasterKey } from '../server/secrets.ts';
 
 const dataDir = path.resolve(process.env.DATA_DIR || 'data');

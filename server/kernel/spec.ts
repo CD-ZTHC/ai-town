@@ -4,7 +4,7 @@ import { BUILDING_STATES } from '../worldgen/finish.ts';
 import { parseHM } from '../memory.ts';
 import { validateAbility } from './abilities.ts';
 import { validateRule } from './rules.ts';
-import { officialPack, packSpec } from '../worlds/pack.js';
+import { officialPack, packSpec } from '../worlds/pack.ts';
 import { RATINGS } from './ratings.ts';
 import { validateDark } from './threat-spec.ts';
 import type { Params, WorldSpec, CalendarEvent } from '../types/spec.ts';

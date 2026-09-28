@@ -2,26 +2,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
-import { HttpError } from './util.js';
-import { authorize } from '../accounts/authz.js';
-import { loadPack, writePack } from '../worlds/pack.js';
-import { checkPack } from '../genesis/pipeline.js';
-import { keywordCheck, sanitize } from '../guard.js';
-import { publishReview } from '../worlds/review.js';
-import { quota } from '../accounts/quota.js';
+import { HttpError } from './util.ts';
+import { authorize } from '../accounts/authz.ts';
+import { loadPack, writePack } from '../worlds/pack.ts';
+import { checkPack } from '../genesis/pipeline.ts';
+import { keywordCheck, sanitize } from '../guard.ts';
+import { publishReview } from '../worlds/review.ts';
+import { quota } from '../accounts/quota.ts';
 import { get as setting } from '../settings/index.ts';
 import { reviewRating } from '../kernel/ratings.ts';
 import { STORYTELLERS } from '../kernel/spec.ts';
-import { DEATH_NAMED_DEFAULT } from './genesis-api.js';
+import { DEATH_NAMED_DEFAULT } from './genesis-api.ts';
 
 const clip = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const EDITABLE = new Set(['drafting', 'preview']);
 
 /**
  * @param {object} deps
- * @param {import('../worlds/registry.js').WorldRegistry} deps.registry
- * @param {import('../worlds/manager.js').WorldManager} deps.manager
- * @param {import('../accounts/index.js').Accounts} [deps.accounts]
+ * @param {import('../worlds/registry.ts').WorldRegistry} deps.registry
+ * @param {import('../worlds/manager.ts').WorldManager} deps.manager
+ * @param {import('../accounts/index.ts').Accounts} [deps.accounts]
  * @param {ReturnType<import('../world-llm.ts').createWorldLlm>} [deps.worldLlm] 按世界配置模型服务
  * @param {(w) => object[]} [deps.credentialsFor] 这个世界可以引用的凭据（主人的；官方世界是站点凭据）
  * @param {(worldId) => object} [deps.usage] 今日用量 { server, own }

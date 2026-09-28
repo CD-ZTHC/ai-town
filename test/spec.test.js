@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { defaultSpec, validateSpec, calendarHint, pickWeather, activeEvents, weekdayOf } from '../server/kernel/spec.ts';
 import { buildWorld, buildMoonRealm } from '../server/world.ts';
-import { officialPack, loadPack, packErrors, hashPack } from '../server/worlds/pack.js';
+import { officialPack, loadPack, packErrors, hashPack } from '../server/worlds/pack.ts';
 
 // 迁移前（地图常量还在 world.js 里时）生成的地图指纹：云溪镇与暗月界必须逐格不变
 const fingerprint = (x) => crypto.createHash('sha256').update(JSON.stringify({ t: x.tiles, w: [...x.walk], o: x.objects, b: x.buildings, l: x.locations, g: x.gate })).digest('hex').slice(0, 16);

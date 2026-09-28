@@ -10,8 +10,8 @@ import { DatabaseSync } from 'node:sqlite';
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { seal, open, scrub, loadMasterKey, parseMasterKey, generateMasterKey } = await import('../server/secrets.ts');
-const { openDb } = await import('../server/accounts/db.js');
-const { LlmCredentials } = await import('../server/accounts/llm-credentials.js');
+const { openDb } = await import('../server/accounts/db.ts');
+const { LlmCredentials } = await import('../server/accounts/llm-credentials.ts');
 const { Ledger } = await import('../server/scheduler/budget.ts');
 const { isBlockedAddress, urlProblem, makeSafeFetch } = await import('../server/net/safe-fetch.ts');
 

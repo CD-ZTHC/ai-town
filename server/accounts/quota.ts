@@ -1,7 +1,7 @@
 // 配额（多世界设计 §5.1、§5.4）：quota(who, bucket) → { ok, remaining, retryAfter }。
 // 互动额度按账号计；公开注册意味着账号本身不值钱，所以同时保留按 IP 的兜底上限（单账号额度 × RATE_IP_FACTOR）。
 // 世界范围的冷却（全镇事件、改天气）按世界计。管理员不受限。
-import { Limiter } from '../guard.js';
+import { Limiter } from '../guard.ts';
 import { get as setting } from '../settings/index.ts';
 
 const H = 3600_000;

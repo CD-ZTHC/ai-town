@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { ROOT } from './common.js';
 import { activeDir } from '../server/timelines.ts';
 import { get as setting } from '../server/settings/index.ts';
-import { withTrialSlot } from '../server/trial-lock.js';
+import { withTrialSlot } from '../server/trial-lock.ts';
 
 const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
 

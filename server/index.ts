@@ -1,4 +1,4 @@
-// 服务入口：设置、账号、世界管理器（多世界）、HTTP 应用（Hono，见 http/app.js）与进化引擎，然后监听端口
+// 服务入口：设置、账号、世界管理器（多世界）、HTTP 应用（Hono，见 http/app.ts）与进化引擎，然后监听端口
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -9,32 +9,32 @@ import * as settings from './settings/index.ts';
 import { Town, llmPublic } from './sim.ts';
 import { activeDir } from './timelines.ts';
 import * as llm from './llm.ts';
-import { config } from './guard.js';
-import { Accounts, installRefs } from './accounts/index.js';
-import { authorize } from './accounts/authz.js';
-import { WorldRegistry } from './worlds/registry.js';
-import { WorldManager, WorldFullError } from './worlds/manager.js';
-import { migrateLegacy, migrateEvolution } from './worlds/migrate.js';
-import { officialPack, officialIds, loadPack } from './worlds/pack.js';
-import { createApp } from './http/app.js';
-import { worldsApi } from './http/worlds-api.js';
-import { genesisApi, genesisQuota } from './http/genesis-api.js';
-import { GenesisJobs } from './genesis/jobs.js';
-import { HttpError } from './http/util.js';
-import { worldPage } from './http/pages.js';
+import { config } from './guard.ts';
+import { Accounts, installRefs } from './accounts/index.ts';
+import { authorize } from './accounts/authz.ts';
+import { WorldRegistry } from './worlds/registry.ts';
+import { WorldManager, WorldFullError } from './worlds/manager.ts';
+import { migrateLegacy, migrateEvolution } from './worlds/migrate.ts';
+import { officialPack, officialIds, loadPack } from './worlds/pack.ts';
+import { createApp } from './http/app.ts';
+import { worldsApi } from './http/worlds-api.ts';
+import { genesisApi, genesisQuota } from './http/genesis-api.ts';
+import { GenesisJobs } from './genesis/jobs.ts';
+import { HttpError } from './http/util.ts';
+import { worldPage } from './http/pages.ts';
 import { evolveConfig } from '../plugin-host/evolved.js';
 import { engineArgs } from '../evolution/common.js';
 import { hostCall, setReviewResolver } from '../evolution/llm.js';
 import { loadMasterKey } from './secrets.ts';
-import { LlmCredentials, SITE } from './accounts/llm-credentials.js';
+import { LlmCredentials, SITE } from './accounts/llm-credentials.ts';
 import { createWorldLlm, normalizeAi } from './world-llm.ts';
-import { credentialsApi } from './http/llm-api.js';
+import { credentialsApi } from './http/llm-api.ts';
 import { setEmbedResolver } from './embeddings.ts';
 import { Ledger, budgetPolicy, LEVEL_NAMES } from './scheduler/budget.ts';
 import { withContext } from './scheduler/context.ts';
 import { CLASS_NAMES } from './scheduler/classes.ts';
-import { sampleWorld } from './worlds/review.js';
-import { trackChild, memoryView, processMem, watchMemory } from './memstat.js';
+import { sampleWorld } from './worlds/review.ts';
+import { trackChild, memoryView, processMem, watchMemory } from './memstat.ts';
 
 // 设置中心：保存的值（data/settings.json）> 环境变量（只作初始值）> 默认值。
 // 还起作用的环境变量写错时直接报错退出，不悄悄用默认值；先读设置文件，才知道哪些环境变量已经不起作用
@@ -246,7 +246,7 @@ setInterval(() => {
 const RESTART_CODE = 75;
 const supervised = typeof process.send === 'function';
 function restart() {
-  // 存盘、通知在线页面「服务器正在重启」，再以 75 退出，由守护进程（server/main.js）立即拉起
+  // 存盘、通知在线页面「服务器正在重启」，再以 75 退出，由守护进程（server/main.ts）立即拉起
   manager.broadcastAll('restart', { at: Date.now() });
   shuttingDown = true;
   engine?.kill('SIGTERM');

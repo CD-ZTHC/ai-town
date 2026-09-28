@@ -6,14 +6,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runGenesis, runRegenerate } from './pipeline.js';
-import { writePack, loadPack } from '../worlds/pack.js';
+import { runGenesis, runRegenerate } from './pipeline.ts';
+import { writePack, loadPack } from '../worlds/pack.ts';
 import { withContext } from '../scheduler/context.ts';
 import { get as setting } from '../settings/index.ts';
-import { trackChild } from '../memstat.js';
-import { withTrialSlot } from '../trial-lock.js';
+import { trackChild } from '../memstat.ts';
+import { withTrialSlot } from '../trial-lock.ts';
 
-const SHADOW = path.join(path.dirname(fileURLToPath(import.meta.url)), 'shadow.js');
+const SHADOW = path.join(path.dirname(fileURLToPath(import.meta.url)), 'shadow.ts');
 const readJSON = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
 const writeJSON = (f, v) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(`${f}.tmp`, JSON.stringify(v, null, 1)); fs.renameSync(`${f}.tmp`, f); };
 
@@ -37,7 +37,7 @@ export class GenesisJobs {
   /**
    * @param {object} o
    * @param {string} o.data 数据根目录
-   * @param {import('../worlds/registry.js').WorldRegistry} o.registry
+   * @param {import('../worlds/registry.ts').WorldRegistry} o.registry
    * @param {(userId, worldId) => number} o.budgetLeft 创世者剩余的创世额度（世界用自己的模型服务时不限）
    * @param {(e) => void} [o.audit]
    * @param {(worldId) => void} [o.onWorldReady] 生成完成（世界进入预览）

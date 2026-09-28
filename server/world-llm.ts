@@ -6,13 +6,13 @@
 import * as llm from './llm.ts';
 import { credentialProvider, CREDENTIAL_PROVIDERS } from './llm-providers.ts';
 import { makeSafeFetch, urlProblem } from './net/safe-fetch.ts';
-import { SITE } from './accounts/llm-credentials.js';
+import { SITE } from './accounts/llm-credentials.ts';
 import { scrub } from './secrets.ts';
 import { get as setting } from './settings/index.ts';
 import type { CompleteArgs, Env, Provider } from './types/llm.ts';
 import type { FailureEvent, FailureKind, Profile } from './llm.ts';
 
-// 用到的世界登记项与凭据字段（worlds/registry.js、accounts/llm-credentials.js 在 B7 迁移）
+// 用到的世界登记项与凭据字段（worlds/registry.ts、accounts/llm-credentials.ts 在 B7 迁移）
 /** 暂停原因 */
 export interface Halt { code: string; message: string; credential?: string | null; at?: number }
 interface WorldEntry { id: string; official?: boolean; ownerId?: string | null; settings?: { ai?: RawAi | null; [k: string]: unknown } }

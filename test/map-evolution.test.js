@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { officialPack, packSpec } from '../server/worlds/pack.js';
+import { officialPack, packSpec } from '../server/worlds/pack.ts';
 import { buildRegions } from '../server/worldgen/index.ts';
 import { applyOp } from '../server/kernel/ops.ts';
 import { findPlacement } from '../server/kernel/placement.ts';
@@ -73,7 +73,7 @@ const path = await import('node:path');
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
-const { loadPack } = await import('../server/worlds/pack.js');
+const { loadPack } = await import('../server/worlds/pack.ts');
 const { manifestText } = await import('../server/worldai/manifest.ts');
 const llm = await import('../server/llm.ts');
 const { judge } = await import('../server/worldai/council.ts');

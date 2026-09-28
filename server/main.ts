@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 守护进程（多世界设计 §14.5）：不做业务，只负责拉起 server/index.js。
+// 守护进程（多世界设计 §14.5）：不做业务，只负责拉起 server/index.ts。
 //   退出码 75（请求重启）→ 立即重新启动
 //   其他非零退出码       → 退避后重启（1s、2s、4s…，上限 30s）
 //   正常退出（0）        → 守护进程也退出
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { rollbackToGood, settingsFile, load, get as setting } from './settings/index.ts';
 
 export const RESTART_CODE = 75;
-const ENTRY = path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.js');
+const ENTRY = path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.ts');
 const MAX_FAILS = 2;
 
 let child = null;

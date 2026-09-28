@@ -8,10 +8,10 @@ import path from 'node:path';
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const { Assets, rewriteHtml, etagMatches, rootPrefix, cspHash } = await import('../server/http/assets.js');
+const { Assets, rewriteHtml, etagMatches, rootPrefix, cspHash } = await import('../server/http/assets.ts');
 const { Town } = await import('../server/sim.ts');
-const { WorldHost } = await import('../server/worlds/host.js');
-const { createApp } = await import('../server/http/app.js');
+const { WorldHost } = await import('../server/worlds/host.ts');
+const { createApp } = await import('../server/http/app.ts');
 const settings = await import('../server/settings/index.ts');
 
 function site() {

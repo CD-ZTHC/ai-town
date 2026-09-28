@@ -41,7 +41,7 @@ export function clientIp(req) {
   return req.socket.remoteAddress || 'unknown';
 }
 
-// 身份（账号 / 会话 / 管理员令牌）见 http/identity.js；这里只剩按网络地址识别客户端
+// 身份（账号 / 会话 / 管理员令牌）见 http/identity.ts；这里只剩按网络地址识别客户端
 
 // ---------- 限流：滑动窗口 ----------
 export class Limiter {
@@ -181,7 +181,7 @@ ${RATING_RULE[rating] || RATING_RULE.cozy}
 }
 
 /**
- * 昵称的审核模型（关键词与格式由 accounts/nickname.js 先查过）：昵称不是事件，
+ * 昵称的审核模型（关键词与格式由 accounts/nickname.ts 先查过）：昵称不是事件，
  * 用事件的规则去审会把普通人名当成「针对真实人物」或「无意义内容」拒掉，所以单独一套提示词。
  * 跟随事件审核的开关（MODERATE_EVENTS）；失败时拒绝，保持安全。
  */

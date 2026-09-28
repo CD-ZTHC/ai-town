@@ -10,11 +10,11 @@ const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const llm = await import('../server/llm.ts');
 const { Town } = await import('../server/sim.ts');
-const { loadPack, packSpec } = await import('../server/worlds/pack.js');
+const { loadPack, packSpec } = await import('../server/worlds/pack.ts');
 const { validateSpec } = await import('../server/kernel/spec.ts');
 const { useAbility } = await import('../server/kernel/abilities.ts');
 const { checkBeat, runBeats, ALL_KINDS } = await import('../server/story/beats.ts');
-const { keywordCheck, targetsResident } = await import('../server/guard.js');
+const { keywordCheck, targetsResident } = await import('../server/guard.ts');
 const { ratingAtLeast, lethal } = await import('../server/kernel/ratings.ts');
 
 llm.setMock(null);
@@ -477,7 +477,7 @@ test('通用：反派的欲望压力累积到头会逼他行动；打倒对方�
 
 // ---------- 创世：参考模式与威胁生成（设计 §4.12）----------
 test('创世参考模式：只借题材要素生成原创世界，威胁的规律编译进内核（写坏的让模型改一次），避免清单里的词会被拦下', { timeout: 60_000 }, async (t) => {
-  const { runGenesis } = await import('../server/genesis/pipeline.js');
+  const { runGenesis } = await import('../server/genesis/pipeline.ts');
   const prompts = {};
   let leakName = false;
   const threat = (over = {}) => ({

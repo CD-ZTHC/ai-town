@@ -3,11 +3,11 @@
 //   本地模式：所有请求都视为内置的本地管理员账号（昵称取 LOCAL_NICKNAME）；设置了 ADMIN_TOKEN 时管理操作仍需令牌
 import crypto from 'node:crypto';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
-import { config, clientIp } from '../guard.js';
+import { config, clientIp } from '../guard.ts';
 import { get as setting } from '../settings/index.ts';
-import { isAdminUser } from '../accounts/authz.js';
-import { SESSION_TTL } from '../accounts/index.js';
-import { HttpError, nodeLike } from './util.js';
+import { isAdminUser } from '../accounts/authz.ts';
+import { SESSION_TTL } from '../accounts/index.ts';
+import { HttpError, nodeLike } from './util.ts';
 
 export const COOKIE = 'town_sid';
 

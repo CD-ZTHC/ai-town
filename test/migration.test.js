@@ -10,7 +10,7 @@ const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const llm = await import('../server/llm.ts');
 const { Town } = await import('../server/sim.ts');
-const { loadPack } = await import('../server/worlds/pack.js');
+const { loadPack } = await import('../server/worlds/pack.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-migration-'));
 const pack = loadPack(path.resolve('worlds/little-red'));

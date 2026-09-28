@@ -5,10 +5,10 @@
 //   tick()     每个世界各自计算「无人观看」时长：先休眠（IDLE_PAUSE_SEC，不推进时间、不调用模型），再卸载（WORLD_UNLOAD_SEC）
 // 常驻世界（PINNED_WORLDS）不会被卸载，但计入上限。
 import fs from 'node:fs';
-import { WorldHost } from './host.js';
-import { WorldRegistry } from './registry.js';
-import { worldRoot } from './migrate.js';
-import { checkDisk, diskLimit } from './disk.js';
+import { WorldHost } from './host.ts';
+import { WorldRegistry } from './registry.ts';
+import { worldRoot } from './migrate.ts';
+import { checkDisk, diskLimit } from './disk.ts';
 import { get as setting } from '../settings/index.ts';
 
 export class WorldFullError extends Error {

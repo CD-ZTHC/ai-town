@@ -4,7 +4,7 @@ import * as llm from '../llm.ts';
 import { addMemory, retrieve, fmtTime, fmtStamp, condenseCandidate, replaceWithSummary, ruleSummary } from '../memory.ts';
 import { useAbility } from '../kernel/abilities.ts';
 import { clampStr } from './util.ts';
-import { renderRefs } from '../accounts/refs.js';
+import { renderRefs } from '../accounts/refs.ts';
 import type { Town } from '../sim.ts';
 import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
 import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';

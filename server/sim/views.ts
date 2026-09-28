@@ -7,7 +7,7 @@ import { fmtTime, fmtStamp } from '../memory.ts';
 import { publicSpec } from '../kernel/spec.ts';
 import { findAbility } from '../kernel/abilities.ts';
 import { threadList } from '../story/threads.ts';
-import { renderRefs, ref } from '../accounts/refs.js';
+import { renderRefs, ref } from '../accounts/refs.ts';
 import type { Town } from '../sim.ts';
 import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
 import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';

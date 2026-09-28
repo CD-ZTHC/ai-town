@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import * as settings from '../settings/index.ts';
 import { GROUPS, SETTINGS } from '../settings/schema.ts';
 import { createProvider } from '../llm-providers.ts';
-import { HttpError } from './util.js';
+import { HttpError } from './util.ts';
 
 /**
  * @param {object} deps

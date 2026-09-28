@@ -10,7 +10,7 @@ const { classOf } = await import('../server/scheduler/classes.ts');
 const { Scheduler } = await import('../server/scheduler/index.ts');
 const { withContext } = await import('../server/scheduler/context.ts');
 const { Ledger, budgetPolicy } = await import('../server/scheduler/budget.ts');
-const { openDb } = await import('../server/accounts/db.js');
+const { openDb } = await import('../server/accounts/db.ts');
 const llm = await import('../server/llm.ts');
 
 test('label → 级别：调度策略只有这一张表', () => {

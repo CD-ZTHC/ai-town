@@ -15,8 +15,8 @@ const { makeLLM } = await import('../evolution/llm.js');
 const { runJob, currentSpec } = await import('../evolution/pipeline.js');
 const { discover } = await import('../evolution/discover.js');
 const { Town } = await import('../server/sim.ts');
-const { loadPack } = await import('../server/worlds/pack.js');
-const { migrateEvolution } = await import('../server/worlds/migrate.js');
+const { loadPack } = await import('../server/worlds/pack.ts');
+const { migrateEvolution } = await import('../server/worlds/migrate.ts');
 
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'evolved');
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-evo-worlds-'));

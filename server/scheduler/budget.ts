@@ -22,7 +22,7 @@ export type Billing = 'server' | 'own';
 export type Usage = { total: number } & Record<LlmClass, number>;
 const emptyUsage = (): Usage => ({ total: 0, P0: 0, P1: 0, P2: 0, P3: 0, P4: 0 });
 
-/** 预算判断需要的世界登记项字段（worlds/registry.js） */
+/** 预算判断需要的世界登记项字段（worlds/registry.ts） */
 export interface BudgetWorld {
   id: string;
   official?: boolean;

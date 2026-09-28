@@ -7,19 +7,19 @@
 //     DELETE /:id         被世界引用时需要 ?confirm=1；确认后这些世界暂停
 //     POST   /:id/test    测试连接（列出模型 + 一次很短的补全），每人每分钟 3 次
 import { Hono } from 'hono';
-import { authorize } from '../accounts/authz.js';
-import { SITE } from '../accounts/llm-credentials.js';
-import { quota } from '../accounts/quota.js';
+import { authorize } from '../accounts/authz.ts';
+import { SITE } from '../accounts/llm-credentials.ts';
+import { quota } from '../accounts/quota.ts';
 import { get as setting } from '../settings/index.ts';
-import { HttpError } from './util.js';
+import { HttpError } from './util.ts';
 
 const clip = (v, max) => String(v ?? '').trim().slice(0, max);
 
 /**
  * @param {object} deps
- * @param {import('../accounts/llm-credentials.js').LlmCredentials} deps.credentials
+ * @param {import('../accounts/llm-credentials.ts').LlmCredentials} deps.credentials
  * @param {ReturnType<import('../world-llm.ts').createWorldLlm>} deps.worldLlm
- * @param {import('../accounts/index.js').Accounts} [deps.accounts]
+ * @param {import('../accounts/index.ts').Accounts} [deps.accounts]
  * @param {'user'|'site'} deps.scope
  */
 export function credentialsApi({ credentials, worldLlm, accounts = null, scope = 'user' }) {

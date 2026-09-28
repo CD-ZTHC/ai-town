@@ -3,7 +3,7 @@
 import { validateThreat, validateBurden, POSTURES } from '../kernel/threat-spec.ts';
 import { EXPR_FN_DOCS, EFFECTS } from '../kernel/effects.ts';
 import { validateAbility } from '../kernel/abilities.ts';
-import { packSpec } from '../worlds/pack.js';
+import { packSpec } from '../worlds/pack.ts';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const ID_RE = /^[a-z][a-z0-9_]{1,23}$/;

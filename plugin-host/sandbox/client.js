@@ -3,7 +3,7 @@ import { fork } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { trackChild } from '../../server/memstat.js';
+import { trackChild } from '../../server/memstat.ts';
 
 const RUNNER = path.join(path.dirname(fileURLToPath(import.meta.url)), 'runner.js');
 // 路径里有符号链接时（例如 macOS 的 /var → /private/var），权限模型有的地方按原路径、有的按真实路径比对，两种都放行

@@ -10,7 +10,7 @@ const { Town } = await import('../server/sim.ts');
 const llm = await import('../server/llm.ts');
 const { computeTension } = await import('../server/story/tension.ts');
 const { checkBeat } = await import('../server/story/beats.ts');
-const { keywordCheck } = await import('../server/guard.js');
+const { keywordCheck } = await import('../server/guard.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-story-'));
 const tick = () => new Promise((r) => setImmediate(r));
