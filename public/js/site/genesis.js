@@ -1,6 +1,7 @@
 // 创世向导（多世界设计 §4.3）：1 来源 → 2 声明 → 3 选项 → 4 提交（排队位置、阶段、用量）→ 5 预览与编辑 → 6 发布
 import { api, esc, $, $$, toast, ROOT, fmtNum } from './api.js';
 import { loginDialog } from './auth.js';
+import { aiForm, bindAiForm } from './ai-settings.js';
 
 const STAGES = { queued: '排队中', G1: '阅读原文', G2: '整理世界圣经', G3: '确定改编方案', G4: '生成地图、居民与剧情线', G5: '验证：考据、试跑、审核', done: '完成', failed: '失败' };
 const RATING = { cozy: '温馨', adventure: '冒险', epic: '史诗', dark: '黑暗（允许战斗、怪异与死亡作为叙事事件）', tragic: '悲剧（允许离别与死亡作为叙事事件）' };
@@ -14,10 +15,12 @@ async function boot() {
   try { q = await api('api/genesis/quota'); } catch (e) { app.innerHTML = `<div class="card"><h2>还没有创世权限</h2><p class="muted">${esc(e.message)}。创世权限由管理员授予，授予时会给出可创建的世界数、原文字数与 token 额度。</p><a href="./">← 回到大厅</a></div>`; return; }
   const jobId = new URLSearchParams(location.search).get('job');
   if (jobId) return progress(jobId);
-  wizard(q);
+  // 自己的模型服务（按世界配置模型服务设计 §10.2）：创世和之后世界里的一切都用它，不扣创世额度
+  const creds = await api('api/me/llm-credentials').catch(() => null);
+  wizard(q, creds);
 }
 
-function wizard(q) {
+function wizard(q, creds = null) {
   const left = q.quota.genesisTokens - q.used.genesisTokens;
   app.innerHTML = `
     <h1>把一个故事变成会自己生活的世界</h1>
@@ -48,9 +51,12 @@ function wizard(q) {
       <div class="setting"><div class="k">生成按规律行事的威胁<div class="help">它们按各自的规律伤人，居民要靠线索、禁忌和对抗活下去（黑暗、悲剧分级默认开启）</div></div><div class="v"><label class="row"><input type="checkbox" id="threats"> 开启</label></div></div>
       <div class="setting"><div class="k">主角数量<div class="help">主角有完整的思考与反思，其余是配角</div></div><div class="v"><input id="leads" type="number" min="1" max="8" value="4"></div></div>
       <div class="setting"><div class="k">允许这个世界自主进化<div class="help">AI 可以为这个世界长出新功能（上线前由你终审）</div></div><div class="v"><label class="row"><input type="checkbox" id="evo"> 开启</label></div></div>
+      ${creds ? `<div class="setting"><div class="k">用哪套模型<div class="help">用自己的模型服务时，创世和之后世界里的所有模型调用都用它，不扣创世额度；内容审核仍由站点完成。模型服务在<a href="mine.html">我的世界</a>里管理</div></div>
+        <div class="v" id="ai-pick">${aiForm({ source: 'server' }, creds.list, { maxConcurrency: 4, allowed: creds.enabled, serverNote: `（创世额度剩余 ${fmtNum(left)}）` })}</div></div>` : ''}
     </div>
     <div class="row" style="margin-top:16px"><button class="primary" id="go">4 · 提交创世</button><span id="go-msg" class="small"></span></div>`;
-  for (const b of $$('[data-src]')) b.onclick = () => { state.text = $('#text')?.value || state.text; state.source = b.dataset.src; wizard(q); };
+  for (const b of $$('[data-src]')) b.onclick = () => { state.text = $('#text')?.value || state.text; state.source = b.dataset.src; wizard(q, creds); };
+  const readAi = creds ? bindAiForm($('#ai-pick'), creds.list) : () => null;
   const count = () => { const n = $('#text').value.length; $('#count').textContent = `${fmtNum(n)} 字${n > q.quota.maxSourceChars ? `，超过了你的配额 ${fmtNum(q.quota.maxSourceChars)} 字` : ''}`; };
   $('#text')?.addEventListener('input', count);
   if ($('#text')) count();
@@ -88,7 +94,7 @@ function wizard(q) {
         sourceId = d.sourceId;
       }
       const r = await api('api/genesis', {
-        id: $('#wid').value.trim(), sourceId, declaration: $('#decl').checked,
+        id: $('#wid').value.trim(), sourceId, declaration: $('#decl').checked, ai: readAi(),
         options: {
           description: $('#desc')?.value || '', start: $('#start').value, fidelity: $('#fidelity').value, rating: $('#rating').value, leads: Number($('#leads').value), evolution: $('#evo').checked,
           storyteller: $('#storyteller').value, threats: $('#threats').checked,

@@ -286,7 +286,7 @@ export class CreatureSystem {
     const town = this.town;
     const hostile = this.list.filter((c) => !c.friendly && !c.hidden);
     if (!hostile.length || town.t - (town.swarmAt ?? -999) < 120 || this.thinking) return;
-    if (!llm.stats.enabled || llm.budgetLeft() <= 0 || llm.isBusy()) return;
+    if (!llm.enabled() || llm.budgetLeft() <= 0 || llm.isBusy()) return;
     town.swarmAt = town.t;
     this.thinking = true;
     const outside = town.agents.filter((a) => a.kind !== 'creature' && !a.inside && a.status !== 'sleeping').map((a) => `${a.name}在${town.locName(a.locId) || '路上'}`);

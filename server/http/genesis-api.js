@@ -38,6 +38,7 @@ export function genesisQuota(grant) {
  * @param {GenesisJobs} deps.jobs
  * @param {(userId) => number} deps.used 创世已用 token（P3，按创世者累计）
  * @param {() => number} [deps.userDiskTotal]
+ * @param {ReturnType<import('../world-llm.js').createWorldLlm>} [deps.worldLlm] 创世时可以选用自己的模型服务
  */
 export function genesisApi(deps) {
   const api = new Hono();
@@ -117,7 +118,9 @@ export function genesisApi(deps) {
     if (!quota.ratings.includes(rating)) throw new HttpError(403, `你的创世权限只允许这些分级：${quota.ratings.join('、')}`);
     const mine = registry.list({ ownerId: user.id }).filter((w) => !['archived', 'failed'].includes(w.status));
     if (mine.length >= quota.maxWorlds) throw new HttpError(403, `最多可以创建 ${quota.maxWorlds} 个世界（已有 ${mine.length} 个）`);
-    if (deps.used(user.id) >= quota.genesisTokens) throw new HttpError(403, '你的创世额度已经用完了');
+    // 用自己的模型服务创世（按世界配置模型服务设计 §5.6）：先按世界的规则校验，不扣站点的创世额度
+    const ai = b.ai && b.ai.source === 'own' && deps.worldLlm ? deps.worldLlm.validate(b.ai, { id, ownerId: user.id, official: false, settings: {} }) : null;
+    if (!ai && deps.used(user.id) >= quota.genesisTokens) throw new HttpError(403, '你的创世额度已经用完了，可以改用自己的模型服务');
     if (deps.userDiskTotal && GenesisJobs.diskFull(deps.userDiskTotal())) throw new HttpError(503, '服务器的世界存储空间满了，暂时不接受新的创世，请联系管理员');
     const sourceId = b.sourceId ? String(b.sourceId) : null;
     if (sourceId && jobs.sourceOwner(sourceId) !== user.id) throw new HttpError(404, '原文不存在，请重新上传');
@@ -134,9 +137,9 @@ export function genesisApi(deps) {
       avoid: (Array.isArray(o.avoid) ? o.avoid : String(o.avoid || '').split(/[，,、\s|]+/)).map((x) => String(x).trim().slice(0, 16)).filter(Boolean).slice(0, 40),
       threats: o.threats === undefined ? ['dark', 'tragic'].includes(rating) : Boolean(o.threats),
     };
-    registry.create({ id, ownerId: user.id, title: String(b.title || id).slice(0, 40), status: 'drafting', rating, evolution: options.evolution });
+    registry.create({ id, ownerId: user.id, title: String(b.title || id).slice(0, 40), status: 'drafting', rating, evolution: options.evolution, settings: ai ? { ai } : {} });
     const job = jobs.create({ ownerId: user.id, worldId: id, options, sourceId });
-    accounts?.audit({ actor: user.id, action: 'genesis.submit', target: id, detail: { job: job.id, declaration: '来源是公版作品或本人有权使用', sourceId, rating } });
+    accounts?.audit({ actor: user.id, action: 'genesis.submit', target: id, detail: { job: job.id, declaration: '来源是公版作品或本人有权使用', sourceId, rating, ai: ai ? { credential: ai.credential, model: ai.models.default } : 'server' } });
     return c.json({ ok: true, jobId: job.id, worldId: id, position: jobs.position(job.id) });
   });
 

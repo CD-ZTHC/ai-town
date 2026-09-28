@@ -106,6 +106,19 @@ export function activeEvents(day, minute) {
   return (app.spec?.calendar.events || []).filter((e) => e.day === day && minute >= (hm(e.from) ?? 0) && minute < (e.to ? hm(e.to) : 1440));
 }
 
+/** 世界暂停的提示条：普通访客只看到「暂时不可用」；主人和管理员可以在「我的世界」或管理面板里查看原因并修复 */
+function showHalt(info) {
+  let el = document.getElementById('halt-bar');
+  if (!info) { el?.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'halt-bar';
+    el.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:40;max-width:min(560px,92vw);padding:10px 16px;border-radius:12px;background:rgba(60,20,24,.92);border:1px solid rgba(255,122,122,.5);color:#ffd9d9;font-size:14px;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.4)';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `⛔ ${String(info.text || '这个世界的 AI 服务暂时不可用，世界暂停了').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}<div style="font-size:12px;opacity:.8">世界的主人修好模型服务后会自动恢复。是主人？去 <a href="../../mine.html" style="color:#ffb86b">我的世界</a> 查看原因。</div>`;
+}
+
 // ---------- 数据流 ----------
 function connect() {
   const es = new EventSource('api/stream');
@@ -131,6 +144,7 @@ function connect() {
     renderer.setCreatureTypes(d.spec?.creatures);
     for (const a of d.agents) a.portrait = renderer.portraits[a.id];
     UI.init(app, first);
+    showHalt(d.state?.halted || null);
     const perms = app.refreshPerms();
     if (first) {
       perms.then(() => Modes.start());
@@ -141,6 +155,9 @@ function connect() {
     }
   });
   es.addEventListener('tick', (e) => { app.snap = JSON.parse(e.data); });
+  // 世界自带的模型服务出了致命错误：世界暂停，修好后自动恢复（world-llm 设计 §5.4）
+  es.addEventListener('halt', (e) => showHalt(JSON.parse(e.data || '{}')));
+  es.addEventListener('resume', () => { showHalt(null); UI.toast('✅ AI 服务恢复了，世界继续运转', 5000); });
   es.addEventListener('log', (e) => UI.onLog(JSON.parse(e.data)));
   es.addEventListener('agent', (e) => UI.onAgentChanged(JSON.parse(e.data).id));
   es.addEventListener('newspaper', (e) => { const p = JSON.parse(e.data); UI.onNewspaper(p); Immerse.onNewspaper(p); });

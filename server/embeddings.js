@@ -13,11 +13,11 @@ const BATCH = 64; // 一次请求最多多少条文本
 const MAX_PER_CALL = 128; // 一次检索最多补算多少条记忆（其余下次再算）
 const MEM_CACHE_MAX = 20_000;
 
-/** OpenAI 兼容的 /embeddings 接口 */
-export function openaiEmbeddings({ baseUrl, apiKey, model }) {
+/** OpenAI 兼容的 /embeddings 接口（世界自带的模型服务注入 safeFetch） */
+export function openaiEmbeddings({ baseUrl, apiKey, model, fetch: f = null }) {
   const base = String(baseUrl || '').replace(/\/+$/, '');
   return async (texts, { signal } = {}) => {
-    const res = await fetch(`${base}/embeddings`, {
+    const res = await (f || fetch)(`${base}/embeddings`, {
       method: 'POST', signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model, input: texts }),
@@ -71,18 +71,27 @@ async function openStore(dir) {
   };
 }
 
+// 按世界配置模型服务：世界用自己的模型服务时，embedding 也用世界配置的（没配就不开），不借用服务器的。
+// 由服务入口注入：(worldId) => null（用服务器的设置）| { env, fetch? }
+let worldResolver = null;
+export function setEmbedResolver(fn) { worldResolver = fn || null; }
+
 /**
  * @param {object} opts
+ * @param {string} [opts.worldId] 世界（用来解析世界自带的 embedding 配置）
  * @param {Record<string, string|undefined>} [opts.env]
  * @param {string} [opts.dir] 缓存目录（不填只缓存在内存）
  * @param {(texts: string[], o?: {signal?: AbortSignal}) => Promise<{vectors: number[][], tokens?: number}>} [opts.embed] 测试用：注入假的 embedding
  */
-export function createEmbedder({ env = settingsEnv(), dir = null, embed = null } = {}) {
+export function createEmbedder({ env = null, dir = null, embed = null, worldId = null } = {}) {
+  const own = !env && worldId && worldResolver ? worldResolver(worldId) : null;
+  env = own ? own.env : env || settingsEnv();
   const model = env.EMBED_MODEL || '';
-  const baseUrl = env.EMBED_BASE_URL || env.BASE_URL || '';
-  const apiKey = env.EMBED_API_KEY || env.API_KEY || '';
+  // 世界自带的：不回落到服务器的 BASE_URL / API_KEY
+  const baseUrl = env.EMBED_BASE_URL || (own ? '' : env.BASE_URL) || '';
+  const apiKey = env.EMBED_API_KEY || (own ? '' : env.API_KEY) || '';
   const enabled = Boolean(embed || (model && baseUrl && apiKey));
-  const call = embed || (enabled ? openaiEmbeddings({ baseUrl, apiKey, model }) : null);
+  const call = embed || (enabled ? openaiEmbeddings({ baseUrl, apiKey, model, fetch: own?.fetch || null }) : null);
   const timeoutMs = Number(env.EMBED_TIMEOUT_MS || 4000);
   const stats = { enabled, model, calls: 0, texts: 0, tokens: 0, errors: 0, timeouts: 0, lastError: '' };
   let storeP = null;

@@ -13,12 +13,16 @@
   "engines": {
     "node": ">=22.13"
   },
-  "optionalDependencies": {
-    "@earendil-works/pi-ai": "0.87.1"
-  },
   "dependencies": {
     "@hono/node-server": "^1.19.17",
     "hono": "^4.13.9",
     "zod": "^4.6.5"
+  },
+  "optionalDependencies": {
+    "@ai-sdk/anthropic": "^4.0.65",
+    "@ai-sdk/google": "^4.0.82",
+    "@ai-sdk/openai": "^4.0.78",
+    "@ai-sdk/openai-compatible": "^3.0.57",
+    "ai": "^7.0.118"
   }
 }

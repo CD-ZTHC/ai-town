@@ -22,6 +22,9 @@ const EDITABLE = new Set(['drafting', 'preview']);
  * @param {import('../worlds/registry.js').WorldRegistry} deps.registry
  * @param {import('../worlds/manager.js').WorldManager} deps.manager
  * @param {import('../accounts/index.js').Accounts} [deps.accounts]
+ * @param {ReturnType<import('../world-llm.js').createWorldLlm>} [deps.worldLlm] 按世界配置模型服务
+ * @param {(w) => object[]} [deps.credentialsFor] 这个世界可以引用的凭据（主人的；官方世界是站点凭据）
+ * @param {(worldId) => object} [deps.usage] 今日用量 { server, own }
  */
 export function worldsApi(deps) {
   const api = new Hono();
@@ -32,7 +35,7 @@ export function worldsApi(deps) {
     return {
       id: w.id, title: w.title, summary: w.summary, sourceTitle: w.sourceTitle, rating: w.rating, official: w.official, status: w.status,
       owner: w.ownerId ? accounts?.get(w.ownerId)?.nickname || null : null, viewers: h ? h.clients.size : 0, running: Boolean(h), day: h?.town.day ?? null,
-      publishedAt: w.publishedAt,
+      publishedAt: w.publishedAt, halted: Boolean(w.settings?.ai?.halt),
     };
   };
 
@@ -190,7 +193,10 @@ export function worldsApi(deps) {
     // 世界级设置（§14.8）：叙事者、Mod；分级改动要在授予范围内（管理员可以改任何世界）
     if (b.migration !== undefined) settings.migration = Boolean(b.migration);
     if (b.storyteller !== undefined) { if (!STORYTELLERS.includes(b.storyteller)) throw new HttpError(400, '未知叙事者'); settings.storyteller = b.storyteller; }
-    if (b.rating !== undefined && c.get('admin')) settings.rating = String(b.rating);
+    if (b.rating !== undefined && c.get('admin')) {
+      if (!['cozy', 'adventure', 'epic', 'dark', 'tragic'].includes(String(b.rating))) throw new HttpError(400, '未知分级');
+      settings.rating = String(b.rating);
+    }
     // 死亡预算（每 3 天最多几名具名角色死亡）：owner 只能在授予的上限之内调整，管理员不限
     if (b.deathNamed !== undefined) {
       const n = Number(b.deathNamed);
@@ -204,6 +210,14 @@ export function worldsApi(deps) {
       settings.deathNamed = n;
     }
     if (b.mods !== undefined && c.get('admin')) settings.mods = (Array.isArray(b.mods) ? b.mods : []).map(String).slice(0, 12);
+    // 官方世界：管理员改过的标题 / 简介记下来，重启时不被世界包覆盖；resetOverrides 恢复为世界包的值（下次启动时生效）
+    if (w.official) {
+      const o = { ...(w.settings?.overrides || {}) };
+      if (patch.title !== undefined) o.title = true;
+      if (patch.summary !== undefined) o.summary = true;
+      for (const k of Array.isArray(b.resetOverrides) ? b.resetOverrides : []) if (k === 'title' || k === 'summary') delete o[k];
+      if (JSON.stringify(o) !== JSON.stringify(w.settings?.overrides || {})) settings.overrides = o;
+    }
     if (Object.keys(settings).length) patch.settings = settings;
     const next = registry.update(w.id, patch);
     act(c, w, 'world.settings', patch);
@@ -214,6 +228,37 @@ export function worldsApi(deps) {
     const reload = Object.keys(settings).some((k) => !['migration', 'deathNamed'].includes(k));
     if (reload || patch.evolution !== undefined) manager.close(w.id, '世界设置已修改');
     return c.json({ ok: true, world: next });
+  });
+
+  // ---------- 世界的 AI 配置（按世界配置模型服务设计 §10.1）：owner 或管理员；官方世界只有管理员 ----------
+  const wl = () => { if (!deps.worldLlm) throw new HttpError(503, '没有启用按世界配置模型服务'); return deps.worldLlm; };
+  api.get('/:id/ai', (c) => {
+    const w = owned(c);
+    return c.json({
+      ...wl().view(w), usage: deps.usage?.(w.id) || null, credentials: deps.credentialsFor?.(w) || [],
+      allowed: w.official || setting('USER_LLM'), maxConcurrency: setting('USER_LLM_MAX_CONCURRENCY'), maxTimeoutMs: setting('USER_LLM_MAX_TIMEOUT_MS'),
+    });
+  });
+  api.put('/:id/ai', async (c) => {
+    const w = owned(c);
+    const before = wl().normalizeAi(w.settings?.ai);
+    const ai = wl().validate(c.get('body'), w);
+    registry.update(w.id, { settings: { ai } });
+    wl().invalidate(w.id);
+    act(c, w, 'world.ai', { source: ai.source, credential: ai.credential || null, models: ai.models || null });
+    // 语义检索换了：重新加载世界（embedder 在创建世界时建好）
+    if (manager.get(w.id) && JSON.stringify(before.embed || null) !== JSON.stringify(ai.embed || null)) manager.close(w.id, 'AI 设置已修改');
+    // 暂停中的世界：保存后自动重试一次
+    let retry = null;
+    if (ai.halt && quota(c.get('who') || {}, 'llm-test').ok) retry = await wl().retryWorld(w.id, { by: c.get('user')?.id || 'admin' });
+    return c.json({ ok: true, ...wl().view(registry.get(w.id)), retry });
+  });
+  api.post('/:id/ai/retry', async (c) => {
+    const w = owned(c);
+    const q = quota(c.get('who') || {}, 'llm-test');
+    if (!q.ok) throw new HttpError(429, q.message, { retryAfter: q.retryAfter });
+    const r = await wl().retryWorld(w.id, { by: c.get('user')?.id || 'admin' });
+    return c.json({ ...r, ...wl().view(registry.get(w.id)) });
   });
 
   // ---------- 举报（§10.2）：登录用户可以举报世界、角色或单条动态；有效举报达到阈值自动转为不公开 ----------

@@ -66,7 +66,7 @@ export class Council {
     const extra = voters.filter((id) => town.agents.includes(town.byId[id])).sort((a, b) => close(b) - close(a)).slice(0, MEETING_EXTRA);
     const members = [...stakeholders.filter((id) => town.agents.includes(town.byId[id])), ...extra].slice(0, 6);
     const where = this.meetingPlace(t.b);
-    if (llm.stats.enabled && members.length >= 2 && where) {
+    if (llm.enabled() && members.length >= 2 && where) {
       p.council.sceneId = town.scenes.schedule({
         location: where, participants: members, title: `议事：${t.b.name}`.slice(0, 16),
         purpose: `大家商量要不要${verb}「${t.b.name}」。提议的理由：${p.motive || p.title}。${stakeholders.length ? `${stakeholders.map((id) => town.byId[id].name).join('、')}住在或在这里做事，会被影响。` : ''}每个人说出自己的看法。`.slice(0, 160),
@@ -107,7 +107,7 @@ export class Council {
       const c = p.council;
       if (p.status !== 'council' || !c || c.status !== 'deliberating' || c.busy || town.t < (c.nextT ?? 0)) continue;
       if (town.t - c.startT > GIVE_UP_MIN) { town.proposalSystem.finish(p, 'rejected', '一直没能开成议事会'); continue; }
-      if (!llm.stats.enabled || llm.budgetLeft() <= 0) { c.nextT = Math.floor(town.t) + RETRY_MIN; continue; }
+      if (!llm.enabled() || llm.budgetLeft() <= 0) { c.nextT = Math.floor(town.t) + RETRY_MIN; continue; }
       c.busy = true;
       this.deliberate(p).catch((e) => { console.warn('[council]', e.message); c.nextT = Math.floor(town.t) + RETRY_MIN; }).finally(() => { c.busy = false; });
     }

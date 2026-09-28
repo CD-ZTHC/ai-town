@@ -1,4 +1,6 @@
-// 设置中心（多世界设计 §14）：值的来源只有三层，优先级从高到低：环境变量 > 面板保存的值（data/settings.json）> 声明里的默认值。
+// 设置中心（多世界设计 §14）：保存的值（data/settings.json）> 环境变量（只作初始值）> 声明里的默认值。
+// 环境变量只用来给「还没有保存过」的设置提供初始值：服务启动时把它们导入设置文件（seedFromEnv），之后一律以保存的值为准，
+// 改环境变量不会再影响已经保存的设置，面板上也没有被环境变量锁定的项。启动必需的几项（端口、数据目录等）例外，只能用环境变量。
 // 代码里只用 settings.get('KEY')，不再直接读 process.env。每次读取都取当前值，live 类设置保存后立即生效。
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,7 +9,8 @@ import { SETTINGS, parseString, toEnvString, checkValue } from './schema.js';
 const KEEP_VERSIONS = 20;
 const warned = new Set();
 
-// 设置文件：只有显式 load() 之后才读取（测试不调用 load，只看环境变量与默认值）
+// 设置文件：只有显式 load() 之后才读取（测试不调用 load，只看环境变量与默认值）。
+// store.seeded：已经从环境变量导入过初始值的项（导入过就不再导入，即使之后被恢复成默认值）
 let file = null;
 let store = { current: 0, versions: [] };
 let values = {}; // 当前版本里保存的值
@@ -57,21 +60,61 @@ function fromEnv(key) {
   return { invalid: r.error };
 }
 
-/** 设置的当前值 */
+/** 设置的当前值：保存的值优先；没有保存过的才看环境变量（初始值）；都没有用默认值。启动必需的项只看环境变量 */
 export function get(key) {
   const def = SETTINGS[key];
   if (!def) throw new Error(`未声明的设置项：${key}`);
-  const e = fromEnv(key);
-  if (e?.value !== undefined) return e.value;
   if (def.bootstrap !== true && Object.hasOwn(values, key)) return values[key];
+  if (def.bootstrap === true || !(store.seeded || []).includes(key)) {
+    const e = fromEnv(key);
+    if (e?.value !== undefined) return e.value;
+  }
   return typeof def.default === 'function' ? def.default(get) : def.default;
 }
 
-/** 值来自哪里：env / panel / default */
+/** 值来自哪里：panel（保存的值）/ env（环境变量：启动必需的项，或还没导入的初始值）/ default */
 export function source(key) {
-  if (fromEnv(key)?.value !== undefined) return 'env';
-  if (!SETTINGS[key].bootstrap && Object.hasOwn(values, key)) return 'panel';
+  const def = SETTINGS[key];
+  if (!def.bootstrap && Object.hasOwn(values, key)) return 'panel';
+  if ((def.bootstrap || !(store.seeded || []).includes(key)) && fromEnv(key)?.value !== undefined) return 'env';
   return 'default';
+}
+
+/**
+ * 把环境变量作为初始值导入设置文件（服务入口在 load 之后调用一次）：只导入还没有保存过、也没有导入过的项，
+ * 生成一个新版本。已经保存过的项，环境变量与它不同时只提示，不覆盖。返回 { imported, ignored }
+ */
+export function seedFromEnv({ by = 'env' } = {}) {
+  const imported = [];
+  const ignored = [];
+  const seeded = new Set(store.seeded || []);
+  const next = { ...values };
+  for (const [k, def] of Object.entries(SETTINGS)) {
+    if (def.bootstrap || def.scope === 'world' || def.dev) continue;
+    const e = fromEnv(k);
+    if (e?.value === undefined) continue;
+    if (Object.hasOwn(values, k) || seeded.has(k)) {
+      if (JSON.stringify(get(k)) !== JSON.stringify(e.value)) ignored.push(k);
+      continue;
+    }
+    next[k] = e.value;
+    seeded.add(k);
+    imported.push(k);
+  }
+  if (imported.length) {
+    store.seeded = [...seeded];
+    pushVersion(next, { by, note: '从环境变量导入初始值', changed: imported });
+  }
+  if (ignored.length) console.warn(`[settings] 这些环境变量与已保存的设置不同，已忽略（环境变量只用作初始值，请在管理面板里修改）：${ignored.join('、')}`);
+  return { imported, ignored };
+}
+
+/** 环境变量与保存的值不同（面板上提示「环境变量已被忽略」） */
+function envIgnored(key) {
+  const def = SETTINGS[key];
+  if (def.bootstrap) return false;
+  const e = fromEnv(key);
+  return e?.value !== undefined && source(key) !== 'env' && JSON.stringify(get(key)) !== JSON.stringify(e.value);
 }
 
 /**
@@ -81,17 +124,23 @@ export function source(key) {
 export function env(extra = process.env) {
   const out = { ...extra };
   for (const [k, def] of Object.entries(SETTINGS)) {
-    if (def.scope === 'world') continue;
+    if (def.scope === 'world' || def.bootstrap) continue;
     const s = source(k);
     if (s === 'panel') out[k] = toEnvString(def, get(k));
+    // 已经导入过、之后被恢复成默认值的项：子进程不应再看到原来的环境变量
+    else if (s === 'default') delete out[k];
   }
   return out;
 }
 
-/** 启动时检查：环境变量里不合法的值 */
+/**
+ * 启动时检查：环境变量里不合法的值。只检查还起作用的环境变量：启动必需的项，以及还没保存过、要作为初始值导入的项
+ * （已经保存过的项，环境变量本来就会被忽略，写错了也不影响启动）
+ */
 export function envProblems() {
   const out = [];
   for (const k of Object.keys(SETTINGS)) {
+    if (!SETTINGS[k].bootstrap && (Object.hasOwn(values, k) || (store.seeded || []).includes(k))) continue;
     const e = fromEnv(k);
     if (e?.invalid) out.push(`${k}：${e.invalid}`);
   }
@@ -117,7 +166,6 @@ export function validateChanges(changes) {
     const def = SETTINGS[k];
     if (!def || def.dev || def.scope === 'world') { errors[k] = '未知的设置项'; continue; }
     if (def.bootstrap) { errors[k] = '启动必需的设置只能用环境变量修改'; continue; }
-    if (source(k) === 'env') { errors[k] = '已由环境变量锁定'; continue; }
     if (raw === null) { if (Object.hasOwn(next, k)) { delete next[k]; changed.push(k); } continue; }
     const v = typeof raw === 'string' && def.kind !== 'string' && def.kind !== 'enum' ? parseString(def, raw) : raw;
     const r = checkValue(def, v);
@@ -204,7 +252,7 @@ export function view() {
     const def = typeof d.default === 'function' ? d.default(get) : d.default;
     return {
       key, group: d.group, kind: d.kind, values: d.values, label: d.label, help: d.help || '', apply: d.apply, bootstrap: Boolean(d.bootstrap), secret: Boolean(d.secret),
-      value: d.secret ? (value ? mask(value) : '') : value, isSet: Boolean(value), default: d.secret ? '' : def, source: source(key), pending: pending.has(key),
+      value: d.secret ? (value ? mask(value) : '') : value, isSet: Boolean(value), default: d.secret ? '' : def, source: source(key), envIgnored: envIgnored(key), pending: pending.has(key),
     };
   });
 }
@@ -214,5 +262,5 @@ export function exportValues() {
   return Object.fromEntries(Object.entries(values).filter(([k]) => !SETTINGS[k]?.secret));
 }
 
-export const settings = { get, source, env, load, save, restore, markGood, history, view, pendingRestart, envProblems, exportValues, lastRollback };
+export const settings = { get, source, seedFromEnv, env, load, save, restore, markGood, history, view, pendingRestart, envProblems, exportValues, lastRollback };
 export default settings;

@@ -63,7 +63,7 @@ export class Director {
   maybeDecide(urgent) {
     const town = this.town;
     const st = this.st;
-    if (this.deciding || !llm.stats.enabled || llm.budgetLeft() <= 0 || llm.isBusy()) return false;
+    if (this.deciding || !llm.enabled() || llm.budgetLeft() <= 0 || llm.isBusy()) return false;
     const h = town.minute / 60;
     if (h < 7 || h > 22) return false;
     if (!urgent && town.t - st.lastDecisionT < MIN_GAP) return false;

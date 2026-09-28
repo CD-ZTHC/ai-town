@@ -45,6 +45,21 @@ const MIGRATIONS = [
    );
    CREATE TABLE audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '{}');
    CREATE INDEX audit_at ON audit(at);`,
+  // 2：按世界配置模型服务（world-llm 设计 §3）：凭据表；用量账本按计费来源（server / own）分开
+  `CREATE TABLE llm_credentials (
+     id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, provider TEXT NOT NULL, base_url TEXT NOT NULL DEFAULT '',
+     key_enc TEXT NOT NULL, key_last4 TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'unchecked', fail_code TEXT, last_error TEXT,
+     checked_at INTEGER, models TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+   );
+   CREATE INDEX llm_credentials_owner ON llm_credentials(owner);
+   CREATE TABLE usage2 (
+     day TEXT NOT NULL, world_id TEXT NOT NULL, user_id TEXT NOT NULL, class TEXT NOT NULL, billing TEXT NOT NULL DEFAULT 'server',
+     tokens INTEGER NOT NULL DEFAULT 0, calls INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (day, world_id, user_id, class, billing)
+   );
+   INSERT INTO usage2 (day, world_id, user_id, class, billing, tokens, calls) SELECT day, world_id, user_id, class, 'server', tokens, calls FROM usage;
+   DROP TABLE usage;
+   ALTER TABLE usage2 RENAME TO usage;`,
 ];
 
 /** 打开（或创建）账号数据库并执行迁移。file 为 ':memory:' 时只在内存里（测试用） */

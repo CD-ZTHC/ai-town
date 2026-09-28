@@ -13,7 +13,7 @@ export class Views {
   snapshot() {
     const now = Date.now();
     return {
-      t: this.t, speed: this.speed, paced: this.paced < 1 ? +this.paced.toFixed(2) : null, paused: this.paused, idle: !!this.idle, weather: this.weather, nightSkip: !!this.nightSkip,
+      t: this.t, speed: this.speed, paced: this.paced < 1 ? +this.paced.toFixed(2) : null, paused: this.paused, idle: !!this.idle, halted: this.halted || null, weather: this.weather, nightSkip: !!this.nightSkip,
       agents: this.agents.map((a) => ({
         id: a.id, x: +a.x.toFixed(3), y: +a.y.toFixed(3), dir: a.dir, moving: a.moving, status: a.status, region: a.region || 'town',
         inside: a.inside, emoji: a.action.emoji, action: a.action.text, loc: a.locId, mood: a.mood.emoji,

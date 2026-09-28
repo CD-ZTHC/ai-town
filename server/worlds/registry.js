@@ -84,7 +84,10 @@ export class WorldRegistry {
     const w = this.get(id);
     const r = settings?.rating || rating;
     if (!w) return this.create({ id, title, summary, status: lethal(r) ? 'unlisted' : 'public', official: true, packHash, settings, rating: r });
-    this.db.prepare('UPDATE worlds SET title = ?, summary = ?, pack_hash = ?, official = 1, rating = ? WHERE id = ?').run(title, summary, packHash, w.settings?.rating || rating, id);
+    // 管理员改过的标题 / 简介（settings.overrides）不再被世界包覆盖（按世界配置模型服务设计 §9.2）
+    const o = w.settings?.overrides || {};
+    this.db.prepare('UPDATE worlds SET title = ?, summary = ?, pack_hash = ?, official = 1, rating = ? WHERE id = ?')
+      .run(o.title ? w.title : title, o.summary ? w.summary : summary, packHash, w.settings?.rating || rating, id);
     return this.get(id);
   }
 

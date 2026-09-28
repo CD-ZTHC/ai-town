@@ -12,28 +12,72 @@ for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const settings = await import('../server/settings/index.js');
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-settings-'));
 
-test('三层来源：环境变量 > 面板 > 默认值；环境变量写错时忽略并报告', (t) => {
+test('来源：保存的值 > 环境变量（只作初始值）> 默认值；没有被环境变量锁定的项', (t) => {
   const dir = tmp();
   settings.load({ dataDir: dir });
   t.after(() => { delete process.env.LLM_CONCURRENCY; settings._setForTest({}); });
   assert.equal(settings.get('LLM_CONCURRENCY'), 4);
   assert.equal(settings.source('LLM_CONCURRENCY'), 'default');
-  settings.save({ LLM_CONCURRENCY: 8 }, { by: 'test' });
-  assert.equal(settings.get('LLM_CONCURRENCY'), 8);
-  assert.equal(settings.source('LLM_CONCURRENCY'), 'panel');
   process.env.LLM_CONCURRENCY = '2';
-  assert.equal(settings.get('LLM_CONCURRENCY'), 2);
+  assert.equal(settings.get('LLM_CONCURRENCY'), 2, '还没保存过：环境变量作为初始值');
   assert.equal(settings.source('LLM_CONCURRENCY'), 'env');
-  // 被环境变量锁定的项不能在面板里改
-  assert.throws(() => settings.save({ LLM_CONCURRENCY: 3 }), /已由环境变量锁定/);
+  settings.save({ LLM_CONCURRENCY: 8 }, { by: 'test' });
+  assert.equal(settings.get('LLM_CONCURRENCY'), 8, '保存之后以保存的值为准');
+  assert.equal(settings.source('LLM_CONCURRENCY'), 'panel');
+  assert.equal(settings.view().find((x) => x.key === 'LLM_CONCURRENCY').envIgnored, true);
   process.env.LLM_CONCURRENCY = 'abc';
-  assert.equal(settings.get('LLM_CONCURRENCY'), 8, '不合法的环境变量被忽略');
-  assert.deepEqual(settings.envProblems(), ['LLM_CONCURRENCY：应为整数']);
-  // 按其他设置推导的默认值
+  assert.equal(settings.get('LLM_CONCURRENCY'), 8);
+  assert.deepEqual(settings.envProblems(), [], '已经保存过的项，环境变量写错也不影响启动');
+  // 按其他设置推导的默认值；启动必需的项仍然只看环境变量
   assert.equal(settings.get('LLM_DAILY_TOKENS'), 0);
   process.env.PUBLIC_MODE = '1';
   assert.equal(settings.get('LLM_DAILY_TOKENS'), 3_000_000);
+  assert.equal(settings.source('PUBLIC_MODE'), 'env');
+  process.env.PORT = 'x';
+  assert.deepEqual(settings.envProblems(), ['PORT：应为整数']);
+  delete process.env.PORT;
   delete process.env.PUBLIC_MODE;
+});
+
+test('启动时导入：还没保存过的环境变量写进设置文件；之后改环境变量不生效；恢复默认后也不再导入', (t) => {
+  const dir = tmp();
+  const env = { MODEL: 'glm-seed', LLM_CONCURRENCY: '6', API_KEY: 'sk-seed-12345678', PORT: '4321', STORY_RATING: 'dark' };
+  Object.assign(process.env, env);
+  t.after(() => { for (const k of Object.keys(env)) delete process.env[k]; settings._setForTest({}); });
+  settings.load({ dataDir: dir });
+  const r = settings.seedFromEnv();
+  assert.deepEqual(r.imported.sort(), ['API_KEY', 'LLM_CONCURRENCY', 'MODEL'], '启动必需的项与世界级设置不导入');
+  assert.equal(settings.history()[0].note, '从环境变量导入初始值');
+  assert.equal(settings.source('MODEL'), 'panel');
+  // 重新启动：环境变量改了，不影响已保存的值
+  process.env.MODEL = 'glm-changed';
+  settings.load({ dataDir: dir });
+  const again = settings.seedFromEnv();
+  assert.deepEqual(again.imported, []);
+  assert.deepEqual(again.ignored, ['MODEL']);
+  assert.equal(settings.get('MODEL'), 'glm-seed');
+  assert.equal(settings.get('PORT'), 4321, '启动必需的项仍然来自环境变量');
+  // 面板里改：没有锁定
+  settings.save({ LLM_CONCURRENCY: 3 });
+  assert.equal(settings.get('LLM_CONCURRENCY'), 3);
+  // 恢复默认：不会在下次启动时又被环境变量导入
+  settings.save({ MODEL: null });
+  settings.load({ dataDir: dir });
+  assert.deepEqual(settings.seedFromEnv().imported, []);
+  assert.equal(settings.get('MODEL'), '');
+  assert.equal(settings.source('MODEL'), 'default');
+  // 子进程看到的是保存的值；已恢复默认的项去掉原来的环境变量
+  const child = settings.env({ ...process.env });
+  assert.equal(child.LLM_CONCURRENCY, '3');
+  assert.equal(child.MODEL, undefined);
+  assert.equal(child.API_KEY, 'sk-seed-12345678');
+  // 新出现的环境变量（之前没有设置过的项）在下次启动时导入
+  process.env.MODEL_FAST = 'glm-fast';
+  settings.load({ dataDir: dir });
+  assert.deepEqual(settings.seedFromEnv().imported, ['MODEL_FAST']);
+  // 回退版本不影响「已导入」的记录
+  const f = path.join(dir, 'settings.json');
+  assert.ok(JSON.parse(fs.readFileSync(f, 'utf8')).seeded.includes('MODEL'));
 });
 
 test('保存：按声明校验，写错的值被拒绝；启动必需的项只能用环境变量；文件以 0600 写入', (t) => {

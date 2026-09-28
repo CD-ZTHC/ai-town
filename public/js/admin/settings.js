@@ -1,11 +1,12 @@
 // 管理面板 · 设置（多世界设计 §14.2~§14.7）：按组编辑、来源标记、待重启提示、测试连接、历史与恢复
 import { api, esc, $, $$, toast, dialog, fmtTime } from '../site/api.js';
 
-const SOURCE = { env: '由环境变量锁定', panel: '面板设置', default: '默认值' };
+// 环境变量只作初始值：启动时导入设置文件，之后以保存的值为准（启动必需的项除外，只能用环境变量）
+const SOURCE = { env: '环境变量', panel: '已保存', default: '默认值' };
 const LLM_KEYS = new Set(['BASE_URL', 'API_KEY', 'MODEL', 'LLM_PROVIDER']);
 
 function control(it) {
-  const locked = it.source === 'env' || it.bootstrap;
+  const locked = it.bootstrap;
   const dis = locked ? 'disabled' : '';
   const k = esc(it.key);
   if (it.kind === 'bool') return `<label class="row"><input type="checkbox" data-k="${k}" ${it.value ? 'checked' : ''} ${dis} /> <span>${it.value ? '开' : '关'}</span></label>`;
@@ -35,7 +36,7 @@ async function render(el, ctx) {
   for (const it of s.items) (byGroup[it.group] ||= []).push(it);
   el.innerHTML = `
     <div class="row" style="margin-bottom:12px">
-      <span class="muted small">值的来源：环境变量 &gt; 面板设置 &gt; 默认值。启动必需的项（端口、数据目录等）只能用环境变量修改。</span>
+      <span class="muted small">所有设置都在这里修改，以保存的值为准；环境变量只在第一次启动时作为初始值导入。启动必需的项（端口、数据目录等）只能用环境变量修改。</span>
       <span style="flex:1"></span>
       <button id="s-history">历史版本</button>
       <button class="primary" id="s-save" disabled>保存</button>
@@ -49,7 +50,8 @@ async function render(el, ctx) {
               <div class="k">${esc(it.label)}<code>${esc(it.key)}</code></div>
               <div class="help">${esc(it.help)}</div>
               <div class="small">
-                <span class="pill ${it.source === 'env' ? 'warn' : it.source === 'panel' ? 'good' : ''}">${SOURCE[it.source]}</span>
+                <span class="pill ${it.source === 'panel' ? 'good' : ''}">${it.bootstrap && it.source === 'env' ? '环境变量（启动必需）' : SOURCE[it.source]}</span>
+                ${it.envIgnored ? '<span class="pill warn" title="环境变量只作初始值，这一项以保存的值为准">环境变量与这里不同，已忽略</span>' : ''}
                 ${it.apply === 'restart' ? '<span class="pill">重启后生效</span>' : ''}
                 ${it.pending ? '<span class="pill bad">待重启</span>' : ''}
                 ${!it.secret && it.source !== 'default' ? `<span class="muted">默认：${esc(Array.isArray(it.default) ? it.default.join(', ') : String(it.default))}</span>` : ''}
@@ -64,7 +66,7 @@ async function render(el, ctx) {
   const changes = () => {
     const out = {};
     for (const it of s.items) {
-      if (it.source === 'env' || it.bootstrap) continue;
+      if (it.bootstrap) continue;
       const v = readValue(it, el);
       if (v === undefined) continue;
       if (it.secret || JSON.stringify(v) !== JSON.stringify(it.value)) out[it.key] = v;

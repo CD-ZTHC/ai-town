@@ -5,10 +5,11 @@ ENV NODE_ENV=production \
     PORT=3000 \
     PUBLIC_MODE=1
 WORKDIR /app
-# WITH_PI=1 时连同可选依赖 pi-ai 一起安装（LLM_PROVIDER=pi 需要）：docker compose build --build-arg WITH_PI=1
-ARG WITH_PI=0
+# 可选依赖 AI SDK（约 22MB）默认一起安装：anthropic / google / aisdk 类型的模型服务需要它。
+# 只用 OpenAI 兼容接口、想要更小的镜像时：docker compose build --build-arg WITH_AISDK=0
+ARG WITH_AISDK=1
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev $([ "$WITH_PI" = "1" ] || echo --omit=optional) --no-audit --no-fund && npm cache clean --force
+RUN npm ci --omit=dev $([ "$WITH_AISDK" = "1" ] || echo --omit=optional) --no-audit --no-fund && npm cache clean --force
 COPY server ./server
 COPY public ./public
 COPY spec ./spec

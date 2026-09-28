@@ -22,6 +22,8 @@ const BUCKETS = {
   plugin: { user: [new Limiter(30, 60_000)], ip: new Limiter(ipMax(() => 30), 60_000), what: '使用插件' },
   report: { user: [new Limiter(10, H)], ip: new Limiter(ipMax(() => 10), H), what: '举报' },
   register: { ip: new Limiter(() => setting('REGISTER_PER_IP_HOUR'), H), what: '注册' },
+  // 测试模型服务的连接（含保存凭据、世界 AI 设置后的自动测试）：防止被用来探测网络或刷上游
+  'llm-test': { user: [new Limiter(3, 60_000)], ip: new Limiter(ipMax(() => 3), 60_000), what: '测试连接' },
 };
 setInterval(() => { for (const b of Object.values(BUCKETS)) for (const l of [...(b.user || []), b.ip, b.world].filter(Boolean)) l.sweep(); }, 300_000).unref();
 

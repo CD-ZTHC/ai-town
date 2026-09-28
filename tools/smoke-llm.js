@@ -25,8 +25,14 @@ const { useAbility } = await import('../server/kernel/abilities.js');
 
 if (MOCK) {
   // 与无头回放测试共用同一份录制回复
-  const { fixtureMock } = await import('../test/fixtures/llm/index.js');
-  llm.setMock(fixtureMock());
+  const { fixtureMock, loadFixtures } = await import('../test/fixtures/llm/index.js');
+  // 模拟模式的结果不能取决于本机 .env：不加载 Mod（Mod 会改地图，影响世界架构师的选址）；
+  // 录制里有几条世界架构师的回复选址在 Mod 加的地点（lakeside_story）旁边，只用不依赖 Mod 的回复
+  //（第一条选址写错、改正后的第二条通过，顺带走一遍修正流程）
+  delete process.env.MODS;
+  const fx = loadFixtures();
+  fx['世界架构师'] = fx['世界架构师'].filter((r) => !JSON.stringify(r).includes('lakeside_story'));
+  llm.setMock(fixtureMock(fx));
 }
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-smoke-'));

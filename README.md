@@ -27,13 +27,13 @@ mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实
 
 ### 设置
 
-所有设置在**管理面板 `/admin` → 设置**里修改：按组编辑，保存前校验取值范围，模型相关的改动可以先「测试连接」，每次保存生成一个版本（可以查看历史、一键恢复）。只有 6 项「启动必需」的设置必须用环境变量（`PORT`、`HOST`、`DATA_DIR`、`PUBLIC_MODE`、`TRUST_PROXY`、`ADMIN_TOKEN`，见 `.env.example`）。
+所有设置在**管理面板 `/admin` → 设置**里修改：按组编辑，保存前校验取值范围，模型相关的改动可以先「测试连接」，每次保存生成一个版本（可以查看历史、一键恢复）。只有 7 项「启动必需」的设置必须用环境变量（`PORT`、`HOST`、`DATA_DIR`、`PUBLIC_MODE`、`TRUST_PROXY`、`ADMIN_TOKEN`、`SECRETS_KEY`，见 `.env.example`）。
 
-- 值的来源：**环境变量 > 面板保存的值（`data/settings.json`）> 默认值**。已有的 `.env` 升级后行为不变；被环境变量设置的项在面板上显示为锁定。
+- 值的来源：**面板保存的值（`data/settings.json`）> 环境变量（只作初始值）> 默认值**。环境变量只在还没保存过时作为初始值导入设置文件，之后一律以保存的值为准，面板上没有被环境变量锁定的项；再改 `.env` 不会生效（启动日志与面板会提示「已忽略」）。从旧版本升级时，`.env` 里的值会在第一次启动时导入。
 - 大部分设置保存后立即生效；少数（例如服务类型、embedding）需要重启——面板顶部会提示，点「立即重启」即可。服务由守护进程 `server/main.js` 拉起：新设置如果连续两次启动失败，会自动回退到上一个正常的版本。
 - 全部设置项、默认值与取值范围见 [docs/settings.md](docs/settings.md)（由 `mise run settings:doc` 从声明表生成）。
 
-依赖保持很少：`hono`（路由与中间件）、`zod`（校验）；账号与账本用 Node 内置的 `node:sqlite`。pi-ai 是可选依赖，只在 `LLM_PROVIDER=pi` 时加载。前端是原生 Canvas + ES Modules，没有构建步骤，所有像素美术均为程序化生成。
+依赖保持很少：`hono`（路由与中间件）、`zod`（校验）；账号与账本用 Node 内置的 `node:sqlite`。默认的 OpenAI 兼容接口零依赖；Anthropic、Google 等其他服务商经 [Vercel AI SDK](https://ai-sdk.dev)（`ai` + `@ai-sdk/*`，可选依赖，默认安装）接入，只在用到时加载。`LLM_PROVIDER=aisdk` 时模型名写成「服务商/模型」，不同档位可以混用多家；旧的 `LLM_PROVIDER=pi` 自动按 `aisdk` 处理。前端是原生 Canvas + ES Modules，没有构建步骤，所有像素美术均为程序化生成。
 
 ## 多世界、创世与账号
 
@@ -45,8 +45,9 @@ mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实
 - **创世**（需要管理员授予，带配额）：`/genesis.html` 上传原文或写一段设定 → 阅读、整理世界圣经、确定改编方案、生成地图 / 居民 / 剧情线、考据与无头试跑 → 预览（人物卡、地点、设定可以编辑或「重新生成这一项」）→ 发布时自动审核（结构、文本、试跑、分级）→ 公开。创世的模型调用走统一队列、从创世额度里扣。
 - **治理**：世界里的决策由创建者终审（超时交给 AI 裁决官），全站管理员可以否决和撤销；用户可以举报，多人举报自动转为不公开；管理员一键下架；公开的世界会被低比例抽样审核。
 - **统一 AI 调度**：所有世界、创世与进化只有一个队列、一个并发上限、一本账（`usage` 表）。调用按用途分成 P0 交互 / P1 心跳 / P2 叙事 / P3 创世 / P4 进化，按世界轮转，一个世界刷屏不会饿死别的世界；每个用户世界有日额度，用到 80% 停叙事、用完退回规则驱动。
+- **按世界配置模型服务**（[设计方案](docs/design/world-llm.md)）：创世者可以在「我的世界」里保存自己的模型服务（OpenAI 兼容接口 / Anthropic / Google：接口地址、密钥），让世界改用它；之后世界里的**所有**模型调用都用它（居民、导演、旅人和居民的对话、创世、进化评审、语义检索），不占站点额度，只受自己设的每日上限约束。内容审核永远用站点的模型。密钥用 AES-256-GCM 加密存放、只写不读（谁都只能看到末 4 位）；用户填写的地址在建立连接时校验，不能访问内网。密钥失效、余额不足、模型不存在、持续连不上时，**世界暂停**并标出原因，修好后自动恢复。每把钥匙一条独立通道：一个用户的网关限流或不支持 JSON 模式，不影响别的世界。
 - **进化**：一台进化引擎服务所有开启进化的世界（官方世界看 `EVOLVE`，用户世界在创世时或设置里打开），插件按世界隔离在 `data/worlds/<id>/plugins/`。
-- **管理面板 `/admin`**：概览、设置、用户（授予创世权限与配额、停用、密码重置链接）、世界（磁盘、配额、下架 / 恢复、暂停 AI）、举报、调度、进化、审计。
+- **管理面板 `/admin`**：概览、设置、用户（授予创世权限与配额、停用、密码重置链接）、世界（任何世界——包括官方世界——的全部世界级设置与 AI 设置、官方世界的公开 / 不公开 / 暂停、磁盘、配额、下架 / 恢复）、举报、调度（含自带模型服务的通道与只给官方世界用的站点凭据）、进化、审计。
 
 ## 发布到个人网站
 
@@ -58,6 +59,8 @@ mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实
 cp .env.example .env      # 启动必需的几项；模型地址与密钥也可以之后在 /admin 里填
 mise run token            # 生成管理员令牌，把输出的 ADMIN_TOKEN=... 写进 .env
 ```
+
+世界自带模型服务的凭据用主密钥 `SECRETS_KEY` 加密。不配置时首次启动会自动生成 `data/secret.key`：**务必备份它**，丢了所有凭据都要重填；生产环境建议改用环境变量提供（`node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`）。更换主密钥：停服务后运行 `node tools/rotate-secrets.js`。
 
 **2A. Docker 部署（推荐）**
 
@@ -271,8 +274,9 @@ server/
   ext/            扩展点：registry.js 注册表、index.js 加载器、go-to.js（RFC 0001）
   worldai/architect.js 世界架构师；worldai/proposals.js 提案与审批；worldai/canon.js 设定考据官
   story/arcs.js   剧情弧引擎；story/creatures.js 异界生物
-  llm.js       LLM 客户端：并发队列、自适应限流、重试、预算与统计、JSON 提取、回复录制
-  llm-providers.js 模型服务接口与默认的 OpenAI 兼容实现；llm-pi.js pi-ai 适配器（LLM_PROVIDER=pi）
+  llm.js       LLM 客户端：按通道（一把钥匙一条）排队、自适应限流、重试、预算与统计、JSON 提取、回复录制
+  llm-providers.js 模型服务接口与默认的 OpenAI 兼容实现；llm-aisdk.js Vercel AI SDK 适配器（anthropic / google / aisdk）
+  world-llm.js 按世界配置模型服务：世界 → 通道的解析、暂停与恢复、测试连接；secrets.js 凭据加密；net/safe-fetch.js 防 SSRF 的请求
   memory.js    记忆流：写入、压缩成摘要、检索（双字组 + 可选的语义相似度）
   embeddings.js 可选的 embedding（EMBED_MODEL）与向量缓存（node:sqlite）
   world.js     手工布局的地图生成器（云溪镇 yunxi-v1、暗月界 moonrealm-v1）与 A* 寻路
@@ -297,12 +301,12 @@ plugin-host/   插件宿主：内置插件加载、AI 插件（哈希锁定、�
 plugins/       builtin/（人维护的插件：架构师、施工、go-to）
 evolution/     进化引擎：需求发现、各个 Agent、自动闸门、影子试运行、流水线、守护进程
 core.lock      冻结区文件哈希（tools/core-guard.js）
-tools/         evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查 + 冻结区校验）、browser-check.js（无头 Chrome 冒烟检查）、core-guard.js（冻结区校验）
+tools/         rotate-secrets.js（更换凭据加密主密钥）、evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查 + 冻结区校验）、browser-check.js（无头 Chrome 冒烟检查）、core-guard.js（冻结区校验）
 spec/mods/     Mod（AI 创造的内容包）
-test/          node:test 测试（pi-ai 相关的在没装时跳过）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复
-.github/       CI：Node 22（不装可选依赖）/ Node 26（装上 pi-ai）跑语法检查、测试与 smoke --mock；Node 26 另跑无头 Chrome 冒烟检查
+test/          node:test 测试（AI SDK 相关的在没装时跳过）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复
+.github/       CI：Node 22（不装可选依赖）/ Node 26（装上 AI SDK）跑语法检查、测试与 smoke --mock；Node 26 另跑无头 Chrome 冒烟检查
 docs/design/   设计方案；docs/settings.md 全部设置项（自动生成）
-data/          accounts.db 账号 / 世界登记 / 举报 / 用量账本 / 审计；settings.json 面板保存的设置（版本）；evolution/ 进化引擎的任务与账本；
+data/          accounts.db 账号 / 世界登记 / 举报 / 用量账本 / 审计 / 模型服务凭据（加密）；secret.key 凭据加密主密钥（没有用 SECRETS_KEY 时）；settings.json 面板保存的设置（版本）；evolution/ 进化引擎的任务与账本；
                genesis/ 创世任务；worlds/<id>/ 每个世界：save.json 存档（每 20 秒）、ops.jsonl 世界变更日志、snapshots/ 每小时快照、
                timelines/ 分支时间线、plugins/ 与 evolution/ 这个世界的 AI 插件、pack/ 用户世界的世界包
 ```

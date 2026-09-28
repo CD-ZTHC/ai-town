@@ -42,7 +42,9 @@ function requireUser(c) {
 function requireInteraction(c) {
   requireUser(c);
   const admin = c.get('admin');
-  if (!llm.stats.enabled) throw new HttpError(503, 'AI 尚未配置');
+  const halted = llm.blocked();
+  if (halted) throw new HttpError(503, halted, { halted: true });
+  if (!llm.enabled()) throw new HttpError(503, 'AI 尚未配置');
   if (llm.budgetLeft() <= 0) throw new HttpError(429, '今天的 AI 额度已经用完了，明天再来吧 🌙');
   if (llm.queueSize(c.get('host').id) > config.maxQueueForUser && !admin) throw new HttpError(503, '居民们正忙着思考，请稍后再试');
 }
@@ -385,7 +387,7 @@ export function worldApi(deps) {
   });
   api.post('/people/run', async (c) => {
     requireReviewer(c);
-    if (!llm.stats.enabled) throw new HttpError(503, 'AI 尚未配置');
+    if (!llm.enabled()) throw new HttpError(503, llm.blocked() || 'AI 尚未配置');
     const kind = String(c.get('body').kind || '');
     const r = await town(c).migration.decide(['arrive', 'leave', 'return'].includes(kind) ? kind : null);
     if (r.error) throw new HttpError(409, r.error);
@@ -404,7 +406,7 @@ export function worldApi(deps) {
   api.post('/director/decide', async (c) => {
     requireAdmin(c);
     const t = town(c);
-    if (!llm.stats.enabled) throw new HttpError(503, 'AI 尚未配置');
+    if (!llm.enabled()) throw new HttpError(503, llm.blocked() || 'AI 尚未配置');
     if (t.director.deciding) throw new HttpError(409, '导演正在思考');
     const r = await t.director.decide();
     return c.json({ ok: true, ...r });
