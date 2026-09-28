@@ -9,6 +9,9 @@
 //
 // 某个世界当日额度用到 80% 先停 P2（导演、编年），用完把 P1 退回规则驱动（调用失败，走现有兜底），
 // P0 仍然可用但只多给 20%。全局预算吃紧（>90%）时，预览中的世界只保留 P0。管理员可以对单个世界「暂停 AI」。
+//
+// 世界自带的模型服务（job.billing === 'own'，world-llm 设计 §5.3）：不占上面任何一项站点额度，
+// 只受世界自己设的每日上限约束（0 = 不限），降级档位照搬（分母换成自己的上限）。
 import { localDayKey } from '../llm.js';
 import { get as setting } from '../settings/index.js';
 
@@ -81,8 +84,9 @@ export const LEVEL_NAMES = { normal: '正常', quiet: '停了导演与编年', r
  * @param {(id) => object|null} o.world 世界登记项
  * @param {(world) => object|null} o.ownerGrant
  * @param {() => number} o.globalUsed 全站当日已用
+ * @param {(worldId) => number|null} [o.ownLimit] 世界用自己的模型服务时的每日上限（0 = 不限）；不是自带时返回 null
  */
-export function budgetPolicy({ ledger, world, ownerGrant, globalUsed }) {
+export function budgetPolicy({ ledger, world, ownerGrant, globalUsed, ownLimit = () => null }) {
   const pinned = () => new Set(setting('PINNED_WORLDS'));
 
   /** 一个用户世界的日额度；常驻 / 官方世界返回 Infinity（只受全局约束） */
@@ -108,10 +112,19 @@ export function budgetPolicy({ ledger, world, ownerGrant, globalUsed }) {
     return { left: total - reserve - userUsed, pinnedUsed, userUsed, total };
   }
 
+  /** 自带模型服务的降级档位：只看自己设的上限 */
+  function ownLevel(worldId, cap) {
+    if (!cap) return 'normal';
+    const ratio = ledger.own(worldId).total / cap;
+    return ratio >= 1.2 ? 'exhausted' : ratio >= 1 ? 'rules' : ratio >= 0.8 ? 'quiet' : 'normal';
+  }
+
   /** 当前降级档位 */
   function level(worldId) {
     const w = world(worldId);
     if (w?.settings?.aiPaused) return 'paused';
+    const cap = ownLimit(worldId);
+    if (cap !== null && cap !== undefined) return ownLevel(worldId, cap);
     const lim = worldLimit(w);
     if (!Number.isFinite(lim)) return 'normal';
     const used = ledger.world(worldId);
@@ -128,6 +141,13 @@ export function budgetPolicy({ ledger, world, ownerGrant, globalUsed }) {
   function allow(job) {
     const w = job.worldId && job.worldId !== '-' ? world(job.worldId) : null;
     if (w?.settings?.aiPaused) return '管理员暂停了这个世界的 AI';
+    if (job.billing === 'own') {
+      const lv = ownLevel(job.worldId, ownLimit(job.worldId) || 0);
+      if (lv === 'exhausted') return '这个世界今天用自己模型服务的上限到了';
+      if (lv === 'rules' && job.cls !== 'P0') return '这个世界今天用自己模型服务的上限到了，居民改用规则驱动';
+      if (lv === 'quiet' && (job.cls === 'P2' || job.cls === 'P4')) return '这个世界今天的上限快到了，暂停导演与编年';
+      return true;
+    }
     if (job.cls === 'P3') return true; // 创世额度由创世任务自己检查（按创世者的 genesisTokens）
     if (job.cls === 'P4') {
       const lim = setting('EVOLVE_BUDGET');

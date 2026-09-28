@@ -21,7 +21,8 @@ export function openaiCompatible({ baseUrl = '', apiKey = '', fetch: f = null } 
     enabled: Boolean(base && apiKey),
     async listModels() {
       const res = await fetch(`${base}/models`, { headers });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(data.error?.message || `HTTP ${res.status}`), { upstreamStatus: res.status });
       return (data.data || []).map((m) => m.id);
     },
     async complete({ model, messages, temperature, maxTokens, json, schema, signal }) {
@@ -43,9 +44,10 @@ export function openaiCompatible({ baseUrl = '', apiKey = '', fetch: f = null } 
       try {
         data = JSON.parse(text);
       } catch {
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+        throw Object.assign(new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`), { upstreamStatus: res.status });
       }
-      if (!res.ok || data.error) throw new Error(data.error?.message || `HTTP ${res.status}`);
+      // upstreamStatus：llm.js 据此区分鉴权失败、余额不足、模型不存在（不用 status，免得被 HTTP 层当成响应码）
+      if (!res.ok || data.error) throw Object.assign(new Error(data.error?.message || `HTTP ${res.status}`), { upstreamStatus: res.ok ? 0 : res.status });
       return {
         content: data.choices?.[0]?.message?.content ?? '',
         usage: { prompt: data.usage?.prompt_tokens || 0, completion: data.usage?.completion_tokens || 0 },

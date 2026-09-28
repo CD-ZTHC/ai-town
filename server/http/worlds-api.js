@@ -22,6 +22,9 @@ const EDITABLE = new Set(['drafting', 'preview']);
  * @param {import('../worlds/registry.js').WorldRegistry} deps.registry
  * @param {import('../worlds/manager.js').WorldManager} deps.manager
  * @param {import('../accounts/index.js').Accounts} [deps.accounts]
+ * @param {ReturnType<import('../world-llm.js').createWorldLlm>} [deps.worldLlm] 按世界配置模型服务
+ * @param {(w) => object[]} [deps.credentialsFor] 这个世界可以引用的凭据（主人的；官方世界是站点凭据）
+ * @param {(worldId) => object} [deps.usage] 今日用量 { server, own }
  */
 export function worldsApi(deps) {
   const api = new Hono();
@@ -32,7 +35,7 @@ export function worldsApi(deps) {
     return {
       id: w.id, title: w.title, summary: w.summary, sourceTitle: w.sourceTitle, rating: w.rating, official: w.official, status: w.status,
       owner: w.ownerId ? accounts?.get(w.ownerId)?.nickname || null : null, viewers: h ? h.clients.size : 0, running: Boolean(h), day: h?.town.day ?? null,
-      publishedAt: w.publishedAt,
+      publishedAt: w.publishedAt, halted: Boolean(w.settings?.ai?.halt),
     };
   };
 
@@ -214,6 +217,37 @@ export function worldsApi(deps) {
     const reload = Object.keys(settings).some((k) => !['migration', 'deathNamed'].includes(k));
     if (reload || patch.evolution !== undefined) manager.close(w.id, '世界设置已修改');
     return c.json({ ok: true, world: next });
+  });
+
+  // ---------- 世界的 AI 配置（按世界配置模型服务设计 §10.1）：owner 或管理员；官方世界只有管理员 ----------
+  const wl = () => { if (!deps.worldLlm) throw new HttpError(503, '没有启用按世界配置模型服务'); return deps.worldLlm; };
+  api.get('/:id/ai', (c) => {
+    const w = owned(c);
+    return c.json({
+      ...wl().view(w), usage: deps.usage?.(w.id) || null, credentials: deps.credentialsFor?.(w) || [],
+      allowed: w.official || setting('USER_LLM'), maxConcurrency: setting('USER_LLM_MAX_CONCURRENCY'), maxTimeoutMs: setting('USER_LLM_MAX_TIMEOUT_MS'),
+    });
+  });
+  api.put('/:id/ai', async (c) => {
+    const w = owned(c);
+    const before = wl().normalizeAi(w.settings?.ai);
+    const ai = wl().validate(c.get('body'), w);
+    registry.update(w.id, { settings: { ai } });
+    wl().invalidate(w.id);
+    act(c, w, 'world.ai', { source: ai.source, credential: ai.credential || null, models: ai.models || null });
+    // 语义检索换了：重新加载世界（embedder 在创建世界时建好）
+    if (manager.get(w.id) && JSON.stringify(before.embed || null) !== JSON.stringify(ai.embed || null)) manager.close(w.id, 'AI 设置已修改');
+    // 暂停中的世界：保存后自动重试一次
+    let retry = null;
+    if (ai.halt && quota(c.get('who') || {}, 'llm-test').ok) retry = await wl().retryWorld(w.id, { by: c.get('user')?.id || 'admin' });
+    return c.json({ ok: true, ...wl().view(registry.get(w.id)), retry });
+  });
+  api.post('/:id/ai/retry', async (c) => {
+    const w = owned(c);
+    const q = quota(c.get('who') || {}, 'llm-test');
+    if (!q.ok) throw new HttpError(429, q.message, { retryAfter: q.retryAfter });
+    const r = await wl().retryWorld(w.id, { by: c.get('user')?.id || 'admin' });
+    return c.json({ ...r, ...wl().view(registry.get(w.id)) });
   });
 
   // ---------- 举报（§10.2）：登录用户可以举报世界、角色或单条动态；有效举报达到阈值自动转为不公开 ----------

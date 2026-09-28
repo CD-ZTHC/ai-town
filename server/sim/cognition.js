@@ -46,7 +46,7 @@ export class Cognition {
     const c = condenseCandidate(a, { minItems: CONDENSE_MIN, beforeDay: this.day - 1 });
     if (!c) return null;
     let text = '';
-    if (llm.stats.enabled && llm.budgetLeft() > 0) {
+    if (llm.enabled() && llm.budgetLeft() > 0) {
       try {
         const list = c.items.map((m) => `- [${fmtTime(m.t)}] ${renderRefs(m.text)}`).join('\n');
         const res = await this.think(a, '整理记忆', () => llm.chatJSON([

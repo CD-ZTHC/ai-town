@@ -55,7 +55,7 @@ export async function review(town, proposal) {
   const spec = town.spec;
   const issues = ruleCheck(spec, proposal.ops);
   if (issues.length) return { ok: false, severity: 'major', issues, by: 'rules' };
-  if (!llm.stats.enabled || llm.budgetLeft() <= 0) return { ok: true, severity: 'none', issues: [], by: 'rules' };
+  if (!llm.enabled() || llm.budgetLeft() <= 0) return { ok: true, severity: 'none', issues: [], by: 'rules' };
   const { text } = describeOps(proposal.ops);
   const canon = relatedCanon(spec, `${proposal.title} ${proposal.motive} ${text}`);
   try {

@@ -36,7 +36,7 @@ export class GenesisJobs {
    * @param {object} o
    * @param {string} o.data 数据根目录
    * @param {import('../worlds/registry.js').WorldRegistry} o.registry
-   * @param {(userId) => number} o.budgetLeft 创世者剩余的创世额度
+   * @param {(userId, worldId) => number} o.budgetLeft 创世者剩余的创世额度（世界用自己的模型服务时不限）
    * @param {(e) => void} [o.audit]
    * @param {(worldId) => void} [o.onWorldReady] 生成完成（世界进入预览）
    */
@@ -113,7 +113,7 @@ export class GenesisJobs {
       const packDir = path.join(root, 'pack');
       const { pack, report } = await withContext({ worldId: job.worldId, userId: job.ownerId }, () => this.run(job, {
         source,
-        budgetLeft: () => this.budgetLeft(job.ownerId),
+        budgetLeft: () => this.budgetLeft(job.ownerId, job.worldId),
         onStage: () => this.save(),
         shadow: async (p) => {
           // 先把包写到临时目录试跑，通过了再写进世界目录
@@ -157,7 +157,7 @@ export class GenesisJobs {
     const packDir = path.join(this.data, 'worlds', job.worldId, 'pack');
     try {
       const pack = loadPack(packDir);
-      const { pack: next, report } = await withContext({ worldId: job.worldId, userId: job.ownerId }, () => runRegenerate(job, { pack, budgetLeft: () => this.budgetLeft(job.ownerId) }));
+      const { pack: next, report } = await withContext({ worldId: job.worldId, userId: job.ownerId }, () => runRegenerate(job, { pack, budgetLeft: () => this.budgetLeft(job.ownerId, job.worldId) }));
       writePack(packDir, next);
       this.registry.update(job.worldId, { packHash: report.hash, title: next.world.meta.name });
       Object.assign(job, { status: 'done', stage: 'done', report, finishedAt: new Date().toISOString() });

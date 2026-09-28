@@ -101,7 +101,7 @@ export class MigrationSystem {
     }
     if (st.dueAt != null && town.t >= st.dueAt && !this.busy) {
       st.dueAt = null;
-      if (llm.stats.enabled && llm.budgetLeft() > 0) this.decide().catch((e) => console.warn('[migration]', e.message));
+      if (llm.enabled() && llm.budgetLeft() > 0) this.decide().catch((e) => console.warn('[migration]', e.message));
     }
   }
 

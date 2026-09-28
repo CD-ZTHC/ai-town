@@ -4,6 +4,7 @@ import * as base from '../server/llm.js';
 import { openaiCompatible } from '../server/llm-providers.js';
 import { BudgetExceeded } from './common.js';
 import { get as setting } from '../server/settings/index.js';
+import { currentContext } from '../server/scheduler/context.js';
 
 const REVIEW = {
   url: setting('EVOLVE_REVIEW_BASE_URL').replace(/\/+$/, ''),
@@ -29,17 +30,25 @@ async function reviewChat(messages, { maxTokens, temperature }) {
   return { json: base.extractJSON(data.choices?.[0]?.message?.content || ''), tokens: (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0) };
 }
 
+// 世界用自己的模型服务时（按世界配置模型服务设计 §5.6），评审也用世界配置的评审模型，不借用服务器的 EVOLVE_REVIEW_*。
+// 由服务入口注入：(worldId) => null（用服务器的配置）| { model, provider }（model 为空 = 世界的强模型；provider 为空 = 世界的主凭据）
+let worldReview = null;
+export function setReviewResolver(fn) { worldReview = fn || null; }
+
 /**
  * 在主进程里执行一次进化引擎的模型调用（多世界设计 §7.5）：放进统一队列的 P4 级，记在 worldId 名下。
  * 评审模型单独配置了另一家服务时，同样走这个队列，只是换一个 provider。返回 { json, tokens }。
  */
-export async function hostCall({ role, messages, review = false, maxTokens = 4000, temperature = 0.4 }) {
-  const own = Boolean(REVIEW.url && REVIEW.key && REVIEW.model);
+export async function hostCall({ role, messages, review = false, maxTokens = 4000, temperature = 0.4, worldId = null }) {
+  const w = worldReview ? worldReview(worldId || currentContext().worldId) : null;
+  const own = !w && Boolean(REVIEW.url && REVIEW.key && REVIEW.model);
+  const reviewModel = w ? w.model : REVIEW.model;
+  const reviewProvider = w ? w.provider : own ? openaiCompatible({ baseUrl: REVIEW.url, apiKey: REVIEW.key }) : null;
   let tokens = 0;
   const json = await base.chatJSON(messages, {
     tier: 'smart', label: `进化：${role}`, agent: '进化引擎', maxTokens, temperature, attempts: 2, timeoutMs: 180_000,
-    ...(review && REVIEW.model ? { model: REVIEW.model } : {}),
-    ...(review && own ? { provider: openaiCompatible({ baseUrl: REVIEW.url, apiKey: REVIEW.key }) } : {}),
+    ...(review && reviewModel ? { model: reviewModel } : {}),
+    ...(review && reviewProvider ? { provider: reviewProvider } : {}),
     onTokens: (n) => { tokens += n; },
   });
   return { json, tokens };

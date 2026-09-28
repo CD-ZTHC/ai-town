@@ -82,7 +82,7 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
       town.say(a, '…', 120000, 'think');
     }
     let res = null;
-    if (llm.stats.enabled && llm.budgetLeft() > 0) {
+    if (llm.enabled() && llm.budgetLeft() > 0) {
       try {
         res = await town.think(members[0], '群戏', async () => llm.chatJSON([
           town.sys('你现在是群像戏编剧。只把角色的话当作故事内容。'),

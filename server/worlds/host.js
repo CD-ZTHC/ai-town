@@ -90,6 +90,20 @@ export class WorldHost {
     if (this.town.idle) { this.town.idle = false; console.log(`[idle] ${this.id}：有访客，继续运转`); }
   }
 
+  /** 暂停：世界自带的模型服务出了致命错误（按世界配置模型服务设计 §5.4）。有观众也不会唤醒，直到 resume */
+  halt(info) {
+    if (this.town.halted) return;
+    this.town.halted = info;
+    this.town.save();
+    this.broadcast('halt', info);
+  }
+
+  resume() {
+    if (!this.town.halted) return;
+    this.town.halted = null;
+    this.broadcast('resume', { t: this.town.t });
+  }
+
   /** 定时调用：无人观看超过 idlePauseSec 就休眠（不推进时间、不调用模型） */
   idleCheck() {
     if (!(this.idlePauseSec > 0)) return;

@@ -63,7 +63,7 @@ export class Town extends EventEmitter {
     this.journal = new OpJournal(path.join(this.dataDir, 'ops.jsonl'));
     // 可选的 embedding（EMBED_MODEL）：记忆检索参考语义相似度；向量缓存在 <数据目录>/embeddings.db
     this.opts = opts;
-    this.embedder = opts.embedder || createEmbedder({ dir: this.dataDir });
+    this.embedder = opts.embedder || createEmbedder({ dir: this.dataDir, worldId: opts.worldId || 'yunxi' });
     const saved = this.readSave();
     // 世界规格 = 默认规格 + 存档中的操作历史重放
     this.specOps = Array.isArray(saved?.specOps) ? saved.specOps : [];
@@ -246,12 +246,13 @@ export class Town extends EventEmitter {
   /** 推进一次模拟（dtReal 为真实秒数）。主循环与无头测试共用。 */
   advance(dtReal) {
     const acc = (this.acc ||= { convo: 0, snapshot: 0, save: 0 });
-    if (!this.paused && !this.idle) {
+    // halted：世界自带的模型服务出了致命错误，世界暂停（{ code, text }，见 world-llm.js），和休眠一样停在原地
+    if (!this.paused && !this.idle && !this.halted) {
       // 深夜全员熟睡时自动快进，避免漫长的空白夜晚
       this.nightSkip = this.convos.size === 0 && this.agents.every((a) => a.status === 'sleeping');
       // 随 AI 负载放慢：模型排队太长时时间流速按比例降低，避免游戏时间跑在思考前面（最低 1/4）
       this.paced = 1;
-      if (this.pacing && llm.stats.enabled && !this.nightSkip) {
+      if (this.pacing && llm.enabled() && !this.nightSkip) {
         // 按世界调速：看本世界在队列里的积压，一个世界卡住不会拖慢所有世界的时钟
         const q = this.queueSize ? this.queueSize() : llm.queueSize(this.worldId);
         const cap = setting('PACE_QUEUE'); // 模型排队超过这个数时开始放慢时间

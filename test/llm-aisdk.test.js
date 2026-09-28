@@ -95,9 +95,9 @@ test('错误信息保留上游状态码与原文；AI SDK 自己不重试', { sk
   const p = aisdkProvider({ kind: 'aisdk', baseUrl: s.base, apiKey: 'k', models: ['glm-test'] });
   const call = () => p.complete({ model: 'glm-test', messages: [{ role: 'user', content: 'x' }], json: true, maxTokens: 10 });
   s.mode = '429';
-  await assert.rejects(call, (e) => /429.*请求频率过高/.test(e.message) && e.status === 429);
+  await assert.rejects(call, (e) => /429.*请求频率过高/.test(e.message) && e.upstreamStatus === 429);
   s.mode = '401';
-  await assert.rejects(call, (e) => /401.*Invalid API key/.test(e.message) && e.status === 401);
+  await assert.rejects(call, (e) => /401.*Invalid API key/.test(e.message) && e.upstreamStatus === 401);
   s.mode = 'no-json';
   await assert.rejects(call, /response_format/);
   assert.equal(s.chats().length, 3);

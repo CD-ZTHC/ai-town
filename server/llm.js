@@ -12,6 +12,7 @@ import { get as setting, env as settingsEnv } from './settings/index.js';
 import { Scheduler } from './scheduler/index.js';
 import { classOf, SERVER_ONLY } from './scheduler/classes.js';
 import { currentContext } from './scheduler/context.js';
+import { scrub } from './secrets.js';
 
 const listeners = new Set();
 const lanes = new Map(); // key → Lane
@@ -199,6 +200,12 @@ export function enabled() {
   return !p.blocked && Boolean(p.lane.provider?.enabled);
 }
 
+/** 当前世界不能调用模型的原因（例如 AI 服务暂停了），没有则 null */
+export function blocked() {
+  if (mock) return null;
+  return resolve().blocked || null;
+}
+
 const totalQueued = () => [...lanes.values()].reduce((s, l) => s + l.queued(), 0);
 /** 队列长度：不传世界时是全局（排队 + 进行中），传世界时是这个世界在它的通道里的积压（按世界调速用） */
 export const queueSize = (worldId = null) => {
@@ -303,7 +310,7 @@ export function onFailure(fn) { failureHook = fn || null; }
  */
 export function failureKind(e) {
   const m = String(e?.message || e || '');
-  const s = Number(e?.status) || Number(/HTTP (\d{3})/.exec(m)?.[1]) || 0;
+  const s = Number(e?.upstreamStatus) || Number(/HTTP (\d{3})/.exec(m)?.[1]) || 0;
   if (e?.code === 'ADDRESS') return 'address';
   if (s === 402 || /insufficient|余额|欠费|balance|exceeded your current quota|billing|credit/i.test(m)) return 'balance';
   if (s === 429 || /\b429\b|速率|频率|rate.?limit|too many|concurren|并发/i.test(m)) return 'rate';
@@ -392,7 +399,7 @@ async function rawChat(profile, messages, { maxTokens = 3000, temperature = 0.9,
     }
     stats.errors++;
     l.stats.errors++;
-    stats.lastError = l.stats.lastError = String(lastErr?.message || lastErr).slice(0, 200);
+    stats.lastError = l.stats.lastError = scrub(String(lastErr?.message || lastErr)).slice(0, 200);
     pushRecent({ label, agent, ms: Date.now() - started, ok: false });
     labelStats(label).fails++;
     const kind = failureKind(lastErr);

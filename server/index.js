@@ -23,7 +23,12 @@ import { HttpError } from './http/util.js';
 import { worldPage } from './http/pages.js';
 import { evolveConfig } from '../plugin-host/evolved.js';
 import { engineArgs } from '../evolution/common.js';
-import { hostCall } from '../evolution/llm.js';
+import { hostCall, setReviewResolver } from '../evolution/llm.js';
+import { loadMasterKey } from './secrets.js';
+import { LlmCredentials, SITE } from './accounts/llm-credentials.js';
+import { createWorldLlm, normalizeAi } from './world-llm.js';
+import { credentialsApi } from './http/llm-api.js';
+import { setEmbedResolver } from './embeddings.js';
 import { Ledger, budgetPolicy, LEVEL_NAMES } from './scheduler/budget.js';
 import { withContext } from './scheduler/context.js';
 import { CLASS_NAMES } from './scheduler/classes.js';
@@ -50,6 +55,22 @@ setInterval(() => accounts.sweepSessions(), 3600_000).unref();
 let manager = null;
 const registry = new WorldRegistry(accounts.db, { onChange: (id) => manager?.onStatus(id) });
 
+// ---------- 按世界配置模型服务（docs/design/world-llm.md）：凭据加密存放；世界选了自己的模型服务，世界里的一切都用它 ----------
+const master = loadMasterKey({ envValue: settings.get('SECRETS_KEY'), dataDir: DATA });
+if (master.source === 'generated') console.warn(`[secrets] 已生成凭据加密主密钥 ${master.file}：请备份它，丢失后所有模型服务凭据都要重填（生产环境建议改用环境变量 SECRETS_KEY）`);
+const credentials = new LlmCredentials(accounts.db, { key: master.key });
+const HALT_PUBLIC = '这个世界的 AI 服务暂时不可用，世界暂停了';
+const worldLlm = createWorldLlm({
+  registry, credentials, audit: (e) => accounts.audit(e),
+  onHalt: (id, h) => manager?.get(id)?.halt({ code: h.code, text: HALT_PUBLIC }),
+  onResume: (id) => manager?.get(id)?.resume(),
+});
+llm.setProfileResolver(worldLlm.resolve);
+llm.onFailure(worldLlm.onFailure);
+setEmbedResolver(worldLlm.embedFor);
+setReviewResolver(worldLlm.reviewFor);
+worldLlm.start();
+
 // 首次以多世界版本启动：把 data/ 下的存档移到 data/worlds/yunxi/（先完整备份）
 migrateLegacy(DATA, 'yunxi');
 migrateEvolution(DATA, ROOT, 'yunxi');
@@ -71,7 +92,7 @@ function evolutionMode(world) {
 function makeTown(world, root) {
   const pack = world.official ? officialPack(world.id) : loadPack(path.join(root, 'pack'));
   const s = world.settings || {};
-  return new Town({
+  const town = new Town({
     dataDir: activeDir(root),
     worldId: world.id,
     pack,
@@ -80,6 +101,9 @@ function makeTown(world, root) {
     // 官方世界的进化开关是 EVOLVE，用户世界是创世时（或之后在设置里）打开的开关，超时交给 AI 裁决官
     evolution: { dir: path.join(root, 'evolution'), pluginsDir: path.join(root, 'plugins'), config: { publicMode: config.publicMode, mode: evolutionMode(world) } },
   });
+  // 自带的模型服务出了致命错误、还没修好：加载后直接停在原地，不发起任何调用
+  if (s.ai?.halt) town.halted = { code: s.ai.halt.code, text: HALT_PUBLIC };
+  return town;
 }
 manager = new WorldManager({
   data: DATA, registry, makeTown,
@@ -99,13 +123,17 @@ setInterval(() => manager.tick(), 5000).unref();
 // ---------- 统一 AI 调度（§7）：账本记在 usage 表；出队前按世界的分层预算检查 ----------
 const ledger = new Ledger(accounts.db);
 llm.onUsage((e) => ledger.add(e));
-const budget = budgetPolicy({ ledger, world: (id) => registry.get(id), ownerGrant: (w) => (w.ownerId ? accounts.grant(w.ownerId, 'genesis') : null), globalUsed: () => llm.stats.dayTokens });
+const budget = budgetPolicy({
+  ledger, world: (id) => registry.get(id), ownerGrant: (w) => (w.ownerId ? accounts.grant(w.ownerId, 'genesis') : null), globalUsed: () => llm.stats.dayTokens,
+  // 世界用自己的模型服务：只受自己设的每日上限约束
+  ownLimit: (id) => (worldLlm.isOwn(id) ? normalizeAi(registry.get(id)?.settings?.ai).dailyTokens : null),
+});
 llm.setBudgetPolicy(budget.allow);
 // ---------- 创世（§4）：任务排队运行，模型调用在 P3 级，从创世者的 genesisTokens 扣 ----------
 const genesisUsed = (uid) => ledger.userTotal(uid, 'P3');
 const genesis = new GenesisJobs({
   data: DATA, registry,
-  budgetLeft: (uid) => genesisQuota(accounts.grant(uid, 'genesis')).genesisTokens - genesisUsed(uid),
+  budgetLeft: (uid, wid) => (wid && worldLlm.isOwn(wid) ? Infinity : genesisQuota(accounts.grant(uid, 'genesis')).genesisTokens - genesisUsed(uid)),
   audit: (e) => accounts.audit(e),
   onWorldReady: (id) => manager.close(id, '世界包已更新'),
 });
@@ -119,6 +147,7 @@ function myWorlds(user) {
     return {
       id: w.id, title: w.title, status: w.status, statusReason: w.statusReason, evolution: w.evolution, migration: w.settings?.migration !== false, running: Boolean(h), viewers: h ? h.clients.size : 0,
       usage: ledger.world(w.id), dailyLimit: Number.isFinite(limit) ? limit : null, level: budget.level(w.id), levelName: LEVEL_NAMES[budget.level(w.id)],
+      ai: aiSummary(w), ownUsage: ledger.own(w.id),
       diskBytes: w.diskBytes, diskLimitMB: w.quota?.diskMB ?? grant?.quota?.diskMB ?? settings.get('WORLD_DISK_MB'),
       pendingDecisions: h ? h.town.decisions.list?.filter?.((d) => d.status === 'waiting').length || 0 : 0,
       job: genesis.jobs.filter((j) => j.worldId === w.id).at(-1) ? genesis.view(genesis.jobs.filter((j) => j.worldId === w.id).at(-1)) : null,
@@ -126,9 +155,30 @@ function myWorlds(user) {
   });
 }
 
+/** 世界的 AI 摘要（我的世界、管理面板）：用哪套模型、是否暂停、暂停原因；不含任何密钥 */
+function aiSummary(w) {
+  const ai = normalizeAi(w.settings?.ai);
+  const cred = ai.source === 'own' ? credentials.get(ai.credential) : null;
+  return {
+    source: ai.source, active: worldLlm.isOwn(w.id), model: ai.models?.default || null, dailyTokens: ai.dailyTokens ?? null,
+    credential: cred ? { id: cred.id, name: cred.name, status: cred.status } : null,
+    halted: Boolean(ai.halt), haltText: ai.halt ? worldLlm.haltText(ai.halt) : '', haltMessage: ai.halt?.message || '',
+  };
+}
+
 /** 调度面板（管理员）：各级别队列、各世界用量排行与降级档位、正在进行的调用 */
 function llmView() {
   return {
+    // 自带的模型服务：每把钥匙一条通道（不显示任何凭据内容，地址除外）
+    lanes: llm.lanesView().filter((l) => l.billing === 'own').map((l) => {
+      const id = l.key.slice(5);
+      const cred = credentials.get(id);
+      return {
+        ...l, name: cred?.name || id, baseUrl: cred?.baseUrl || '', credentialStatus: cred?.status || 'gone',
+        ownerName: l.owner === SITE ? '站点' : accounts.get(l.owner)?.nickname || l.owner,
+        worlds: worldLlm.worldsUsing(id).map((w) => ({ id: w.id, title: w.title, halted: Boolean(w.settings.ai.halt), usage: ledger.own(w.id).total })),
+      };
+    }),
     classes: llm.sched.view().map((x) => ({ ...x, name: CLASS_NAMES[x.cls] })),
     ranking: ledger.ranking().map((r) => ({ ...r, title: registry.get(r.id)?.title || r.id, level: budget.level(r.id), levelName: LEVEL_NAMES[budget.level(r.id)], limit: Number.isFinite(budget.worldLimit(registry.get(r.id))) ? budget.worldLimit(registry.get(r.id)) : null })),
     pool: budget.pool(),
@@ -217,10 +267,18 @@ const app = createApp({
   publicDir: path.join(ROOT, 'public'),
   accounts,
   engineStatus: (worldId) => engineStatus(worldId),
-  admin: { restart, supervised: () => supervised, impactOf, manager, registry, llmView, budget, ledger, engineStatus: () => engineStatus() },
+  admin: {
+    restart, supervised: () => supervised, impactOf, manager, registry, llmView, budget, ledger, engineStatus: () => engineStatus(),
+    siteCredentials: credentialsApi({ credentials, worldLlm, accounts, scope: 'site' }), aiSummary,
+  },
   routes: [
-    ['worlds', worldsApi({ registry, manager, accounts, jobs: genesis, mine: myWorlds })],
-    ['genesis', genesisApi({ accounts, registry, jobs: genesis, used: genesisUsed, userDiskTotal: () => manager.userDiskTotal() })],
+    ['worlds', worldsApi({
+      registry, manager, accounts, jobs: genesis, mine: myWorlds, worldLlm,
+      credentialsFor: (w) => credentials.list(w.official ? SITE : w.ownerId || '-'),
+      usage: (id) => ({ server: ledger.world(id), own: ledger.own(id) }),
+    })],
+    ['genesis', genesisApi({ accounts, registry, jobs: genesis, used: genesisUsed, userDiskTotal: () => manager.userDiskTotal(), worldLlm })],
+    ['me/llm-credentials', credentialsApi({ credentials, worldLlm, accounts, scope: 'user' })],
   ],
   worlds: {
     lobby: true,
@@ -270,7 +328,7 @@ function startEngine() {
   for (const d of [...dirs, EVO_DIR]) fs.mkdirSync(d, { recursive: true });
   // 引擎不联网：模型调用经 IPC 交给主进程，放进统一队列的 P4 级（§7.5）
   const args = [...engineArgs({ root: ROOT, data: DATA, evolvedDir: dirs[0], evoDir: EVO_DIR, extraWrite: dirs.slice(1), net: false }), path.join(ROOT, 'evolution', 'daemon.js')];
-  engine = spawn(process.execPath, args, { cwd: ROOT, env: settings.env({ ...process.env, DATA_DIR: DATA, EVOLVE_IPC: '1', EVOLVE_LLM: llm.stats.enabled ? '1' : '0' }), stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+  engine = spawn(process.execPath, args, { cwd: ROOT, env: settings.env({ ...process.env, DATA_DIR: DATA, EVOLVE_IPC: '1', EVOLVE_LLM: llm.stats.enabled || list.some((w) => worldLlm.isOwn(w.id)) ? '1' : '0' }), stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
   const proc = engine;
   proc.on('message', async (m) => {
     if (m?.type !== 'llm') return;
@@ -308,6 +366,6 @@ function engineStatus(worldId = null) {
 syncEvolution();
 
 let shuttingDown = false;
-const shutdown = () => { shuttingDown = true; engine?.kill('SIGTERM'); manager.closeAll(); accounts.close(); process.exit(0); };
+const shutdown = () => { shuttingDown = true; engine?.kill('SIGTERM'); worldLlm.stop(); manager.closeAll(); accounts.close(); process.exit(0); };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

@@ -178,6 +178,9 @@ export function adminApi(deps) {
 
   api.post('/worlds/:id/unload', (c) => c.json({ ok: Boolean(deps.manager?.close(c.req.param('id'), '管理员卸载')) }));
 
+  // ---------- 站点凭据（按世界配置模型服务设计 §9.3）：只给官方世界用 ----------
+  if (deps.siteCredentials) api.route('/llm-credentials', deps.siteCredentials);
+
   // ---------- 调度（§7.6）----------
   api.get('/llm', (c) => c.json(deps.llmView ? deps.llmView() : {}));
   api.post('/worlds/:id/ai', (c) => {

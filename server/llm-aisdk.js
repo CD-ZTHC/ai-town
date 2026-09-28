@@ -53,7 +53,7 @@ function upstreamError(e) {
   let msg = e?.message || String(e);
   try { const d = JSON.parse(e?.responseBody || ''); msg = d?.error?.message || d?.message || msg; } catch { /* 不是 JSON */ }
   const err = new Error(status ? `HTTP ${status}: ${msg}` : msg);
-  if (status) err.status = status;
+  if (status) err.upstreamStatus = status; // 不用 status：HTTP 层会把 status 当成响应码直接返回给浏览器
   return err;
 }
 
