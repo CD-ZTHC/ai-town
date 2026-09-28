@@ -185,7 +185,7 @@ export function applyPerms() {
   $('#more-manage').hidden = !p.owner;
   document.body.classList.toggle('world-preview', p.worldStatus === 'preview');
   $('#btn-weather').hidden = !canTry;
-  if (!canTry && ui.tab === 'chat') ui.tab = 'sched';
+  if (!canTry && ui.tab === 'chat') ui.tab = 'attr';
 }
 
 export const setSpeed = guarded(async (sp) => {
