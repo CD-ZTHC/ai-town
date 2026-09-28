@@ -3,31 +3,39 @@
 import * as llm from '../llm.ts';
 import { similarity } from '../memory.ts';
 import { threadList } from '../story/threads.js';
+import type { Town } from '../sim.ts';
+import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
+import type { Act, ActArgs, Convo, Fight, MetricsDay, SaveData, ThreatInstance } from '../types/town.ts';
+import type { Persona } from '../types/spec.ts';
+import type { Cell } from '../types/map.ts';
+import type { Pos } from '../kernel/effects.ts';
+import type { ModelJSON } from '../llm.ts';
+import type { RetrieveOptions } from '../memory.ts';
 
 const KEEP_DAYS = 30;
 const REPEAT_SIM = 0.5; // 两次对话摘要的相似度达到这个值算「重复」
 const REPEAT_WINDOW = 2 * 1440; // 只和两天内同一对人的上一次对话比较
 
-const ratio = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 1000 : null);
+const ratio = (a: number, b: number): number | null => (b > 0 ? Math.round((a / b) * 1000) / 1000 : null);
 
 export class Metrics {
-  metricsDay(day = this.day) {
+  metricsDay(this: Town, day = this.day): MetricsDay & { keptKeys: string[]; pending: Array<{ key: string; end: number }> } {
     const st = (this.metricsState ||= { days: {} });
     if (!st.days[day]) {
       // 过去的日子只保留计数：去掉用来去重的 key 列表，控制存档体积
       for (const old of Object.values(st.days)) { delete old.keptKeys; delete old.pending; }
       st.days[day] = { commitsMade: 0, commitsKept: 0, keptKeys: [], pending: [], plans: 0, planFallback: 0, convos: 0, convoFallback: 0 };
     }
-    const d = st.days[day];
+    const d = st.days[day]!;
     d.keptKeys ||= [];
     d.pending ||= [];
     const keys = Object.keys(st.days).map(Number).sort((a, b) => a - b);
     for (const k of keys.slice(0, Math.max(0, keys.length - KEEP_DAYS))) delete st.days[k];
-    return d;
+    return d as MetricsDay & { keptKeys: string[]; pending: Array<{ key: string; end: number }> };
   }
 
   /** 新约定（对话里约好的、旅人的话带来的新计划）。key = 居民 + desired() 生成的日程 key；同一个约定重复约只算一次 */
-  noteCommitMade(a, entry) {
+  noteCommitMade(this: Town, a: LiveAgent, entry: ScheduleEntry) {
     const d = this.metricsDay();
     const key = `${a.id}:${this.day}-${entry.start}-${entry.location}-${entry.activity}`;
     if (d.pending.some((p) => p.key === key)) return;
@@ -36,7 +44,7 @@ export class Metrics {
   }
 
   /** 居民在约定的日程里到场 */
-  noteSettle(a, e) {
+  noteSettle(this: Town, a: LiveAgent, e: CurEntry) {
     if (e?.src !== 'commit' || !e.key) return;
     const d = this.metricsDay();
     const key = `${a.id}:${e.key}`;
@@ -46,18 +54,18 @@ export class Metrics {
   }
 
   /** 规划 / 对话用的是模型输出还是兜底 */
-  noteRun(kind, fallback) {
+  noteRun(this: Town, kind: string, fallback: boolean) {
     const d = this.metricsDay();
     if (kind === 'plan') { d.plans++; if (fallback) d.planFallback++; }
     if (kind === 'convo') { d.convos++; if (fallback) d.convoFallback++; }
   }
 
-  metricsView() {
+  metricsView(this: Town) {
     const days = Object.entries(this.metricsState?.days || {}).map(([k, v]) => ({ day: Number(k), ...v }));
-    const sum = (f) => days.reduce((s, d) => s + (d[f] || 0), 0);
+    const sum = (f: 'commitsMade' | 'commitsKept' | 'plans' | 'planFallback' | 'convos' | 'convoFallback') => days.reduce((s, d) => s + (d[f] || 0), 0);
     // 今天还没到时间的约定不算失约
     const today = days.find((d) => d.day === this.day);
-    const pending = (today?.pending || []).filter((p) => p.end > this.minute && !today.keptKeys.includes(p.key)).length;
+    const pending = (today?.pending || []).filter((p) => p.end > this.minute && !today!.keptKeys!.includes(p.key)).length;
     const made = sum('commitsMade') - pending, kept = sum('commitsKept');
 
     let compared = 0, repeats = 0;
@@ -76,10 +84,10 @@ export class Metrics {
     }
 
     const threads = threadList(this);
-    const resolved = threads.filter((t) => t.status === 'resolved').length;
-    const touched = threads.filter((t) => t.status !== 'open').length;
+    const resolved = threads.filter((t: { status: string }) => t.status === 'resolved').length;
+    const touched = threads.filter((t: { status: string }) => t.status !== 'open').length;
 
-    const byLabel = {};
+    const byLabel: Record<string, { calls: number; repaired: number; failed: number }> = {};
     let jsonCalls = 0, repaired = 0, failed = 0;
     for (const [label, s] of Object.entries(llm.stats.byLabel)) {
       if (!s.json) continue;

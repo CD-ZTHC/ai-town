@@ -8,9 +8,17 @@ import { publicSpec } from '../kernel/spec.ts';
 import { findAbility } from '../kernel/abilities.ts';
 import { threadList } from '../story/threads.js';
 import { renderRefs, ref } from '../accounts/refs.js';
+import type { Town } from '../sim.ts';
+import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
+import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';
+import type { Ability, Persona } from '../types/spec.ts';
+import type { Cell } from '../types/map.ts';
+import type { Pos } from '../kernel/effects.ts';
+import type { ModelJSON } from '../llm.ts';
+import type { RetrieveOptions } from '../memory.ts';
 
 export class Views {
-  snapshot() {
+  snapshot(this: Town) {
     const now = Date.now();
     return {
       t: this.t, speed: this.speed, paced: this.paced < 1 ? +this.paced.toFixed(2) : null, paused: this.paused, idle: !!this.idle, halted: this.halted || null, weather: this.weather, nightSkip: !!this.nightSkip,
@@ -30,11 +38,11 @@ export class Views {
       ...(this.threats.enabled || this.dark.graves.length ? { dark: this.threats.view() } : {}),
       avatars: this.avatars.view(),
       overlay: this.evolved.snapshotExtra(),
-      story: { tension: this.story?.now?.value ?? null, arc: this.arcs.active()?.phase || null, vote: this.votes.list.some((v) => v.status !== 'closed') },
+      story: { tension: this.story?.now?.value ?? null, arc: this.arcs.active()?.phase || null, vote: this.votes.list.some((v: { status: string }) => v.status !== 'closed') },
     };
   }
 
-  agentDetail(id, vid = 'local') {
+  agentDetail(this: Town, id: string, vid = 'local') {
     const a = this.byId[id];
     if (!a) return null;
     return {
@@ -52,7 +60,7 @@ export class Views {
       chat: a.visitorChats[vid] || [],
       body: { ...a.body, stamina: Math.round(a.body.stamina), courage: Math.round(a.body.courage) },
       inventory: Object.entries(a.inventory).map(([k, n]) => ({ id: k, n, name: this.spec.items[k]?.name || k, emoji: this.spec.items[k]?.emoji || '📦' })),
-      abilities: a.abilities.map((k) => findAbility(this.spec, k)).filter(Boolean).map((ab) => ({
+      abilities: a.abilities.map((k) => findAbility(this.spec, k)).filter((ab): ab is Ability => Boolean(ab)).map((ab) => ({
         id: ab.id, name: ab.name, emoji: ab.emoji, desc: ab.desc, cooldown: Math.max(0, Math.ceil((a.cooldowns?.[ab.id] || 0) - this.t)),
       })),
       researching: a.researching?.topic || null,
@@ -66,7 +74,7 @@ export class Views {
     };
   }
 
-  initPayload() {
+  initPayload(this: Town) {
     return {
       world: this.world,
       regions: Object.fromEntries(Object.entries(this.regions).filter(([id]) => id !== 'town')),
@@ -83,31 +91,31 @@ export class Views {
     };
   }
 
-  relationsGraph() {
+  relationsGraph(this: Town) {
     return this.agents.map((a) => ({ id: a.id, name: a.name, relations: Object.entries(a.relations).map(([id, r]) => ({ id, ...r })) }));
   }
 
-  agentsMeta() {
+  agentsMeta(this: Town) {
     return this.agents.map((a) => ({ id: a.id, name: a.name, age: a.age, role: a.role, look: a.look, home: a.home, kind: a.kind }));
   }
 
-  usageView() {
+  usageView(this: Town) {
     const days = Object.entries(this.usage?.days || {}).map(([d, v]) => ({ day: Number(d), ...v })).sort((a, b) => a.day - b.day);
     const avg = days.length ? Math.round(days.reduce((s, d) => s + d.tokens, 0) / days.length) : null;
     return { days, avgPerDay: avg, byLabel: llm.stats.byLabel, metrics: this.metricsView() };
   }
 
   /** 心愿单 + 已生成的需求文档（mise run evolve 写在 data/evolve.json 里） */
-  gapsWithRfc() {
-    let rfcs = {};
+  gapsWithRfc(this: Town) {
+    let rfcs: Record<string, { file?: string }> = {};
     try { rfcs = JSON.parse(fs.readFileSync(path.join(this.dataDir, 'evolve.json'), 'utf8')).gaps || {}; } catch {}
     return [...(this.gaps || [])].sort((a, b) => b.count - a.count).map((g) => ({ ...g, status: g.status || 'open', rfc: rfcs[g.id]?.file || null }));
   }
 
-  proposalsView(key = null, admin = false) {
+  proposalsView(this: Town, key: string | null = null, admin = false) {
     const ps = this.proposalSystem;
     return {
-      proposals: ps.list.slice(-20).reverse().map((p) => ps.view(p, key)),
+      proposals: ps.list.slice(-20).reverse().map((p: unknown) => ps.view(p, key as null)), // TODO(types): B6 迁移 proposals 后去掉断言（JS 推断出的参数类型过窄）
       queue: (this.architectQueue || []).map((q) => ({ intent: q.intent, origin: ps.originText(q.origin) })),
       thinking: Boolean(this.architect?.busy),
       gaps: admin ? this.gapsWithRfc() : undefined,
@@ -116,21 +124,21 @@ export class Views {
     };
   }
 
-  storyView(key = null) {
+  storyView(this: Town, key: string | null = null) {
     const st = this.story || {};
     return {
       storyteller: this.spec.meta.storyteller, rating: this.spec.meta.rating,
       tension: st.now || null, history: (st.history || []).slice(-72), decisions: (st.decisions || []).slice(-8).reverse(),
       arcs: this.arcs.view(), threads: threadList(this),
-      arcTemplates: this.spec.arcs.filter((a) => !this.arcs.runs.some((r) => r.template === a.id)).map((a) => ({ id: a.id, title: a.title })),
+      arcTemplates: this.spec.arcs!.filter((a) => !this.arcs.runs.some((r: { template: string }) => r.template === a.id)).map((a) => ({ id: a.id, title: a.title })),
       migration: this.migration.view(),
-      votes: this.votes.list.slice(-5).reverse().map((v) => this.votes.view(v, key)),
+      votes: this.votes.list.slice(-5).reverse().map((v: unknown) => this.votes.view(v, key as null)), // TODO(types): B6
       scenes: (this.pendingScenes || []).map((s) => ({ title: s.title, time: s.time, location: this.locName(s.location) })),
       crisis: {
-        ...this.crisis, defense: this.entities.filter((e) => e.tags.includes('light')).length,
-        creatures: this.creatures.list.filter((c) => !c.friendly).length, portal: this.portalState ? { stage: this.portalState.stage, name: this.portalState.name } : null,
+        ...this.crisis, defense: this.entities.filter((e) => (e.tags as string[]).includes('light')).length,
+        creatures: this.creatures.list.filter((c: { friendly?: boolean }) => !c.friendly).length, portal: this.portalState ? { stage: this.portalState.stage, name: this.portalState.name } : null,
       },
-      bestiary: Object.entries(this.spec.creatures).map(([id, c]) => (this.discovered.includes(id) || (c.leader && this.spec.personas.some((p) => p.creature === id))
+      bestiary: Object.entries(this.spec.creatures!).map(([id, c]) => (this.discovered.includes(id) || (c.leader && this.spec.personas.some((p) => p.creature === id))
         ? { id, known: true, name: c.name, emoji: c.emoji, origin: c.origin, lore: c.lore, weakness: c.weakness, temperament: c.temperament, look: c.look }
         : { id, known: false })),
       dark: this.threats.enabled ? this.threats.panel() : null,

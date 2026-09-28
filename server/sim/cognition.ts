@@ -5,31 +5,43 @@ import { addMemory, retrieve, fmtTime, fmtStamp, condenseCandidate, replaceWithS
 import { useAbility } from '../kernel/abilities.ts';
 import { clampStr } from './util.ts';
 import { renderRefs } from '../accounts/refs.js';
+import type { Town } from '../sim.ts';
+import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
+import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';
+import type { Persona, WorldSpec } from '../types/spec.ts';
+import type { ChatMessage } from '../types/llm.ts';
+import type { Cell } from '../types/map.ts';
+import type { Pos } from '../kernel/effects.ts';
+import type { ModelJSON } from '../llm.ts';
+import type { RetrieveOptions } from '../memory.ts';
 
 const CONDENSE_AT = 300; // 记忆超过这么多条时，每晚整理一天的琐事
 const CONDENSE_MIN = 8; // 一天至少这么多条琐碎记忆才整理
 
+// chronicle 是 getter（不能声明 this 参数），这里声明它用到的字段
+export interface Cognition { spec: WorldSpec }
+
 export class Cognition {
-  personaBlock(a) {
+  personaBlock(this: Town, a: LiveAgent) {
     const rel = Object.entries(a.relations)
       .map(([id, r]) => `${this.byId[id]?.name}（好感${r.affinity}）：${r.note}`)
       .join('；');
     const growth = (a.growth || []).slice(-3).map((g) => `第${g.day}天：${g.change}`).join('；');
     const beliefs = a.beliefs.filter((x) => x.confidence >= 0.5).slice(-3).map((x) => x.claim).join('；');
     const tr = this.spec.personas.find((p) => p.id === a.id)?.traveller;
-    const origin = tr ? `\n来历：来自${tr.origin}，刚来到这里；不认识这些东西：${tr.knowledgeGap.join('、')}（遇到时会误解、好奇或害怕）` : '';
+    const origin = tr ? `\n来历：来自${tr.origin}，刚来到这里；不认识这些东西：${tr.knowledgeGap!.join('、')}（遇到时会误解、好奇或害怕）` : '';
     const b = a.body;
     const status = `体力${Math.round(b.stamina)}，勇气${Math.round(b.courage)}${b.conditions.length ? `，${b.conditions.join('、')}` : ''}`;
     return `姓名：${a.name}，${a.age}岁，${a.role}。\n性格：${a.persona}${growth ? `\n成长经历：${growth}` : ''}\n当前目标：${a.goal}\n心情：${a.mood.text}；状态：${status}${beliefs ? `\n相信：${beliefs}` : ''}${origin}${this.darkPersonaBlock(a)}\n人际关系：${rel || '暂无'}`;
   }
 
-  memBlock(a, query, k = 10, opts = undefined) {
+  memBlock(this: Town, a: LiveAgent, query: string, k = 10, opts: RetrieveOptions | undefined = undefined) {
     const ms = retrieve(a, query, this.t, k, opts);
     return ms.length ? ms.map((m) => `- [${fmtStamp(m.t)}] ${renderRefs(m.text)}`).join('\n') : '- （暂无）';
   }
 
   /** 提示词里的「相关记忆」：配置了 embedding 时先补齐向量（有超时），再按双字组 + 语义检索；没配置时等同 memBlock */
-  async recall(a, query, k = 10) {
+  async recall(this: Town, a: LiveAgent, query: string, k = 10) {
     const e = this.embedder;
     if (!e?.enabled) return this.memBlock(a, query, k);
     await e.ensure([query, ...a.memories.map((m) => m.text)]);
@@ -41,7 +53,7 @@ export class Cognition {
    * 整理记忆（每晚写完日记后）：记忆太多时，把前天以前最早的一天琐事浓缩成一条摘要。
    * 有模型时由快模型用第一人称概括，失败或没有模型时用规则摘要。返回摘要记忆或 null。
    */
-  async condenseMemories(a) {
+  async condenseMemories(this: Town, a: LiveAgent) {
     if (a.memories.length <= CONDENSE_AT) return null;
     const c = condenseCandidate(a, { minItems: CONDENSE_MIN, beforeDay: this.day - 1 });
     if (!c) return null;
@@ -55,13 +67,13 @@ export class Cognition {
         ], { label: '记忆整理', agent: a.name, maxTokens: 800, tier: 'fast', attempts: 1, timeoutMs: 60_000 }));
         text = clampStr(res.summary, 120);
       } catch (err) {
-        console.warn(`[memory] ${a.name} 整理失败，改用规则摘要：`, err.message);
+        console.warn(`[memory] ${a.name} 整理失败，改用规则摘要：`, (err as Error).message);
       }
     }
     return replaceWithSummary(a, c.items, text ? { text: `第${c.day}天：${text}`, importance: 5, day: c.day } : { text: ruleSummary(c.day, c.items), day: c.day });
   }
 
-  timeBlock() {
+  timeBlock(this: Town) {
     return `现在是第${this.day}天（${this.weekday}）${fmtTime(this.t)}，天气${this.weatherText()}。${this.festivalHint()}`;
   }
 
@@ -70,15 +82,15 @@ export class Cognition {
     return this.spec.voice?.chronicle || { name: `${this.spec.meta.name}日报`, kind: '日报', editor: '主编', style: '温暖、俏皮，擅长从小事里挖出故事' };
   }
 
-  sys(extra = '') {
+  sys(this: Town, extra = ''): ChatMessage {
     const place = this.spec.voice?.place || '小镇';
-    const rating = { cozy: '', adventure: `\n本${place}允许奇幻冒险与紧张的对抗（例如异界生物），但没有死亡、血腥与残酷。`, epic: `\n本${place}允许重大挑战与损失，但没有死亡与血腥描写。`, dark: `\n本${place}是黑暗题材：冲突、危险、战斗与死亡都可能发生；死亡作为叙事事件一笔带过，不描写血腥与残酷的细节。反派有自己的欲望，不会因为几句好话就改变主意；恐惧是真实的。`, tragic: `\n本${place}允许离别与死亡作为叙事事件，但不描写细节，没有血腥与残酷。` }[this.spec.meta.rating] || '';
+    const rating = ({ cozy: '', adventure: `\n本${place}允许奇幻冒险与紧张的对抗（例如异界生物），但没有死亡、血腥与残酷。`, epic: `\n本${place}允许重大挑战与损失，但没有死亡与血腥描写。`, dark: `\n本${place}是黑暗题材：冲突、危险、战斗与死亡都可能发生；死亡作为叙事事件一笔带过，不描写血腥与残酷的细节。反派有自己的欲望，不会因为几句好话就改变主意；恐惧是真实的。`, tragic: `\n本${place}允许离别与死亡作为叙事事件，但不描写细节，没有血腥与残酷。` } as Record<string, string>)[this.spec.meta.rating] || '';
     const era = this.spec.era?.forbidden?.length ? `\n时代：${this.spec.era.tech}，不要出现${this.spec.era.forbidden.join('、')}这类不属于这个时代的东西。` : '';
-    const pillars = this.pack ? `\n不可违背的设定：${this.spec.lore.pillars.join('；')}` : '';
+    const pillars = this.pack ? `\n不可违背的设定：${this.spec.lore.pillars!.join('；')}` : '';
     return { role: 'system', content: `你是「${this.spec.meta.name}」生成式智能体${place}的角色大脑。${this.spec.lore.summary}${rating}${era}${pillars}\n要求：角色要鲜活、口语化、符合人设，推动各自的目标与人际关系发展；中文输出；只输出 JSON，不要任何解释或 markdown。${extra}` };
   }
 
-  async innerThought(a) {
+  async innerThought(this: Town, a: LiveAgent) {
     // 配角（创世生成的世界里 tier 为 support）只按日程生活和对话，不做内心独白与反思
     if (a.tier === 'support' || llm.isBusy()) return;
     a.lastThoughtT = this.t;
@@ -113,11 +125,11 @@ ${this.abilityList(a)}
       }
       this.maybeReflect(a);
     } catch (err) {
-      console.warn(`[thought] ${a.name}：`, err.message);
+      console.warn(`[thought] ${a.name}：`, (err as Error).message);
     }
   }
 
-  nearbyText(a) {
+  nearbyText(this: Town, a: LiveAgent) {
     const near = this.agents.filter((o) => o !== a && o.status !== 'sleeping' && (o.region || 'town') === (a.region || 'town') &&
       ((a.inside && o.inside === a.inside) || (!a.inside && !o.inside && Math.hypot(o.x - a.x, o.y - a.y) < 6)));
     const guests = this.avatars.near(a).map((v) => `旅人「${v.name}」`);
@@ -125,7 +137,7 @@ ${this.abilityList(a)}
     return guests.length ? `${txt}\n附近还有外地来的访客：${guests.join('、')}` : txt;
   }
 
-  async maybeReflect(a) {
+  async maybeReflect(this: Town, a: LiveAgent) {
     if (a.tier === 'support') return;
     if (a.importanceAcc < this.params.reflectThreshold || a.reflecting || this.t - a.lastReflectT < 90) return;
     a.reflecting = true;
@@ -145,21 +157,21 @@ ${recent}
 输出 JSON：{"insights":["≤45字"],"mood":"两字","moodEmoji":"一个emoji","goal":"更新后的长期目标（≤50字，可保持不变）"}`,
         },
       ], { label: '反思', agent: a.name, maxTokens: 3000 }));
-      const ins = (res.insights || []).slice(0, 3).map((s) => clampStr(s, 90)).filter(Boolean);
+      const ins = (res.insights || []).slice(0, 3).map((s: unknown) => clampStr(s, 90)).filter(Boolean);
       for (const s of ins) addMemory(a, { t: this.t, type: 'reflect', text: s, importance: 7 });
       a.importanceAcc = 0;
       a.mood = { text: clampStr(res.mood, 6) || a.mood.text, emoji: clampStr(res.moodEmoji, 4) || a.mood.emoji };
       if (res.goal) a.goal = clampStr(res.goal, 80);
       if (ins.length) this.log('reflect', `${a.name} 领悟到：${ins[0]}`, { agents: [a.id], insights: ins });
     } catch (err) {
-      console.warn(`[reflect] ${a.name}：`, err.message);
+      console.warn(`[reflect] ${a.name}：`, (err as Error).message);
     } finally {
       a.reflecting = false;
       this.emit('agent', a.id);
     }
   }
 
-  async writeDiary(a) {
+  async writeDiary(this: Town, a: LiveAgent) {
     const start = (this.day - 1) * 1440;
     const today = a.memories.filter((m) => m.t >= start && m.type !== 'thought').slice(-30).map((m) => `- [${fmtTime(m.t)}] ${renderRefs(m.text)}`).join('\n');
     try {
@@ -173,11 +185,11 @@ ${recent}
       addMemory(a, { t: this.t, type: 'diary', text: `日记：${text.slice(0, 100)}`, importance: 5 });
       this.log('diary', `${a.name} 写下了第${this.day}天的日记`, { agents: [a.id] });
     } catch (err) {
-      console.warn(`[diary] ${a.name}：`, err.message);
+      console.warn(`[diary] ${a.name}：`, (err as Error).message);
     }
   }
 
-  async makeNewspaper() {
+  async makeNewspaper(this: Town) {
     const start = this.t - 1440;
     const items = this.logs.filter((l) => l.t >= start && ['convo', 'scene', 'event', 'reflect', 'commit', 'visitor', 'weather', 'plan', 'omen', 'thread', 'arc', 'portal', 'creature', 'encounter', 'arrival', 'depart', 'vote', 'learn', 'gift', 'ability', 'news_spread', 'growth'].includes(l.type));
     const convoTexts = this.convoLog.filter((c) => c.t >= start).map((c) => `[${fmtTime(c.t)} ${c.where}] ${this.byId[c.a].name}×${this.byId[c.b].name}：${c.summary}｜${c.lines.slice(0, 4).map((l) => `${this.byId[l.speaker].name}：${l.text}`).join(' ')}`);
@@ -206,7 +218,7 @@ articles 写 3 篇。`,
       this.emit('newspaper', paper);
       return paper;
     } catch (err) {
-      console.warn('[news] 失败：', err.message);
+      console.warn('[news] 失败：', (err as Error).message);
       throw err;
     }
   }

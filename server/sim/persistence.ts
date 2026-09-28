@@ -8,22 +8,30 @@ import { fmtStamp } from '../memory.ts';
 import { findAbility } from '../kernel/abilities.ts';
 import { OpJournal } from '../kernel/ops.ts';
 import { freshDark } from '../story/threats.js';
+import type { Town } from '../sim.ts';
+import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
+import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';
+import type { Persona } from '../types/spec.ts';
+import type { Cell } from '../types/map.ts';
+import type { Pos } from '../kernel/effects.ts';
+import type { ModelJSON } from '../llm.ts';
+import type { RetrieveOptions } from '../memory.ts';
 
 const SAVE_VERSION = 2;
 const SNAPSHOT_KEEP = 24; // 保留最近 24 个游戏小时的快照
 
 export class Persistence {
-  readSave() {
+  readSave(this: Town) {
     if (!fs.existsSync(this.saveFile)) return null;
     try {
       return JSON.parse(fs.readFileSync(this.saveFile, 'utf8'));
     } catch (e) {
-      console.warn('[save] 存档损坏，重新开始：', e.message);
+      console.warn('[save] 存档损坏，重新开始：', (e as Error).message);
       return null;
     }
   }
 
-  save() {
+  save(this: Town) {
     if (this.stopped) return;
     try {
       fs.mkdirSync(this.dataDir, { recursive: true });
@@ -41,12 +49,12 @@ export class Persistence {
       fs.renameSync(this.saveFile + '.tmp', this.saveFile);
       this.snapshotHourly(text);
     } catch (e) {
-      console.warn('[save] 失败：', e.message);
+      console.warn('[save] 失败：', (e as Error).message);
     }
   }
 
   /** 每个游戏小时保留一份快照（data/snapshots/），供之后的「时光回溯」使用 */
-  snapshotHourly(text) {
+  snapshotHourly(this: Town, text: string) {
     // 超出磁盘上限（多世界设计 §6.4）：暂停新快照，存档照常写入
     if (this.diskFull) return;
     const hour = Math.floor(this.t / 60);
@@ -65,7 +73,7 @@ export class Persistence {
     for (const f of files.slice(0, Math.max(0, files.length - SNAPSHOT_KEEP))) fs.rmSync(path.join(dir, f), { force: true });
   }
 
-  load(d) {
+  load(this: Town, d: SaveData) {
     if (!d) return;
     try {
       if ((d.v || 1) < SAVE_VERSION) {
@@ -80,7 +88,7 @@ export class Persistence {
       Object.assign(this, {
         threadState: d.threadState || {}, crisis: d.crisis || { morale: 70, supplies: 80 }, discovered: d.discovered || [], story: d.story || undefined, migrationState: d.migrationState || undefined, mapState: d.mapState || undefined,
         arcRuns: d.arcRuns || [], voteState: d.voteState || [], pendingScenes: d.pendingScenes || [], creatureList: d.creatureList || [], dark: d.dark ? { ...freshDark(), ...d.dark } : freshDark(), fights: d.fights || [], portalState: d.portalState || null, swarmGoal: d.swarmGoal || null,
-        proposals: d.proposals || [], decisionState: (d.decisionState || []).map((x) => (x.status === 'arbitrating' ? { ...x, status: 'waiting' } : x)), architectQueue: d.architectQueue || [], gaps: d.gaps || [], architectUsage: d.architectUsage || undefined,
+        proposals: d.proposals || [], decisionState: (d.decisionState || []).map((x: { status: string }) => (x.status === 'arbitrating' ? { ...x, status: 'waiting' } : x)), architectQueue: d.architectQueue || [], gaps: d.gaps || [], architectUsage: d.architectUsage || undefined,
         usage: { days: d.usage?.days || {}, mark: null }, // 进程内计数重启后归零，重新开始标记
         metricsState: d.metricsState || { days: {} },
       });
@@ -110,7 +118,7 @@ export class Persistence {
       }
       console.log(`[save] 已读取存档：${fmtStamp(this.t)}`);
     } catch (e) {
-      console.warn('[save] 存档损坏，重新开始：', e.message);
+      console.warn('[save] 存档损坏，重新开始：', (e as Error).message);
     }
   }
 }
@@ -120,23 +128,23 @@ export class Persistence {
 export const SNAP_RE = /^d(\d{3})-(\d{2})\.json(?:\.gz)?$/;
 
 /** 读取一份快照（自动解压）；损坏时抛错 */
-export function readSnapshot(file) {
+export function readSnapshot(file: string): SaveData {
   const buf = fs.readFileSync(file);
   return JSON.parse((file.endsWith('.gz') ? zlib.gunzipSync(buf) : buf).toString('utf8'));
 }
 
 /** 列出可回溯的整点快照（新的在前） */
-export function listSnapshots(dataDir) {
+export function listSnapshots(dataDir: string): Array<{ name: string; day: number; hour: number; size: number }> {
   const dir = path.join(path.resolve(dataDir), 'snapshots');
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter((f) => SNAP_RE.test(f)).sort().reverse().map((f) => {
-    const [, d, h] = SNAP_RE.exec(f);
+    const [, d, h] = SNAP_RE.exec(f)!;
     return { name: f, day: Number(d), hour: Number(h), size: fs.statSync(path.join(dir, f)).size };
   });
 }
 
 /** 用快照替换当前存档（当前存档先备份）。调用方负责之后重建 Town。返回备份文件名。 */
-export function restoreSnapshot(dataDir, name) {
+export function restoreSnapshot(dataDir: string, name: string): string {
   if (!SNAP_RE.test(String(name))) throw Object.assign(new Error('快照名称不合法'), { status: 400 });
   const dir = path.resolve(dataDir);
   const src = path.join(dir, 'snapshots', name);

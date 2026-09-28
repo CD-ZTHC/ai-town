@@ -4,9 +4,18 @@ import * as llm from '../llm.ts';
 import { addMemory, fmtTime } from '../memory.ts';
 import { rand, clampStr, pairKey, GUARD } from './util.ts';
 import { encodeRefs } from '../accounts/refs.js';
+import type { Town } from '../sim.ts';
+import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
+import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';
+import type { Persona } from '../types/spec.ts';
+import type { ConvoRecord } from '../types/save.ts';
+import type { Cell } from '../types/map.ts';
+import type { Pos } from '../kernel/effects.ts';
+import type { ModelJSON } from '../llm.ts';
+import type { RetrieveOptions } from '../memory.ts';
 
 export class Social {
-  checkConversations() {
+  checkConversations(this: Town) {
     const m = this.minute;
     if (m < 6 * 60 + 40 || m > this.dayEnd || this.convos.size >= this.params.maxConvos) return;
     const free = this.agents.filter((a) => !a.convoId && (a.status === 'acting' || a.status === 'walking') && this.t - a.lastConvoEnd > 25 && !this.hasPosture(a, 'silent'));
@@ -27,10 +36,10 @@ export class Social {
     }
   }
 
-  async startConvo(a, b) {
+  async startConvo(this: Town, a: LiveAgent, b: LiveAgent) {
     const id = `c${++this.seq}`;
     const where = a.inside ? this.locName(a.locId || b.locId) : (a.locId ? this.locName(a.locId) : '路上');
-    const convo = { id, a: a.id, b: b.id, where, t: this.t, lines: [], state: 'thinking' };
+    const convo: Convo = { id, a: a.id, b: b.id, where, t: this.t, lines: [], state: 'thinking' };
     this.convos.set(id, convo);
     this.pairCd[pairKey(a.id, b.id)] = this.t;
     for (const [x, y] of [[a, b], [b, a]]) {
@@ -50,7 +59,7 @@ export class Social {
     this.say(a, '…', 120000, 'think');
     this.say(b, '…', 120000, 'think');
 
-    let res;
+    let res: ModelJSON;
     try {
       res = await this.think(a, '组织语言', async () => llm.chatJSON([
         this.sys(`你现在是对话编剧，负责两位居民之间的一段对话。${GUARD}`),
@@ -58,7 +67,7 @@ export class Social {
       ], { label: '对话', agent: `${a.name}×${b.name}`, maxTokens: 4000, temperature: 0.95, timeoutMs: 80_000, attempts: 2 }));
       if (!Array.isArray(res.lines) || !res.lines.length) throw new Error('无台词');
     } catch (err) {
-      console.warn('[convo] 失败：', err.message);
+      console.warn('[convo] 失败：', (err as Error).message);
       res = {
         lines: [
           { speaker: a.name, text: rand(['哟，这么巧！', '早啊～', '你也在这儿呀？']) },
@@ -70,15 +79,15 @@ export class Social {
       };
     }
     convo.state = 'talking';
-    const byName = { [a.name]: a, [b.name]: b };
-    convo.lines = res.lines.slice(0, 10).map((l, i) => {
+    const byName: Record<string, LiveAgent> = { [a.name]: a, [b.name]: b };
+    convo.lines = res.lines.slice(0, 10).map((l: { speaker: string; text: unknown }, i: number) => {
       const sp = byName[l.speaker] || byName[String(l.speaker).trim()] || (i % 2 ? b : a);
       return { speaker: sp.id, text: clampStr(l.text, 90) };
-    }).filter((l) => l.text);
+    }).filter((l: { text: string }) => l.text);
     a.bubble = null; b.bubble = null;
 
     for (const line of convo.lines) {
-      const sp = this.byId[line.speaker];
+      const sp = this.byId[line.speaker]!;
       if (a.status === 'dead' || b.status === 'dead') break; // 对话中途有人遇害
       // 规律型威胁会读到「谁在说话」「谁被叫了名字」（黑暗叙事设计 §4.1）
       sp.spokeAt = this.t;
@@ -93,12 +102,12 @@ export class Social {
     this.finishConvo(convo, a, b, res);
   }
 
-  async convoPrompt(a, b, where) {
+  async convoPrompt(this: Town, a: LiveAgent, b: LiveAgent, where: string): Promise<string> {
     const mems = {
       [a.id]: await this.recall(a, `${b.name} ${b.role} ${a.goal} ${a.todayGoal || ''}`, 9),
       [b.id]: await this.recall(b, `${a.name} ${a.role} ${b.goal} ${b.todayGoal || ''}`, 9),
     };
-    const side = (x, y) => `【${x.name}】
+    const side = (x: LiveAgent, y: LiveAgent) => `【${x.name}】
 ${this.personaBlock(x)}
 正在：${x.action.text}
 ${x.name}对${y.name}的看法：${x.relations[y.id]?.note || '不太熟'}（好感${x.relations[y.id]?.affinity ?? 0}）
@@ -124,7 +133,7 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
 另外可以输出 "idea"：两人聊出来的、想为小镇添点什么的具体建设点子（例如「在码头边修个观星台」，≤30字）；大多数时候没有，就给 null。`;
   }
 
-  finishConvo(convo, a, b, res) {
+  finishConvo(this: Town, convo: Convo, a: LiveAgent, b: LiveAgent, res: ModelJSON) {
     this.convos.delete(convo.id);
     convo.state = 'done';
     convo.summary = clampStr(res.summary, 60) || `${a.name}和${b.name}聊了聊`;
@@ -144,13 +153,13 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
     }
     const commits = [];
     for (const c of Array.isArray(res.commitments) ? res.commitments : []) {
-      const who = (Array.isArray(c.who) ? c.who : [c.who]).map((n) => [a, b].find((x) => x.name === n || String(n).includes(x.name))).filter(Boolean);
+      const who = (Array.isArray(c.who) ? c.who : [c.who]).map((n: unknown) => [a, b].find((x) => x.name === n || String(n).includes(x.name))).filter(Boolean);
       for (const x of (who.length ? who : [a, b])) {
         if (this.addCommitment(x, c, `（和${(x === a ? b : a).name}约好的）`)) commits.push(`${x.name} ${c.time} ${this.locName(this.resolveLoc(x, c.location))} ${c.activity}`);
       }
     }
     convo.commitments = commits;
-    this.convoLog.push(convo);
+    this.convoLog.push(convo as ConvoRecord);
     if (this.convoLog.length > 120) this.convoLog.shift();
     this.log('convo', convo.summary, { agents: [a.id, b.id], convoId: convo.id, where: convo.where, lines: convo.lines, commitments: commits, ...(res.fallback ? { fallback: true } : {}) });
     for (const c of commits) this.log('commit', `📌 新约定：${c}`, { agents: [a.id, b.id] });
@@ -161,9 +170,9 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
     this.maybeReflect(a); this.maybeReflect(b);
   }
 
-  sleepReal(ms) {
+  sleepReal(this: Town, ms: number) {
     if (this.instantTalk) return Promise.resolve();
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve) => {
       let left = ms;
       // 世界停下（重置、回溯、卸载）时立即结束：休眠中的世界不倒计时，否则这个计时器会一直留着旧的 Town
       const done = () => { clearInterval(iv); this.sleepers?.delete(done); resolve(); };
@@ -175,14 +184,14 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
     });
   }
 
-  setBelief(a, { about, claim, confidence = 0.6, source = '' }) {
+  setBelief(this: Town, a: LiveAgent, { about, claim, confidence = 0.6, source = '' }: { about: string; claim: string; confidence?: number; source?: string }) {
     a.beliefs = a.beliefs.filter((b) => b.about !== about);
     a.beliefs.push({ about, claim, confidence: Math.round(Math.max(0, Math.min(1, confidence)) * 100) / 100, source, t: Math.floor(this.t) });
     if (a.beliefs.length > 20) a.beliefs.shift();
   }
 
   /** 信念在交谈中传播：x 较确信的看法会以打折的确信度传给 y（y 更确信的看法不会被覆盖） */
-  shareBeliefs(x, y) {
+  shareBeliefs(this: Town, x: LiveAgent, y: LiveAgent) {
     let n = 0;
     for (const b of [...x.beliefs].reverse()) {
       if (n >= 2) break;
@@ -200,7 +209,7 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
    * 旅人对居民说话 / 化作心声。visitor：{ id: 账号 id, name: 当前昵称 }（兼容旧写法：直接传一个 id 字符串）。
    * 心声是匿名的：居民只会觉得「突然想到」，不知道来自谁。
    */
-  async visitorChat(id, text, mode = 'visitor', visitor = 'local') {
+  async visitorChat(this: Town, id: string, text: string, mode = 'visitor', visitor: string | { id: string; name: string } = 'local') {
     const a = this.byId[id];
     if (!a) throw Object.assign(new Error('居民不存在'), { status: 404 });
     if (a.chatBusy) throw Object.assign(new Error(`${a.name}正在回应别人，稍等一下再说吧`), { status: 429 });
@@ -267,7 +276,7 @@ ${whisper
     return { reply, emoji: res.emoji, thought: a.thought, plan };
   }
 
-  async godEvent(text, target = 'all') {
+  async godEvent(this: Town, text: string, target = 'all') {
     text = clampStr(text, 200);
     const targets = (target === 'all' ? this.agents : [this.byId[target]]).filter((a) => a && a.kind !== 'creature');
     // 玩家事件同时交给叙事导演，由它决定是否把事件发展成剧情

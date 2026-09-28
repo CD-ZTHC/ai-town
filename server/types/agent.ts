@@ -57,6 +57,22 @@ export interface ScheduleEntry {
   activity: string;
   emoji?: string;
   src?: string;
+  /** 这条日程要做的行动（sim/actions） */
+  act?: import('./town.ts').Act;
+  [k: string]: unknown;
+}
+
+/** 此刻该做的事（sim/movement 的 desired）：日程里的一条，或者睡觉、起床、闲逛这类兜底 */
+export interface CurEntry {
+  key: string;
+  location: string;
+  activity: string;
+  emoji?: string;
+  sleep?: boolean;
+  start?: number;
+  end?: number;
+  act?: import('./town.ts').Act;
+  [k: string]: unknown;
 }
 
 export interface DiaryEntry {
@@ -68,6 +84,9 @@ export interface DiaryEntry {
 export interface TravellerRelation {
   affinity: number;
   chats: number;
+  /** 第一次、最近一次见面的游戏分钟 */
+  met?: number;
+  last?: number;
 }
 
 export interface VisitorChatLine {
@@ -122,29 +141,47 @@ export interface Agent {
   inventory: Record<string, number>;
   abilities: string[];
   beliefs: Belief[];
-  growth: Array<{ t: number; text: string; [k: string]: unknown }>;
+  /** 经历带来的变化（基础人设以世界规格为准） */
+  growth: Array<{ day: number; change: string; [k: string]: unknown }>;
   cooldowns: Record<string, number>;
   /** 已发放初始物品与能力 */
   kit: number;
-  researching?: { topic: string; since: number; key: string; loc: string };
+  researching?: { topic: string; since: number; key: string; loc: string | null } | null;
 
   // ---------- 黑暗叙事（docs/design/night-watch.md）----------
   alignment?: string;
-  combat?: Record<string, unknown>;
+  combat?: { atk?: number; def?: number };
   /** 负担值：负担名 → 当前值 */
   burdens?: Record<string, number>;
   hosted?: Array<{ threat: string; since: number }>;
   marks?: Array<Record<string, unknown>>;
   spokeAt?: number;
   namedAt?: number;
+  /** 最近一次开门进屋的时刻 */
+  openedAt?: number;
+  /** 被关押：谁关的、从什么时候到什么时候、关在哪 */
+  captive?: { by: string; since: number; until: number; at: string } | null;
+  /** 正保持着的禁忌姿态 */
+  posture?: { holds: string[]; until: number } | null;
+  /** 正在收容的威胁 */
+  containing?: unknown;
+  /** 负担值冻结到什么时候：负担名 → 游戏分钟 */
+  burdenFreeze?: Record<string, number>;
+  /** 反派的压力值 */
+  pressure?: Record<string, number>;
+  /** 去过的其他区域 */
+  visited?: string[];
 }
 
 /** 只在运行时存在的字段（save() 里排除，读档时重置） */
 export interface AgentRuntime {
   path: Array<{ x: number; y: number }>;
-  dest: { x: number; y: number; locId?: string | null } | null;
+  /** 正在前往的位置；hop 表示先走到通往另一个区域的路口 */
+  dest: { x: number; y: number; locId: string | null; indoor: string | null; hop?: boolean } | null;
+  /** 跨区域时下一段：去哪个区域、最终的地点、在那边从哪里出现 */
+  hop?: { to: string; locId: string; arrive?: { x: number; y: number } | null } | null;
   curKey: string | null;
-  curEntry?: ScheduleEntry | null;
+  curEntry?: CurEntry | null;
   bubble: { id: number; text: string; kind: 'say' | 'think' | (string & {}); until: number } | null;
   /** 正在进行的模型调用数 */
   thinking: number;
@@ -152,9 +189,11 @@ export interface AgentRuntime {
   reflecting?: boolean;
   convoId: string | null;
   chatBusy?: boolean;
-  pendingAct?: unknown;
+  /** 对象还没到场的行动：每 10 游戏分钟重试一次 */
+  pendingAct?: { key: string; next: number; tries: number } | null;
   actKey?: string | null;
-  hop?: unknown;
+  /** 旧版本的字段（读档时删除） */
+  visitorChat?: unknown;
 }
 
 /** 运行中的居民对象：迁移期间两部分仍在同一个对象上 */

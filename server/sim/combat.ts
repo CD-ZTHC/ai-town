@@ -5,6 +5,14 @@ import { addMemory } from '../memory.ts';
 import { posOf } from '../kernel/effects.ts';
 import { lethal } from '../kernel/ratings.ts';
 import { clamp } from './util.ts';
+import type { Town } from '../sim.ts';
+import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
+import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';
+import type { Persona } from '../types/spec.ts';
+import type { Cell } from '../types/map.ts';
+import type { Pos } from '../kernel/effects.ts';
+import type { ModelJSON } from '../llm.ts';
+import type { RetrieveOptions } from '../memory.ts';
 
 const MAX_ROUNDS = 12;
 const HATE = -40; // 好感低于它才会动手
@@ -12,7 +20,7 @@ const CAPTIVE_MINUTES = 360;
 
 export class Combat {
   /** 属性：基础值 + 人设里的 combat + 装备 */
-  combatStats(a) {
+  combatStats(this: Town, a: LiveAgent) {
     let atk = 4 + (a.combat?.atk || 0) + Math.round((a.body.courage - 50) / 25);
     let def = 1 + (a.combat?.def || 0);
     const tags = [];
@@ -27,7 +35,7 @@ export class Combat {
   }
 
   /** a 能不能对 b 动手：分级允许，而且 a 恨 b、a 是反派，或者两人的阵营敌对 */
-  mayHarm(a, b, intent = 'subdue') {
+  mayHarm(this: Town, a: LiveAgent, b: LiveAgent, intent = 'subdue') {
     if (!this.canBeHostile?.()) return '这个世界里没有人会动手';
     if (intent === 'kill' && !lethal(this.spec.meta.rating)) return '这个世界不允许杀人';
     const aff = a.relations[b.id]?.affinity ?? 0;
@@ -35,13 +43,13 @@ export class Combat {
     return `${a.name}和${b.name}没有深仇大恨，下不了手`;
   }
 
-  factionsHostile(a, b) {
+  factionsHostile(this: Town, a: LiveAgent, b: LiveAgent) {
     const fa = this.factionOf?.(a), fb = this.factionOf?.(b);
     return Boolean(fa && fb && fa !== fb && (fa.hostile || []).includes(fb.id));
   }
 
   // ---------- 居民之间 ----------
-  attack(a, { target, intent = 'subdue' }) {
+  attack(this: Town, a: LiveAgent, { target, intent = 'subdue' }: ActArgs) {
     const b = this.findNear(a, target, 3);
     if (!b) return { ok: false, reason: `${target}不在身边`, retry: true };
     const no = this.mayHarm(a, b, intent);
@@ -58,16 +66,16 @@ export class Combat {
   }
 
   /** 每游戏分钟：结算进行中的打斗 */
-  combatTick() {
+  combatTick(this: Town) {
     const minute = Math.floor(this.t);
     if (this.fightMinute === minute || !this.fights?.length) return;
     this.fightMinute = minute;
     for (const f of [...this.fights]) this.round(f);
   }
 
-  round(f) {
+  round(this: Town, f: Fight) {
     const a = this.byId[f.a], b = this.byId[f.b];
-    const end = (text, extra = {}) => { this.fights = this.fights.filter((x) => x !== f); if (text) this.log('combat', text, { agents: [f.a, f.b], ...extra }); };
+    const end = (text: string | null, extra = {}) => { this.fights = this.fights.filter((x) => x !== f); if (text) this.log('combat', text, { agents: [f.a, f.b], ...extra }); };
     if (!a || !b || !this.agents.includes(a) || !this.agents.includes(b) || !this.near(a, b, 4)) return end(a && b ? `${a.name}和${b.name}分开了` : '');
     f.round++;
     const sa = this.combatStats(a), sb = this.combatStats(b);
@@ -89,7 +97,7 @@ export class Combat {
   }
 
   /** 倒下：按攻击者的意图和分级决定结果（设计 §4.3 伤势阶梯） */
-  downed(x, by, intent) {
+  downed(this: Town, x: LiveAgent, by: LiveAgent, intent: string) {
     x.body.hp = 5;
     addMemory(by, { t: this.t, type: 'event', text: `把${x.name}打倒了`, importance: 7 });
     for (const o of this.agents) if (o !== x && o !== by && this.near(o, x, 6)) addMemory(o, { t: this.t, type: 'event', text: `亲眼看见${by.name}把${x.name}打倒在地`, importance: 8 });
@@ -110,7 +118,7 @@ export class Combat {
   }
 
   /** 每小时：被关着的人——时限到了，致死的分级下可能丧命，否则被放出来 */
-  captiveTick() {
+  captiveTick(this: Town) {
     for (const x of [...this.agents]) {
       const c = x.captive;
       if (!c || this.t < c.until) continue;
@@ -126,7 +134,7 @@ export class Combat {
     }
   }
 
-  rescue(a, { target }) {
+  rescue(this: Town, a: LiveAgent, { target }: ActArgs) {
     const x = this.agents.find((o) => o.name === target || o.id === target || String(target).includes(o.name));
     if (!x?.captive) return { ok: false, reason: `${target}没有被关着` };
     if (a.locId !== x.captive.at && !this.near(a, x, 3)) return { ok: false, reason: `要到${this.locName(x.captive.at)}才能救人`, retry: true };
@@ -150,7 +158,7 @@ export class Combat {
     return { ok: true };
   }
 
-  steal(a, { item, from }) {
+  steal(this: Town, a: LiveAgent, { item, from }: ActArgs) {
     const b = this.findNear(a, from, 2);
     if (!b) return { ok: false, reason: `${from}不在身边`, retry: true };
     const no = this.mayHarm(a, b);
@@ -173,7 +181,7 @@ export class Combat {
     return { ok: true };
   }
 
-  threaten(a, { target, demand }) {
+  threaten(this: Town, a: LiveAgent, { target, demand }: ActArgs) {
     const b = this.findNear(a, target, 3);
     if (!b) return { ok: false, reason: `${target}不在身边`, retry: true };
     const no = this.mayHarm(a, b);
@@ -188,14 +196,14 @@ export class Combat {
   }
 
   // ---------- 居民与威胁 ----------
-  hunt(a, { threat }) {
+  hunt(this: Town, a: LiveAgent, { threat }: ActArgs) {
     const ts = this.threats;
-    const p = posOf(this, a);
+    const p = posOf(this, a)!;
     const inst = ts?.find(threat);
     if (!inst) return { ok: false, reason: `找不到${threat}` };
     if (inst.region !== (p.region || 'town') || Math.hypot(inst.x - p.x, inst.y - p.y) > 5) return { ok: false, reason: `${inst.name}不在附近`, retry: true };
     const s = this.combatStats(a);
-    const dmg = ts.hit(inst, s.atk, s.tags, a);
+    const dmg = ts.hit(inst, s.atk, s.tags, a as never); // TODO(types): B6 迁移 story/threats 后去掉断言（JS 推断出的参数类型过窄）
     const def = ts.def(inst);
     // 会死的威胁会还手
     if (def?.mortal && inst.hp > 0 && def.atk) this.woundAgent(a, Math.max(1, Math.round(def.atk * (0.8 + Math.random() * 0.4) - s.def * 0.5)), { cause: `threat:${inst.type}` });

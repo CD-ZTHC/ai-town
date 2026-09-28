@@ -5,10 +5,18 @@ import { useAbility, describeAbility, findAbility, matchResearch } from '../kern
 import { agentsNear, posOf, runEffects } from '../kernel/effects.ts';
 import { POSTURE_NAMES } from './dark.ts';
 import { clamp, clampStr } from './util.ts';
+import type { Town } from '../sim.ts';
+import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
+import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';
+import type { Persona } from '../types/spec.ts';
+import type { Cell } from '../types/map.ts';
+import type { EffectArgs, Pos } from '../kernel/effects.ts';
+import type { ModelJSON } from '../llm.ts';
+import type { RetrieveOptions } from '../memory.ts';
 
 export class Actions {
   /** 校验并规范化 LLM 给出的行动；不合法返回 undefined（该条日程照常执行，只是没有行动） */
-  normalizeAct(act) {
+  normalizeAct(this: Town, act: Act | null | undefined) {
     if (!act || typeof act !== 'object') return undefined;
     const type = String(act.type || '');
     const to = clampStr(act.to, 12);
@@ -25,7 +33,7 @@ export class Actions {
   }
 
   /** 黑暗叙事的行动（设计 §4.1 禁忌姿态、§4.3 对抗、§4.8 派遣、§4.9 敌对行动）；世界里没有对应内容时不接受 */
-  normalizeDarkAct(type, act) {
+  normalizeDarkAct(this: Town, type: string, act: Act) {
     const spec = this.spec;
     const threats = Object.keys(spec.threats || {}).length > 0;
     const name = clampStr(act.target ?? act.to, 12);
@@ -46,7 +54,7 @@ export class Actions {
   }
 
   /** 到达日程地点时执行行动；对象不在身边时稍后重试 */
-  runAct(a, e, retry = false) {
+  runAct(this: Town, a: LiveAgent, e: CurEntry, retry = false) {
     const act = e?.act;
     if (!act || e.sleep || (!retry && a.actKey === e.key)) return;
     a.actKey = e.key;
@@ -67,12 +75,12 @@ export class Actions {
     if (!a.pendingAct) addMemory(a, { t: this.t, type: 'obs', text: `本想${e.activity}，可惜没成：${r.reason}`, importance: 2 });
   }
 
-  runDarkAct(a, act, e) {
+  runDarkAct(this: Town, a: LiveAgent, act: Act, e: CurEntry) {
     switch (act.type) {
       case 'taboo': {
-        const until = act.until ? parseHM(act.until) + (this.day - 1) * 1440 : this.t + (e ? e.end - this.minute : 120);
+        const until = act.until ? parseHM(act.until)! + (this.day - 1) * 1440 : this.t + (e ? e.end! - this.minute : 120);
         a.posture = { holds: act.hold, until: Math.max(this.t + 10, until) };
-        this.log('taboo', `🤐 ${a.name}开始${act.hold.map((h) => POSTURE_NAMES[h]).join('、')}`, { agents: [a.id] });
+        this.log('taboo', `🤐 ${a.name}开始${act.hold.map((h: string) => (POSTURE_NAMES as Record<string, string>)[h]).join('、')}`, { agents: [a.id] });
         return { ok: true };
       }
       case 'contain': return this.threats.startContain(a, act.threat);
@@ -94,7 +102,7 @@ export class Actions {
   }
 
   /** 使用物品（items[].use）：执行物品的效果，用掉一个 */
-  useItem(a, { item, target }) {
+  useItem(this: Town, a: LiveAgent, { item, target }: ActArgs) {
     const it = this.spec.items[item];
     if (!it?.use) return { ok: false, reason: '这东西没法用' };
     if ((a.inventory[item] || 0) < 1) return { ok: false, reason: `身上没有${it.name}` };
@@ -102,19 +110,19 @@ export class Actions {
     if (target && !t) return { ok: false, reason: `${target}不在身边`, retry: true };
     a.inventory[item] -= 1;
     if (!a.inventory[item]) delete a.inventory[item];
-    runEffects(this, { self: a, target: t, at: posOf(this, a), source: `item:${item}` }, it.use);
+    runEffects(this, { self: a, target: t, at: posOf(this, a), source: `item:${item}` }, it.use as EffectArgs[]);
     addMemory(a, { t: this.t, type: 'obs', text: `用了${it.name}${t ? `（对${t.name}）` : ''}`, importance: 4 });
     this.log('ability', `${it.emoji} ${a.name}用了${it.name}`, { agents: [a.id, t?.id].filter(Boolean) });
     this.emit('agent', a.id);
     return { ok: true };
   }
 
-  findNear(a, ref, r = 3) {
+  findNear(this: Town, a: LiveAgent, ref: string, r = 3) {
     const s = String(ref || '').trim();
     return agentsNear(this, posOf(this, a), r, a).find((o) => o.id === s || o.name === s || (s && s.includes(o.name))) || null;
   }
 
-  giveItem(a, { item, to, count = 1 }) {
+  giveItem(this: Town, a: LiveAgent, { item, to, count = 1 }: ActArgs) {
     const it = this.spec.items[item];
     if ((a.inventory[item] || 0) < 1) return { ok: false, reason: `身上没有${it.name}` };
     const b = this.findNear(a, to);
@@ -133,8 +141,8 @@ export class Actions {
     return { ok: true };
   }
 
-  teach(a, { ability, to }) {
-    const ab = findAbility(this.spec, ability);
+  teach(this: Town, a: LiveAgent, { ability, to }: ActArgs) {
+    const ab = findAbility(this.spec, ability)!; // 与迁移前一致：未知能力在这里直接出错
     if (!a.abilities.includes(ability)) return { ok: false, reason: `自己还不会「${ab.name}」` };
     if (!ab.learn?.teach) return { ok: false, reason: `「${ab.name}」没法教给别人` };
     const b = this.findNear(a, to);
@@ -152,7 +160,7 @@ export class Actions {
   }
 
   /** 研究结束：在合适的地点钻研足够久，且课题对得上，就能学会新能力 */
-  finishResearch(a) {
+  finishResearch(this: Town, a: LiveAgent) {
     const r = a.researching;
     a.researching = null;
     if (!r || this.t - r.since < 45) return;
@@ -162,7 +170,7 @@ export class Actions {
     else addMemory(a, { t: this.t, type: 'obs', text: `在${this.locName(r.loc)}研究了「${r.topic}」，有了些头绪`, importance: 3 });
   }
 
-  learnAbility(a, id, how = '') {
+  learnAbility(this: Town, a: LiveAgent, id: string, how = '') {
     const ab = findAbility(this.spec, id);
     if (!ab || a.abilities.includes(id)) return false;
     a.abilities.push(id);
@@ -172,16 +180,16 @@ export class Actions {
     return true;
   }
 
-  abilityList(a) {
+  abilityList(this: Town, a: LiveAgent) {
     const abs = a.abilities.map((id) => findAbility(this.spec, id)).filter(Boolean);
-    return abs.length ? `${a.name}会的能力：\n${abs.map((ab) => `- ${describeAbility(this, a, ab)}`).join('\n')}\n` : '';
+    return abs.length ? `${a.name}会的能力：\n${abs.map((ab) => `- ${describeAbility(this, a, ab!)}`).join('\n')}\n` : '';
   }
 
   /** 规划 / 重新规划时告诉 LLM：会什么、有什么、可以做哪些行动 */
-  actionBlock(a) {
+  actionBlock(this: Town, a: LiveAgent) {
     const inv = Object.entries(a.inventory).map(([k, n]) => `${this.spec.items[k]?.emoji || ''}${this.spec.items[k]?.name || k}×${n}（${k}）`).join('、');
-    const labs = [...new Set(this.spec.abilities.filter((ab) => ab.learn?.research && !a.abilities.includes(ab.id)).map((ab) => ab.learn.research.location))];
-    const teachable = a.abilities.map((id) => findAbility(this.spec, id)).filter((ab) => ab?.learn?.teach).map((ab) => ab.id);
+    const labs = [...new Set(this.spec.abilities.filter((ab) => ab.learn?.research && !a.abilities.includes(ab.id)).map((ab) => ab.learn!.research!.location))];
+    const teachable = a.abilities.map((id) => findAbility(this.spec, id)).filter((ab) => ab?.learn?.teach).map((ab) => ab!.id);
     return `${this.abilityList(a)}${inv ? `身上的物品：${inv}\n` : ''}${labs.length ? `在${labs.map((l) => `${this.locName(l)}（${l}）`).join('、')}钻研合适的课题，也许能学会新本事。\n` : ''}日程条目可以附带一个可选的 act 字段（没有就不写）：
 {"type":"use","ability":"能力id","target":"对象姓名"} 使用能力（要在合适的地点；对别人使用时要和对方在同一地点）
 {"type":"give","item":"物品id","to":"姓名","count":1} 把身上的东西送人（要和对方在同一地点）

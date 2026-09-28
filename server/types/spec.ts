@@ -95,17 +95,48 @@ export interface Persona {
   relations: Record<string, [number, string]>;
   memories: string[];
   alignment?: string;
-  combat?: Record<string, unknown>;
+  combat?: { atk?: number; def?: number };
+  /** 主角光环：不会死（降为重伤） */
+  plotArmor?: boolean;
+  /** 反派回心转意的条件（表达式） */
+  redemption?: string;
+  /** 反派的欲望：每天积累多少压力 */
+  drives?: Array<{ text: string; perDay?: number }>;
   /** 旅人：从哪里来、对这里不了解什么 */
   traveller?: { origin: string; knowledgeGap?: string[]; [k: string]: unknown };
   origin?: string;
+  /** 异界角色守着时的样子 */
+  idle?: string;
+  /** 这个角色是某种异界生物的首领（图鉴里默认可见） */
+  creature?: string;
 }
 
 export interface Item {
   name: string;
   emoji: string;
   desc?: string;
+  /** 装备位置（黑暗叙事）：装备后加成 mods */
+  equip?: 'weapon' | 'armor' | 'trinket' | (string & {});
+  mods?: { atk?: number; def?: number; hp?: number };
+  /** 弱点标签（攻击威胁时比对） */
+  tags?: string[];
+  /** 使用物品的效果 */
+  use?: Effect[];
   [k: string]: unknown;
+}
+
+/** 负担值（黑暗叙事设计 §4.4）：随时间或事件增长，到头时触发 onFull */
+export interface BurdenDef {
+  name: string;
+  max?: number;
+  /** 每天增长多少 */
+  drift?: number;
+  driftMods?: Array<{ when: string; mult: number }>;
+  onEvent?: Array<{ event: string; amount: number }>;
+  /** 到某个数值时心情变成… */
+  moodAt?: Array<[number, string]>;
+  selfText?: string;
+  onFull?: Effect[];
 }
 
 export interface Structure {
@@ -193,6 +224,14 @@ export interface Region {
   adjacent?: { to: string; side: Side };
   /** 向西 / 向北扩展时世界包基础内容的平移 */
   offset?: { x: number; y: number };
+  /** 扩展过的区域：生成器用的基础尺寸（size 是扩展之后的） */
+  baseSize?: [number, number];
+  /** 开放时、第一次到访时的文字；到访后居民得到的看法、听到的传闻；那边的原住民 */
+  openText?: string;
+  firstVisit?: string;
+  belief?: string;
+  rumors?: string[];
+  friends?: Array<{ type: string; name: string; near: string }>;
   [k: string]: unknown;
 }
 
@@ -227,7 +266,7 @@ export interface ThreatType {
   kind?: string;
   mortal?: boolean;
   rule?: Record<string, unknown>;
-  hostable?: { burden: string; grants: string[]; [k: string]: unknown };
+  hostable?: { burden: string; grants: string[]; rate?: number; offsets?: Record<string, number>; via?: Array<{ when?: string; p: number; fail?: Effect[] }> };
   [k: string]: unknown;
 }
 
@@ -235,6 +274,8 @@ export interface Faction {
   id: string;
   name: string;
   members: string[];
+  /** 敌对的阵营 */
+  hostile?: string[];
   head?: string;
   authority?: string[];
   stipend?: { every: number; [item: string]: number };
@@ -279,7 +320,7 @@ export interface WorldSpec {
   abilities: Ability[];
   rules: Rule[];
   factions?: Faction[];
-  burdens?: Record<string, { name?: string; [k: string]: unknown }>;
+  burdens?: Record<string, BurdenDef>;
   threats?: Record<string, ThreatType>;
   incidents?: unknown[];
   params: Params;

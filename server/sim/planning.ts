@@ -3,6 +3,14 @@
 import * as llm from '../llm.ts';
 import { addMemory, fmtTime, parseHM } from '../memory.ts';
 import { rand, clampStr, GUARD } from './util.ts';
+import type { Town } from '../sim.ts';
+import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
+import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';
+import type { Persona } from '../types/spec.ts';
+import type { Cell } from '../types/map.ts';
+import type { Pos } from '../kernel/effects.ts';
+import type { ModelJSON } from '../llm.ts';
+import type { RetrieveOptions } from '../memory.ts';
 
 // 兜底日程里去暗月界时可做的事
 const MOON_OUTINGS = [
@@ -12,7 +20,7 @@ const MOON_OUTINGS = [
 ];
 
 export class Planning {
-  planAll() {
+  planAll(this: Town) {
     this.flags.plannedDay = this.day;
     this.recordUsage();
     this.log('system', `🌅 第${this.day}天（${this.weekday}）开始了。${this.festivalHint()}`);
@@ -20,14 +28,14 @@ export class Planning {
   }
 
   /** 候选地点里这个世界有的（云溪镇的地点都在，因此随机数的消耗与之前一致）；一个都没有时退回任意公共地点 */
-  placesOr(ids) {
+  placesOr(this: Town, ids: string[]) {
     const have = ids.filter((id) => id === 'home' || this.findLocation(id));
     if (have.length) return have;
     const pub = this.publicLocs().filter((id) => this.locRegion(id) === 'town');
     return pub.length ? pub : ['home'];
   }
 
-  fallbackSchedule(a) {
+  fallbackSchedule(this: Town, a: LiveAgent): ScheduleEntry[] {
     const w = a.work === a.home ? this.placesOr(['park'])[0] : a.work;
     // 暗月界开放时，傍晚的散步有机会改成去渡口那头逛逛
     const moon = this.moonOuting(a);
@@ -38,14 +46,14 @@ export class Planning {
       ['17:00', '18:30', ...walk], ['18:30', '20:30', rand(this.placesOr(['tavern', 'home'])), '吃晚饭', '🍲'],
       ['20:30', '22:30', 'home', '看书休息', '📖'],
     ];
-    return raw.map(([s, e, l, act, em]) => ({ start: parseHM(s), end: parseHM(e), location: l, activity: act, emoji: em, src: 'plan' }));
+    return raw.map(([s, e, l, act, em]) => ({ start: parseHM(s) as number, end: parseHM(e) as number, location: l as string, activity: act as string, emoji: em as string, src: 'plan' }));
   }
 
   /**
    * 今天要不要去暗月界逛逛（没有 LLM 时的兜底日程用）。
    * 按「角色 + 日期」取固定的伪随机数，同一天的结果稳定；听说过、去过的人更想去。
    */
-  moonOuting(a) {
+  moonOuting(this: Town, a: LiveAgent) {
     if (!this.regions.moonrealm || !this.regionOpen('moonrealm') || a.kind === 'creature') return null;
     const belief = a.beliefs.find((b) => b.about === '暗月界');
     const chance = 0.25 + (belief ? 0.2 * belief.confidence : 0) + (a.visited?.includes('moonrealm') ? 0.1 : 0);
@@ -58,14 +66,14 @@ export class Planning {
   }
 
   /** 规划提示里的「去暗月界的理由」：区域关闭时为空 */
-  moonHint(a) {
+  moonHint(this: Town, a: LiveAgent) {
     if (!this.regionOpen('moonrealm')) return '';
     const been = a.visited?.includes('moonrealm');
     return `【暗月界】码头的月之渡口现在通向暗月界，可以随时过去再回来。${been ? `${a.name}去过那边，还惦记着那里。` : `${a.name}还没去过，镇上都在聊那边的事。`}那里有一碰就发光的月光花（moon_garden）、能同时看见两个月亮的许愿崖（moon_lookout）、影灵们提灯散步的暗月广场（moon_plaza）。如果符合${a.name}的性格和目标（采风、找灵感、拍视频、找草药、交朋友、许愿……），今天可以安排一段时间去那边，location 填上面的 id。\n`;
   }
 
-  normalizeSchedule(a, list, minStart = 0) {
-    const out = [];
+  normalizeSchedule(this: Town, a: LiveAgent, list: ModelJSON, minStart = 0): ScheduleEntry[] {
+    const out: ScheduleEntry[] = [];
     for (const it of Array.isArray(list) ? list : []) {
       let s = parseHM(it.start), e = parseHM(it.end);
       if (s == null) continue;
@@ -82,7 +90,7 @@ export class Planning {
     return out.filter((e) => e.end - e.start >= 10);
   }
 
-  async planDay(a) {
+  async planDay(this: Town, a: LiveAgent) {
     const day = this.day;
     const lastDiary = a.diary[a.diary.length - 1];
     const keepCommits = a.scheduleDay === day ? a.schedule.filter((e) => e.src === 'commit') : [];
@@ -114,14 +122,14 @@ ${this.moonHint(a)}${this.actionBlock(a)}
       addMemory(a, { t: this.t, type: 'plan', text: `今天的打算：${a.todayGoal || ''}（${sched.map((e) => `${fmtTime(e.start)}${e.activity}`).join('，')}）`, importance: 3 });
       this.log('plan', `${a.name} 制定了今天的计划：${a.todayGoal || sched.map((e) => e.activity).slice(0, 3).join('、')}`, { agents: [a.id] });
     } catch (err) {
-      console.warn(`[plan] ${a.name} 失败：`, err.message);
+      console.warn(`[plan] ${a.name} 失败：`, (err as Error).message);
       if (a.scheduleDay !== day) { a.schedule = this.fallbackSchedule(a); a.scheduleDay = day; this.noteRun('plan', true); }
     }
     a.curKey = null;
     this.emit('agent', a.id);
   }
 
-  insertEntry(a, c) {
+  insertEntry(this: Town, a: LiveAgent, c: ScheduleEntry) {
     if (a.scheduleDay !== this.day) { a.schedule = []; a.scheduleDay = this.day; }
     const { start, end } = c;
     const next = [];
@@ -135,7 +143,7 @@ ${this.moonHint(a)}${this.actionBlock(a)}
     a.curKey = null;
   }
 
-  addCommitment(a, c, why = '') {
+  addCommitment(this: Town, a: LiveAgent, c: ScheduleEntry, why = '') {
     const start = parseHM(c.time);
     if (start == null || start <= this.minute || start >= 23 * 60) return false;
     const end = Math.min(start + (Number(c.duration) || 60), 23 * 60);
@@ -148,7 +156,7 @@ ${this.moonHint(a)}${this.actionBlock(a)}
     return true;
   }
 
-  async replan(a, news) {
+  async replan(this: Town, a: LiveAgent, news: string) {
     addMemory(a, { t: this.t, type: 'event', text: `得知消息：${news}`, importance: 8 });
     const now = this.minute;
     const rest = (a.scheduleDay === this.day ? a.schedule : []).filter((e) => e.end > now);
@@ -183,7 +191,7 @@ ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22
         this.log('reaction', `${a.name}：「${clampStr(res.reaction, 60)}」`, { agents: [a.id] });
       }
     } catch (err) {
-      console.warn(`[replan] ${a.name}：`, err.message);
+      console.warn(`[replan] ${a.name}：`, (err as Error).message);
     }
     this.emit('agent', a.id);
   }

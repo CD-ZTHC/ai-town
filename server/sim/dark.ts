@@ -8,14 +8,25 @@ import { findAbility } from '../kernel/abilities.ts';
 import { lethal } from '../kernel/ratings.ts';
 import { freshDark } from '../story/threats.js';
 import { clamp } from './util.ts';
+import type { Town } from '../sim.ts';
+import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
+import type { Act, ActArgs, Convo, DarkState, Fight, SaveData, ThreatInstance } from '../types/town.ts';
+import type { Persona } from '../types/spec.ts';
+import type { Cell } from '../types/map.ts';
+import type { Pos } from '../kernel/effects.ts';
+import type { ModelJSON } from '../llm.ts';
+import type { RetrieveOptions } from '../memory.ts';
 
 export const DEATH_NAMED_DEFAULT = 2;
 export const DEATH_DAYS_DEFAULT = 3;
 const ANCHOR = 50; // 好感达到多少算「锚」（负担值的 anchor_lost 事件）
 
+// darkState 是 getter（不能声明 this 参数），这里声明它用到的字段
+export interface Dark { dark: DarkState }
+
 export class Dark {
   /** 两个居民是否在一起（同一栋楼里，或都在户外、r 格以内） */
-  near(a, b, r = 3) {
+  near(this: Town, a: LiveAgent, b: LiveAgent, r = 3) {
     if (!a || !b || (a.region || 'town') !== (b.region || 'town')) return false;
     if (a.inside || b.inside) return a.inside === b.inside;
     return Math.hypot(a.x - b.x, a.y - b.y) <= r;
@@ -24,7 +35,7 @@ export class Dark {
   get darkState() { return (this.dark ||= freshDark()); }
 
   /** 死亡预算：每 days 天最多 named 名具名角色死亡（世界设置覆盖世界包参数） */
-  deathBudget() {
+  deathBudget(this: Town) {
     const named = Number.isInteger(this.worldSettings?.deathNamed) ? this.worldSettings.deathNamed : this.params.deathNamed ?? DEATH_NAMED_DEFAULT;
     const days = this.params.deathDays ?? DEATH_DAYS_DEFAULT;
     const used = this.darkState.deaths.filter((d) => this.t - d.t < days * 1440).length;
@@ -36,7 +47,7 @@ export class Dark {
    * 让一位居民死去。分级不允许、有主角光环、死亡预算用完时降为重伤。
    * 返回 'dead' / 'wounded'（分级不允许）/ 'spared'（光环或预算）/ 'absent'
    */
-  killAgent(a, { cause = '', text = '', threat = null } = {}) {
+  killAgent(this: Town, a: LiveAgent, { cause = '', text = '', threat = null }: { cause?: string; text?: string; threat?: ThreatInstance | null } = {}) {
     if (!a || !this.agents.includes(a) || a.kind === 'creature') return 'absent';
     const p = this.spec.personas.find((x) => x.id === a.id);
     if (!lethal(this.spec.meta.rating)) { this.woundAgent(a, 80, { cause }); return 'wounded'; }
@@ -85,7 +96,7 @@ export class Dark {
   }
 
   /** 受伤：hp 降到 30 以下为重伤，送去休养 */
-  woundAgent(a, amount, { cause = '' } = {}) {
+  woundAgent(this: Town, a: LiveAgent, amount: number, { cause = '' }: { cause?: string } = {}) {
     if (!a || !this.agents.includes(a)) return;
     const b = a.body;
     b.hp = clamp(Math.round(b.hp - amount), 1, 100);
@@ -98,7 +109,7 @@ export class Dark {
     this.emit('agent', a.id);
   }
 
-  healAgent(a, amount) {
+  healAgent(this: Town, a: LiveAgent, amount: number) {
     const b = a.body;
     b.hp = clamp(Math.round(b.hp + amount), 0, 100);
     if (b.hp >= 50) b.conditions = b.conditions.filter((c) => c !== '重伤');
@@ -106,17 +117,17 @@ export class Dark {
   }
 
   /** 群众伤亡（只记数字，设计 §4.10）：at 可以是地点 id 或坐标；记在最近的、有人口的地点上 */
-  casualties(at, n, { cause = '', text = '' } = {}) {
+  casualties(this: Town, at: Pos | string | null, n: number, { cause = '', text = '' }: { cause?: string; text?: string } = {}) {
     if (!(n > 0)) return 0;
     const st = this.darkState;
-    let loc = typeof at === 'string' ? at : null;
+    let loc: string | null = typeof at === 'string' ? at : null;
     if (!loc && at) {
       const cands = Object.keys(st.population).length ? Object.keys(st.population) : this.publicLocs();
       let best = Infinity;
       for (const id of cands) {
-        if (this.locRegion(id) !== (at.region || 'town')) continue;
+        if (this.locRegion(id) !== ((at as Pos).region || 'town')) continue;
         const c = this.locCenter(id);
-        const d = c ? Math.hypot(c.x - at.x, c.y - at.y) : Infinity;
+        const d = c ? Math.hypot(c.x - (at as Pos).x, c.y - (at as Pos).y) : Infinity;
         if (d < best) { best = d; loc = id; }
       }
     }
@@ -133,7 +144,7 @@ export class Dark {
   }
 
   // ---------- 负担值（设计 §4.4）----------
-  addBurden(a, id, amount, event = null) {
+  addBurden(this: Town, a: LiveAgent, id: string, amount: number, event: string | null = null) {
     const def = this.spec.burdens?.[id];
     if (!def || !a || !this.agents.includes(a)) return;
     if (amount > 0 && (a.burdenFreeze?.[id] || 0) > this.t) return;
@@ -151,7 +162,7 @@ export class Dark {
   }
 
   /** 关系事件触发负担值跳涨：anchor_lost（最亲近的人死了）/ anchor_gained / ability_used */
-  burdenEvent(a, event, only = null) {
+  burdenEvent(this: Town, a: LiveAgent, event: string, only: string | null= null) {
     for (const id of Object.keys(a.burdens || {})) {
       if (only && id !== only) continue;
       for (const ev of this.spec.burdens?.[id]?.onEvent || []) if (ev.event === event) this.addBurden(a, id, ev.amount);
@@ -159,7 +170,7 @@ export class Dark {
   }
 
   /** 每小时：负担值按 drift 增长（寄宿的威胁、driftMods 调整速度） */
-  burdenTick() {
+  burdenTick(this: Town) {
     const spec = this.spec;
     if (!spec.burdens || !Object.keys(spec.burdens).length) return;
     for (const a of [...this.agents]) {
@@ -169,8 +180,8 @@ export class Dark {
         let mult = 1;
         const hosts = (a.hosted || []).map((h) => spec.threats?.[h.threat]?.hostable).filter((h) => h?.burden === id);
         if (hosts.length) {
-          mult = hosts.reduce((s, h) => s + (h.rate ?? 1), 0);
-          for (const h of a.hosted) for (const [other, off] of Object.entries(spec.threats?.[h.threat]?.hostable?.offsets || {})) if (a.hosted.some((x) => x.threat === other)) mult += off;
+          mult = hosts.reduce((s, h) => s + (h!.rate ?? 1), 0);
+          for (const h of a.hosted!) for (const [other, off] of Object.entries(spec.threats?.[h.threat]?.hostable?.offsets || {})) if (a.hosted!.some((x) => x.threat === other)) mult += off;
           mult = Math.max(0, mult);
         }
         for (const m of def.driftMods || []) {
@@ -184,7 +195,7 @@ export class Dark {
 
   // ---------- 宿主关系（设计 §4.5）----------
   /** 让 a 成为某个威胁的宿主；inst 是被吸收的那个实例（没有时只是寄宿一只同类） */
-  hostThreat(a, type, inst = null) {
+  hostThreat(this: Town, a: LiveAgent, type: string, inst: ThreatInstance | null= null) {
     const def = this.spec.threats?.[type];
     const h = def?.hostable;
     if (!h || !a || !this.agents.includes(a) || (a.hosted || []).some((x) => x.threat === type)) return false;
@@ -206,7 +217,7 @@ export class Dark {
   }
 
   /** 创建角色时：初始寄宿的威胁与负担值（世界包 personas[].start.hosted / start.burdens） */
-  initDarkAgent(a, p) {
+  initDarkAgent(this: Town, a: LiveAgent, p: Persona) {
     if (p.alignment) a.alignment = p.alignment;
     if (p.combat) a.combat = { ...p.combat };
     const burdens = { ...(p.start?.burdens || {}) };
@@ -221,9 +232,9 @@ export class Dark {
   }
 
   // ---------- 阵营：配给与派遣（设计 §4.8）----------
-  factionOf(a) { return (this.spec.factions || []).find((f) => (f.members || []).includes(a.id)) || null; }
+  factionOf(this: Town, a: LiveAgent) { return (this.spec.factions || []).find((f) => (f.members || []).includes(a.id)) || null; }
 
-  stipendTick() {
+  stipendTick(this: Town) {
     const st = this.darkState;
     for (const f of this.spec.factions || []) {
       if (!f.stipend) continue;
@@ -244,7 +255,7 @@ export class Dark {
   }
 
   /** 派遣：阵营把某人派去某个事件；去不去由这个人自己决定（重新盘算日程） */
-  dispatch(a, incId, by = null) {
+  dispatch(this: Town, a: LiveAgent, incId: string, by: LiveAgent | null = null) {
     const inc = this.darkState.incidents.find((x) => x.id === incId || x.loc === incId);
     if (!a || !inc) return false;
     if (!inc.assigned.includes(a.id)) inc.assigned.push(a.id);
@@ -258,7 +269,7 @@ export class Dark {
 
   // ---------- 反派（设计 §4.9）----------
   /** 每小时：欲望的压力累积，满了就逼他动手；满足转变门槛时转变立场（只由规则判定） */
-  villainTick() {
+  villainTick(this: Town) {
     for (const a of [...this.agents]) {
       const p = this.spec.personas.find((x) => x.id === a.id);
       if (!p || a.alignment !== 'villain') continue;
@@ -282,7 +293,7 @@ export class Dark {
     }
   }
 
-  darkHourly() {
+  darkHourly(this: Town) {
     const hour = Math.floor(this.t / 60);
     const st = this.darkState;
     if (st.agentHour === hour) return;
@@ -297,7 +308,7 @@ export class Dark {
 
   // ---------- 提示词 ----------
   /** 写进居民人设块的黑暗叙事部分：立场、欲望、负担值、寄宿、被标记的迹象、禁忌姿态 */
-  darkPersonaBlock(a) {
+  darkPersonaBlock(this: Town, a: LiveAgent) {
     const out = [];
     const p = this.spec.personas.find((x) => x.id === a.id);
     if (a.alignment === 'villain') out.push(`立场：你和其他人的目标是冲突的${p?.drives?.length ? `（${p.drives.map((d) => d.text).join('；')}）` : ''}。你不会因为一次友善的对话就改变主意，也不会无缘无故放弃。`);
@@ -310,18 +321,18 @@ export class Dark {
     if (a.hosted?.length) out.push(`你身上寄宿着：${a.hosted.map((h) => this.spec.threats?.[h.threat]?.name || h.threat).join('、')}。借用它的力量会让负担加重。`);
     const signs = (a.marks || []).map((m) => m.sign).filter(Boolean);
     if (signs.length) out.push(`最近总觉得不对劲：${[...new Set(signs)].join('；')}`);
-    if (a.posture && a.posture.until > this.t) out.push(`你正刻意保持：${a.posture.holds.map((h) => POSTURE_NAMES[h] || h).join('、')}`);
+    if (a.posture && a.posture.until > this.t) out.push(`你正刻意保持：${a.posture.holds.map((h) => (POSTURE_NAMES as Record<string, string>)[h] || h).join('、')}`);
     if (a.captive) out.push(`你被${this.byId[a.captive.by]?.name || '人'}关了起来，等着有人来救。`);
     return out.length ? `\n${out.join('\n')}` : '';
   }
 
   /** 写进规划提示的行动说明（actionBlock 的补充） */
-  darkActionBlock(a) {
+  darkActionBlock(this: Town, a: LiveAgent) {
     const spec = this.spec;
     const lines = [];
     if (Object.keys(spec.threats || {}).length) {
       lines.push(`{"type":"taboo","hold":["${Object.keys(POSTURE_NAMES).join('","')}"],"until":"HH:MM"} 刻意保持某些禁忌（${Object.entries(POSTURE_NAMES).map(([k, v]) => `${k}=${v}`).join('，')}），用来躲开你认为危险的东西；代价是闭眼走得慢、不说话就没法商量`);
-      const containers = new Set(Object.values(spec.threats).flatMap((t) => (t.counters || []).filter((c) => c.type === 'contain').map((c) => c.with)));
+      const containers = new Set(Object.values(spec.threats!).flatMap((t) => ((t.counters || []) as Array<{ type: string; with: string }>).filter((c) => c.type === 'contain').map((c) => c.with)));
       if ([...containers].some((k) => a.inventory[k])) lines.push('{"type":"contain","threat":"要收容的东西的名字"} 在它身边用容器把它收起来（先压住它才稳妥，否则很可能失手并被它盯上）');
       lines.push('{"type":"hunt","threat":"名字"} 去找它、和它正面交手（有的东西杀不死，只能拖住）');
     }
@@ -341,13 +352,13 @@ export class Dark {
   }
 
   /** 这个世界允许居民之间的敌对行动吗：冒险分级起，并且世界包里有阵营、反派或威胁 */
-  canBeHostile() {
+  canBeHostile(this: Town) {
     const r = this.spec.meta.rating;
     if (!['adventure', 'epic', 'dark', 'tragic'].includes(r)) return false;
     return Boolean((this.spec.factions || []).length || this.spec.personas.some((p) => p.alignment === 'villain') || Object.keys(this.spec.threats || {}).length);
   }
 
-  hasPosture(a, name) { return hasPosture(this, a, name); }
+  hasPosture(this: Town, a: LiveAgent, name: string) { return hasPosture(this, a, name); }
 }
 
 export const POSTURE_NAMES = { eyesClosed: '闭着眼', silent: '不出声', noOpen: '不开门', stayLit: '待在亮处', notAlone: '不落单' };

@@ -7,11 +7,8 @@ import type { AgentLike, TownLike } from '../types/town.ts';
 import type { Rule, WorldSpec } from '../types/spec.ts';
 import { parseHM } from '../memory.ts';
 
-/** 黑暗叙事给居民加的运行时字段（sim/dark.js） */
-type DarkAgent = AgentLike & {
-  posture?: { until: number; holds: string[] };
-  openedAt?: number;
-};
+/** 黑暗叙事用到的居民字段（posture、openedAt）已经在 Agent 类型里 */
+type DarkAgent = AgentLike;
 /** 表达式函数收到的是 agentView 的快照（或任意值），通过 id 回查真实居民 */
 type Arg = unknown;
 /** 有坐标的东西（威胁、声音、区域） */
