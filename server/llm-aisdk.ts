@@ -11,13 +11,20 @@
 // fetch：可以注入（自带模型时是 safeFetch，做连接时的地址校验）。
 // 重试、限流、预算都由 llm.js 负责，所以关掉 AI SDK 自带的重试（maxRetries: 0）。
 
+import type { CompleteArgs, Provider, UpstreamError } from './types/llm.ts';
+
 const CUSTOM = 'custom';
-const PREFIXED = ['anthropic', 'google', 'openai'];
+const PREFIXED: readonly string[] = ['anthropic', 'google', 'openai'];
 const DEFAULT_BASE = { anthropic: 'https://api.anthropic.com/v1', google: 'https://generativelanguage.googleapis.com/v1beta', openai: 'https://api.openai.com/v1' };
-globalThis.AI_SDK_LOG_WARNINGS = false; // 兼容模式之类的提示不打到日志里
+(globalThis as { AI_SDK_LOG_WARNINGS?: boolean }).AI_SDK_LOG_WARNINGS = false; // 兼容模式之类的提示不打到日志里
+
+/** 加载好的 AI SDK 模块 */
+export type SdkModules = Awaited<ReturnType<typeof defaultLoad>>;
+/** AI SDK 各服务商的 provider 类型各不相同，这里只调用 p(id) / p.chatModel(id) */
+type SdkProvider = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /** "anthropic/claude-sonnet-5" → { provider, id }；没有前缀（或前缀不认识）的走自定义网关 */
-export function parseModelName(name) {
+export function parseModelName(name: unknown): { provider: string; id: string } {
   const s = String(name || '');
   const i = s.indexOf('/');
   const p = i > 0 ? s.slice(0, i) : '';
@@ -25,9 +32,9 @@ export function parseModelName(name) {
 }
 
 /** OpenAI 风格的消息 → { system, messages }（system 合并到一起，其余原样；content 一律转成字符串） */
-export function toPrompt(messages) {
-  const system = [];
-  const out = [];
+export function toPrompt(messages: Array<{ role: string; content: unknown }>): { system?: string; messages: Array<{ role: 'assistant' | 'user'; content: string }> } {
+  const system: string[] = [];
+  const out: Array<{ role: 'assistant' | 'user'; content: string }> = [];
   for (const m of messages) {
     const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
     if (m.role === 'system') system.push(text);
@@ -48,28 +55,31 @@ async function defaultLoad() {
 }
 
 /** 把 AI SDK 的错误变成带上游状态码与原文的 Error：llm.js 据此识别限流、鉴权失败、余额不足、不支持 JSON 模式 */
-function upstreamError(e) {
+function upstreamError(e: any): UpstreamError { // eslint-disable-line @typescript-eslint/no-explicit-any -- AI SDK 抛出的各种错误
   const status = e?.statusCode;
   let msg = e?.message || String(e);
   try { const d = JSON.parse(e?.responseBody || ''); msg = d?.error?.message || d?.message || msg; } catch { /* 不是 JSON */ }
-  const err = new Error(status ? `HTTP ${status}: ${msg}` : msg);
+  const err: UpstreamError = new Error(status ? `HTTP ${status}: ${msg}` : msg);
   if (status) err.upstreamStatus = status; // 不用 status：HTTP 层会把 status 当成响应码直接返回给浏览器
   return err;
 }
 
-/**
- * @param {object} o
- * @param {'anthropic'|'google'|'aisdk'} o.kind
- * @param {string} [o.baseUrl]
- * @param {string} [o.apiKey]
- * @param {string[]} [o.models] 配置的模型名（aisdk 用来判断是否需要自定义网关）
- * @param {boolean} [o.strictKey] 必须显式给出密钥（世界自带的模型服务）
- * @param {typeof fetch} [o.fetch]
- * @param {() => Promise<object>} [o.load] 测试用：注入已加载的模块
- */
-export function aisdkProvider({ kind, baseUrl = '', apiKey = '', models = [], strictKey = false, fetch: f = null, load = defaultLoad } = {}) {
+export interface AisdkOptions {
+  kind: 'anthropic' | 'google' | 'aisdk';
+  baseUrl?: string;
+  apiKey?: string;
+  /** 配置的模型名（aisdk 用来判断是否需要自定义网关） */
+  models?: Array<string | undefined>;
+  /** 必须显式给出密钥（世界自带的模型服务） */
+  strictKey?: boolean;
+  fetch?: typeof fetch | null;
+  /** 测试用：注入已加载的模块 */
+  load?: () => Promise<SdkModules>;
+}
+
+export function aisdkProvider({ kind, baseUrl = '', apiKey = '', models = [], strictKey = false, fetch: f = null, load = defaultLoad }: AisdkOptions = {} as AisdkOptions): Provider {
   const base = String(baseUrl || '').replace(/\/+$/, '');
-  const configured = models.filter(Boolean);
+  const configured = models.filter((n): n is string => Boolean(n));
   const needsCustom = kind === 'aisdk' && configured.some((n) => parseModelName(n).provider === CUSTOM);
   const enabled = kind === 'aisdk'
     ? configured.length > 0 && (!needsCustom || Boolean(base && apiKey))
@@ -77,7 +87,7 @@ export function aisdkProvider({ kind, baseUrl = '', apiKey = '', models = [], st
 
   // 自带模型：请求头里的密钥必须是给出的那一把（防止 AI SDK 在任何情况下退回去读服务器的环境变量）
   const guarded = strictKey
-    ? async (url, init = {}) => {
+    ? async (url: string | URL | Request, init: RequestInit = {}) => {
       const h = new Headers(init.headers);
       const sent = h.get('x-api-key') || h.get('x-goog-api-key') || (h.get('authorization') || '').replace(/^Bearer\s+/i, '');
       if (!apiKey || sent !== apiKey) throw new Error('请求没有带上这份凭据的密钥，已拒绝发出');
@@ -85,18 +95,18 @@ export function aisdkProvider({ kind, baseUrl = '', apiKey = '', models = [], st
     }
     : f || undefined;
 
-  let loading = null;
-  const sdk = () => (loading ||= load().catch((e) => { loading = null; throw e; }));
-  const factories = new Map();
+  let loading: Promise<SdkModules> | null = null;
+  const sdk = (): Promise<SdkModules> => (loading ||= load().catch((e) => { loading = null; throw e; }));
+  const factories = new Map<string, SdkProvider>();
 
   /** 服务商实例（按服务商缓存） */
-  function providerFor(m, provider) {
+  function providerFor(m: SdkModules, provider: string): SdkProvider {
     if (factories.has(provider)) return factories.get(provider);
     if (strictKey && !apiKey) throw new Error('这份凭据没有密钥');
     // 单一服务商：密钥与地址来自凭据 / 设置；aisdk 模式下带前缀的服务商由 AI SDK 从环境变量读密钥
     const own = kind !== 'aisdk';
     const opts = { ...(own && apiKey ? { apiKey } : {}), ...(own && base ? { baseURL: base } : {}), ...(guarded ? { fetch: guarded } : {}) };
-    let p;
+    let p: SdkProvider;
     if (provider === CUSTOM) p = m.compat.createOpenAICompatible({ name: CUSTOM, baseURL: base, apiKey, includeUsage: true, supportsStructuredOutputs: true, ...(guarded ? { fetch: guarded } : {}) });
     else if (provider === 'anthropic') p = m.anthropic.createAnthropic(opts);
     else if (provider === 'google') p = m.google.createGoogleGenerativeAI(opts);
@@ -105,9 +115,9 @@ export function aisdkProvider({ kind, baseUrl = '', apiKey = '', models = [], st
     return p;
   }
 
-  const route = (name) => (kind === 'aisdk' ? parseModelName(name) : { provider: kind, id: String(name || '') });
+  const route = (name: string) => (kind === 'aisdk' ? parseModelName(name) : { provider: kind, id: String(name || '') });
 
-  async function listJSON(url, headers) {
+  async function listJSON(url: string, headers: Record<string, string>): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any -- 各服务商的模型列表格式不同
     const res = await (guarded || fetch)(url, { headers });
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
@@ -120,18 +130,18 @@ export function aisdkProvider({ kind, baseUrl = '', apiKey = '', models = [], st
     async listModels() {
       if (kind === 'anthropic') {
         const data = await listJSON(`${base || DEFAULT_BASE.anthropic}/models?limit=200`, { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' });
-        return (data.data || []).map((m) => m.id);
+        return (data.data || []).map((m: { id: string }) => m.id);
       }
       if (kind === 'google') {
         const data = await listJSON(`${base || DEFAULT_BASE.google}/models?pageSize=200`, { 'x-goog-api-key': apiKey });
-        return (data.models || []).map((m) => String(m.name || '').replace(/^models\//, ''));
+        return (data.models || []).map((m: { name?: string }) => String(m.name || '').replace(/^models\//, ''));
       }
       // aisdk：只能列出自定义网关的模型；内置服务商不列（返回的列表里没有它们时，llm.js 不做自动纠正）
       if (!needsCustom) return [];
       const data = await listJSON(`${base}/models`, { Authorization: `Bearer ${apiKey}` });
-      return [...(data.data || []).map((m) => m.id), ...configured.filter((n) => parseModelName(n).provider !== CUSTOM)];
+      return [...(data.data || []).map((m: { id: string }) => m.id), ...configured.filter((n) => parseModelName(n).provider !== CUSTOM)];
     },
-    async complete({ model: name, messages, temperature, maxTokens, json, schema, signal }) {
+    async complete({ model: name, messages, temperature, maxTokens, json, schema, signal }: CompleteArgs) {
       const m = await sdk();
       const { provider, id } = route(name);
       const p = providerFor(m, provider);
@@ -139,7 +149,7 @@ export function aisdkProvider({ kind, baseUrl = '', apiKey = '', models = [], st
       // JSON 模式只给 Chat Completions 风格的接口（与默认的 OpenAI 兼容实现一致）；其他服务商靠提示词约束，llm.js 负责修复
       const chatStyle = provider === CUSTOM;
       const output = json && chatStyle
-        ? schema ? m.ai.Output.object({ schema: m.ai.jsonSchema(schema.schema), name: schema.name }) : m.ai.Output.json()
+        ? schema ? m.ai.Output.object({ schema: m.ai.jsonSchema(schema.schema as Parameters<typeof m.ai.jsonSchema>[0]), name: schema.name }) : m.ai.Output.json()
         : undefined;
       const req = {
         model, ...toPrompt(messages), temperature, maxOutputTokens: maxTokens, abortSignal: signal, maxRetries: 0,
@@ -148,7 +158,7 @@ export function aisdkProvider({ kind, baseUrl = '', apiKey = '', models = [], st
         ...(chatStyle ? { providerOptions: { [CUSTOM]: { reasoningEffort: 'low', strictJsonSchema: false } } } : {}),
       };
       try {
-        const r = await m.ai.generateText(req);
+        const r = await m.ai.generateText(req as Parameters<typeof m.ai.generateText>[0]);
         return { content: r.text ?? '', usage: { prompt: r.usage?.inputTokens || 0, completion: r.usage?.outputTokens || 0 }, finishReason: r.finishReason };
       } catch (e) {
         // 模型的输出不是合法 JSON：把原文交回 llm.js，由它修复或让模型重写

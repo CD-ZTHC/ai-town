@@ -11,8 +11,11 @@
 //               schema：{ name, schema }（JSON Schema），只在开启结构化输出时传入；不支持的实现可以忽略
 //   失败时抛出 Error，message 带上上游的原始错误信息：llm.js 据此识别限流、鉴权失败、不支持 JSON 模式。
 import { aisdkProvider } from './llm-aisdk.ts';
+import type { CompleteArgs, Env, JsonSchemaSpec, Provider } from './types/llm.ts';
 
-export function openaiCompatible({ baseUrl = '', apiKey = '', fetch: f = null } = {}) {
+export type { Provider } from './types/llm.ts';
+
+export function openaiCompatible({ baseUrl = '', apiKey = '', fetch: f = null }: { baseUrl?: string; apiKey?: string; fetch?: typeof fetch | null } = {}): Provider {
   const base = baseUrl.replace(/\/+$/, '');
   const fetch = f || globalThis.fetch; // 世界自带的模型服务注入 safeFetch（连接时校验地址）
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` };
@@ -21,11 +24,11 @@ export function openaiCompatible({ baseUrl = '', apiKey = '', fetch: f = null } 
     enabled: Boolean(base && apiKey),
     async listModels() {
       const res = await fetch(`${base}/models`, { headers });
-      const data = await res.json().catch(() => ({}));
+      const data: { data?: Array<{ id: string }>; error?: { message?: string } } = await res.json().catch(() => ({}));
       if (!res.ok) throw Object.assign(new Error(data.error?.message || `HTTP ${res.status}`), { upstreamStatus: res.status });
       return (data.data || []).map((m) => m.id);
     },
-    async complete({ model, messages, temperature, maxTokens, json, schema, signal }) {
+    async complete({ model, messages, temperature, maxTokens, json, schema, signal }: CompleteArgs) {
       const res = await fetch(`${base}/chat/completions`, {
         method: 'POST',
         signal,
@@ -40,7 +43,8 @@ export function openaiCompatible({ baseUrl = '', apiKey = '', fetch: f = null } 
         }),
       });
       const text = await res.text();
-      let data;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any; // 上游返回的 JSON，按 OpenAI 的格式读取
       try {
         data = JSON.parse(text);
       } catch {
@@ -58,13 +62,14 @@ export function openaiCompatible({ baseUrl = '', apiKey = '', fetch: f = null } 
 }
 
 /** Chat Completions 的 response_format：有 schema 时用 json_schema（非严格模式，兼容性更好） */
-export function responseFormat(schema) {
+export function responseFormat(schema: JsonSchemaSpec | null | undefined) {
   return schema ? { type: 'json_schema', json_schema: { name: schema.name, schema: schema.schema, strict: false } } : { type: 'json_object' };
 }
 
-const tiers = (env) => [env.MODEL, env.MODEL_FAST, env.MODEL_SMART];
+const tiers = (env: Env) => [env.MODEL, env.MODEL_FAST, env.MODEL_SMART];
 let piWarned = false;
-const factories = {
+type Factory = (env: Env) => Provider;
+const factories: Record<string, Factory> = {
   openai: (env) => openaiCompatible({ baseUrl: env.BASE_URL || '', apiKey: env.API_KEY || '' }),
   // 经 AI SDK（可选依赖，第一次请求时才加载）
   anthropic: (env) => aisdkProvider({ kind: 'anthropic', baseUrl: env.BASE_URL, apiKey: env.API_KEY }),
@@ -73,31 +78,28 @@ const factories = {
   // 旧名字：pi-ai 已经换成 AI SDK，「服务商/模型」的写法不变
   pi: (env) => {
     if (!piWarned) { piWarned = true; console.warn('[llm] LLM_PROVIDER=pi 已弃用，按 aisdk 处理（写法不变）；请改成 LLM_PROVIDER=aisdk'); }
-    return factories.aisdk(env);
+    return factories.aisdk!(env);
   },
 };
 
 /** 世界自带的模型服务可以选的类型（aisdk 从服务器的环境变量读密钥，只给服务器用） */
-export const CREDENTIAL_PROVIDERS = ['openai', 'anthropic', 'google'];
+export const CREDENTIAL_PROVIDERS: readonly string[] = ['openai', 'anthropic', 'google'];
 
-/**
- * 按一份凭据建 provider：密钥必须显式给出（绝不读服务器的环境变量），请求经过注入的 fetch（safeFetch）
- * @param {{ provider: string, baseUrl?: string, apiKey: string, fetch?: typeof fetch }} c
- */
-export function credentialProvider({ provider, baseUrl = '', apiKey, fetch: f = null }) {
+/** 按一份凭据建 provider：密钥必须显式给出（绝不读服务器的环境变量），请求经过注入的 fetch（safeFetch） */
+export function credentialProvider({ provider, baseUrl = '', apiKey, fetch: f = null }: { provider: string; baseUrl?: string; apiKey: string; fetch?: typeof fetch | null }): Provider {
   if (!CREDENTIAL_PROVIDERS.includes(provider)) throw new Error(`不支持的服务类型：${provider}`);
   if (!apiKey) throw new Error('这份凭据没有密钥');
   if (provider === 'openai') return openaiCompatible({ baseUrl, apiKey, fetch: f });
-  return aisdkProvider({ kind: provider, baseUrl, apiKey, strictKey: true, fetch: f });
+  return aisdkProvider({ kind: provider as 'anthropic' | 'google', baseUrl, apiKey, strictKey: true, fetch: f });
 }
 
 /** 注册一个 provider 工厂：factory(env) => provider */
-export function registerProvider(name, factory) {
+export function registerProvider(name: string, factory: Factory): void {
   if (Object.hasOwn(factories, name)) throw new Error(`provider 已存在：${name}`);
   factories[name] = factory;
 }
 
-export function createProvider(name = 'openai', env = process.env) {
+export function createProvider(name = 'openai', env: Env = process.env): Provider {
   if (!Object.hasOwn(factories, name)) throw new Error(`未知的 LLM_PROVIDER：${name}（可用：${Object.keys(factories).join('、')}）`);
-  return factories[name](env);
+  return factories[name]!(env);
 }
