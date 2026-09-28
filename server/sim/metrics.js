@@ -1,7 +1,7 @@
 // AI 表现指标：约定兑现率、对话重复率、剧情线程回收率、JSON 失败率、兜底率。
 // 换模型时拿来对比；计数按游戏日存进存档（最多 30 天），JSON 统计来自进程内的 llm.stats。
 import * as llm from '../llm.js';
-import { similarity } from '../memory.js';
+import { similarity } from '../memory.ts';
 import { threadList } from '../story/threads.js';
 
 const KEEP_DAYS = 30;

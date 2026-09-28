@@ -9,7 +9,7 @@
 //   - 公平补偿：连续让路（导演看到队列忙就不做决策）N 次的世界，下次出队权重翻倍
 //   - 单个世界最多同时占 L-2 个并发（L≥3；L=2 时 1 个）——只在别的世界也有任务排队时生效，
 //     保证一个世界刷聊天时，别的世界的心跳仍然有空位（没有别的世界时不限制，不浪费容量）
-import { CLASSES } from './classes.js';
+import { CLASSES } from './classes.ts';
 
 const YIELD_BOOST = 3;
 const AGING_EVERY = 10;

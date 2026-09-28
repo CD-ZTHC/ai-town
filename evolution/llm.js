@@ -3,8 +3,8 @@
 import * as base from '../server/llm.js';
 import { openaiCompatible } from '../server/llm-providers.js';
 import { BudgetExceeded } from './common.js';
-import { get as setting } from '../server/settings/index.js';
-import { currentContext } from '../server/scheduler/context.js';
+import { get as setting } from '../server/settings/index.ts';
+import { currentContext } from '../server/scheduler/context.ts';
 
 const REVIEW = {
   url: setting('EVOLVE_REVIEW_BASE_URL').replace(/\/+$/, ''),

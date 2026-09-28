@@ -7,7 +7,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { env as settingsEnv } from './settings/index.js';
+import { env as settingsEnv } from './settings/index.ts';
 
 const BATCH = 64; // 一次请求最多多少条文本
 const MAX_PER_CALL = 128; // 一次检索最多补算多少条记忆（其余下次再算）

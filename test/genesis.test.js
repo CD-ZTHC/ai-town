@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const llm = await import('../server/llm.js');
 const { chunkSource, screenSource } = await import('../server/genesis/source.js');
@@ -18,7 +18,7 @@ const { Accounts, installRefs } = await import('../server/accounts/index.js');
 const { WorldRegistry } = await import('../server/worlds/registry.js');
 const { WorldManager } = await import('../server/worlds/manager.js');
 const { loadPack } = await import('../server/worlds/pack.js');
-const { Ledger } = await import('../server/scheduler/budget.js');
+const { Ledger } = await import('../server/scheduler/budget.ts');
 const { Town } = await import('../server/sim.js');
 const { activeDir } = await import('../server/timelines.js');
 const { createApp } = await import('../server/http/app.js');
@@ -171,7 +171,7 @@ function genesisEnv(t) {
   });
   return { data, acc, reg, ledger, manager, jobs, req };
 }
-const memoryHooksReset = async () => { (await import('../server/memory.js')).memoryHooks.encode = null; };
+const memoryHooksReset = async () => { (await import('../server/memory.ts')).memoryHooks.encode = null; };
 const cookieOf = (res) => (res.headers.get('set-cookie') || '').split(';')[0];
 
 test('创世完整流程（接口）：无授予 403；上传原文；提交后排队运行 G1~G5（P3，记在创世者名下）；进入预览；只有 owner 能看；世界可以运行', { timeout: 180_000 }, async (t) => {

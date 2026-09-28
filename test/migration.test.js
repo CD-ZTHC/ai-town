@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const llm = await import('../server/llm.js');
 const { Town } = await import('../server/sim.js');

@@ -10,7 +10,7 @@ import { Hono } from 'hono';
 import { authorize } from '../accounts/authz.js';
 import { SITE } from '../accounts/llm-credentials.js';
 import { quota } from '../accounts/quota.js';
-import { get as setting } from '../settings/index.js';
+import { get as setting } from '../settings/index.ts';
 import { HttpError } from './util.js';
 
 const clip = (v, max) => String(v ?? '').trim().slice(0, max);

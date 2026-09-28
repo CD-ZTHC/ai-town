@@ -4,7 +4,7 @@
 // 代码里只用 settings.get('KEY')，不再直接读 process.env。每次读取都取当前值，live 类设置保存后立即生效。
 import fs from 'node:fs';
 import path from 'node:path';
-import { SETTINGS, parseString, toEnvString, checkValue } from './schema.js';
+import { SETTINGS, parseString, toEnvString, checkValue } from './schema.ts';
 
 const KEEP_VERSIONS = 20;
 const warned = new Set();

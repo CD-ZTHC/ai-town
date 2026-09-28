@@ -1,7 +1,7 @@
 // 能力系统（设计文档 6.3）：能力是由效果原语组合而成的数据。居民可以使用、研究、互相传授。
 import { checkEffects, checkExpr, runEffects, posOf, agentsNear } from './effects.js';
 import { testExpr } from './rules.js';
-import { addMemory, fmtTime } from '../memory.js';
+import { addMemory, fmtTime } from '../memory.ts';
 
 const ID_RE = /^[a-z][a-z0-9_]{1,31}$/;
 const inRange = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;

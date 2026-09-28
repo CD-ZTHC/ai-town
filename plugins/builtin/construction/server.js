@@ -2,7 +2,7 @@
 // 内核只负责「提案获批 → 落地」；有新建筑的提案由本插件接管：搭脚手架、给负责施工的居民排上日程，
 // 并把提案标为 building、写好完工时间，到点后由内核落地。以后「先备料再开工」「建筑会慢慢破旧」之类的玩法，
 // 都可以写成新插件挂在同样的钩子上，不用修改内核。
-import { fmtTime } from '../../../server/memory.js';
+import { fmtTime } from '../../../server/memory.ts';
 
 /** 拆除工地旁边最近的公共地点（工人在那里集合） */
 function nearestPublic(town, site) {

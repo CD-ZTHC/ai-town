@@ -8,11 +8,11 @@
 // 没有注入解析器时一律用服务器的配置档，行为与只有一个模型时完全一样。审核类调用永远用服务器（SERVER_ONLY）。
 import fs from 'node:fs';
 import { createProvider } from './llm-providers.js';
-import { get as setting, env as settingsEnv } from './settings/index.js';
-import { Scheduler } from './scheduler/index.js';
-import { classOf, SERVER_ONLY } from './scheduler/classes.js';
-import { currentContext } from './scheduler/context.js';
-import { scrub } from './secrets.js';
+import { get as setting, env as settingsEnv } from './settings/index.ts';
+import { Scheduler } from './scheduler/index.ts';
+import { classOf, SERVER_ONLY } from './scheduler/classes.ts';
+import { currentContext } from './scheduler/context.ts';
+import { scrub } from './secrets.ts';
 
 const listeners = new Set();
 const lanes = new Map(); // key → Lane

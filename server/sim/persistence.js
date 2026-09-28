@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import zlib from 'node:zlib';
 import path from 'node:path';
 import * as llm from '../llm.js';
-import { fmtStamp } from '../memory.js';
+import { fmtStamp } from '../memory.ts';
 import { findAbility } from '../kernel/abilities.js';
 import { OpJournal } from '../kernel/ops.js';
 import { freshDark } from '../story/threats.js';

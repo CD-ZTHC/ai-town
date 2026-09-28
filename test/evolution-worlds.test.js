@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const llm = await import('../server/llm.js');
 const { paths, Budget, rotation, readJSON, saveJobs } = await import('../evolution/common.js');

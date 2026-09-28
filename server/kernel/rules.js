@@ -5,7 +5,7 @@ import { EXPR_FNS, EXT_FNS, checkEffects, checkExpr, runEffects, posOf, agentsNe
 
 /** 居民是否正保持着某种禁忌姿态（黑暗叙事设计 §4.1） */
 export const hasPosture = (town, a, name) => Boolean(a?.posture && a.posture.until > town.t && a.posture.holds.includes(name));
-import { parseHM } from '../memory.js';
+import { parseHM } from '../memory.ts';
 
 const ID_RE = /^[a-z][a-z0-9_]{1,31}$/;
 const MAX_MATCHES = 12; // 一次触发最多影响的实体数，防止「雪崩」规则

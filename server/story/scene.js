@@ -1,7 +1,7 @@
 // 多人场景（设计文档 5.1）：议事会、谈判、告别……一次 LLM 调用写出 N 人群像戏。
 // 流程：安排（给参与者写约定）→ 等人到齐 → 开场（逐句播放）→ 收尾（记忆、好感、分工、抉择）
 import * as llm from '../llm.js';
-import { addMemory, fmtTime } from '../memory.js';
+import { addMemory, fmtTime } from '../memory.ts';
 import { resolveWho } from './beats.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);

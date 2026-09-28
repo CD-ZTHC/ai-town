@@ -4,7 +4,7 @@
 import crypto from 'node:crypto';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { config, clientIp } from '../guard.js';
-import { get as setting } from '../settings/index.js';
+import { get as setting } from '../settings/index.ts';
 import { isAdminUser } from '../accounts/authz.js';
 import { SESSION_TTL } from '../accounts/index.js';
 import { HttpError, nodeLike } from './util.js';

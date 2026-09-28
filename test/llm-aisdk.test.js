@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { aisdkProvider, parseModelName, toPrompt } from '../server/llm-aisdk.js';
 import { createProvider, credentialProvider } from '../server/llm-providers.js';
-import { SETTINGS, parseString } from '../server/settings/schema.js';
+import { SETTINGS, parseString } from '../server/settings/schema.ts';
 
 let installed = true;
 try { await import('ai'); } catch { installed = false; }

@@ -9,7 +9,7 @@ import { fork } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rollbackToGood, settingsFile, load, get as setting } from './settings/index.js';
+import { rollbackToGood, settingsFile, load, get as setting } from './settings/index.ts';
 
 export const RESTART_CODE = 75;
 const ENTRY = path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.js');

@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { buildRegions, buildRegion } from './worldgen/index.js';
 import * as llm from './llm.js';
-import { addMemory, parseHM } from './memory.js';
+import { addMemory, parseHM } from './memory.ts';
 import { officialPack, packSpec } from './worlds/pack.js';
 import { defaultSpec, validateSpec, weekdayOf, calendarHint, pickWeather, publicSpec, PARAM_BOUNDS } from './kernel/spec.js';
 import { RuleEngine } from './kernel/rules.js';
@@ -41,7 +41,7 @@ import { Persistence } from './sim/persistence.js';
 import { Metrics } from './sim/metrics.js';
 import { Dark } from './sim/dark.js';
 import { Combat } from './sim/combat.js';
-import { get as setting } from './settings/index.js';
+import { get as setting } from './settings/index.ts';
 
 const MAX_STRUCTURES = 30;
 // 改变地图上建筑的世界操作：落地后重建地图（syncMap）

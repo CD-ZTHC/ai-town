@@ -7,7 +7,7 @@
 import { Hono } from 'hono';
 import * as llm from '../llm.js';
 import { authorize } from '../accounts/authz.js';
-import { get as setting } from '../settings/index.js';
+import { get as setting } from '../settings/index.ts';
 import { normalizeSource, screenSource, sampleParagraphs } from '../genesis/source.js';
 import { GenesisJobs } from '../genesis/jobs.js';
 import { HttpError } from './util.js';

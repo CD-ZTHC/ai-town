@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // mise run settings:doc：由设置声明表（server/settings/schema.js）生成 docs/settings.md
 import fs from 'node:fs';
-import { SETTINGS, GROUPS } from '../server/settings/schema.js';
+import { SETTINGS, GROUPS } from '../server/settings/schema.ts';
 
 const fmt = (d) => {
   const v = typeof d.default === 'function' ? '（按其他设置推导）' : d.default;

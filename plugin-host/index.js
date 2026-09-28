@@ -3,7 +3,7 @@
 // - AI 插件（plugins/evolved/）：见 evolved.js，数据类以规格覆盖层叠加，代码类在沙箱子进程里运行
 import { builtins } from './builtin.js';
 import { registerEffect, registerExprFn } from './registry.js';
-import { get as setting } from '../server/settings/index.js';
+import { get as setting } from '../server/settings/index.ts';
 
 export class PluginHost {
   /**

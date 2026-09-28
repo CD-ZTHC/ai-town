@@ -9,7 +9,7 @@ import { checkPack } from '../genesis/pipeline.js';
 import { keywordCheck, sanitize } from '../guard.js';
 import { publishReview } from '../worlds/review.js';
 import { quota } from '../accounts/quota.js';
-import { get as setting } from '../settings/index.js';
+import { get as setting } from '../settings/index.ts';
 import { reviewRating } from '../kernel/ratings.js';
 import { STORYTELLERS } from '../kernel/spec.js';
 import { DEATH_NAMED_DEFAULT } from './genesis-api.js';

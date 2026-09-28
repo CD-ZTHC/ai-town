@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { openDb } from '../server/accounts/db.js';
 import { LlmCredentials } from '../server/accounts/llm-credentials.js';
-import { loadMasterKey, parseMasterKey, generateMasterKey } from '../server/secrets.js';
+import { loadMasterKey, parseMasterKey, generateMasterKey } from '../server/secrets.ts';
 
 const dataDir = path.resolve(process.env.DATA_DIR || 'data');
 const file = path.join(dataDir, 'accounts.db');

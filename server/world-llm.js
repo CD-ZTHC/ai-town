@@ -5,10 +5,10 @@
 //   - 恢复：凭据或配置修好后测试连接，通过就恢复；「持续连不上」每 15 分钟自动探测一次
 import * as llm from './llm.js';
 import { credentialProvider, CREDENTIAL_PROVIDERS } from './llm-providers.js';
-import { makeSafeFetch, urlProblem } from './net/safe-fetch.js';
+import { makeSafeFetch, urlProblem } from './net/safe-fetch.ts';
 import { SITE } from './accounts/llm-credentials.js';
-import { scrub } from './secrets.js';
-import { get as setting } from './settings/index.js';
+import { scrub } from './secrets.ts';
+import { get as setting } from './settings/index.ts';
 
 const HALT_NAMES = {
   auth: '密钥无效或没有权限', balance: '余额不足', model: '模型不存在', address: '接口地址不允许访问', net: '持续连不上模型服务',

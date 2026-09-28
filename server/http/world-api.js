@@ -12,7 +12,7 @@ import { config, sanitize, moderate, targetsResident } from '../guard.js';
 import { authorize } from '../accounts/authz.js';
 import { quota, remaining as quotaLeft } from '../accounts/quota.js';
 import { HttpError } from './util.js';
-import { get as setting } from '../settings/index.js';
+import { get as setting } from '../settings/index.ts';
 
 function requireAdmin(c) {
   if (!c.get('admin')) throw new HttpError(403, '只有小镇管理员可以这样做');

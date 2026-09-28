@@ -9,7 +9,7 @@ import { WorldHost } from './host.js';
 import { WorldRegistry } from './registry.js';
 import { worldRoot } from './migrate.js';
 import { checkDisk, diskLimit } from './disk.js';
-import { get as setting } from '../settings/index.js';
+import { get as setting } from '../settings/index.ts';
 
 export class WorldFullError extends Error {
   constructor(retryAfter) { super('现在同时运行的世界已经满了，请稍后再来'); this.status = 503; this.retryAfter = retryAfter; this.full = true; }

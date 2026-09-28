@@ -4,7 +4,7 @@
 //   存档与操作日志始终可以写入——世界本身照常运行。
 import fs from 'node:fs';
 import path from 'node:path';
-import { get as setting } from '../settings/index.js';
+import { get as setting } from '../settings/index.ts';
 
 const MB = 1024 * 1024;
 const SNAP = /^d(\d{3})-(\d{2})\.json(?:\.gz)?$/;

@@ -1,7 +1,7 @@
 // 公网部署防护：配置、权限、限流、内容审核
 import crypto from 'node:crypto';
 import * as llm from './llm.js';
-import { get as setting } from './settings/index.js';
+import { get as setting } from './settings/index.ts';
 import { lethal } from './kernel/ratings.js';
 
 // 每个字段都读设置中心的当前值（live 类设置保存后立即生效）；测试可以直接赋值覆盖（例如 config.publicMode = true）

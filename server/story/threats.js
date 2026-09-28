@@ -2,7 +2,7 @@
 // 只有世界包声明了 threats 时才运行。规律判定、标记、应验都按规则结算，不调用 LLM；
 // 规律本身（rule）从不进入任何提示词，居民只能通过线索形成自己的看法（信念）。
 import { findPath } from '../world.js';
-import { addMemory, parseHM } from '../memory.js';
+import { addMemory, parseHM } from '../memory.ts';
 import { runEffects, posOf, agentsNear } from '../kernel/effects.js';
 import { testExpr } from '../kernel/rules.js';
 import { ratingAtLeast } from '../kernel/ratings.js';

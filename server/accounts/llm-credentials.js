@@ -1,7 +1,7 @@
 // 模型服务凭据（按世界配置模型服务设计 §3.1）：属于账号（owner = 用户 id），或属于站点（owner = 'site'，只给官方世界用）。
 // 密钥加密存放，只写不读：对外只有末 4 位；明文只经 secret() 交给构造 provider 的代码，永远不出这个模块的公开视图。
 import crypto from 'node:crypto';
-import { seal, open, scrub } from '../secrets.js';
+import { seal, open, scrub } from '../secrets.ts';
 
 export const SITE = 'site';
 export const STATUSES = ['unchecked', 'ok', 'failing'];

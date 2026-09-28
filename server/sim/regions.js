@@ -1,6 +1,6 @@
 // 区域与地点：地点查找、区域开关（暗月界）、地点列表
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
-import { addMemory } from '../memory.js';
+import { addMemory } from '../memory.ts';
 
 export class Regions {
   publicLocs() { return Object.keys(this.spec.locations).filter((id) => this.spec.locations[id].public && this.regionOpen(this.locRegion(id)) && this.findLocation(id)); }

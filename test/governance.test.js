@@ -6,9 +6,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const settings = await import('../server/settings/index.js');
+const settings = await import('../server/settings/index.ts');
 const { openDb } = await import('../server/accounts/db.js');
 const { Accounts, installRefs } = await import('../server/accounts/index.js');
 const { WorldRegistry } = await import('../server/worlds/registry.js');
@@ -23,7 +23,7 @@ const { authorize } = await import('../server/accounts/authz.js');
 const { config } = await import('../server/guard.js');
 const { _resetQuota } = await import('../server/accounts/quota.js');
 const llm = await import('../server/llm.js');
-const { memoryHooks } = await import('../server/memory.js');
+const { memoryHooks } = await import('../server/memory.ts');
 
 const PW = 'correct-horse-9';
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-gov-'));

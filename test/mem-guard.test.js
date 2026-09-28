@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { withTrialSlot } = await import('../server/trial-lock.js');
 const { createEmbedder } = await import('../server/embeddings.js');

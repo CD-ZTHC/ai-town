@@ -1,7 +1,7 @@
 // 世界架构师（设计文档 5.3；自主演化 E0 起作为内置插件运行）：把「世界需要改变」的意图（来自导演、居民、访客、管理员）变成 WorldPatch。
 // 提示词里带着自动生成的能力清单；补丁校验失败时带着错误修一轮；清单里没有的能力记为「能力缺口」（P5 使用）。
 import * as llm from '../../../server/llm.js';
-import { similarity } from '../../../server/memory.js';
+import { similarity } from '../../../server/memory.ts';
 import { ARCHITECT_OPS } from '../../../server/worldai/proposals.js';
 import { manifestText } from '../../../server/worldai/manifest.js';
 

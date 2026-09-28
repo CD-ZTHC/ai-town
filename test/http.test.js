@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 // 不受开发机 .env 的影响
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { Town } = await import('../server/sim.js');
 const { WorldHost } = await import('../server/worlds/host.js');
@@ -151,7 +151,7 @@ test('静态资源：首页、ETag、禁止路径穿越与点开头的文件', a
 });
 
 test('管理员接口 · 设置：查看、校验、试算、保存、历史与恢复；密钥不回显', async (t) => {
-  const settings = await import('../server/settings/index.js');
+  const settings = await import('../server/settings/index.ts');
   const { app, host, dir } = setup();
   settings.load({ dataDir: dir });
   t.after(() => { host.close({ save: false }); settings._setForTest({}); });

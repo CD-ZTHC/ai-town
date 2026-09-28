@@ -1,7 +1,7 @@
 // 战斗与敌对行动（黑暗叙事设计 §4.3 的 slay、§4.9）：居民之间的攻击、偷窃、威胁、俘虏与营救，以及居民与会死的威胁交手。
 // 按规则逐回合结算（每游戏分钟一回合），不调用 LLM。
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
-import { addMemory } from '../memory.js';
+import { addMemory } from '../memory.ts';
 import { posOf } from '../kernel/effects.js';
 import { lethal } from '../kernel/ratings.js';
 import { clamp } from './util.js';

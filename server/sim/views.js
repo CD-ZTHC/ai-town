@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as llm from '../llm.js';
-import { fmtTime, fmtStamp } from '../memory.js';
+import { fmtTime, fmtStamp } from '../memory.ts';
 import { publicSpec } from '../kernel/spec.js';
 import { findAbility } from '../kernel/abilities.js';
 import { threadList } from '../story/threads.js';

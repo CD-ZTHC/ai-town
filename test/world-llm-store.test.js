@@ -7,13 +7,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const { seal, open, scrub, loadMasterKey, parseMasterKey, generateMasterKey } = await import('../server/secrets.js');
+const { seal, open, scrub, loadMasterKey, parseMasterKey, generateMasterKey } = await import('../server/secrets.ts');
 const { openDb } = await import('../server/accounts/db.js');
 const { LlmCredentials } = await import('../server/accounts/llm-credentials.js');
-const { Ledger } = await import('../server/scheduler/budget.js');
-const { isBlockedAddress, urlProblem, makeSafeFetch } = await import('../server/net/safe-fetch.js');
+const { Ledger } = await import('../server/scheduler/budget.ts');
+const { isBlockedAddress, urlProblem, makeSafeFetch } = await import('../server/net/safe-fetch.ts');
 
 const KEY = parseMasterKey(generateMasterKey());
 

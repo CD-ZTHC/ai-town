@@ -2,7 +2,7 @@
 // 遭遇结算没有死亡：结果只有 驱散 / 吓退 / 偷走东西 / 受惊 / 晕倒送诊所。
 import { findPath } from '../world.js';
 import * as llm from '../llm.js';
-import { addMemory, parseHM } from '../memory.js';
+import { addMemory, parseHM } from '../memory.ts';
 import { posOf } from '../kernel/effects.js';
 import { ratingAtLeast } from '../kernel/ratings.js';
 

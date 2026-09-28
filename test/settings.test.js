@@ -6,10 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 // 不受开发机 .env 的影响
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const settings = await import('../server/settings/index.js');
+const settings = await import('../server/settings/index.ts');
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-settings-'));
 
 test('来源：保存的值 > 环境变量（只作初始值）> 默认值；没有被环境变量锁定的项', (t) => {
@@ -166,7 +166,7 @@ test('守护进程：设置导致连续启动失败时回退到上一个正常�
   const counter = path.join(dir, 'n');
   fs.writeFileSync(fake, `
 import fs from 'node:fs';
-import * as s from ${JSON.stringify(path.resolve('server/settings/index.js'))};
+import * as s from ${JSON.stringify(path.resolve('server/settings/index.ts'))};
 s.load();
 if (s.get('MODEL') === 'crash') { console.error('模拟启动失败'); process.exit(1); }
 process.send({ type: 'ready' });
@@ -176,7 +176,7 @@ process.exit(n === 1 ? 75 : 0);
 `);
   const main = fs.readFileSync('server/main.js', 'utf8')
     .replace("path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.js')", JSON.stringify(fake))
-    .replace("from './settings/index.js'", `from ${JSON.stringify(path.resolve('server/settings/index.js'))}`);
+    .replace("from './settings/index.ts'", `from ${JSON.stringify(path.resolve('server/settings/index.ts'))}`);
   const mainFile = path.join(dir, 'main.mjs');
   fs.writeFileSync(mainFile, main);
   const out = await new Promise((resolve) => {

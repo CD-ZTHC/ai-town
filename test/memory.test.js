@@ -1,7 +1,7 @@
 // 记忆检索：相关性排序、双字组缓存在记忆文本变化后不会过期
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addMemory, retrieve, similarity } from '../server/memory.js';
+import { addMemory, retrieve, similarity } from '../server/memory.ts';
 
 const agent = () => ({ id: 'x', memories: [] });
 
@@ -35,7 +35,7 @@ test('相似度：相同为 1，无关为 0', () => {
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { MEMORY_CAP, condenseCandidate, ruleSummary, replaceWithSummary, cosine } from '../server/memory.js';
+import { MEMORY_CAP, condenseCandidate, ruleSummary, replaceWithSummary, cosine } from '../server/memory.ts';
 import { createEmbedder } from '../server/embeddings.js';
 
 test('记忆满了：最早一天的琐事压缩成一条摘要，而不是直接删掉；重要记忆与反思不动', () => {

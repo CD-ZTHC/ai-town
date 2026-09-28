@@ -5,12 +5,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { Accounts, installRefs, LOCAL_ID } = await import('../server/accounts/index.js');
 const { nicknameKey } = await import('../server/accounts/nickname.js');
 const { renderRefs, encodeRefs, GONE } = await import('../server/accounts/refs.js');
-const { memoryHooks, addMemory } = await import('../server/memory.js');
+const { memoryHooks, addMemory } = await import('../server/memory.ts');
 const { _resetQuota } = await import('../server/accounts/quota.js');
 
 const PW = 'correct-horse-9';

@@ -8,8 +8,8 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { runGenesis, runRegenerate } from './pipeline.js';
 import { writePack, loadPack } from '../worlds/pack.js';
-import { withContext } from '../scheduler/context.js';
-import { get as setting } from '../settings/index.js';
+import { withContext } from '../scheduler/context.ts';
+import { get as setting } from '../settings/index.ts';
 import { trackChild } from '../memstat.js';
 import { withTrialSlot } from '../trial-lock.js';
 

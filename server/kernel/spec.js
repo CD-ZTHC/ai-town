@@ -1,7 +1,7 @@
 // 世界规格：把原本写死在代码里的世界（设定、居民、建筑、地点、天气、日历、参数）变成一份可校验的数据。
 // 默认规格来自官方世界包 worlds/yunxi/（多世界设计 §3）；之后的一切改动都以 WorldOp 叠加在它上面。
 import { BUILDING_STATES } from '../worldgen/finish.js';
-import { parseHM } from '../memory.js';
+import { parseHM } from '../memory.ts';
 import { validateAbility } from './abilities.js';
 import { validateRule } from './rules.js';
 import { officialPack, packSpec } from '../worlds/pack.js';

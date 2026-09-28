@@ -5,7 +5,7 @@ import { openDb, tx } from './db.js';
 import { hashPassword, verifyPassword, passwordProblem } from './passwords.js';
 import { nicknameKey, cleanNickname, nicknameProblem, usernameProblem } from './nickname.js';
 import { setResolver, encodeRefs } from './refs.js';
-import { memoryHooks } from '../memory.js';
+import { memoryHooks } from '../memory.ts';
 
 const DAY = 86400_000;
 export const SESSION_TTL = 30 * DAY; // 30 天滑动过期

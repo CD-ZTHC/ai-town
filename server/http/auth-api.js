@@ -2,7 +2,7 @@
 import crypto from 'node:crypto';
 import { Hono } from 'hono';
 import { config, moderateNickname } from '../guard.js';
-import { get as setting } from '../settings/index.js';
+import { get as setting } from '../settings/index.ts';
 import { quota } from '../accounts/quota.js';
 import { HttpError } from './util.js';
 import { setSessionCookie, clearSessionCookie, sessionToken } from './identity.js';

@@ -70,7 +70,7 @@ test('建筑状态：停业 / 受损只能到门口，废墟变成户外地点�
 const fs = await import('node:fs');
 const os = await import('node:os');
 const path = await import('node:path');
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { Town } = await import('../server/sim.js');
 const { loadPack } = await import('../server/worlds/pack.js');

@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { SETTINGS } from '../server/settings/schema.js';
+import { SETTINGS } from '../server/settings/schema.ts';
 
 const args = process.argv.slice(2);
 const opt = (k, d) => (args.includes(k) ? args[args.indexOf(k) + 1] : d);

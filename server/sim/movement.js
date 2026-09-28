@@ -1,7 +1,7 @@
 // 日程执行与移动：当前该做什么、寻路、行走、到达、体力与勇气
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
 import { findPath } from '../world.js';
-import { addMemory } from '../memory.js';
+import { addMemory } from '../memory.ts';
 import { clamp, rand } from './util.js';
 
 export class Movement {

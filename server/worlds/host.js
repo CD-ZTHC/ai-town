@@ -1,5 +1,5 @@
-import { withContext } from '../scheduler/context.js';
-import { get as setting } from '../settings/index.js';
+import { withContext } from '../scheduler/context.ts';
+import { get as setting } from '../settings/index.ts';
 
 const enc = new TextEncoder();
 

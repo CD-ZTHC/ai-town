@@ -65,7 +65,7 @@ if [ "$MODE" = systemd ] && grep -nE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^"'"'
   exit 1
 fi
 # 新版本会校验环境变量（写错就拒绝启动）：在停掉旧版本之前先用线上的 .env 检查一遍，不通过就放弃部署
-run_node --env-file=.env --input-type=module -e "import('./server/settings/index.js').then((s) => { const p = s.envProblems(); if (p.length) { console.error('✖ 线上 .env 有不合法的设置：\\n  ' + p.join('\\n  ')); process.exit(1); } })"
+run_node --env-file=.env --input-type=module -e "import('./server/settings/index.ts').then((s) => { const p = s.envProblems(); if (p.length) { console.error('✖ 线上 .env 有不合法的设置：\\n  ' + p.join('\\n  ')); process.exit(1); } })"
 
 PORT=${PORT_OVERRIDE:-$(grep -E '^PORT=' .env | head -1 | sed -E 's/^PORT=([0-9]+).*/\1/')}
 PORT=${PORT:-3000}

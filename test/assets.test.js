@@ -6,13 +6,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { Assets, rewriteHtml, etagMatches, rootPrefix, cspHash } = await import('../server/http/assets.js');
 const { Town } = await import('../server/sim.js');
 const { WorldHost } = await import('../server/worlds/host.js');
 const { createApp } = await import('../server/http/app.js');
-const settings = await import('../server/settings/index.js');
+const settings = await import('../server/settings/index.ts');
 
 function site() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-assets-'));

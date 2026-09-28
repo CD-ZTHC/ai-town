@@ -1,7 +1,7 @@
 // 社交：居民对话、信念传播、旅人聊天与心声、小镇事件
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
 import * as llm from '../llm.js';
-import { addMemory, fmtTime } from '../memory.js';
+import { addMemory, fmtTime } from '../memory.ts';
 import { rand, clampStr, pairKey, GUARD } from './util.js';
 import { encodeRefs } from '../accounts/refs.js';
 

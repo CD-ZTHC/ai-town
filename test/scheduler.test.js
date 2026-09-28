@@ -3,13 +3,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const settings = await import('../server/settings/index.js');
-const { classOf } = await import('../server/scheduler/classes.js');
-const { Scheduler } = await import('../server/scheduler/index.js');
-const { withContext } = await import('../server/scheduler/context.js');
-const { Ledger, budgetPolicy } = await import('../server/scheduler/budget.js');
+const settings = await import('../server/settings/index.ts');
+const { classOf } = await import('../server/scheduler/classes.ts');
+const { Scheduler } = await import('../server/scheduler/index.ts');
+const { withContext } = await import('../server/scheduler/context.ts');
+const { Ledger, budgetPolicy } = await import('../server/scheduler/budget.ts');
 const { openDb } = await import('../server/accounts/db.js');
 const llm = await import('../server/llm.js');
 

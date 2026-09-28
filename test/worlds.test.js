@@ -5,9 +5,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const { SETTINGS } = await import('../server/settings/schema.js');
+const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const settings = await import('../server/settings/index.js');
+const settings = await import('../server/settings/index.ts');
 const { Town } = await import('../server/sim.js');
 const { openDb } = await import('../server/accounts/db.js');
 const { Accounts } = await import('../server/accounts/index.js');

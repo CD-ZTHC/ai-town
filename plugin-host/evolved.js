@@ -14,7 +14,7 @@ import { hashDir } from './hash.js';
 import { staticCheck } from './sandbox/static-check.js';
 import { SandboxClient } from './sandbox/client.js';
 import { ROOT } from './builtin.js';
-import { env as settingsEnv } from '../server/settings/index.js';
+import { env as settingsEnv } from '../server/settings/index.ts';
 
 const readJSON = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
 const writeJSON = (f, v) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(`${f}.tmp`, JSON.stringify(v, null, 1)); fs.renameSync(`${f}.tmp`, f); };

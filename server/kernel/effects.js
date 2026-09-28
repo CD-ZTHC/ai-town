@@ -2,7 +2,7 @@
 // 每个原语：check(args, spec) 静态校验（返回错误文本或 null），apply(town, ctx, args) 在运行时执行。
 // ctx：{ self, target, e, at: {x, y, inside}, source }，self / target / e 为居民对象（可能为空）。
 import { parse, ExprError } from './expr.js';
-import { addMemory } from '../memory.js';
+import { addMemory } from '../memory.ts';
 
 // 表达式里可以调用的函数名（实现见 rules.js 的 exprEnv）
 export const EXPR_FNS = new Set(['has', 'count', 'knows', 'hasCondition', 'nearStructure', 'nearAgents', 'min', 'max', 'abs', 'rand',

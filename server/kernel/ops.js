@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PARAM_BOUNDS, RATINGS, STORYTELLERS, validateSpec } from './spec.js';
 import { lethal } from './ratings.js';
-import { parseHM } from '../memory.js';
+import { parseHM } from '../memory.ts';
 import { checkRemap, applyRemap } from './impact.js';
 import { stripOf, packStrip, SIDES, MAX_SIZE } from '../worldgen/extend.js';
 import { buildRegion } from '../worldgen/index.js';

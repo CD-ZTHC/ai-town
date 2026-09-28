@@ -1,7 +1,7 @@
 // 黑暗叙事的居民侧（设计 §4.4、§4.5、§4.8~§4.10）：死亡与死亡预算、受伤与治疗、群众伤亡、负担值、宿主关系、
 // 阵营配给与派遣、反派的欲望与转变，以及写进居民提示词的部分。
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
-import { addMemory } from '../memory.js';
+import { addMemory } from '../memory.ts';
 import { runEffects, posOf } from '../kernel/effects.js';
 import { testExpr, hasPosture } from '../kernel/rules.js';
 import { findAbility } from '../kernel/abilities.js';

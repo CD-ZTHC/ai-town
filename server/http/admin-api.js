@@ -1,7 +1,7 @@
 // 管理员接口（多世界设计 §11、§14）：设置中心、重启。账号上线前用现有的管理员身份（ADMIN_TOKEN / 本地模式）。
 import { Hono } from 'hono';
-import * as settings from '../settings/index.js';
-import { GROUPS, SETTINGS } from '../settings/schema.js';
+import * as settings from '../settings/index.ts';
+import { GROUPS, SETTINGS } from '../settings/schema.ts';
 import { createProvider } from '../llm-providers.js';
 import { HttpError } from './util.js';
 

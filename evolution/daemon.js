@@ -11,7 +11,7 @@ import { paths, readJSON, setEngine, Budget, ledger, str, enabledWorlds, rotatio
 import { makeLLM, reviewInfo } from './llm.js';
 import { discover } from './discover.js';
 import { runJob } from './pipeline.js';
-import { get as setting } from '../server/settings/index.js';
+import { get as setting } from '../server/settings/index.ts';
 
 const G = paths(); // 全站的目录（任务、引擎状态、账本、开启进化的世界列表）
 const once = process.argv.includes('--once');

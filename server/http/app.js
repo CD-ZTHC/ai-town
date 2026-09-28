@@ -9,8 +9,8 @@ import { worldApi } from './world-api.js';
 import { adminApi } from './admin-api.js';
 import { authApi } from './auth-api.js';
 import { identity } from './identity.js';
-import { withContext } from '../scheduler/context.js';
-import { get as setting } from '../settings/index.js';
+import { withContext } from '../scheduler/context.ts';
+import { get as setting } from '../settings/index.ts';
 import { Assets, etagMatches } from './assets.js';
 
 export const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };

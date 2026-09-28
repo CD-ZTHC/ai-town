@@ -2,7 +2,7 @@
 // 化身只存在于内存（不进存档），长时间不操作会自动离开。同一账号在同一个世界里只有一个化身（多个标签页看到的是同一个），
 // 每个世界最多 AVATAR_MAX 个。
 import { findPath } from './world.js';
-import { get as setting } from './settings/index.js';
+import { get as setting } from './settings/index.ts';
 
 const IDLE_MS = 20 * 60_000; // 20 分钟不操作就离开
 const MOVE_CD_MS = 3000;

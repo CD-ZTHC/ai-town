@@ -3,7 +3,7 @@
 // 自主演化 E1：管理员终审窗口（真实时间，minor 6 小时 / major 24 小时）超时后，交给 AI 裁决官决定（不再作废）。
 import { OPS, applyOp, OpError } from '../kernel/ops.js';
 import { findPlacement, checkPlacement, solvePath, solveBridge, solveRect, checkEdit, outdoorSize, choosePassages } from '../kernel/placement.js';
-import { addMemory, fmtTime } from '../memory.js';
+import { addMemory, fmtTime } from '../memory.ts';
 import { review } from './canon.js';
 import { impactOf } from '../kernel/impact.js';
 
