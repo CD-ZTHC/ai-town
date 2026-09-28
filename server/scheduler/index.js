@@ -133,6 +133,21 @@ export class Scheduler {
     return false;
   }
 
+  /** 拒绝并移除满足条件的排队任务（世界暂停、通道回收时） */
+  drop(filter, err) {
+    let n = 0;
+    for (const cls of CLASSES) {
+      for (const [w, list] of this.queues[cls]) {
+        const keep = [];
+        for (const job of list) {
+          if (filter(job)) { n++; try { job.reject(err); } catch { /* 忽略 */ } } else keep.push(job);
+        }
+        this.queues[cls].set(w, keep);
+      }
+    }
+    return n;
+  }
+
   started(job) {
     this.inflight[job.cls]++;
     this.inflightByWorld.set(job.worldId, (this.inflightByWorld.get(job.worldId) || 0) + 1);

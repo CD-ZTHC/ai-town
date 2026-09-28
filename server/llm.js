@@ -1,49 +1,141 @@
 // LLM 客户端：并发队列、重试、模型分档与自动校正、JSON 提取、统计。发请求交给 provider（见 llm-providers.js）
+//
+// 通道与配置档（按世界配置模型服务，设计见 docs/design/world-llm.md §5）：
+//   通道（Lane）    一把钥匙一条通道：provider、调度队列、并发、限流退避、JSON 模式降级、模型名纠正都属于通道。
+//                   服务器的模型是 'server' 通道；世界自带的模型服务按凭据各有一条通道，互不影响。
+//   配置档（Profile）某个世界用哪条通道、哪三档模型、多长超时、要不要 JSON 模式。
+// 每次调用按调用上下文（scheduler/context.js 的 worldId）解析配置档：由服务入口 setProfileResolver 注入；
+// 没有注入解析器时一律用服务器的配置档，行为与只有一个模型时完全一样。审核类调用永远用服务器（SERVER_ONLY）。
 import fs from 'node:fs';
 import { createProvider } from './llm-providers.js';
 import { get as setting, env as settingsEnv } from './settings/index.js';
 import { Scheduler } from './scheduler/index.js';
-import { classOf } from './scheduler/classes.js';
+import { classOf, SERVER_ONLY } from './scheduler/classes.js';
 import { currentContext } from './scheduler/context.js';
 
-// provider 按「服务类型 + 地址 + 密钥」缓存：面板里改了地址或密钥，下一次调用就换用新的
+const listeners = new Set();
+const lanes = new Map(); // key → Lane
+
+// allow：出队前的额度检查（按世界的分层预算，见 scheduler/budget.js；由服务入口设置）
+let budgetPolicy = () => true;
+export function setBudgetPolicy(fn) { budgetPolicy = fn || (() => true); }
+
+/** 通道：一把钥匙的队列、并发与退避状态 */
+class Lane {
+  /**
+   * @param {object} o
+   * @param {string} o.key
+   * @param {'server'|'own'} o.billing
+   * @param {() => object} o.provider
+   * @param {() => number} o.limit 并发上限（遇到限流时再临时降低）
+   * @param {boolean} [o.jsonMode]
+   * @param {boolean} [o.schemaMode]
+   */
+  constructor({ key, billing, provider, limit, jsonMode = true, schemaMode = false, owner = null }) {
+    Object.assign(this, { key, billing, getProvider: provider, baseLimit: limit, jsonMode, schemaMode, owner });
+    this.fixes = {}; // 模型名写错时自动纠正的结果（想要的名字 → 实际使用的名字）
+    this.checked = new Set();
+    this.penalty = 0; // 触发限流后临时降低并发
+    this.cooldownUntil = 0;
+    this.backoff = 0;
+    this.pumpTimer = null;
+    this.inflight = 0;
+    this.lastUsed = Date.now();
+    this.netFails = 0; // 连续的网络错误（判断「持续连不上」）
+    this.netFailSince = 0;
+    this.stats = { calls: 0, ok: 0, errors: 0, tokens: 0, lastError: '' };
+    this.sched = new Scheduler({ limit: () => this.limit(), agingMs: () => setting('PRIORITY_AGING_MIN') * 60_000, allow: (job) => budgetPolicy(job) });
+  }
+
+  get provider() { return this.getProvider(); }
+  limit() { return Math.max(1, this.baseLimit() - this.penalty); }
+  queued() { return this.sched.queued(); }
+}
+
+// ---- 服务器的通道与配置档：provider 按「服务类型 + 地址 + 密钥」缓存，面板里改了下一次调用就换用新的 ----
 let injected = null; // 测试或启动时注入的 provider（setProvider）
 let cached = null;
-function currentProvider() {
+function serverProvider() {
   if (injected) return injected;
-  const sig = JSON.stringify([setting('LLM_PROVIDER'), setting('BASE_URL'), setting('API_KEY')]);
+  const sig = JSON.stringify([setting('LLM_PROVIDER'), setting('BASE_URL'), setting('API_KEY'), setting('MODEL'), setting('MODEL_FAST'), setting('MODEL_SMART')]);
   if (cached?.sig !== sig) {
     cached = { sig, p: createProvider(setting('LLM_PROVIDER'), settingsEnv()) };
-    checked.clear();
+    serverLane.checked.clear();
   }
   return cached.p;
 }
-const concurrency = () => setting('LLM_CONCURRENCY');
-const timeoutMsSetting = () => setting('LLM_TIMEOUT_MS');
-// 每日令牌预算（0 = 不限）。公网模式默认 300 万，超出后世界退化为规则驱动，玩家交互暂停
-const dailyBudget = () => setting('LLM_DAILY_TOKENS');
-
+// JSON 模式（response_format: json_object）：大幅减少模型输出不合法 JSON 的情况。
+// 网关不支持时会报错，此时自动关闭并重试（只关这条通道）；也可以用 LLM_JSON_MODE=0 手动关闭。
+// 结构化输出（response_format: json_schema）：调用方给了 schema 且 LLM_JSON_SCHEMA=1 时使用；网关不支持时自动退回普通 JSON 模式
+const serverLane = new Lane({
+  key: 'server', billing: 'server', provider: serverProvider, limit: () => setting('LLM_CONCURRENCY'),
+  jsonMode: setting('LLM_JSON_MODE'), schemaMode: setting('LLM_JSON_SCHEMA'),
+});
+lanes.set('server', serverLane);
 // 模型分档：fast 用于高频的小任务（独白、审核），smart 用于低频的重要任务（日报、叙事导演、世界架构师）。
 // 未配置的档位回落到 MODEL，因此只配置 MODEL 时行为与之前完全一致。
-// fixes：模型名写错时自动纠正的结果（想要的名字 → 实际使用的名字）
-const fixes = {};
-const checked = new Set();
-const wanted = (tier) => (tier === 'fast' ? setting('MODEL_FAST') : tier === 'smart' ? setting('MODEL_SMART') : '') || setting('MODEL');
-const modelFor = (tier) => { const w = wanted(tier); return fixes[w] || w; };
-// JSON 模式（response_format: json_object）：大幅减少模型输出不合法 JSON 的情况。
-// 网关不支持时会报错，此时自动关闭并重试；也可以用 LLM_JSON_MODE=0 手动关闭。
-let jsonMode = setting('LLM_JSON_MODE');
-export function setJsonMode(on) { jsonMode = Boolean(on); }
-// 结构化输出（response_format: json_schema）：调用方给了 schema 且 LLM_JSON_SCHEMA=1 时使用；
-// 网关不支持时自动退回普通 JSON 模式
-let schemaMode = setting('LLM_JSON_SCHEMA');
-export function setJsonSchema(on) { schemaMode = Boolean(on); }
-const listeners = new Set();
+const serverProfile = {
+  lane: serverLane,
+  models: () => ({ default: setting('MODEL'), fast: setting('MODEL_FAST'), smart: setting('MODEL_SMART') }),
+  timeoutMs: () => setting('LLM_TIMEOUT_MS'),
+  jsonMode: true,
+  schemaMode: true,
+};
 
+export function setJsonMode(on) { serverLane.jsonMode = Boolean(on); }
+export function setJsonSchema(on) { serverLane.schemaMode = Boolean(on); }
+
+const wanted = (profile, tier) => {
+  const m = profile.models();
+  return (tier === 'fast' ? m.fast : tier === 'smart' ? m.smart : '') || m.default;
+};
+const modelFor = (profile, tier) => { const w = wanted(profile, tier); return profile.lane.fixes[w] || w; };
+
+// ---- 世界的配置档（由服务入口注入）----
+let resolver = null;
+/**
+ * @param {null | ((q: { worldId: string|null, userId: string|null, label: string }) => object|null)} fn
+ *   返回配置档；返回 null 用服务器的；返回 { blocked, code } 表示这个世界现在不能调用模型（例如已暂停）
+ */
+export function setProfileResolver(fn) { resolver = fn || null; }
+
+function resolve(ctx = currentContext(), label = '') {
+  if (!resolver || SERVER_ONLY.has(label)) return serverProfile;
+  return resolver({ worldId: ctx.worldId || null, userId: ctx.userId || null, label }) || serverProfile;
+}
+
+/** 建（或取回）一条通道；同一把钥匙的世界共用一条 */
+export function lane(key, make) {
+  let l = lanes.get(key);
+  if (!l) { l = new Lane({ key, billing: 'own', jsonMode: true, schemaMode: true, ...make() }); lanes.set(key, l); }
+  l.lastUsed = Date.now();
+  return l;
+}
+
+/** 回收通道：拒绝还在排队的任务（在途的请求让它自然结束） */
+export function dropLane(key, reason = '模型服务已更换') {
+  const l = lanes.get(key);
+  if (!l || l === serverLane) return;
+  l.sched.drop(() => true, Object.assign(new Error(reason), { code: 'HALTED', status: 503 }));
+  lanes.delete(key);
+  notify();
+}
+
+/** 拒绝某些世界在所有通道里排队的任务（世界暂停时） */
+export function dropWorld(worldId, reason) {
+  for (const l of lanes.values()) l.sched.drop((job) => job.worldId === worldId, Object.assign(new Error(reason), { code: 'HALTED', status: 503 }));
+}
+
+/** 回收空闲的自带通道（空闲 idleMs 以上、没有排队也没有在途） */
+export function sweepLanes(idleMs = 10 * 60_000, keep = () => false) {
+  for (const [k, l] of lanes) if (l !== serverLane && !l.inflight && !l.queued() && Date.now() - l.lastUsed > idleMs && !keep(k)) lanes.delete(k);
+}
+
+// ---- 统计 ----
 export const stats = {
-  get enabled() { return Boolean(mock) || currentProvider().enabled; },
-  get model() { return modelFor('default'); },
-  get models() { return { fast: modelFor('fast'), smart: modelFor('smart') }; },
+  get enabled() { return Boolean(mock) || serverLane.provider.enabled; },
+  get model() { return modelFor(serverProfile, 'default'); },
+  get models() { return { fast: modelFor(serverProfile, 'fast'), smart: modelFor(serverProfile, 'smart') }; },
   calls: 0,
   ok: 0,
   errors: 0,
@@ -54,18 +146,30 @@ export const stats = {
   avgMs: 0,
   lastError: '',
   dayKey: '',
-  dayTokens: 0,
+  dayTokens: 0, // 只算服务器通道（全站预算）
   get dailyBudget() { return dailyBudget(); },
   recent: [], // {label, agent, ms, ok, at}
   byLabel: {}, // 按模块统计：{ 规划一天: { calls, fails, tokens, ms } }
   active: [], // {id, label, agent, since}
 };
 
+/** 各条通道的状态（管理面板用；不含任何密钥） */
+export function lanesView() {
+  return [...lanes.values()].map((l) => ({
+    key: l.key, billing: l.billing, owner: l.owner, provider: l.provider?.name || '', limit: l.limit(), penalty: l.penalty,
+    inflight: l.inflight, queued: l.queued(), cooling: Math.max(0, l.cooldownUntil - Date.now()), jsonMode: l.jsonMode, fixes: { ...l.fixes }, ...l.stats,
+  }));
+}
+
 export function onActivity(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
 const notify = () => listeners.forEach((fn) => fn(stats));
+
+const concurrency = () => setting('LLM_CONCURRENCY');
+// 每日令牌预算（0 = 不限）。公网模式默认 300 万，超出后世界退化为规则驱动，玩家交互暂停。只约束服务器通道
+const dailyBudget = () => setting('LLM_DAILY_TOKENS');
 
 export class BudgetError extends Error {
   constructor() { super('今日 AI 额度已用完'); this.code = 'BUDGET'; }
@@ -78,19 +182,37 @@ function rollDay() {
   const k = localDayKey();
   if (stats.dayKey !== k) { stats.dayKey = k; stats.dayTokens = 0; }
 }
+/** 当前世界可用的每日额度：服务器通道看全站预算；自带的模型服务不占全站预算（自己的上限由预算策略检查） */
 export function budgetLeft() {
+  const p = resolve();
+  if (p.blocked) return 0;
+  if (p.lane.billing !== 'server') return Infinity;
   rollDay();
   const b = dailyBudget();
   return b ? Math.max(0, b - stats.dayTokens) : Infinity;
 }
-/** 队列长度：不传世界时是全局（排队 + 进行中），传世界时是这个世界的积压（按世界调速用） */
-export const queueSize = (worldId = null) => (worldId ? sched.backlog(worldId) : sched.queued() + stats.inflight);
 
-async function ensureModel() {
-  const provider = currentProvider();
-  const want = [...new Set(['default', 'fast', 'smart'].map(wanted))].filter((w) => w && !checked.has(w));
-  if (!want.length || !stats.enabled) return;
-  for (const w of want) checked.add(w);
+/** 当前世界现在能不能调用模型（没配置、世界暂停中 → false）；审核等只用服务器的调用看 stats.enabled */
+export function enabled() {
+  if (mock) return true;
+  const p = resolve();
+  return !p.blocked && Boolean(p.lane.provider?.enabled);
+}
+
+const totalQueued = () => [...lanes.values()].reduce((s, l) => s + l.queued(), 0);
+/** 队列长度：不传世界时是全局（排队 + 进行中），传世界时是这个世界在它的通道里的积压（按世界调速用） */
+export const queueSize = (worldId = null) => {
+  if (!worldId) return totalQueued() + stats.inflight;
+  const p = resolver ? resolve({ worldId }) : serverProfile;
+  return (p.lane || serverLane).sched.backlog(worldId);
+};
+
+async function ensureModel(profile) {
+  const l = profile.lane;
+  const provider = l.provider;
+  const want = [...new Set(['default', 'fast', 'smart'].map((t) => wanted(profile, t)))].filter((w) => w && !l.checked.has(w));
+  if (!want.length || !(mock || provider.enabled)) return;
+  for (const w of want) l.checked.add(w);
   try {
     const ids = provider.listModels ? await provider.listModels() : [];
     for (const w of want) {
@@ -104,123 +226,163 @@ async function ensureModel() {
         return same - Math.abs(a.length - b.length) * 2;
       };
       const best = ids.slice().sort((x, y) => score(y) - score(x))[0];
-      console.warn(`[llm] 模型 "${w}" 不可用，自动改用 "${best}"（可用: ${ids.join(', ')}）`);
-      fixes[w] = best;
+      console.warn(`[llm] ${l.key === 'server' ? '' : `${l.key} `}模型 "${w}" 不可用，自动改用 "${best}"（可用: ${ids.join(', ')}）`);
+      l.fixes[w] = best;
     }
   } catch (e) {
-    console.warn('[llm] 无法获取模型列表：', e.message);
+    console.warn(`[llm] ${l.key === 'server' ? '' : `${l.key} `}无法获取模型列表：`, e.message);
   }
 }
 
-// ---- 统一调度（多世界设计 §7）：一个队列、一个并发上限；按级别与世界出队，带自适应限流 ----
-let penalty = 0; // 触发限流后临时降低并发
-let cooldownUntil = 0;
-let backoff = 0;
-let pumpTimer = null;
-const limit = () => Math.max(1, concurrency() - penalty);
-// allow：出队前的额度检查（按世界的分层预算，见 scheduler/budget.js；由服务入口设置）
-let budgetPolicy = () => true;
-export function setBudgetPolicy(fn) { budgetPolicy = fn || (() => true); }
-export const sched = new Scheduler({ limit, agingMs: () => setting('PRIORITY_AGING_MIN') * 60_000, allow: (job) => budgetPolicy(job) });
+// ---- 统一调度（多世界设计 §7）：每条通道一个队列、一个并发上限；按级别与世界出队，带自适应限流 ----
+// 服务器通道的调度器（测试会拦截它的 push）
+export const sched = serverLane.sched;
+// 所有自带通道合计的在途上限（0 = 不限），防止大量自带世界占满服务器的连接
+let ownInflight = 0;
+const ownCap = () => { try { return setting('USER_LLM_TOTAL_CONCURRENCY'); } catch { return 0; } };
+
 /** 队列忙：调用点（导演、独白、群体心智）据此让路；让路记在当前世界上，作为公平补偿的依据 */
 export const isBusy = () => {
-  const busy = sched.queued() > 1 || stats.inflight >= limit() || Date.now() < cooldownUntil;
-  if (busy) sched.noteYield(currentContext().worldId);
+  const ctx = currentContext();
+  const p = resolve(ctx);
+  const l = p.lane || serverLane;
+  const busy = Boolean(p.blocked) || l.queued() > 1 || l.inflight >= l.limit() || Date.now() < l.cooldownUntil;
+  if (busy) l.sched.noteYield(ctx.worldId);
   return busy;
 };
-function pump() {
-  const wait = cooldownUntil - Date.now();
+
+function pumpLane(l) {
+  const wait = l.cooldownUntil - Date.now();
   if (wait > 0) {
-    if (!pumpTimer) pumpTimer = setTimeout(() => { pumpTimer = null; pump(); }, wait);
-    stats.queued = sched.queued();
-    return notify();
+    if (!l.pumpTimer) l.pumpTimer = setTimeout(() => { l.pumpTimer = null; pump(); }, wait);
+    return;
   }
-  for (let job = sched.next(); job; job = sched.next()) {
-    sched.started(job);
+  const cap = l.billing === 'own' ? ownCap() : 0;
+  for (let job = cap && ownInflight >= cap ? null : l.sched.next(); job; job = cap && ownInflight >= cap ? null : l.sched.next()) {
+    l.sched.started(job);
+    l.inflight++;
     stats.inflight++;
-    stats.queued = sched.queued();
+    if (l.billing === 'own') ownInflight++;
     job.run().finally(() => {
-      sched.finished(job);
+      l.sched.finished(job);
+      l.inflight--;
       stats.inflight--;
+      if (l.billing === 'own') ownInflight--;
       pump();
       notify();
     });
   }
-  stats.queued = sched.queued();
+}
+function pump() {
+  for (const l of lanes.values()) pumpLane(l);
+  stats.queued = totalQueued();
   notify();
 }
-/** 放进队列：级别由 label 决定（调用点不再自己选优先级），世界与用户来自调用上下文 */
-function enqueue(fn, opts) {
-  const ctx = currentContext();
+
+/** 放进通道的队列：级别由 label 决定（调用点不再自己选优先级），世界与用户来自调用上下文 */
+function enqueue(profile, fn, opts, ctx) {
+  const l = profile.lane;
   return new Promise((resolve, reject) => {
-    sched.push({ cls: opts.cls || classOf(opts.label), worldId: ctx.worldId, userId: ctx.userId, label: opts.label, run: () => fn(ctx).then(resolve, reject), reject });
+    l.sched.push({ cls: opts.cls || classOf(opts.label), worldId: ctx.worldId, userId: ctx.userId, billing: l.billing, lane: l.key, label: opts.label, run: () => fn(ctx).then(resolve, reject), reject });
     pump();
   });
 }
 
-// ---- 用量账本：每次调用结束后记下 { worldId, userId, class, tokens }（由服务入口写进 usage 表）----
+// ---- 用量账本：每次调用结束后记下 { worldId, userId, class, tokens, billing }（由服务入口写进 usage 表）----
 const usageListeners = new Set();
 export function onUsage(fn) { usageListeners.add(fn); return () => usageListeners.delete(fn); }
 
+// ---- 故障：自带通道的致命错误交给服务入口（暂停世界、标记凭据，见设计 §5.4）----
+let failureHook = null;
+/** fn({ lane, kind, error, worldId, profile }) */
+export function onFailure(fn) { failureHook = fn || null; }
+
+/**
+ * 错误分类：rate 限流（退避重试）；balance 余额不足、auth 鉴权失败、model 模型不存在、address 地址被拒（致命，不重试）；
+ * net 网络错误或 5xx（重试；连续多次才算致命）；null 其他
+ */
+export function failureKind(e) {
+  const m = String(e?.message || e || '');
+  const s = Number(e?.status) || Number(/HTTP (\d{3})/.exec(m)?.[1]) || 0;
+  if (e?.code === 'ADDRESS') return 'address';
+  if (s === 402 || /insufficient|余额|欠费|balance|exceeded your current quota|billing|credit/i.test(m)) return 'balance';
+  if (s === 429 || /\b429\b|速率|频率|rate.?limit|too many|concurren|并发/i.test(m)) return 'rate';
+  if (s === 401 || s === 403 || /no access|invalid.*key|unauthori|authentication|permission denied/i.test(m)) return 'auth';
+  if ((s === 404 && /model/i.test(m)) || /model.{0,60}(not.?found|does not exist|not exist|unknown)|模型不存在|unknown model|no such model/i.test(m)) return 'model';
+  if (s >= 500 || (!s && /fetch failed|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|socket|network|certificate|TLS/i.test(m))) return 'net';
+  return null;
+}
+const FATAL = new Set(['balance', 'auth', 'model', 'address']);
+
 let seq = 0;
-async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = timeoutMsSetting(), attempts = 3, tier = 'default', json = false, schema = null, model: override = '', provider: providerOverride = null, cls = null, onTokens = null }, ctx = {}) {
-  await ensureModel();
-  // override：进化引擎的评审 Agent 可以指定另一个模型（EVOLVE_REVIEW_MODEL）
-  const model = override || modelFor(tier);
+async function rawChat(profile, messages, { maxTokens = 3000, temperature = 0.9, label = 'llm', agent = null, timeoutMs = null, attempts = 3, tier = 'default', json = false, schema = null, model: override = '', provider: providerOverride = null, cls = null, onTokens = null }, ctx = {}) {
+  const l = profile.lane;
+  await ensureModel(profile);
+  // override：进化引擎的评审 Agent 可以指定另一个模型（评审模型）
+  const model = override || modelFor(profile, tier);
+  timeoutMs ??= profile.timeoutMs();
   const id = ++seq;
   const started = Date.now();
-  stats.active.push({ id, label, agent, since: started, model });
+  stats.active.push({ id, label, agent, since: started, model, lane: l.key });
   stats.calls++;
+  l.stats.calls++;
   notify();
   let lastErr;
   try {
     for (let attempt = 0; attempt < attempts + 3; attempt++) {
-      const wait = cooldownUntil - Date.now();
+      const wait = l.cooldownUntil - Date.now();
       if (wait > 0) await new Promise((r) => setTimeout(r, wait + Math.random() * 500));
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const jsonOn = json && l.jsonMode && profile.jsonMode;
+      const schemaOn = Boolean(schema && jsonOn && l.schemaMode && profile.schemaMode);
       try {
-        const withSchema = Boolean(schema && json && jsonMode && schemaMode);
-        const { content, usage, finishReason } = await (providerOverride || currentProvider()).complete({ model, messages, temperature, maxTokens, json: json && jsonMode, ...(withSchema ? { schema } : {}), signal: ctrl.signal });
+        const { content, usage, finishReason } = await (providerOverride || l.provider).complete({ model, messages, temperature, maxTokens, json: jsonOn, ...(schemaOn ? { schema } : {}), signal: ctrl.signal });
         stats.promptTokens += usage.prompt;
         stats.completionTokens += usage.completion;
-        rollDay();
-        stats.dayTokens += usage.prompt + usage.completion;
         const tokens = usage.prompt + usage.completion;
+        if (l.billing === 'server') { rollDay(); stats.dayTokens += tokens; }
+        l.stats.tokens += tokens;
         onTokens?.(tokens);
-        for (const fn of usageListeners) { try { fn({ worldId: ctx.worldId || null, userId: ctx.userId || null, cls: cls || classOf(label), label, tokens }); } catch { /* 账本失败不影响调用 */ } }
+        for (const fn of usageListeners) { try { fn({ worldId: ctx.worldId || null, userId: ctx.userId || null, cls: cls || classOf(label), label, tokens, billing: l.billing }); } catch { /* 账本失败不影响调用 */ } }
         const u = labelStats(label);
         u.calls++;
-        u.tokens += usage.prompt + usage.completion;
+        u.tokens += tokens;
         u.ms += Date.now() - started;
+        l.netFails = 0;
         if (!content.trim()) throw new Error(`空回复 (finish_reason=${finishReason})`);
         const ms = Date.now() - started;
-        backoff = Math.max(0, backoff - 1);
-        if (stats.ok % 5 === 0 && penalty > 0) penalty--;
+        l.backoff = Math.max(0, l.backoff - 1);
+        if (l.stats.ok % 5 === 0 && l.penalty > 0) l.penalty--;
         stats.ok++;
+        l.stats.ok++;
         stats.avgMs = stats.avgMs ? stats.avgMs * 0.85 + ms * 0.15 : ms;
         pushRecent({ label, agent, ms, ok: true });
         return content;
       } catch (e) {
         lastErr = e;
-        if (/no access|invalid.*key|unauthori/i.test(e.message)) break;
-        if (schema && json && jsonMode && schemaMode && /json_schema|response_format|schema/i.test(e.message)) {
-          schemaMode = false;
-          console.warn('[llm] 网关不支持结构化输出（json_schema），已退回普通 JSON 模式');
+        const kind = failureKind(e);
+        if (FATAL.has(kind)) break;
+        if (schemaOn && /json_schema|response_format|schema/i.test(e.message)) {
+          l.schemaMode = false;
+          console.warn(`[llm] ${l.key === 'server' ? '网关' : `${l.key} 的网关`}不支持结构化输出（json_schema），已退回普通 JSON 模式`);
           continue;
         }
-        if (json && jsonMode && /response_format|json_object|json mode/i.test(e.message)) {
-          jsonMode = false;
-          console.warn('[llm] 网关不支持 JSON 模式，已自动关闭');
+        if (jsonOn && /response_format|json_object|json mode/i.test(e.message)) {
+          l.jsonMode = false;
+          console.warn(`[llm] ${l.key === 'server' ? '网关' : `${l.key} 的网关`}不支持 JSON 模式，已自动关闭`);
           continue;
         }
-        if (/速率|频率|rate.?limit|429|too many|concurren|并发/i.test(e.message)) {
-          // 限流：全局冷却 + 指数退避 + 降低并发
-          backoff = Math.min(5, backoff + 1);
-          penalty = Math.min(concurrency() - 1, penalty + 1);
-          cooldownUntil = Math.max(cooldownUntil, Date.now() + 4000 * 2 ** (backoff - 1));
-          stats.lastError = `限流中，${Math.round((cooldownUntil - Date.now()) / 1000)}s 后重试`;
+        if (kind === 'rate') {
+          // 限流：通道冷却 + 指数退避 + 降低并发
+          l.backoff = Math.min(5, l.backoff + 1);
+          l.penalty = Math.min(l.baseLimit() - 1, l.penalty + 1);
+          l.cooldownUntil = Math.max(l.cooldownUntil, Date.now() + 4000 * 2 ** (l.backoff - 1));
+          stats.lastError = `限流中，${Math.round((l.cooldownUntil - Date.now()) / 1000)}s 后重试`;
           continue;
+        }
+        if (kind === 'net' && !ctrl.signal.aborted) {
+          if (!l.netFails++) l.netFailSince = Date.now();
         }
         if (attempt >= attempts - 1) break;
         await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
@@ -229,9 +391,14 @@ async function rawChat(messages, { maxTokens = 3000, temperature = 0.9, label = 
       }
     }
     stats.errors++;
-    stats.lastError = String(lastErr?.message || lastErr).slice(0, 200);
+    l.stats.errors++;
+    stats.lastError = l.stats.lastError = String(lastErr?.message || lastErr).slice(0, 200);
     pushRecent({ label, agent, ms: Date.now() - started, ok: false });
     labelStats(label).fails++;
+    const kind = failureKind(lastErr);
+    if (l.billing === 'own' && failureHook && (FATAL.has(kind) || kind === 'net')) {
+      try { failureHook({ lane: l, kind, error: lastErr, worldId: ctx.worldId || null, profile, model }); } catch (e) { console.warn('[llm] 故障处理失败：', e.message); }
+    }
     throw lastErr;
   } finally {
     stats.active = stats.active.filter((a) => a.id !== id);
@@ -254,19 +421,31 @@ export function setMock(fn) {
   mock = fn || null;
 }
 
-/** 换用另一个 provider（测试，或在启动时接入其他 SDK）；模型名会重新校验 */
+/** 换用另一个 provider（测试，或在启动时接入其他 SDK）：只换服务器通道；模型名会重新校验 */
 export function setProvider(p) {
   injected = p || null;
-  checked.clear();
+  serverLane.checked.clear();
+}
+
+export class HaltedError extends Error {
+  constructor(msg) { super(msg || '这个世界的 AI 服务暂停了'); this.code = 'HALTED'; this.status = 503; }
 }
 
 export function chat(messages, opts = {}) {
   if (mock) return Promise.resolve().then(() => mock(messages, opts));
-  if (!stats.enabled) return Promise.reject(new Error('LLM 未配置'));
-  if (budgetLeft() <= 0) return Promise.reject(new BudgetError());
-  const p = enqueue((ctx) => rawChat(messages, opts, ctx), opts);
+  const ctx = currentContext();
+  const profile = resolve(ctx, opts.label);
+  if (profile.blocked) return Promise.reject(new HaltedError(profile.blocked));
+  if (!profile.lane.provider.enabled) return Promise.reject(new Error('LLM 未配置'));
+  if (profile.lane.billing === 'server') {
+    rollDay();
+    const b = dailyBudget();
+    if (b && stats.dayTokens >= b) return Promise.reject(new BudgetError());
+  }
+  const p = enqueue(profile, (c) => rawChat(profile, messages, opts, c), opts, ctx);
   return RECORD_FILE ? p.then((content) => { record(opts.label || 'llm', content); return content; }) : p;
 }
+
 
 // 录制真实回复，供无头回放测试使用：LLM_RECORD=test/fixtures/llm/responses.json mise run start
 // 按模块（label）分组，每个模块保留最近 RECORD_KEEP 条；能解析成 JSON 的存成对象，方便人工审阅与修改
