@@ -44,11 +44,12 @@ export async function runShadow(P, candidate, { hours = setting('EVOLVE_SHADOW_H
   fs.rmSync(root, { recursive: true, force: true });
   let saveFile = null;
   try { saveFile = path.join(activeDir(P.data), 'save.json'); } catch { /* 没有存档就从第一天开始 */ }
-  // 对照组与插件组依次运行（不同时占两份内存），并与创世试跑共用全站的试运行锁（重构方案 §6.4）
-  const { base, trial } = await withTrialSlot(P.global, async () => ({
-    base: await runOne(P, { workDir: path.join(root, 'base'), saveFile, candidate: null, hours, packDir: P.world?.packDir || null }, timeoutMs),
-    trial: await runOne(P, { workDir: path.join(root, 'trial'), saveFile, candidate, hours, packDir: P.world?.packDir || null }, timeoutMs),
-  }), { what: `evolve ${P.world?.id || ''} ${candidate.key}` });
+  // 对照组与插件组同时运行：两者在同样的负载下测 tick 耗时，比较才公平（依次运行时负载波动会被误判为「模拟变慢」）。
+  // 与创世试跑共用全站的试运行锁（重构方案 §6.4），同一时刻最多一个试运行任务
+  const [base, trial] = await withTrialSlot(P.global, () => Promise.all([
+    runOne(P, { workDir: path.join(root, 'base'), saveFile, candidate: null, hours, packDir: P.world?.packDir || null }, timeoutMs),
+    runOne(P, { workDir: path.join(root, 'trial'), saveFile, candidate, hours, packDir: P.world?.packDir || null }, timeoutMs),
+  ]), { what: `evolve ${P.world?.id || ''} ${candidate.key}` });
   fs.rmSync(root, { recursive: true, force: true });
   const metrics = { base, trial };
   if (base.failed) return { passed: false, reason: `对照组没能运行：${base.error}`, metrics };

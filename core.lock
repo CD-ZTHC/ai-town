@@ -181,7 +181,7 @@
   "evolution/pipeline.js": "5568bca344503562c274cb05c232f083d08167374324b27c2ea4d230b6aa51bf",
   "evolution/prompts.js": "2ff63c284f4b3dbdf451e2cfa9222e6513a6611118293a0a97544cd4928aad4b",
   "evolution/shadow-runner.js": "4795c588c142998235fb1f2d84d357c18613454ec5024d989de2aa287d91ad69",
-  "evolution/shadow.js": "db831740a3a371e93b3456c65015c37ec6c834b36b0b6bdcf76ce7455e761d88",
+  "evolution/shadow.js": "0647ef6769c940a4f5ccd1d07dc6e66321690d0c3df9684bbe8dd7f053767725",
   "plugins/builtin/architect/architect.js": "4fcf2418f2f2e209ed7f33fee39d86f44b6fc598c86dd5d735e0f8fe4786c03c",
   "plugins/builtin/architect/plugin.json": "0abb490c0797e1a82b9fc54d8f6f722f00585105031c12842443da3cde5f6cba",
   "plugins/builtin/architect/server.js": "29833be5d6de6a3868c405e6ab75c67666938b04843fbd8fc714d1b8c99e07bb",
