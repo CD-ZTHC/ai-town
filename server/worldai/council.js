@@ -6,7 +6,7 @@
 // 拆除落地时，当事人得到一条重要记忆；被全票通过的当事人心情失落，并留下一条「旧居」的剧情线程。
 import * as llm from '../llm.js';
 import { addMemory } from '../memory.ts';
-import { impactOf } from '../kernel/impact.js';
+import { impactOf } from '../kernel/impact.ts';
 
 const str = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 export const VETO_DAYS = 10;

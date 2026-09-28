@@ -1,7 +1,7 @@
 // AI 插件清单（plugin.json）与效果参数的声明式校验。
 // 沙箱插件的效果在内核里是同步校验的（能力、规则、剧情节拍都会先 check），所以参数格式必须以数据的形式写在清单里，
 // 由宿主按下面的规则校验，而不是执行插件代码。
-import { checkTarget } from '../server/kernel/effects.js';
+import { checkTarget } from '../server/kernel/effects.ts';
 
 export const TIERS = ['T0', 'T1', 'T2'];
 export const PERMISSIONS = ['world.read', 'effects', 'store', 'llm', 'routes', 'ui.panel', 'ui.overlay'];

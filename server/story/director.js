@@ -5,7 +5,7 @@ import { fmtTime } from '../memory.ts';
 import { computeTension, targetTension, BOREDOM_HOURS } from './tension.js';
 import { runBeats, DIRECTOR_KINDS, ALL_KINDS } from './beats.js';
 import { threadsBlock } from './threads.js';
-import { lethal } from '../kernel/ratings.js';
+import { lethal } from '../kernel/ratings.ts';
 
 const MIN_GAP = 120; // 两次决策至少间隔 2 游戏小时（玩家事件除外）
 const MAX_BEATS = 3;

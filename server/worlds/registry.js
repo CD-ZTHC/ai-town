@@ -1,7 +1,7 @@
 // 世界登记表（多世界设计 §6.3、§5.7 的 worlds 表）：每个世界的归属、状态、可见性、世界级设置、配额与磁盘占用。
 // 状态机：drafting → preview → public ⇄ paused；public → unlisted（举报）→ suspended（下架）；preview / public → archived（归档）
 import { WORLD_ID_RE } from './pack.js';
-import { lethal } from '../kernel/ratings.js';
+import { lethal } from '../kernel/ratings.ts';
 
 export const STATUSES = ['drafting', 'preview', 'failed', 'public', 'paused', 'unlisted', 'suspended', 'archived'];
 // 允许的状态转换：谁可以做由调用方（授权）决定，这里只管能不能从 A 到 B

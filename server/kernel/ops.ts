@@ -2,14 +2,14 @@
 // 存档只保存「操作历史」，读档时 = 默认规格 + 按序重放，因此代码里对基础设定的更新也会同步到老存档。
 import fs from 'node:fs';
 import path from 'node:path';
-import { PARAM_BOUNDS, RATINGS, STORYTELLERS, validateSpec } from './spec.js';
-import { lethal } from './ratings.js';
+import { PARAM_BOUNDS, RATINGS, STORYTELLERS, validateSpec } from './spec.ts';
+import { lethal } from './ratings.ts';
 import { parseHM } from '../memory.ts';
-import { checkRemap, applyRemap } from './impact.js';
+import { checkRemap, applyRemap } from './impact.ts';
 import { stripOf, packStrip, SIDES, MAX_SIZE } from '../worldgen/extend.js';
 import { buildRegion } from '../worldgen/index.js';
-import { validateAbility } from './abilities.js';
-import { validateRule } from './rules.js';
+import { validateAbility } from './abilities.ts';
+import { validateRule } from './rules.ts';
 import { solveLayout, layoutProblems, regionSize, mapSize, BIOME_IDS, BUILDING_KINDS, OUTDOOR_KINDS } from '../worldgen/layout.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);

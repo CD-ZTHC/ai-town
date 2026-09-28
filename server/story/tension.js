@@ -1,6 +1,6 @@
 // 张力模型（设计文档 5.2）：不调用 LLM，每游戏小时计算一次。
 // T = 35×威胁 + 20×冲突 + 20×悬念 + 15×匮乏 + 10×氛围，范围 0~100。
-import { activeEvents } from '../kernel/spec.js';
+import { activeEvents } from '../kernel/spec.ts';
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const PORTAL_THREAT = { crack: 0.15, open: 0.55, wide: 0.9, stable: 0.05, sealed: 0 };

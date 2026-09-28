@@ -11,11 +11,11 @@ for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const llm = await import('../server/llm.js');
 const { Town } = await import('../server/sim.js');
 const { loadPack, packSpec } = await import('../server/worlds/pack.js');
-const { validateSpec } = await import('../server/kernel/spec.js');
-const { useAbility } = await import('../server/kernel/abilities.js');
+const { validateSpec } = await import('../server/kernel/spec.ts');
+const { useAbility } = await import('../server/kernel/abilities.ts');
 const { checkBeat, runBeats, ALL_KINDS } = await import('../server/story/beats.js');
 const { keywordCheck, targetsResident } = await import('../server/guard.js');
-const { ratingAtLeast, lethal } = await import('../server/kernel/ratings.js');
+const { ratingAtLeast, lethal } = await import('../server/kernel/ratings.ts');
 
 llm.setMock(null);
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-dark-'));

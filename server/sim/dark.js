@@ -2,10 +2,10 @@
 // 阵营配给与派遣、反派的欲望与转变，以及写进居民提示词的部分。
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
 import { addMemory } from '../memory.ts';
-import { runEffects, posOf } from '../kernel/effects.js';
-import { testExpr, hasPosture } from '../kernel/rules.js';
-import { findAbility } from '../kernel/abilities.js';
-import { lethal } from '../kernel/ratings.js';
+import { runEffects, posOf } from '../kernel/effects.ts';
+import { testExpr, hasPosture } from '../kernel/rules.ts';
+import { findAbility } from '../kernel/abilities.ts';
+import { lethal } from '../kernel/ratings.ts';
 import { freshDark } from '../story/threats.js';
 import { clamp } from './util.js';
 

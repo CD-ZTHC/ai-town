@@ -8,8 +8,8 @@ import path from 'node:path';
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER', 'MODS']) delete process.env[k];
 const { Town } = await import('../server/sim.js');
 const llm = await import('../server/llm.js');
-const { defaultSpec, validateSpec } = await import('../server/kernel/spec.js');
-const { useAbility } = await import('../server/kernel/abilities.js');
+const { defaultSpec, validateSpec } = await import('../server/kernel/spec.ts');
+const { useAbility } = await import('../server/kernel/abilities.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-moon-'));
 function newTown(hour = 20) {

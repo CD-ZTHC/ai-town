@@ -9,8 +9,8 @@ import path from 'node:path';
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER', 'MODS', 'PUBLIC_MODE']) delete process.env[k];
 const { Town } = await import('../server/sim.js');
 const llm = await import('../server/llm.js');
-const { defaultSpec } = await import('../server/kernel/spec.js');
-const { replay } = await import('../server/kernel/ops.js');
+const { defaultSpec } = await import('../server/kernel/spec.ts');
+const { replay } = await import('../server/kernel/ops.ts');
 const { fixtureMock } = await import('./fixtures/llm/index.js');
 
 const SEED = Number(process.env.REPLAY_SEED || 20260926);

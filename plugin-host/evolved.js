@@ -6,8 +6,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as llm from '../server/llm.js';
-import { EFFECTS, checkEffects, runEffects, posOf } from '../server/kernel/effects.js';
-import { replay, OPS } from '../server/kernel/ops.js';
+import { EFFECTS, checkEffects, runEffects, posOf } from '../server/kernel/effects.ts';
+import { replay, OPS } from '../server/kernel/ops.ts';
 import { registerEffect, unregisterSource } from './registry.js';
 import { validateManifest, checkArgs, CONTENT_OPS, cleanOverlay } from './schema.js';
 import { hashDir } from './hash.js';

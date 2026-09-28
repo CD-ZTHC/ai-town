@@ -9,9 +9,9 @@ const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { Town } = await import('../server/sim.js');
 const { loadPack, packSpec } = await import('../server/worlds/pack.js');
-const { validateSpec } = await import('../server/kernel/spec.js');
+const { validateSpec } = await import('../server/kernel/spec.ts');
 const { solveLayout, buildLayoutRegion, layoutProblems } = await import('../server/worldgen/layout.js');
-const { findPlacement } = await import('../server/kernel/placement.js');
+const { findPlacement } = await import('../server/kernel/placement.ts');
 const { findPath } = await import('../server/world.js');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-layout-'));

@@ -1,8 +1,8 @@
 // 行动（P1）：使用能力、送东西、传授、研究
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
 import { addMemory, parseHM } from '../memory.ts';
-import { useAbility, describeAbility, findAbility, matchResearch } from '../kernel/abilities.js';
-import { agentsNear, posOf, runEffects } from '../kernel/effects.js';
+import { useAbility, describeAbility, findAbility, matchResearch } from '../kernel/abilities.ts';
+import { agentsNear, posOf, runEffects } from '../kernel/effects.ts';
 import { POSTURE_NAMES } from './dark.js';
 import { clamp, clampStr } from './util.js';
 

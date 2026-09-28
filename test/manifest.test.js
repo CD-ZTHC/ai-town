@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const { defaultSpec } = await import('../server/kernel/spec.js');
+const { defaultSpec } = await import('../server/kernel/spec.ts');
 await import('../plugin-host/builtin.js');
 const { manifestMarkdown } = await import('../server/worldai/manifest.js');
 

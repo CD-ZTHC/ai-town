@@ -1,7 +1,7 @@
 // 剧情节拍：叙事导演与剧情弧共用的「剧情动作」。每个动作先校验、再执行，非法动作会被丢弃。
 // 普通动作导演可以直接使用；标记为 privileged 的动作（开裂隙、刷怪、角色登场/离场、投票……）只允许剧情弧模板使用。
 import { addMemory } from '../memory.ts';
-import { checkEffects, runEffects, posOf, VFX } from '../kernel/effects.js';
+import { checkEffects, runEffects, posOf, VFX } from '../kernel/effects.ts';
 import { advanceThread } from './threads.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);

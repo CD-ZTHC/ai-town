@@ -9,7 +9,7 @@ import { keywordCheck } from '../guard.js';
 import { loadPack } from './pack.js';
 import { checkPack, visibleTexts } from '../genesis/pipeline.js';
 import { shadowRun } from '../genesis/jobs.js';
-import { reviewRating } from '../kernel/ratings.js';
+import { reviewRating } from '../kernel/ratings.ts';
 
 const MAX_PERSONAS = 16;
 const MAX_REGIONS = 6;

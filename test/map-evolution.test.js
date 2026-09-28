@@ -5,9 +5,9 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { officialPack, packSpec } from '../server/worlds/pack.js';
 import { buildRegions } from '../server/worldgen/index.js';
-import { applyOp } from '../server/kernel/ops.js';
-import { findPlacement } from '../server/kernel/placement.js';
-import { validateSpec } from '../server/kernel/spec.js';
+import { applyOp } from '../server/kernel/ops.ts';
+import { findPlacement } from '../server/kernel/placement.ts';
+import { validateSpec } from '../server/kernel/spec.ts';
 import { T } from '../server/world.js';
 
 const fingerprint = (x) => crypto.createHash('sha256').update(JSON.stringify({ t: x.tiles, w: [...x.walk], o: x.objects, b: x.buildings, l: x.locations, g: x.gate })).digest('hex').slice(0, 16);
@@ -252,7 +252,7 @@ test('议事否决：差一票不拆；10 天之内不能再提；终审人不�
 
 // ---------- E4 地形 ----------
 const { findPath } = await import('../server/world.js');
-const { locationCenter } = await import('../server/kernel/placement.js');
+const { locationCenter } = await import('../server/kernel/placement.ts');
 
 test('修路：穿过树林的新路让往返变近；入口与站位都还在；跨太宽的水面要先架桥', (t) => {
   const town = redTown();

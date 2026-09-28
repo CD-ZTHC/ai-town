@@ -9,9 +9,9 @@ for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'D
 const { Town } = await import('../server/sim.js');
 const llm = await import('../server/llm.js');
 const { registerEffect, registerExprFn, extensions } = await import('../plugin-host/registry.js');
-const { EFFECTS, checkEffects } = await import('../server/kernel/effects.js');
+const { EFFECTS, checkEffects } = await import('../server/kernel/effects.ts');
 const { manifestText, manifestMarkdown } = await import('../server/worldai/manifest.js');
-const { defaultSpec } = await import('../server/kernel/spec.js');
+const { defaultSpec } = await import('../server/kernel/spec.ts');
 const { evolve, nextNumber } = await import('../tools/evolve.js');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-p5-'));
@@ -112,7 +112,7 @@ test('完整闭环：架构师用新的 goTo 设计出「召集铃」→ 提案�
   assert.equal(p.status, 'applied', p.result?.reason);
   assert.ok(town.spec.abilities.some((a) => a.id === 'gather_bell'));
 
-  const { useAbility } = await import('../server/kernel/abilities.js');
+  const { useAbility } = await import('../server/kernel/abilities.ts');
   town.learnAbility(town.byId.he, 'gather_bell', '在酒馆里');
   place(town, ['he', 'lin', 'su']);
   const r = useAbility(town, town.byId.he, 'gather_bell');

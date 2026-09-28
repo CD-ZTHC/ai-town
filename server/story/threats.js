@@ -3,9 +3,9 @@
 // 规律本身（rule）从不进入任何提示词，居民只能通过线索形成自己的看法（信念）。
 import { findPath } from '../world.js';
 import { addMemory, parseHM } from '../memory.ts';
-import { runEffects, posOf, agentsNear } from '../kernel/effects.js';
-import { testExpr } from '../kernel/rules.js';
-import { ratingAtLeast } from '../kernel/ratings.js';
+import { runEffects, posOf, agentsNear } from '../kernel/effects.ts';
+import { testExpr } from '../kernel/rules.ts';
+import { ratingAtLeast } from '../kernel/ratings.ts';
 
 const MAX_THREATS = 16;
 const SOUND_WINDOW = 12; // 声音保留的游戏分钟

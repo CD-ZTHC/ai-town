@@ -10,8 +10,8 @@ import { keywordCheck, sanitize } from '../guard.js';
 import { publishReview } from '../worlds/review.js';
 import { quota } from '../accounts/quota.js';
 import { get as setting } from '../settings/index.ts';
-import { reviewRating } from '../kernel/ratings.js';
-import { STORYTELLERS } from '../kernel/spec.js';
+import { reviewRating } from '../kernel/ratings.ts';
+import { STORYTELLERS } from '../kernel/spec.ts';
 import { DEATH_NAMED_DEFAULT } from './genesis-api.js';
 
 const clip = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);

@@ -5,8 +5,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { hashDir } from '../plugin-host/hash.js';
-import { defaultSpec } from '../server/kernel/spec.js';
-import { replay } from '../server/kernel/ops.js';
+import { defaultSpec } from '../server/kernel/spec.ts';
+import { replay } from '../server/kernel/ops.ts';
 import { manifestText } from '../server/worldai/manifest.js';
 import { activeDir } from '../server/timelines.js';
 import { loadPack, packSpec } from '../server/worlds/pack.js';

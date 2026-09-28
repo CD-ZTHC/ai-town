@@ -2,7 +2,7 @@
 import crypto from 'node:crypto';
 import * as llm from './llm.js';
 import { get as setting } from './settings/index.ts';
-import { lethal } from './kernel/ratings.js';
+import { lethal } from './kernel/ratings.ts';
 
 // 每个字段都读设置中心的当前值（live 类设置保存后立即生效）；测试可以直接赋值覆盖（例如 config.publicMode = true）
 const FIELDS = {

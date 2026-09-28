@@ -3,8 +3,8 @@
 import { findPath } from '../world.js';
 import * as llm from '../llm.js';
 import { addMemory, parseHM } from '../memory.ts';
-import { posOf } from '../kernel/effects.js';
-import { ratingAtLeast } from '../kernel/ratings.js';
+import { posOf } from '../kernel/effects.ts';
+import { ratingAtLeast } from '../kernel/ratings.ts';
 
 const MAX_CREATURES = 24;
 const rand = (a) => a[Math.floor(Math.random() * a.length)];

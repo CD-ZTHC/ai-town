@@ -2,8 +2,8 @@
 // 按规则逐回合结算（每游戏分钟一回合），不调用 LLM。
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
 import { addMemory } from '../memory.ts';
-import { posOf } from '../kernel/effects.js';
-import { lethal } from '../kernel/ratings.js';
+import { posOf } from '../kernel/effects.ts';
+import { lethal } from '../kernel/ratings.ts';
 import { clamp } from './util.js';
 
 const MAX_ROUNDS = 12;

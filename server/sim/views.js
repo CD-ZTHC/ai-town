@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as llm from '../llm.js';
 import { fmtTime, fmtStamp } from '../memory.ts';
-import { publicSpec } from '../kernel/spec.js';
-import { findAbility } from '../kernel/abilities.js';
+import { publicSpec } from '../kernel/spec.ts';
+import { findAbility } from '../kernel/abilities.ts';
 import { threadList } from '../story/threads.js';
 import { renderRefs, ref } from '../accounts/refs.js';
 

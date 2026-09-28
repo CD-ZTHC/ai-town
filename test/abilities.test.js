@@ -8,9 +8,9 @@ import path from 'node:path';
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING']) delete process.env[k];
 const { Town } = await import('../server/sim.js');
 const llm = await import('../server/llm.js');
-const { defaultSpec, validateSpec } = await import('../server/kernel/spec.js');
-const { applyOp } = await import('../server/kernel/ops.js');
-const { useAbility } = await import('../server/kernel/abilities.js');
+const { defaultSpec, validateSpec } = await import('../server/kernel/spec.ts');
+const { applyOp } = await import('../server/kernel/ops.ts');
+const { useAbility } = await import('../server/kernel/abilities.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-p1-'));
 const tick = () => new Promise((r) => setImmediate(r));

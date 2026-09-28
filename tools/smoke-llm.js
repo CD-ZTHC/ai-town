@@ -21,7 +21,7 @@ process.env.STORY_RATING ||= 'adventure';
 
 const { Town } = await import('../server/sim.js');
 const llm = await import('../server/llm.js');
-const { useAbility } = await import('../server/kernel/abilities.js');
+const { useAbility } = await import('../server/kernel/abilities.ts');
 
 if (MOCK) {
   // 与无头回放测试共用同一份录制回复

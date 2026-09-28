@@ -1,8 +1,8 @@
 // WorldOp：校验、应用、失败不污染原规格、重放
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultSpec, calendarHint } from '../server/kernel/spec.js';
-import { applyOp, replay, OPS } from '../server/kernel/ops.js';
+import { defaultSpec, calendarHint } from '../server/kernel/spec.ts';
+import { applyOp, replay, OPS } from '../server/kernel/ops.ts';
 
 const base = () => defaultSpec({});
 

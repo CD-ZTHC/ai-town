@@ -8,8 +8,8 @@ import { keywordCheck } from '../guard.js';
 import { ruleCheck } from '../worldai/canon.js';
 import { normalizeLook } from '../genesis/assemble.js';
 import { get as setting } from '../settings/index.ts';
-import { MAX_PERSONAS } from '../kernel/spec.js';
-import { reviewRating } from '../kernel/ratings.js';
+import { MAX_PERSONAS } from '../kernel/spec.ts';
+import { reviewRating } from '../kernel/ratings.ts';
 
 const str = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const RESIDENTIAL = new Set(['hut', 'cabin', 'cottage', 'house', 'farmhouse', 'inn', 'tavern']);

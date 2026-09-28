@@ -1,9 +1,9 @@
 // 能力清单（设计文档第 7 节）：从代码自动生成「AI 现在能做什么」。
 // 架构师的提示词、`mise run manifest` 生成的 docs/capabilities.md、`mise run evolve` 的需求文档都用它，
 // 因此新能力（包括插件注册的扩展）一旦加载，就会自动出现在 AI 的视野里。
-import { EFFECTS, EXPR_FN_DOCS, VFX } from '../kernel/effects.js';
-import { OPS } from '../kernel/ops.js';
-import { PARAM_BOUNDS, BODY_PLANS } from '../kernel/spec.js';
+import { EFFECTS, EXPR_FN_DOCS, VFX } from '../kernel/effects.ts';
+import { OPS } from '../kernel/ops.ts';
+import { PARAM_BOUNDS, BODY_PLANS } from '../kernel/spec.ts';
 import { extensions } from '../../plugin-host/registry.js';
 
 // 世界架构师可以使用的操作及参数格式

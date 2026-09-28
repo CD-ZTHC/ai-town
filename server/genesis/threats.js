@@ -1,8 +1,8 @@
 // 创世：威胁生成（黑暗叙事设计 §4.12）。让模型设计这个世界里按规律行事的威胁，把规律编译成内核的表达式，
 // 逐个校验；不合法的带着错误让模型改一次，还不合法的丢掉。改编模式与参考模式都可以用。
-import { validateThreat, validateBurden, POSTURES } from '../kernel/threat-spec.js';
-import { EXPR_FN_DOCS, EFFECTS } from '../kernel/effects.js';
-import { validateAbility } from '../kernel/abilities.js';
+import { validateThreat, validateBurden, POSTURES } from '../kernel/threat-spec.ts';
+import { EXPR_FN_DOCS, EFFECTS } from '../kernel/effects.ts';
+import { validateAbility } from '../kernel/abilities.ts';
 import { packSpec } from '../worlds/pack.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);

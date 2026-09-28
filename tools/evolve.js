@@ -154,8 +154,8 @@ export async function evolve(opts = {}) {
   if (!gaps.length) return { written: [], skipped: ['没有需要整理的缺口（先在管理面板的「AI 心愿单」里采纳，或加 --all）'] };
 
   // 用存档里的世界（默认规格 + 操作历史）生成当时的能力清单
-  const { defaultSpec } = await import('../server/kernel/spec.js');
-  const { replay } = await import('../server/kernel/ops.js');
+  const { defaultSpec } = await import('../server/kernel/spec.ts');
+  const { replay } = await import('../server/kernel/ops.ts');
   await import('../plugin-host/builtin.js');
   const { manifestText, effectsText } = await import('../server/worldai/manifest.js');
   const spec = replay(defaultSpec(), save.specOps || []).spec;

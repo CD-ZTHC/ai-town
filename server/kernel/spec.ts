@@ -2,14 +2,14 @@
 // 默认规格来自官方世界包 worlds/yunxi/（多世界设计 §3）；之后的一切改动都以 WorldOp 叠加在它上面。
 import { BUILDING_STATES } from '../worldgen/finish.js';
 import { parseHM } from '../memory.ts';
-import { validateAbility } from './abilities.js';
-import { validateRule } from './rules.js';
+import { validateAbility } from './abilities.ts';
+import { validateRule } from './rules.ts';
 import { officialPack, packSpec } from '../worlds/pack.js';
-import { RATINGS } from './ratings.js';
-import { validateDark } from './threat-spec.js';
+import { RATINGS } from './ratings.ts';
+import { validateDark } from './threat-spec.ts';
 
 export const SPEC_VERSION = 2;
-export { RATINGS } from './ratings.js';
+export { RATINGS } from './ratings.ts';
 export const STORYTELLERS = ['gentle', 'voyage', 'chaos', 'horror'];
 export const PERSONA_KINDS = ['resident', 'traveller', 'creature'];
 export const BODY_PLANS = ['wisp', 'hound', 'warden'];

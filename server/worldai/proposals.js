@@ -1,11 +1,11 @@
 // 世界补丁提案（设计文档 5.3 / 8.1）：校验 → 设定考据 → 审批 → （施工）→ 落地。
 // 审批：本地模式 小改自动通过、大改等管理员确认；公网模式 小改和大改都先访客投票，再由管理员终审。
 // 自主演化 E1：管理员终审窗口（真实时间，minor 6 小时 / major 24 小时）超时后，交给 AI 裁决官决定（不再作废）。
-import { OPS, applyOp, OpError } from '../kernel/ops.js';
-import { findPlacement, checkPlacement, solvePath, solveBridge, solveRect, checkEdit, outdoorSize, choosePassages } from '../kernel/placement.js';
+import { OPS, applyOp, OpError } from '../kernel/ops.ts';
+import { findPlacement, checkPlacement, solvePath, solveBridge, solveRect, checkEdit, outdoorSize, choosePassages } from '../kernel/placement.ts';
 import { addMemory, fmtTime } from '../memory.ts';
 import { review } from './canon.js';
-import { impactOf } from '../kernel/impact.js';
+import { impactOf } from '../kernel/impact.ts';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const LEVELS = ['micro', 'minor', 'major'];

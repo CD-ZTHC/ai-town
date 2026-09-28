@@ -7,7 +7,7 @@ import { llmPublic, listSnapshots, restoreSnapshot } from '../sim.js';
 import { ADMIN_OPS } from '../worldai/proposals.js';
 import { registry, forkTimeline, setActive } from '../timelines.js';
 import * as llm from '../llm.js';
-import { useAbility } from '../kernel/abilities.js';
+import { useAbility } from '../kernel/abilities.ts';
 import { config, sanitize, moderate, targetsResident } from '../guard.js';
 import { authorize } from '../accounts/authz.js';
 import { quota, remaining as quotaLeft } from '../accounts/quota.js';

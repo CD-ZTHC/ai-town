@@ -1,7 +1,7 @@
 // 扩展注册表（自主演化设计 §5.3）：插件通过这里向内核注册新的效果原语与表达式函数。
 // 约束：只能新增、不能覆盖内核或其他插件已有的能力；每项都必须带说明文字（会进入能力清单，AI 据此使用它）。
 // AI 插件被停用或回滚时，它注册的能力会被注销。
-import { EFFECTS, EXPR_FNS, EXPR_FN_DOCS, EXT_FNS } from '../server/kernel/effects.js';
+import { EFFECTS, EXPR_FNS, EXPR_FN_DOCS, EXT_FNS } from '../server/kernel/effects.ts';
 
 const NAME = /^[a-z][a-zA-Z0-9]{1,23}$/;
 const RESERVED = new Set(Object.getOwnPropertyNames(Object.prototype));

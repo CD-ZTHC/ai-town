@@ -1,7 +1,7 @@
 // 规则引擎（设计文档 4.5）：世界法则 = 触发 → 条件（安全表达式）→ 效果。
 // 触发器：every（每隔 N 游戏分钟）、at（每天某时刻）、weather（天气变为某种）、enter（居民到达某地点）。
-import { compile, evaluate } from './expr.js';
-import { EXPR_FNS, EXT_FNS, checkEffects, checkExpr, runEffects, posOf, agentsNear } from './effects.js';
+import { compile, evaluate } from './expr.ts';
+import { EXPR_FNS, EXT_FNS, checkEffects, checkExpr, runEffects, posOf, agentsNear } from './effects.ts';
 
 /** 居民是否正保持着某种禁忌姿态（黑暗叙事设计 §4.1） */
 export const hasPosture = (town, a, name) => Boolean(a?.posture && a.posture.until > town.t && a.posture.holds.includes(name));

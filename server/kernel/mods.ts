@@ -2,7 +2,7 @@
 // 加载顺序：默认世界规格 → Mod（按 MODS 列出的顺序）→ 存档里的操作历史。
 import fs from 'node:fs';
 import path from 'node:path';
-import { replay } from './ops.js';
+import { replay } from './ops.ts';
 
 // 可以导出的内容类操作（不含角色、参数、分级等状态类操作）
 export const MOD_OPS = ['addBuilding', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'addRule', 'addCanon'];

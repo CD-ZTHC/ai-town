@@ -229,7 +229,7 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 
 ## 世界规格与世界操作
 
-小镇的设定、居民、建筑、地点、天气、日历和内核参数都由一份**世界规格**描述（`server/kernel/spec.js`，默认规格由 `personas.js` / `world.js` 生成）。对世界的修改都是一条可校验、可重放的 **WorldOp**（`server/kernel/ops.js`）：
+小镇的设定、居民、建筑、地点、天气、日历和内核参数都由一份**世界规格**描述（`server/kernel/spec.ts`，默认规格由 `personas.js` / `world.js` 生成）。对世界的修改都是一条可校验、可重放的 **WorldOp**（`server/kernel/ops.ts`）：
 
 - 存档只保存操作历史，读档时 = 默认规格 + 按序重放；审计日志追加写入 `data/ops.jsonl`，每个游戏小时的快照保存在 `data/snapshots/`；
 - 目前支持 `setParam`（在上下限内调节步速、对话数等）、`setMeta`（内容分级 / 叙事者）、`addCanon`（设定集）、`addCalendarEvent`（新节日）、`addWeather`（新天气）、`addItem`（新物品）、`addStructure`（新构筑物）、`addAbility`（新能力）、`addRule`（新世界法则）；新能力和法则只能由效果原语组合，数值有上限，越界会被拒绝；
@@ -252,17 +252,17 @@ server/
   sim/         Town 的其余职责（以 mixin 挂到 Town 上）：regions 区域与地点、movement 移动与日程执行、
                planning 规划与约定、actions 能力与行动、cognition 独白 / 反思 / 日记 / 日报、
                social 对话 / 信念 / 旅人 / 事件、views 前端视图、persistence 存档与快照、metrics AI 表现指标
-  kernel/spec.js  世界规格：默认规格、校验、日历与天气工具
-  kernel/ops.js   WorldOp：操作定义、校验、应用、重放、审计日志
-  kernel/expr.js  安全表达式（手写解析器）
-  kernel/effects.js 效果原语：能力、规则、剧情共用的「动词表」
-  kernel/rules.js 规则引擎（定时 / 每日 / 天气 / 进入地点触发）
-  kernel/abilities.js 能力：校验、使用、研究
+  kernel/spec.ts  世界规格：默认规格、校验、日历与天气工具
+  kernel/ops.ts   WorldOp：操作定义、校验、应用、重放、审计日志
+  kernel/expr.ts  安全表达式（手写解析器）
+  kernel/effects.ts 效果原语：能力、规则、剧情共用的「动词表」
+  kernel/rules.ts 规则引擎（定时 / 每日 / 天气 / 进入地点触发）
+  kernel/abilities.ts 能力：校验、使用、研究
   story/director.js 叙事导演；story/tension.js 张力模型；story/threads.js 剧情线程
   story/beats.js  剧情节拍（导演与剧情弧共用的剧情动作）；story/scene.js 多人场景；story/votes.js 投票
-  kernel/placement.js 新建筑的语义化选址与连通性校验
+  kernel/placement.ts 新建筑的语义化选址与连通性校验
   worldai/manifest.js 能力清单（自动生成）
-  kernel/mods.js  Mod 导出与加载；timelines.js 时间线分支；avatars.js 访客化身
+  kernel/mods.ts  Mod 导出与加载；timelines.js 时间线分支；avatars.js 访客化身
   main.js         守护进程：拉起服务、请求重启（退出码 75）、设置导致启动失败时回退
   settings/       设置中心：schema.js 声明表（唯一出处）、index.js 三层来源、版本与回退
   http/           Hono 应用：app.js 路由与中间件、identity.js 身份、world-api.js 世界接口、auth-api.js 账号、

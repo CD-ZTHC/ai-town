@@ -9,8 +9,8 @@ for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'D
 const { Town, listSnapshots, restoreSnapshot } = await import('../server/sim.js');
 const llm = await import('../server/llm.js');
 const { buildWorld } = await import('../server/world.js');
-const { defaultSpec } = await import('../server/kernel/spec.js');
-const { findPlacement, checkPlacement } = await import('../server/kernel/placement.js');
+const { defaultSpec } = await import('../server/kernel/spec.ts');
+const { findPlacement, checkPlacement } = await import('../server/kernel/placement.ts');
 const { ruleCheck } = await import('../server/worldai/canon.js');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-p4-'));

@@ -11,7 +11,7 @@ import { get as setting } from '../settings/index.ts';
 import { normalizeSource, screenSource, sampleParagraphs } from '../genesis/source.js';
 import { GenesisJobs } from '../genesis/jobs.js';
 import { HttpError } from './util.js';
-import { STORYTELLERS } from '../kernel/spec.js';
+import { STORYTELLERS } from '../kernel/spec.ts';
 
 const RATINGS_DEFAULT = ['cozy', 'adventure'];
 export const DEATH_NAMED_DEFAULT = 2;

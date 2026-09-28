@@ -1,7 +1,7 @@
 // 安全表达式：语法、运算、以及各种恶意输入
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parse, evaluate, ExprError } from '../server/kernel/expr.js';
+import { parse, evaluate, ExprError } from '../server/kernel/expr.ts';
 
 const FNS = new Set(['has', 'max']);
 const run = (src, vars = {}, fns = {}) => evaluate(parse(src, FNS), vars, fns);

@@ -8,7 +8,7 @@ import path from 'node:path';
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER', 'PLUGINS_DISABLE']) delete process.env[k];
 const { Town } = await import('../server/sim.js');
 const llm = await import('../server/llm.js');
-const { opinion } = await import('../server/kernel/decisions.js');
+const { opinion } = await import('../server/kernel/decisions.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-e1-'));
 const flush = async (n = 8) => { for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r)); };

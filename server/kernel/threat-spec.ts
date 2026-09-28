@@ -1,7 +1,7 @@
 // 黑暗叙事的规格校验（黑暗叙事设计 §4、§6.1）：威胁、负担值、阵营权威、人口、反派心智、装备。
 // 这些字段都是可选的：世界包没有声明时，validateDark 什么也不检查，相关系统也不会运行。
-import { checkEffects, checkExpr } from './effects.js';
-import { RATINGS } from './ratings.js';
+import { checkEffects, checkExpr } from './effects.ts';
+import { RATINGS } from './ratings.ts';
 import { parseHM } from '../memory.ts';
 
 const ID_RE = /^[a-z][a-z0-9_]{1,23}$/;
