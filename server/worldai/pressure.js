@@ -5,7 +5,7 @@
 //   破败：受损 / 废墟持续的天数                               → 修复或清除
 //   走得远：居民日常一趟路的平均格数比开始时明显变长          → 修路、架桥
 // 结果写进架构师的提示词、显示在建设面板；压力明显时每两天最多交给架构师一个意图。
-import { T } from './../worldgen/tiles.js';
+import { T } from './../worldgen/tiles.ts';
 
 const KEEP_DAYS = 14;
 const IDLE_DAYS = 5;

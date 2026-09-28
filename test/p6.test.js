@@ -11,7 +11,7 @@ const llm = await import('../server/llm.ts');
 const { exportMod, applyMods, readMod } = await import('../server/kernel/mods.ts');
 const { defaultSpec } = await import('../server/kernel/spec.ts');
 const { registry, forkTimeline, setActive, activeDir, timelineDir } = await import('../server/timelines.js');
-const { buildMoonRealm, T } = await import('../server/world.js');
+const { buildMoonRealm, T } = await import('../server/world.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-p6-'));
 

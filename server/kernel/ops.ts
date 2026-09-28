@@ -6,11 +6,11 @@ import { PARAM_BOUNDS, RATINGS, STORYTELLERS, validateSpec } from './spec.ts';
 import { lethal } from './ratings.ts';
 import { parseHM } from '../memory.ts';
 import { checkRemap, applyRemap } from './impact.ts';
-import { stripOf, packStrip, SIDES, MAX_SIZE } from '../worldgen/extend.js';
-import { buildRegion } from '../worldgen/index.js';
+import { stripOf, packStrip, SIDES, MAX_SIZE } from '../worldgen/extend.ts';
+import { buildRegion } from '../worldgen/index.ts';
 import { validateAbility } from './abilities.ts';
 import { validateRule } from './rules.ts';
-import { solveLayout, layoutProblems, regionSize, mapSize, BIOME_IDS, BUILDING_KINDS, OUTDOOR_KINDS } from '../worldgen/layout.js';
+import { solveLayout, layoutProblems, regionSize, mapSize, BIOME_IDS, BUILDING_KINDS, OUTDOOR_KINDS } from '../worldgen/layout.ts';
 import type { OpLevel } from '../types/ops.ts';
 import type { Ability, Building, Region, RegionEdit, Rule, Side, WorldSpec } from '../types/spec.ts';
 

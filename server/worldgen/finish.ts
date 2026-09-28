@@ -1,10 +1,10 @@
 // 叠加层（地图演变设计 §2、§7.2）：生成器只负责展开世界包里的基础地图，运行中的一切变化都在这里按顺序叠加上去。
 //   拆除（removed）→ 新增建筑（added）→ 建筑状态（停业 / 受损 / 废墟）→ 连通性过滤
 // 基础生成一行不动，所以云溪镇的基础瓦片与随机序列永远不变；两个生成器（yunxi-v1、layout-v1）共用这一段。
-import { T, WALKABLE } from './tiles.js';
-import { paintOutdoor } from './brush.js';
-import { paintExtension } from './extend.js';
-import { BIOMES } from './layout.js';
+import { T, WALKABLE } from './tiles.ts';
+import { paintOutdoor } from './brush.ts';
+import { paintExtension } from './extend.ts';
+import { BIOMES } from './layout.ts';
 
 const REMOVABLE = new Set(['tree', 'bush', 'rock']);
 const BUILDABLE = new Set([T.GRASS, T.FLOWER, T.DIRT, T.SAND]);

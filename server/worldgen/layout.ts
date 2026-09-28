@@ -8,10 +8,10 @@
 //                              "style": { "roof": "#c0392b", "wall": "#f2e2c2", "roofShape": "thatch", "decor": ["chimney", "flowers"] } }] }],
 //     "links": [{ "from": "village", "to": "forest", "via": "path" }] }
 // 建筑的坐标由求解器给出（packSpec 时写进规格的 buildings / locations），之后运行中新增的建筑（addBuilding）照常叠加。
-import { findPath } from '../world.js';
-import { T, WALKABLE } from './tiles.js';
-import { finishRegion } from './finish.js';
-import { paintOutdoor } from './brush.js';
+import { findPath } from '../world.ts';
+import { T, WALKABLE } from './tiles.ts';
+import { finishRegion } from './finish.ts';
+import { paintOutdoor } from './brush.ts';
 
 // 建筑类的地点：占地（宽 × 高）
 export const BUILDING_KINDS = {

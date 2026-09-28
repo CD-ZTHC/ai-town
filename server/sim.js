@@ -3,7 +3,7 @@
 // 以 mixin 的形式挂到 Town 上（见文件末尾），方法里的 this 都是 Town。
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
-import { buildRegions, buildRegion } from './worldgen/index.js';
+import { buildRegions, buildRegion } from './worldgen/index.ts';
 import * as llm from './llm.ts';
 import { addMemory, parseHM } from './memory.ts';
 import { officialPack, packSpec } from './worlds/pack.js';

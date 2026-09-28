@@ -11,7 +11,7 @@ import { chunkSource } from './source.js';
 import { assembleMap, assemblePersonas, assembleExtras, assembleWorld } from './assemble.js';
 import { packErrors, packSpec, hashPack } from '../worlds/pack.js';
 import { validateSpec } from '../kernel/spec.ts';
-import { layoutProblems, BUILDING_KINDS, OUTDOOR_KINDS, BIOME_IDS } from '../worldgen/layout.js';
+import { layoutProblems, BUILDING_KINDS, OUTDOOR_KINDS, BIOME_IDS } from '../worldgen/layout.ts';
 import { reviewRating, lethal } from '../kernel/ratings.ts';
 import { promptThreats, assembleThreats, mergeThreats } from './threats.js';
 

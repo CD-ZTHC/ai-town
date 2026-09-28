@@ -229,7 +229,7 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 
 ## 世界规格与世界操作
 
-小镇的设定、居民、建筑、地点、天气、日历和内核参数都由一份**世界规格**描述（`server/kernel/spec.ts`，默认规格由 `personas.js` / `world.js` 生成）。对世界的修改都是一条可校验、可重放的 **WorldOp**（`server/kernel/ops.ts`）：
+小镇的设定、居民、建筑、地点、天气、日历和内核参数都由一份**世界规格**描述（`server/kernel/spec.ts`，默认规格由世界包（`worlds/<id>/`）生成）。对世界的修改都是一条可校验、可重放的 **WorldOp**（`server/kernel/ops.ts`）：
 
 - 存档只保存操作历史，读档时 = 默认规格 + 按序重放；审计日志追加写入 `data/ops.jsonl`，每个游戏小时的快照保存在 `data/snapshots/`；
 - 目前支持 `setParam`（在上下限内调节步速、对话数等）、`setMeta`（内容分级 / 叙事者）、`addCanon`（设定集）、`addCalendarEvent`（新节日）、`addWeather`（新天气）、`addItem`（新物品）、`addStructure`（新构筑物）、`addAbility`（新能力）、`addRule`（新世界法则）；新能力和法则只能由效果原语组合，数值有上限，越界会被拒绝；
@@ -270,7 +270,7 @@ server/
   accounts/       账号：db.js（node:sqlite）、passwords.js、nickname.js、authz.js 授权、quota.js 配额、refs.js 记忆里的账号引用
   worlds/         pack.js 世界包、registry.js 世界登记与状态机、manager.js 世界管理器、host.js 单个世界的托管、
                   disk.js 磁盘上限、review.js 发布审核与抽样审核、migrate.js 数据迁移
-  worldgen/       地图生成器：index.js 注册表、layout.js 语义布局（layout-v1）
+  worldgen/       地图生成器：index.ts 注册表、layout.ts 语义布局（layout-v1）
   scheduler/      统一 AI 调度：classes.ts 级别表、index.ts 调度器、budget.ts 账本与分层预算、context.ts 调用归属
   genesis/        创世：source.js 原文、pipeline.js G1~G5、assemble.js 组装、jobs.js 任务、shadow.js 无头试跑
   ext/            扩展点：registry.js 注册表、index.js 加载器、go-to.js（RFC 0001）
@@ -281,7 +281,7 @@ server/
   world-llm.ts 按世界配置模型服务：世界 → 通道的解析、暂停与恢复、测试连接；secrets.ts 凭据加密；net/safe-fetch.ts 防 SSRF 的请求
   memory.ts    记忆流：写入、压缩成摘要、检索（双字组 + 可选的语义相似度）
   embeddings.ts 可选的 embedding（EMBED_MODEL）与向量缓存（node:sqlite）
-  world.js     手工布局的地图生成器（云溪镇 yunxi-v1、暗月界 moonrealm-v1）与 A* 寻路
+  world.ts     手工布局的地图生成器（云溪镇 yunxi-v1、暗月界 moonrealm-v1）与 A* 寻路
 public/
   js/render.js 世界渲染器：数据更新、坐标换算、每帧调度；render/ 下是 terrain 静态层、objects 物体与角色、
                atmosphere 粒子 / 光照 / 天气、overlays 标签与气泡 / 小地图、util 常量与纯函数

@@ -1,7 +1,7 @@
 // 规律型威胁（黑暗叙事设计 §4.1~§4.3、§4.6、§4.7）：按规律杀人的东西，以及围绕它们发生的事件。
 // 只有世界包声明了 threats 时才运行。规律判定、标记、应验都按规则结算，不调用 LLM；
 // 规律本身（rule）从不进入任何提示词，居民只能通过线索形成自己的看法（信念）。
-import { findPath } from '../world.js';
+import { findPath } from '../world.ts';
 import { addMemory, parseHM } from '../memory.ts';
 import { runEffects, posOf, agentsNear } from '../kernel/effects.ts';
 import { testExpr } from '../kernel/rules.ts';

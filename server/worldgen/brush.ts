@@ -1,6 +1,6 @@
 // 户外地点的笔刷：广场、集市、田地、果园、花园、池塘、码头、水井、营地、神龛……
 // layout-v1 生成基础地图时用它，运行中新增的户外地点（addOutdoorPlace，见 finish.js）也用它。
-import { T } from './tiles.js';
+import { T } from './tiles.ts';
 
 /** 在画布上画一个户外地点：c = { set, get, block, objects, rnd, H }，p = { rect, kind } */
 export function paintOutdoor(c, p) {

@@ -1,6 +1,6 @@
 // 创世 G4 的组装（多世界设计 §4.1）：把模型给出的人物、地图、叙述口吻等拼成一个世界包。
 // 模型的输出只是素材：所有字段在这里裁剪、补默认值、换成合法的 id；最后仍要通过结构校验（zod）与内核规格校验。
-import { BUILDING_KINDS, OUTDOOR_KINDS, BIOME_IDS } from '../worldgen/layout.js';
+import { BUILDING_KINDS, OUTDOOR_KINDS, BIOME_IDS } from '../worldgen/layout.ts';
 import { SPEC_VERSION, RATINGS, STORYTELLERS } from '../kernel/spec.ts';
 
 const str = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);

@@ -1,6 +1,6 @@
 // 异界生物（设计文档 5.5 / 6.2）：日常行为由规则驱动，群体心智每两小时最多调用一次 LLM。
 // 遭遇结算没有死亡：结果只有 驱散 / 吓退 / 偷走东西 / 受惊 / 晕倒送诊所。
-import { findPath } from '../world.js';
+import { findPath } from '../world.ts';
 import * as llm from '../llm.ts';
 import { addMemory, parseHM } from '../memory.ts';
 import { posOf } from '../kernel/effects.ts';

@@ -2,8 +2,8 @@
 //   yunxi-v1      云溪镇的手工布局（逐格不变）
 //   moonrealm-v1  暗月界
 //   layout-v1     语义布局 → 地图（创世生成的世界用，见 layout.js）
-import { buildWorld, buildMoonRealm } from '../world.js';
-import { buildLayoutRegion } from './layout.js';
+import { buildWorld, buildMoonRealm } from '../world.ts';
+import { buildLayoutRegion } from './layout.ts';
 
 const GENERATORS = {
   'yunxi-v1': (region, spec) => buildWorld({ buildings: spec.buildings, locationInfo: spec.locations, region, spec }),

@@ -1,7 +1,7 @@
 // 地图扩展（地图演变设计 §5.1）：主地图向任意方向长出一条新地块，最大 96×64。
 // 向西 / 向北扩展时原来的坐标整体平移：规格里「运行中加入的东西」（新增建筑、地形编辑、已有的扩展块）由 expandMap 操作平移，
 // 世界包里的基础内容仍在基础坐标系里生成，再由叠加层贴到 offset 位置。
-import { T } from './tiles.js';
+import { T } from './tiles.ts';
 
 export const MAX_SIZE = [96, 64];
 export const SIDES = ['north', 'south', 'east', 'west'];

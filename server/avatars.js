@@ -1,7 +1,7 @@
 // 访客化身（设计文档 P6、多世界设计 §5.6）：登录的用户以账号昵称在世界里现身、走到公共地点；居民看得见，也会记住这个人。
 // 化身只存在于内存（不进存档），长时间不操作会自动离开。同一账号在同一个世界里只有一个化身（多个标签页看到的是同一个），
 // 每个世界最多 AVATAR_MAX 个。
-import { findPath } from './world.js';
+import { findPath } from './world.ts';
 import { get as setting } from './settings/index.ts';
 
 const IDLE_MS = 20 * 60_000; // 20 分钟不操作就离开

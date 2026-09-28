@@ -1,6 +1,6 @@
 // 云溪镇地图生成：瓦片、建筑、装饰物、地点与站位点（确定性随机，前后端共享同一份数据）
-import { T, WALKABLE } from './worldgen/tiles.js';
-import { finishRegion } from './worldgen/finish.js';
+import { T, WALKABLE } from './worldgen/tiles.ts';
+import { finishRegion } from './worldgen/finish.ts';
 
 export { T };
 

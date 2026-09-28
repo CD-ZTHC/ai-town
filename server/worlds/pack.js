@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { solveLayout } from '../worldgen/layout.js';
+import { solveLayout } from '../worldgen/layout.ts';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const OFFICIAL_DIR = path.join(ROOT, 'worlds');

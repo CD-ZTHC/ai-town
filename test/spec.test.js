@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { defaultSpec, validateSpec, calendarHint, pickWeather, activeEvents, weekdayOf } from '../server/kernel/spec.ts';
-import { buildWorld, buildMoonRealm } from '../server/world.js';
+import { buildWorld, buildMoonRealm } from '../server/world.ts';
 import { officialPack, loadPack, packErrors, hashPack } from '../server/worlds/pack.js';
 
 // 迁移前（地图常量还在 world.js 里时）生成的地图指纹：云溪镇与暗月界必须逐格不变

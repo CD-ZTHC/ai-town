@@ -1,7 +1,7 @@
 // 语义化放置（设计文档 5.3）：AI 只描述「靠近哪里、多大」，由这里寻找合法位置并校验连通性。
 // 校验标准：占地可建、与其他建筑隔一格、门口能走到、原有建筑入口仍然可达、各地点的可达站位一个都不少。
-import { T } from '../world.js';
-import { buildRegion } from '../worldgen/index.js';
+import { T } from '../world.ts';
+import { buildRegion } from '../worldgen/index.ts';
 import type { Region, WorldSpec } from '../types/spec.ts';
 
 // 生成出来的地图（worldgen/，B4 迁移前先在这里声明用到的字段）
@@ -100,7 +100,7 @@ export function findPlacement(spec: WorldSpec, { id, name = '', w, h, near, with
 }
 
 // ---------- 地形编辑的求解（地图演变 §4）：AI 只说意图，这里给出具体的格子，并在应用前完整校验 ----------
-import { OUTDOOR_KINDS } from '../worldgen/layout.js';
+import { OUTDOOR_KINDS } from '../worldgen/layout.ts';
 
 const ROADS = new Set<number>([T.PATH, T.PLAZA, T.BRIDGE, T.WOOD, T.DIRT]);
 const SOFT = new Set<number>([T.GRASS, T.FLOWER, T.SAND, T.SOIL]);
