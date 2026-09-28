@@ -3,8 +3,8 @@
 import { addMemory, parseHM } from '../memory.ts';
 import { useAbility, describeAbility, findAbility, matchResearch } from '../kernel/abilities.ts';
 import { agentsNear, posOf, runEffects } from '../kernel/effects.ts';
-import { POSTURE_NAMES } from './dark.js';
-import { clamp, clampStr } from './util.js';
+import { POSTURE_NAMES } from './dark.ts';
+import { clamp, clampStr } from './util.ts';
 
 export class Actions {
   /** 校验并规范化 LLM 给出的行动；不合法返回 undefined（该条日程照常执行，只是没有行动） */

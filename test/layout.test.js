@@ -7,7 +7,7 @@ import path from 'node:path';
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 const { loadPack, packSpec } = await import('../server/worlds/pack.js');
 const { validateSpec } = await import('../server/kernel/spec.ts');
 const { solveLayout, buildLayoutRegion, layoutProblems } = await import('../server/worldgen/layout.ts');

@@ -19,7 +19,7 @@ if (!MOCK && !(process.env.BASE_URL && process.env.API_KEY)) {
 process.env.STORYTELLER = 'gentle';
 process.env.STORY_RATING ||= 'adventure';
 
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 const llm = await import('../server/llm.ts');
 const { useAbility } = await import('../server/kernel/abilities.ts');
 

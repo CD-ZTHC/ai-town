@@ -4,7 +4,7 @@
 import { addMemory } from '../memory.ts';
 import { posOf } from '../kernel/effects.ts';
 import { lethal } from '../kernel/ratings.ts';
-import { clamp } from './util.js';
+import { clamp } from './util.ts';
 
 const MAX_ROUNDS = 12;
 const HATE = -40; // 好感低于它才会动手

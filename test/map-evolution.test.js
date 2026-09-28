@@ -72,7 +72,7 @@ const os = await import('node:os');
 const path = await import('node:path');
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 const { loadPack } = await import('../server/worlds/pack.js');
 const { manifestText } = await import('../server/worldai/manifest.js');
 const llm = await import('../server/llm.ts');

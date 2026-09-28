@@ -2,7 +2,7 @@
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
 import * as llm from '../llm.ts';
 import { addMemory, fmtTime, parseHM } from '../memory.ts';
-import { rand, clampStr, GUARD } from './util.js';
+import { rand, clampStr, GUARD } from './util.ts';
 
 // 兜底日程里去暗月界时可做的事
 const MOON_OUTINGS = [

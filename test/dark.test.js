@@ -9,7 +9,7 @@ import path from 'node:path';
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const llm = await import('../server/llm.ts');
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 const { loadPack, packSpec } = await import('../server/worlds/pack.js');
 const { validateSpec } = await import('../server/kernel/spec.ts');
 const { useAbility } = await import('../server/kernel/abilities.ts');

@@ -9,7 +9,7 @@ export class WorldHost {
   /**
    * @param {object} o
    * @param {string} o.id 世界 id
-   * @param {() => import('../sim.js').Town} o.makeTown 按当前时间线创建 Town
+   * @param {() => import('../sim.ts').Town} o.makeTown 按当前时间线创建 Town
    * @param {(town) => void} [o.onWire] 新 Town 接线时的额外设置（例如投票需要管理员终审）
    * @param {number|(() => number)} [o.idlePauseSec] 无人观看多久后休眠（0 = 不休眠；函数则每次读取当前设置）
    */

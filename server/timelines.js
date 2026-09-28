@@ -2,7 +2,7 @@
 // 目录：主时间线 = <data>/；分支 = <data>/timelines/<id>/；登记表 = <data>/timelines.json
 import fs from 'node:fs';
 import path from 'node:path';
-import { SNAP_RE, readSnapshot } from './sim/persistence.js';
+import { SNAP_RE, readSnapshot } from './sim/persistence.ts';
 
 const ID_RE = /^(main|tl-\d{1,4})$/;
 const MAX_TIMELINES = 12;

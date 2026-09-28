@@ -20,7 +20,7 @@ export class WorldManager {
    * @param {object} o
    * @param {string} o.data 数据根目录
    * @param {WorldRegistry} o.registry
-   * @param {(world, root) => import('../sim.js').Town} o.makeTown 按世界登记项创建 Town（root = data/worlds/<id>/）
+   * @param {(world, root) => import('../sim.ts').Town} o.makeTown 按世界登记项创建 Town（root = data/worlds/<id>/）
    * @param {(world, town) => void} [o.onWire] 新 Town 接线时的额外设置（例如决策的终审人）
    * @param {(world) => object|null} [o.ownerGrant] 世界创建者的 genesis 授予（磁盘上限用）
    */

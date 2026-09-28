@@ -14,7 +14,7 @@ const { paths, Budget, rotation, readJSON, saveJobs } = await import('../evoluti
 const { makeLLM } = await import('../evolution/llm.js');
 const { runJob, currentSpec } = await import('../evolution/pipeline.js');
 const { discover } = await import('../evolution/discover.js');
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 const { loadPack } = await import('../server/worlds/pack.js');
 const { migrateEvolution } = await import('../server/worlds/migrate.js');
 

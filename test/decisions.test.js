@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER', 'PLUGINS_DISABLE']) delete process.env[k];
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 const llm = await import('../server/llm.ts');
 const { opinion } = await import('../server/kernel/decisions.ts');
 

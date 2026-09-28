@@ -29,18 +29,18 @@ import { applyOp, replay, OpJournal, OPS, OpError } from './kernel/ops.ts';
 import { checkPlacement } from './kernel/placement.ts';
 import { applyMods } from './kernel/mods.ts';
 import { createEmbedder } from './embeddings.ts';
-import { clamp, rand } from './sim/util.js';
-import { Regions } from './sim/regions.js';
-import { Movement } from './sim/movement.js';
-import { Planning } from './sim/planning.js';
-import { Actions } from './sim/actions.js';
-import { Cognition } from './sim/cognition.js';
-import { Social } from './sim/social.js';
-import { Views } from './sim/views.js';
-import { Persistence } from './sim/persistence.js';
-import { Metrics } from './sim/metrics.js';
-import { Dark } from './sim/dark.js';
-import { Combat } from './sim/combat.js';
+import { clamp, rand } from './sim/util.ts';
+import { Regions } from './sim/regions.ts';
+import { Movement } from './sim/movement.ts';
+import { Planning } from './sim/planning.ts';
+import { Actions } from './sim/actions.ts';
+import { Cognition } from './sim/cognition.ts';
+import { Social } from './sim/social.ts';
+import { Views } from './sim/views.ts';
+import { Persistence } from './sim/persistence.ts';
+import { Metrics } from './sim/metrics.ts';
+import { Dark } from './sim/dark.ts';
+import { Combat } from './sim/combat.ts';
 import { get as setting } from './settings/index.ts';
 
 const MAX_STRUCTURES = 30;
@@ -678,5 +678,5 @@ for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Vie
   }
 }
 
-export { listSnapshots, restoreSnapshot } from './sim/persistence.js';
-export { llmPublic } from './sim/views.js';
+export { listSnapshots, restoreSnapshot } from './sim/persistence.ts';
+export { llmPublic } from './sim/views.ts';

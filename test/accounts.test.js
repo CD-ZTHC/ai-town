@@ -146,7 +146,7 @@ test('本地模式的内置账号：昵称跟随设置', () => {
 });
 
 // ---------- 公网模式下的接口 ----------
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 const { WorldHost } = await import('../server/worlds/host.js');
 const { createApp } = await import('../server/http/app.js');
 const { config } = await import('../server/guard.js');

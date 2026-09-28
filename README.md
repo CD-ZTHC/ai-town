@@ -248,7 +248,7 @@ curl -X POST localhost:3000/api/world/op -H 'content-type: application/json' \
 server/
   index.js     HTTP + SSE 实时推送 + REST 接口（权限、限流、休眠）
   guard.js     公网防护：配置、管理员鉴权、限流器、内容审核
-  sim.js       模拟核心：世界状态、主循环、天气、角色登场与离开、世界操作
+  sim.ts       模拟核心：世界状态、主循环、天气、角色登场与离开、世界操作
   sim/         Town 的其余职责（以 mixin 挂到 Town 上）：regions 区域与地点、movement 移动与日程执行、
                planning 规划与约定、actions 能力与行动、cognition 独白 / 反思 / 日记 / 日报、
                social 对话 / 信念 / 旅人 / 事件、views 前端视图、persistence 存档与快照、metrics AI 表现指标

@@ -7,7 +7,7 @@ import path from 'node:path';
 
 // 必须在导入 llm.js 之前清掉 LLM 配置，保证测试不会发出真实请求
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING']) delete process.env[k];
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-test-'));
 const tick = () => new Promise((r) => setImmediate(r));

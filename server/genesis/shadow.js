@@ -7,7 +7,7 @@ const [packDir, workDir] = process.argv.slice(2);
 const out = (x) => { process.stdout.write(`${JSON.stringify(x)}\n`); process.exit(0); };
 try {
   const { loadPack } = await import('../worlds/pack.js');
-  const { Town } = await import('../sim.js');
+  const { Town } = await import('../sim.ts');
   const pack = loadPack(packDir);
   const town = new Town({ dataDir: workDir, worldId: 'shadow', pack, instantTalk: true, pacing: false, evolution: { dir: path.join(workDir, 'evolution'), pluginsDir: path.join(workDir, 'plugins') } });
   const residents = town.agents.filter((a) => a.kind !== 'creature');

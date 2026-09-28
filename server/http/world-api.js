@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
-import { llmPublic, listSnapshots, restoreSnapshot } from '../sim.js';
+import { llmPublic, listSnapshots, restoreSnapshot } from '../sim.ts';
 import { ADMIN_OPS } from '../worldai/proposals.js';
 import { registry, forkTimeline, setActive } from '../timelines.js';
 import * as llm from '../llm.ts';

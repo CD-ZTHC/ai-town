@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'LLM_PROVIDER']) delete process.env[k];
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-metrics-'));
 const tick = () => new Promise((r) => setImmediate(r));

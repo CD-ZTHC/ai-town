@@ -2,7 +2,7 @@
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
 import * as llm from '../llm.ts';
 import { addMemory, fmtTime } from '../memory.ts';
-import { rand, clampStr, pairKey, GUARD } from './util.js';
+import { rand, clampStr, pairKey, GUARD } from './util.ts';
 import { encodeRefs } from '../accounts/refs.js';
 
 export class Social {

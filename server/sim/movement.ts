@@ -2,7 +2,7 @@
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
 import { findPath } from '../world.ts';
 import { addMemory } from '../memory.ts';
-import { clamp, rand } from './util.js';
+import { clamp, rand } from './util.ts';
 
 export class Movement {
   desired(a) {

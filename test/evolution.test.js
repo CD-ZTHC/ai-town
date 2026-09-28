@@ -14,7 +14,7 @@ const { makeLLM } = await import('../evolution/llm.js');
 const { runJob } = await import('../evolution/pipeline.js');
 const { discover } = await import('../evolution/discover.js');
 const { hashDir } = await import('../plugin-host/hash.js');
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'evolved');
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));

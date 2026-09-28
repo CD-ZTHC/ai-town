@@ -3,7 +3,7 @@
 import * as llm from '../llm.ts';
 import { addMemory, retrieve, fmtTime, fmtStamp, condenseCandidate, replaceWithSummary, ruleSummary } from '../memory.ts';
 import { useAbility } from '../kernel/abilities.ts';
-import { clampStr } from './util.js';
+import { clampStr } from './util.ts';
 import { renderRefs } from '../accounts/refs.js';
 
 const CONDENSE_AT = 300; // 记忆超过这么多条时，每晚整理一天的琐事

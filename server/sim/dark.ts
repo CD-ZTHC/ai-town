@@ -7,7 +7,7 @@ import { testExpr, hasPosture } from '../kernel/rules.ts';
 import { findAbility } from '../kernel/abilities.ts';
 import { lethal } from '../kernel/ratings.ts';
 import { freshDark } from '../story/threats.js';
-import { clamp } from './util.js';
+import { clamp } from './util.ts';
 
 export const DEATH_NAMED_DEFAULT = 2;
 export const DEATH_DAYS_DEFAULT = 3;

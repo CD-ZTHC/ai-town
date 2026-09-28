@@ -38,7 +38,7 @@ export function evolveConfig(env = settingsEnv()) {
 
 export class EvolvedManager {
   /**
-   * @param {import('../server/sim.js').Town} town
+   * @param {import('../server/sim.ts').Town} town
    * @param {object} opts dir：data/evolution；pluginsDir：plugins/evolved；force：[{ key, dir }] 不经裁决直接加载（影子试运行用）
    */
   constructor(town, opts = {}) {

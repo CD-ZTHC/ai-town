@@ -7,7 +7,7 @@ import { get as setting } from '../server/settings/index.ts';
 
 export class PluginHost {
   /**
-   * @param {import('../server/sim.js').Town} town
+   * @param {import('../server/sim.ts').Town} town
    * @param {{ disable?: string[] }} [opts] disable：不加载的内置插件（测试或排查用，也可用环境变量 PLUGINS_DISABLE=a,b）
    */
   constructor(town, opts = {}) {

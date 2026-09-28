@@ -8,7 +8,7 @@ import path from 'node:path';
 // 不受开发机 .env 的影响
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 const { WorldHost } = await import('../server/worlds/host.js');
 const { createApp } = await import('../server/http/app.js');
 

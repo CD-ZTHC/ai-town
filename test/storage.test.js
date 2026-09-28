@@ -7,7 +7,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'LLM_PROVIDER']) delete process.env[k];
-const { Town, listSnapshots, restoreSnapshot } = await import('../server/sim.js');
+const { Town, listSnapshots, restoreSnapshot } = await import('../server/sim.ts');
 const { forkTimeline, timelineDir } = await import('../server/timelines.js');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-storage-'));

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import v8 from 'node:v8';
 import { serve } from '@hono/node-server';
 import * as settings from './settings/index.ts';
-import { Town, llmPublic } from './sim.js';
+import { Town, llmPublic } from './sim.ts';
 import { activeDir } from './timelines.js';
 import * as llm from './llm.ts';
 import { config } from './guard.js';

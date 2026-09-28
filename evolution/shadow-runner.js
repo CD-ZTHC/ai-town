@@ -7,7 +7,7 @@ const job = JSON.parse(process.argv[2]);
 let warnings = 0;
 console.warn = () => { warnings++; };
 console.log = () => {};
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 const { loadPack } = await import('../server/worlds/pack.js');
 
 fs.mkdirSync(job.workDir, { recursive: true });

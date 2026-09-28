@@ -8,7 +8,7 @@ import path from 'node:path';
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const settings = await import('../server/settings/index.ts');
-const { Town } = await import('../server/sim.js');
+const { Town } = await import('../server/sim.ts');
 const { openDb } = await import('../server/accounts/db.js');
 const { Accounts } = await import('../server/accounts/index.js');
 const { WorldRegistry } = await import('../server/worlds/registry.js');
