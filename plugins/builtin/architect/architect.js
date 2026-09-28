@@ -2,8 +2,8 @@
 // 提示词里带着自动生成的能力清单；补丁校验失败时带着错误修一轮；清单里没有的能力记为「能力缺口」（P5 使用）。
 import * as llm from '../../../server/llm.ts';
 import { similarity } from '../../../server/memory.ts';
-import { ARCHITECT_OPS } from '../../../server/worldai/proposals.js';
-import { manifestText } from '../../../server/worldai/manifest.js';
+import { ARCHITECT_OPS } from '../../../server/worldai/proposals.ts';
+import { manifestText } from '../../../server/worldai/manifest.ts';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 

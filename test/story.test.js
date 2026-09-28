@@ -8,8 +8,8 @@ import path from 'node:path';
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER']) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
 const llm = await import('../server/llm.ts');
-const { computeTension } = await import('../server/story/tension.js');
-const { checkBeat } = await import('../server/story/beats.js');
+const { computeTension } = await import('../server/story/tension.ts');
+const { checkBeat } = await import('../server/story/beats.ts');
 const { keywordCheck } = await import('../server/guard.js');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-story-'));

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defaultSpec } from '../server/kernel/spec.ts';
 import '../plugin-host/builtin.js';
-import { manifestMarkdown } from '../server/worldai/manifest.js';
+import { manifestMarkdown } from '../server/worldai/manifest.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(ROOT, 'docs', 'capabilities.md');

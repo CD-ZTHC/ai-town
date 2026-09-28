@@ -7,7 +7,7 @@ import * as llm from '../llm.ts';
 import { fmtStamp } from '../memory.ts';
 import { findAbility } from '../kernel/abilities.ts';
 import { OpJournal } from '../kernel/ops.ts';
-import { freshDark } from '../story/threats.js';
+import { freshDark } from '../story/threats.ts';
 import type { Town } from '../sim.ts';
 import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
 import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';

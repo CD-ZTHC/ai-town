@@ -2,7 +2,7 @@
 // 普通动作导演可以直接使用；标记为 privileged 的动作（开裂隙、刷怪、角色登场/离场、投票……）只允许剧情弧模板使用。
 import { addMemory } from '../memory.ts';
 import { checkEffects, runEffects, posOf, VFX } from '../kernel/effects.ts';
-import { advanceThread } from './threads.js';
+import { advanceThread } from './threads.ts';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const inRange = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;

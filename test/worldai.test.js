@@ -11,7 +11,7 @@ const llm = await import('../server/llm.ts');
 const { buildWorld } = await import('../server/world.ts');
 const { defaultSpec } = await import('../server/kernel/spec.ts');
 const { findPlacement, checkPlacement } = await import('../server/kernel/placement.ts');
-const { ruleCheck } = await import('../server/worldai/canon.js');
+const { ruleCheck } = await import('../server/worldai/canon.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-p4-'));
 const tick = () => new Promise((r) => setImmediate(r));
@@ -250,7 +250,7 @@ test('点子的来源与配额：导演节拍、居民聊天各自有每日上�
 
 test('导演的 propose 节拍会把意图交给架构师', async () => {
   const town = newTown();
-  const { runBeats } = await import('../server/story/beats.js');
+  const { runBeats } = await import('../server/story/beats.ts');
   const r = runBeats(town, [{ kind: 'propose', intent: '为双月节准备一种新的灯' }], { ctx: { source: 'director' } });
   assert.equal(r.done, 1);
   assert.equal(town.architect.queue.at(-1).origin, 'director');

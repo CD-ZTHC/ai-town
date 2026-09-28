@@ -1,7 +1,7 @@
 // 剧情弧引擎（设计文档 5.2）：按模板推进 伏笔 → 爆发 → 发展 → 高潮 → 余波。
 // 节拍时间相对开弧日计算；错过的节拍（例如服务器休眠）会按顺序补上。
 import { parseHM } from '../memory.ts';
-import { runBeats } from './beats.js';
+import { runBeats } from './beats.ts';
 
 export class ArcEngine {
   constructor(town) { this.town = town; }

@@ -2,7 +2,7 @@
 // 换模型时拿来对比；计数按游戏日存进存档（最多 30 天），JSON 统计来自进程内的 llm.stats。
 import * as llm from '../llm.ts';
 import { similarity } from '../memory.ts';
-import { threadList } from '../story/threads.js';
+import { threadList } from '../story/threads.ts';
 import type { Town } from '../sim.ts';
 import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
 import type { Act, ActArgs, Convo, Fight, MetricsDay, SaveData, ThreatInstance } from '../types/town.ts';

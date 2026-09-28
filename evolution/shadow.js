@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { ROOT } from './common.js';
-import { activeDir } from '../server/timelines.js';
+import { activeDir } from '../server/timelines.ts';
 import { get as setting } from '../server/settings/index.ts';
 import { withTrialSlot } from '../server/trial-lock.js';
 

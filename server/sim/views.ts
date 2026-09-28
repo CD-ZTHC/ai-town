@@ -6,7 +6,7 @@ import * as llm from '../llm.ts';
 import { fmtTime, fmtStamp } from '../memory.ts';
 import { publicSpec } from '../kernel/spec.ts';
 import { findAbility } from '../kernel/abilities.ts';
-import { threadList } from '../story/threads.js';
+import { threadList } from '../story/threads.ts';
 import { renderRefs, ref } from '../accounts/refs.js';
 import type { Town } from '../sim.ts';
 import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';

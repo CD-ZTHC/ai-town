@@ -5,7 +5,7 @@
 import * as llm from '../llm.ts';
 import { addMemory } from '../memory.ts';
 import { keywordCheck } from '../guard.js';
-import { ruleCheck } from '../worldai/canon.js';
+import { ruleCheck } from '../worldai/canon.ts';
 import { normalizeLook } from '../genesis/assemble.js';
 import { get as setting } from '../settings/index.ts';
 import { MAX_PERSONAS } from '../kernel/spec.ts';

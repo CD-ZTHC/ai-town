@@ -5,7 +5,7 @@ import fs from 'node:fs';
 
 const { defaultSpec } = await import('../server/kernel/spec.ts');
 await import('../plugin-host/builtin.js');
-const { manifestMarkdown } = await import('../server/worldai/manifest.js');
+const { manifestMarkdown } = await import('../server/worldai/manifest.ts');
 
 test('docs/capabilities.md 与代码一致（不一致时运行 mise run manifest）', () => {
   const file = fs.readFileSync(new URL('../docs/capabilities.md', import.meta.url), 'utf8');

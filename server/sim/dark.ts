@@ -6,7 +6,7 @@ import { runEffects, posOf } from '../kernel/effects.ts';
 import { testExpr, hasPosture } from '../kernel/rules.ts';
 import { findAbility } from '../kernel/abilities.ts';
 import { lethal } from '../kernel/ratings.ts';
-import { freshDark } from '../story/threats.js';
+import { freshDark } from '../story/threats.ts';
 import { clamp } from './util.ts';
 import type { Town } from '../sim.ts';
 import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';

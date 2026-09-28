@@ -10,7 +10,7 @@ const { Town } = await import('../server/sim.ts');
 const llm = await import('../server/llm.ts');
 const { exportMod, applyMods, readMod } = await import('../server/kernel/mods.ts');
 const { defaultSpec } = await import('../server/kernel/spec.ts');
-const { registry, forkTimeline, setActive, activeDir, timelineDir } = await import('../server/timelines.js');
+const { registry, forkTimeline, setActive, activeDir, timelineDir } = await import('../server/timelines.ts');
 const { buildMoonRealm, T } = await import('../server/world.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-p6-'));
@@ -226,7 +226,7 @@ test('暗月界开放后，没有模型的两天里也有居民去那边逛，�
 });
 
 test('区域：导演不能开区域，剧情弧可以；存档保留开放状态', async () => {
-  const { checkBeat } = await import('../server/story/beats.js');
+  const { checkBeat } = await import('../server/story/beats.ts');
   const dir = tmp();
   const town = new Town({ dataDir: dir });
   assert.match(checkBeat(town, { kind: 'region', id: 'moonrealm', open: true }) || '', /./);

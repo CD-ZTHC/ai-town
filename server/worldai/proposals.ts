@@ -4,7 +4,7 @@
 import { OPS, applyOp, OpError } from '../kernel/ops.ts';
 import { findPlacement, checkPlacement, solvePath, solveBridge, solveRect, checkEdit, outdoorSize, choosePassages } from '../kernel/placement.ts';
 import { addMemory, fmtTime } from '../memory.ts';
-import { review } from './canon.js';
+import { review } from './canon.ts';
 import { impactOf } from '../kernel/impact.ts';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);

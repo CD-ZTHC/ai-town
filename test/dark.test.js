@@ -13,7 +13,7 @@ const { Town } = await import('../server/sim.ts');
 const { loadPack, packSpec } = await import('../server/worlds/pack.js');
 const { validateSpec } = await import('../server/kernel/spec.ts');
 const { useAbility } = await import('../server/kernel/abilities.ts');
-const { checkBeat, runBeats, ALL_KINDS } = await import('../server/story/beats.js');
+const { checkBeat, runBeats, ALL_KINDS } = await import('../server/story/beats.ts');
 const { keywordCheck, targetsResident } = await import('../server/guard.js');
 const { ratingAtLeast, lethal } = await import('../server/kernel/ratings.ts');
 

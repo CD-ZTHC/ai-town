@@ -2,7 +2,7 @@
 // 流程：安排（给参与者写约定）→ 等人到齐 → 开场（逐句播放）→ 收尾（记忆、好感、分工、抉择）
 import * as llm from '../llm.ts';
 import { addMemory, fmtTime } from '../memory.ts';
-import { resolveWho } from './beats.js';
+import { resolveWho } from './beats.ts';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));

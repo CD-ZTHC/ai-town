@@ -258,11 +258,11 @@ server/
   kernel/effects.ts 效果原语：能力、规则、剧情共用的「动词表」
   kernel/rules.ts 规则引擎（定时 / 每日 / 天气 / 进入地点触发）
   kernel/abilities.ts 能力：校验、使用、研究
-  story/director.js 叙事导演；story/tension.js 张力模型；story/threads.js 剧情线程
-  story/beats.js  剧情节拍（导演与剧情弧共用的剧情动作）；story/scene.js 多人场景；story/votes.js 投票
+  story/director.ts 叙事导演；story/tension.ts 张力模型；story/threads.ts 剧情线程
+  story/beats.ts  剧情节拍（导演与剧情弧共用的剧情动作）；story/scene.ts 多人场景；story/votes.ts 投票
   kernel/placement.ts 新建筑的语义化选址与连通性校验
-  worldai/manifest.js 能力清单（自动生成）
-  kernel/mods.ts  Mod 导出与加载；timelines.js 时间线分支；avatars.js 访客化身
+  worldai/manifest.ts 能力清单（自动生成）
+  kernel/mods.ts  Mod 导出与加载；timelines.ts 时间线分支；avatars.ts 访客化身
   main.js         守护进程：拉起服务、请求重启（退出码 75）、设置导致启动失败时回退
   settings/       设置中心：schema.ts 声明表（唯一出处）、index.ts 三层来源、版本与回退
   http/           Hono 应用：app.js 路由与中间件、identity.js 身份、world-api.js 世界接口、auth-api.js 账号、
@@ -274,8 +274,8 @@ server/
   scheduler/      统一 AI 调度：classes.ts 级别表、index.ts 调度器、budget.ts 账本与分层预算、context.ts 调用归属
   genesis/        创世：source.js 原文、pipeline.js G1~G5、assemble.js 组装、jobs.js 任务、shadow.js 无头试跑
   ext/            扩展点：registry.js 注册表、index.js 加载器、go-to.js（RFC 0001）
-  worldai/architect.js 世界架构师；worldai/proposals.js 提案与审批；worldai/canon.js 设定考据官
-  story/arcs.js   剧情弧引擎；story/creatures.js 异界生物
+  worldai/architect.js 世界架构师；worldai/proposals.ts 提案与审批；worldai/canon.ts 设定考据官
+  story/arcs.ts   剧情弧引擎；story/creatures.ts 异界生物
   llm.ts       LLM 客户端：按通道（一把钥匙一条）排队、自适应限流、重试、预算与统计、JSON 提取、回复录制
   llm-providers.ts 模型服务接口与默认的 OpenAI 兼容实现；llm-aisdk.ts Vercel AI SDK 适配器（anthropic / google / aisdk）
   world-llm.ts 按世界配置模型服务：世界 → 通道的解析、暂停与恢复、测试连接；secrets.ts 凭据加密；net/safe-fetch.ts 防 SSRF 的请求

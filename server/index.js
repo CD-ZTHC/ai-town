@@ -7,7 +7,7 @@ import v8 from 'node:v8';
 import { serve } from '@hono/node-server';
 import * as settings from './settings/index.ts';
 import { Town, llmPublic } from './sim.ts';
-import { activeDir } from './timelines.js';
+import { activeDir } from './timelines.ts';
 import * as llm from './llm.ts';
 import { config } from './guard.js';
 import { Accounts, installRefs } from './accounts/index.js';

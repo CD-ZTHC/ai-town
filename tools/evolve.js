@@ -157,7 +157,7 @@ export async function evolve(opts = {}) {
   const { defaultSpec } = await import('../server/kernel/spec.ts');
   const { replay } = await import('../server/kernel/ops.ts');
   await import('../plugin-host/builtin.js');
-  const { manifestText, effectsText } = await import('../server/worldai/manifest.js');
+  const { manifestText, effectsText } = await import('../server/worldai/manifest.ts');
   const spec = replay(defaultSpec(), save.specOps || []).spec;
   const context = { manifest: manifestText(spec), effects: effectsText() };
   const llm = await import('../server/llm.ts');

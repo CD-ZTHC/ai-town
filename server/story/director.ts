@@ -2,9 +2,9 @@
 // 调用强模型决定下一步（按兵不动 / 埋伏笔 / 添麻烦 / 升级 / 喘息 / 收束 / 开启剧情弧），输出的剧情节拍经校验后执行。
 import * as llm from '../llm.ts';
 import { fmtTime } from '../memory.ts';
-import { computeTension, targetTension, BOREDOM_HOURS } from './tension.js';
-import { runBeats, DIRECTOR_KINDS, ALL_KINDS } from './beats.js';
-import { threadsBlock } from './threads.js';
+import { computeTension, targetTension, BOREDOM_HOURS } from './tension.ts';
+import { runBeats, DIRECTOR_KINDS, ALL_KINDS } from './beats.ts';
+import { threadsBlock } from './threads.ts';
 import { lethal } from '../kernel/ratings.ts';
 
 const MIN_GAP = 120; // 两次决策至少间隔 2 游戏小时（玩家事件除外）

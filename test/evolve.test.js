@@ -10,7 +10,7 @@ const { Town } = await import('../server/sim.ts');
 const llm = await import('../server/llm.ts');
 const { registerEffect, registerExprFn, extensions } = await import('../plugin-host/registry.js');
 const { EFFECTS, checkEffects } = await import('../server/kernel/effects.ts');
-const { manifestText, manifestMarkdown } = await import('../server/worldai/manifest.js');
+const { manifestText, manifestMarkdown } = await import('../server/worldai/manifest.ts');
 const { defaultSpec } = await import('../server/kernel/spec.ts');
 const { evolve, nextNumber } = await import('../tools/evolve.js');
 
