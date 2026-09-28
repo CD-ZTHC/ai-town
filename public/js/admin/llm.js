@@ -1,5 +1,7 @@
 // 管理面板 · 调度（多世界设计 §7.6）：各级别队列长度与等待时间、各世界用量排行与降级档位、正在进行的调用；可以对单个世界「暂停 AI」
+// 自带模型服务的通道（每把钥匙一条）与站点凭据（只给官方世界用，world-llm 设计 §9.3）
 import { api, esc, $, $$, toast, fmtNum } from '../site/api.js';
+import { credentialsPanel } from '../site/ai-settings.js';
 
 const sec = (ms) => (ms >= 60_000 ? `${Math.round(ms / 60_000)} 分` : `${Math.round(ms / 1000)} 秒`);
 
@@ -21,7 +23,13 @@ async function render(el, ctx) {
         <td>${r.id !== '-' ? `<button class="small" data-ai="${esc(r.id)}" data-p="${r.level === 'paused' ? '0' : '1'}">${r.level === 'paused' ? '恢复 AI' : '暂停 AI'}</button>` : ''}</td></tr>`).join('')}</table>` : '<div class="empty">今天还没有调用</div>'}</div>
     <div class="card" style="margin-bottom:14px"><h2>创世任务</h2>${(d.genesis || []).length ? `<table><tr><th>世界</th><th>创世者</th><th>状态</th><th>阶段</th><th>用量</th><th>时间</th></tr>
       ${d.genesis.map((j) => `<tr><td>${esc(j.worldId)}</td><td>${esc(j.owner)}</td><td><span class="pill ${j.status === 'done' ? 'good' : j.status === 'failed' ? 'bad' : 'warn'}">${esc(j.status)}</span>${j.error ? `<div class="small bad">${esc(j.error)}</div>` : ''}</td><td>${esc(j.stage)}</td><td>${fmtNum(j.tokens)}</td><td class="small">${esc(new Date(j.createdAt).toLocaleString())}</td></tr>`).join('')}</table>` : '<div class="muted small">没有</div>'}</div>
+    <div class="card" style="margin-bottom:14px"><h2>自带模型服务的通道</h2>${(d.lanes || []).length ? `<table><tr><th>模型服务</th><th>所有者</th><th>并发</th><th>排队</th><th>调用 / 失败</th><th>今日 token</th><th>世界</th><th>最近错误</th></tr>
+      ${d.lanes.map((l) => `<tr><td>${esc(l.name)}<div class="muted small">${esc(l.baseUrl || '官方地址')}</div>${l.credentialStatus === 'failing' ? '<span class="pill bad">出错</span>' : ''}</td><td>${esc(l.ownerName)}</td>
+        <td>${l.inflight} / ${l.limit}${l.cooling ? `<div class="small warn">冷却 ${sec(l.cooling)}</div>` : ''}</td><td>${l.queued}</td><td>${l.calls} / <span class="${l.errors ? 'bad' : ''}">${l.errors}</span></td><td>${fmtNum(l.tokens)}</td>
+        <td class="small">${l.worlds.map((w) => `${esc(w.title)}${w.halted ? ' <span class="bad">⛔</span>' : ''} · ${fmtNum(w.usage)}`).join('<br>') || '—'}</td><td class="small bad" style="max-width:240px">${esc(l.lastError || '')}</td></tr>`).join('')}</table>` : '<div class="muted small">没有世界在用自己的模型服务</div>'}</div>
+    <div id="site-creds" style="margin-bottom:14px"></div>
     <div class="card"><h2>正在进行</h2>${d.active.map((a) => `<div class="small">${esc(a.label)} · ${esc(a.agent || '')} · ${sec(a.ms)}</div>`).join('') || '<div class="muted small">没有</div>'}</div>`;
+  credentialsPanel($('#site-creds', el), { base: 'api/admin/llm-credentials', title: '🔑 站点凭据（只给官方世界用）' });
   for (const b of $$('[data-ai]', el)) {
     b.onclick = async () => { await api(`api/admin/worlds/${b.dataset.ai}/ai`, { paused: b.dataset.p === '1' }); toast(b.dataset.p === '1' ? '已暂停这个世界的 AI' : '已恢复'); ctx.reload(); };
   }

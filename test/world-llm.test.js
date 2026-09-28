@@ -408,3 +408,20 @@ test('接口：测试连接有频率限制', async () => {
   for (let i = 0; i < 3; i++) assert.equal((await call('u1', 'POST', `/api/me/llm-credentials/${c.id}/test`)).status, 200);
   assert.equal((await call('u1', 'POST', `/api/me/llm-credentials/${c.id}/test`)).status, 429);
 });
+
+test('官方世界：管理员改的标题不被世界包覆盖；恢复后又用世界包的值；只有管理员能改官方世界', async () => {
+  _resetQuota();
+  const call = app();
+  registry.ensureOfficial('off-pack', { title: '世界包标题', summary: '世界包简介', packHash: 'h1', settings: {} });
+  assert.equal((await call('u1', 'PATCH', '/api/worlds/off-pack/settings', { title: '想改' })).status, 403);
+  const r = await call('admin', 'PATCH', '/api/worlds/off-pack/settings', { title: '管理员改的标题' });
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(registry.get('off-pack').settings.overrides, { title: true });
+  registry.ensureOfficial('off-pack', { title: '世界包标题', summary: '世界包新简介', packHash: 'h2', settings: {} }); // 模拟重启
+  assert.equal(registry.get('off-pack').title, '管理员改的标题');
+  assert.equal(registry.get('off-pack').summary, '世界包新简介', '没改过的字段照常跟随世界包');
+  await call('admin', 'PATCH', '/api/worlds/off-pack/settings', { resetOverrides: ['title'] });
+  registry.ensureOfficial('off-pack', { title: '世界包标题', summary: 'x', packHash: 'h3', settings: {} });
+  assert.equal(registry.get('off-pack').title, '世界包标题');
+  assert.equal((await call('admin', 'PATCH', '/api/worlds/off-pack/settings', { rating: 'nope' })).status, 400);
+});

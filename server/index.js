@@ -145,7 +145,8 @@ function myWorlds(user) {
     const grant = accounts.grant(user.id, 'genesis');
     const limit = budget.worldLimit(w);
     return {
-      id: w.id, title: w.title, status: w.status, statusReason: w.statusReason, evolution: w.evolution, migration: w.settings?.migration !== false, running: Boolean(h), viewers: h ? h.clients.size : 0,
+      id: w.id, title: w.title, summary: w.summary, rating: w.rating, settings: w.settings, official: w.official,
+      status: w.status, statusReason: w.statusReason, evolution: w.evolution, migration: w.settings?.migration !== false, running: Boolean(h), viewers: h ? h.clients.size : 0,
       usage: ledger.world(w.id), dailyLimit: Number.isFinite(limit) ? limit : null, level: budget.level(w.id), levelName: LEVEL_NAMES[budget.level(w.id)],
       ai: aiSummary(w), ownUsage: ledger.own(w.id),
       diskBytes: w.diskBytes, diskLimitMB: w.quota?.diskMB ?? grant?.quota?.diskMB ?? settings.get('WORLD_DISK_MB'),

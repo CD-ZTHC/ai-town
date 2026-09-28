@@ -30,7 +30,7 @@ async function list() {
       <div class="row"><h3 style="margin:0">${esc(w.title)}</h3>${w.official ? '<span class="pill good">官方</span>' : ''}<span class="pill">${RATING[w.rating] || esc(w.rating)}</span></div>
       ${w.sourceTitle ? `<div class="small muted">改编自《${esc(w.sourceTitle)}》</div>` : ''}
       <p class="small" style="color:var(--text)">${esc(w.summary).slice(0, 120)}${w.summary.length > 120 ? '…' : ''}</p>
-      <div class="small muted">${w.running ? `🟢 ${w.viewers} 人在看 · 第 ${w.day} 天` : '💤 休眠中，打开即唤醒'}${w.owner ? ` · 创世者 ${esc(w.owner)}` : ''}</div>
+      <div class="small muted">${w.halted ? '<span class="pill bad">暂停中</span> ' : ''}${w.running ? `🟢 ${w.viewers} 人在看 · 第 ${w.day} 天` : '💤 休眠中，打开即唤醒'}${w.owner ? ` · 创世者 ${esc(w.owner)}` : ''}</div>
     </a>`).join('') || '<div class="empty">没有找到世界</div>';
 }
 

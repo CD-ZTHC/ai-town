@@ -104,7 +104,7 @@ export function adminApi(deps) {
     const list = reg().list({ status }).map((w) => {
       const grant = w.ownerId && accounts ? accounts.grant(w.ownerId, 'genesis') : null;
       const limitMB = w.official ? null : w.quota?.diskMB ?? grant?.quota?.diskMB ?? settings.get('WORLD_DISK_MB');
-      return { ...w, owner: w.ownerId ? accounts?.get(w.ownerId)?.nickname || w.ownerId : null, runtime: running.get(w.id) || null, diskLimitMB: limitMB };
+      return { ...w, owner: w.ownerId ? accounts?.get(w.ownerId)?.nickname || w.ownerId : null, runtime: running.get(w.id) || null, diskLimitMB: limitMB, ai: deps.aiSummary?.(w) || null };
     }).sort((a, b) => b.diskBytes - a.diskBytes);
     return c.json({ list, running: running.size, max: settings.get('MAX_ACTIVE_WORLDS') });
   });
@@ -137,6 +137,21 @@ export function adminApi(deps) {
     reg().db.prepare("UPDATE reports SET handled_at = ?, handled_by = ?, resolution = 'restored' WHERE world_id = ? AND handled_at IS NULL").run(Date.now(), actor(c), w.id);
     deps.audit?.({ actor: actor(c), action: 'world.restore', target: w.id });
     return c.json({ ok: true });
+  });
+
+  // 官方世界的发布状态（按世界配置模型服务设计 §9.1）：在公开 / 不公开（有链接才能看）/ 暂停之间切换。
+  // 例如 dark 分级的官方世界第一次登记是不公开的，由管理员决定是否公开
+  api.post('/worlds/:id/status', (c) => {
+    const w = reg().get(c.req.param('id'));
+    if (!w) throw new HttpError(404, '世界不存在');
+    if (!w.official) throw new HttpError(409, '用户世界的状态由创建者管理（下架与恢复用专门的操作）');
+    const to = String(c.get('body').status || '');
+    if (!['public', 'unlisted', 'paused'].includes(to)) throw new HttpError(400, '只能切换到公开、不公开或暂停');
+    // 状态机里 unlisted 不能直接到 paused、paused 不能直接到 unlisted：经过 public 中转
+    if (w.status !== to && !['public', to].includes(w.status)) reg().setStatus(w.id, 'public', '');
+    reg().setStatus(w.id, to, to === 'paused' ? '管理员暂停了这个世界' : '');
+    deps.audit?.({ actor: actor(c), action: 'world.status', target: w.id, detail: { from: w.status, to } });
+    return c.json({ ok: true, world: reg().get(w.id) });
   });
 
   // ---------- 举报 ----------
