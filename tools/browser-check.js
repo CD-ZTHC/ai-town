@@ -269,6 +269,36 @@ await step('23-admin-evolution', async () => {
   await send('Page.navigate', { url: `${base}/admin/#evolution` });
   await waitFor(() => evaluate(`document.querySelector('#page')?.textContent.includes('进化引擎')`), 10000, '管理面板 · 进化');
 });
+// 按世界配置模型服务：站点凭据、官方世界改用它、调度页的通道表、世界的 AI 设置与世界设置对话框
+await step('25-admin-site-credentials', async () => {
+  const post = (url, body, method = 'POST') => fetch(`${base}/${url}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+  const c = await post('api/admin/llm-credentials', { name: '巡检用网关', provider: 'openai', baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'sk-browser-check-0000' });
+  const r = await post('api/worlds/yunxi/ai', { source: 'own', credential: c.credential.id, models: { default: 'check-model' } }, 'PUT');
+  if (!r.ok) throw new Error(`绑定失败：${JSON.stringify(r)}`);
+  await send('Page.navigate', { url: `${base}/admin/#llm` });
+  await waitFor(() => evaluate(`document.querySelector('#site-creds')?.textContent.includes('巡检用网关')`), 10000, '站点凭据');
+  if (await evaluate(`document.body.innerHTML.includes('sk-browser-check-0000')`)) throw new Error('页面上出现了密钥原文');
+  await evaluate(`document.querySelector('#site-creds').scrollIntoView(), true`);
+});
+await step('26-admin-ai-dialog', async () => {
+  await send('Page.navigate', { url: `${base}/admin/#worlds` });
+  await waitFor(() => evaluate(`Boolean(document.querySelector('[data-ai="yunxi"]'))`), 10000, '世界列表');
+  await evaluate(`document.querySelector('[data-ai="yunxi"]').click(), true`);
+  await waitFor(() => evaluate(`document.querySelector('.dialog [name="m-default"]')?.value === 'check-model'`), 10000, 'AI 设置对话框');
+});
+await step('27-admin-world-settings', async () => {
+  await send('Page.navigate', { url: `${base}/admin/#worlds` });
+  await evaluate(`location.reload(), true`); // 同一个地址只改 hash 不会刷新：先关掉上一步的对话框
+  await sleep(500);
+  await waitFor(() => evaluate(`Boolean(document.querySelector('[data-settings="night-watch"]'))`), 10000, '世界列表');
+  await evaluate(`document.querySelector('[data-settings="night-watch"]').click(), true`);
+  await waitFor(() => evaluate(`Boolean(document.querySelector('.dialog [name="rating"]'))`), 10000, '世界设置对话框');
+});
+await step('28-genesis-ai', async () => {
+  await send('Page.navigate', { url: `${base}/genesis.html` });
+  await waitFor(() => evaluate(`Boolean(document.querySelector('#ai-pick [name="source"]'))`), 10000, '创世向导 · 选择模型');
+  await evaluate(`document.querySelector('#ai-pick').scrollIntoView({ block: 'center' }), true`);
+});
 // 公网模式：游客点互动入口 → 弹出登录框 → 注册 → 自动继续刚才的操作（现身）
 const pubPort = port + 100;
 const pub = spawn(process.execPath, ['server/index.js'], { env: { ...env, PORT: String(pubPort), PUBLIC_MODE: '1', DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'town-bc-pub-')) }, stdio: ['ignore', 'pipe', 'pipe'] });

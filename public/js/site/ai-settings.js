@@ -27,7 +27,9 @@ export async function credentialsPanel(el, { base, title = '🔑 我的模型服
   el.innerHTML = `<div class="card stack">
     <div class="row"><h2 style="margin:0">${title}</h2><span class="grow" style="flex:1"></span>
       ${r.enabled ? `<button class="small primary" id="cred-add" ${full ? 'disabled' : ''}>＋ 添加</button>` : ''}</div>
-    <p class="muted small" style="margin:0">世界可以使用你自己的模型服务，不占用站点额度；世界里的所有模型调用（包括旅人和居民的对话）都会用它，只有内容审核仍由站点完成。
+    <p class="muted small" style="margin:0">${r.max == null
+      ? '官方世界可以改用这里的模型服务（在「世界」页点世界的「AI」按钮选择）；世界里的所有模型调用都会用它，只有内容审核仍用站点设置里的模型。'
+      : '世界可以使用你自己的模型服务，不占用站点额度；世界里的所有模型调用（包括旅人和居民的对话）都会用它，只有内容审核仍由站点完成。'}
       密钥加密保存，保存后谁都看不到原文（包括管理员），页面上只显示末 4 位。${r.max != null ? `最多 ${r.max} 份。` : ''}</p>
     ${r.enabled ? '' : '<div class="banner">站点暂时没有开放自带模型服务。</div>'}
     ${r.list.length ? `<table><tr><th>名称</th><th>类型与地址</th><th>密钥</th><th>状态</th><th>使用它的世界</th><th></th></tr>

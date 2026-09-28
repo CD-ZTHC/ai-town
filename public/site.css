@@ -87,6 +87,14 @@ h3 { font-size: 15px; }
 .dialog h2 { margin-bottom: 14px; }
 .dialog label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 13px; }
 .dialog input { width: 100%; }
+.dialog label.row { display: flex; color: var(--text); }
+.dialog input[type='radio'], .dialog input[type='checkbox'] { width: 18px; flex: none; margin: 0; }
+.dialog details { margin-top: 8px; }
+/* 世界的 AI 设置表单（对话框与创世向导共用） */
+.ai-form label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 13px; }
+.ai-form label.row { display: flex; margin: 0; color: var(--text); font-size: 14px; }
+.ai-form input[type='radio'], .ai-form input[type='checkbox'] { width: 18px !important; flex: none; margin: 0; }
+.ai-form input:not([type='radio']):not([type='checkbox']), .ai-form select { width: 100%; max-width: 420px; }
 .dialog .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
 #toasts { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; }
 #toasts .toast { background: var(--glass-2); border: 1px solid var(--line); border-radius: 12px; padding: 8px 16px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35); }
