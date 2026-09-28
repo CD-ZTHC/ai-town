@@ -34,6 +34,8 @@ export const SETTINGS = {
   ALLOW_INTERACTION: { group: 'site', ...bool(), default: true, apply: 'live', label: '允许互动', help: '关闭后所有世界变成纯观赏模式' },
   MAX_CLIENTS: { group: 'site', ...int(1, 100000), default: 200, apply: 'live', label: '同时在线页面上限' },
   MAX_CLIENTS_PER_IP: { group: 'site', ...int(1, 1000), default: 6, apply: 'live', label: '每个 IP 同时打开的页面上限' },
+  TICK_HZ: { group: 'site', ...num(1, 20), default: 4, apply: 'live', label: '画面推送频率（次/秒）', help: '每秒向每位观众推送几次世界快照。页面会在两次推送之间插值，调低省带宽与内存' },
+  SSE_MAX_BUFFER_KB: { group: 'site', ...int(32, 65536), default: 256, apply: 'live', label: '单个观众的积压上限（KB）', help: '观众网络卡住时，推送不出去的消息最多积压这么多；超过就断开这个连接，页面会自动重连并重新加载' },
   IDLE_PAUSE_SEC: { group: 'site', ...int(0, 86400), default: 90, apply: 'live', label: '无人观看多久后休眠（秒）', help: '0 = 永不休眠。休眠的世界不推进时间、不调用模型' },
   AVATAR_MAX: { group: 'site', ...int(0, 200), default: 8, apply: 'live', label: '每个世界同时现身的旅人上限' },
 

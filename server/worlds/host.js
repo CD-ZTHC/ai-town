@@ -1,4 +1,7 @@
 import { withContext } from '../scheduler/context.js';
+import { get as setting } from '../settings/index.js';
+
+const enc = new TextEncoder();
 
 // 世界托管：一个运行中的世界 = 一个 Town 实例 + 它的 SSE 观众。
 // 负责把 Town 的事件推给观众、无人观看时休眠、重置 / 回溯 / 切换时间线时换一个新的 Town。
@@ -16,7 +19,7 @@ export class WorldHost {
     this.onWire = onWire;
     this._idle = idlePauseSec;
     this.now = now;
-    this.clients = new Set(); // { send(event, data), ip }
+    this.clients = new Set(); // { push(event, bytes) | write(text), ip }：见 http/app.js 的 openStream
     this.clientsPerIp = new Map();
     this.lastViewer = now();
     this.town = null;
@@ -25,14 +28,23 @@ export class WorldHost {
 
   get idlePauseSec() { return typeof this._idle === 'function' ? this._idle() : this._idle; }
 
+  /** 推给所有观众：只序列化、编码一次，所有观众共用同一份字节 */
   broadcast(event, data) {
+    if (!this.clients.size) return;
     const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    for (const c of this.clients) c.write(msg);
+    let bytes = null;
+    for (const c of this.clients) {
+      if (c.push) c.push(event, bytes ||= enc.encode(msg));
+      else c.write(msg);
+    }
   }
 
   wire(t) {
     const b = (event) => (x) => this.broadcast(event, x);
-    t.on('tick', (s) => { if (this.clients.size) this.broadcast('tick', s); });
+    // 快照按 TICK_HZ 推送（默认每秒 4 次）；没有观众时连快照都不算
+    t.wantsSnapshot = () => this.clients.size > 0;
+    t.snapshotEvery = () => 1 / setting('TICK_HZ');
+    t.on('tick', (s) => this.broadcast('tick', s));
     t.on('log', b('log'));
     t.on('agent', (id) => this.broadcast('agent', { id }));
     t.on('newspaper', b('newspaper'));

@@ -148,36 +148,93 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
   return app;
 }
 
-/** SSE：只推送这个世界的事件 */
+/**
+ * SSE：只推送这个世界的事件。
+ * 背压（重构方案 §6.1）：流由 pull() 驱动，只有底层连接能写时才取数据。
+ *   tick   每位观众只留最新的一帧，发不出去的旧帧直接丢弃
+ *   其他   进队列；队列积压超过 SSE_MAX_BUFFER_KB 时断开这个连接（页面会自动重连并重新拿 init）
+ */
 export function openStream(c, host) {
   const ip = c.get('ip');
   let total = 0;
   for (const _ of host.clients) total++;
   if (total >= config.maxClients) throw new HttpError(503, '小镇访客太多了，请稍后再来');
   if (host.viewersFrom(ip) >= config.maxClientsPerIp) throw new HttpError(429, '同时打开的页面太多了');
-  const enc = new TextEncoder();
+  const client = sseClient(ip, () => cleanup());
   let leave = null, ka = null;
   const stream = new ReadableStream({
-    start(ctrl) {
-      const client = {
-        ip,
-        write: (s) => { try { ctrl.enqueue(enc.encode(s)); } catch { cleanup(); } },
-        close: () => { try { ctrl.close(); } catch { /* 已关闭 */ } cleanup(); },
-      };
+    start() {
       client.write('retry: 3000\n\n');
       client.write(`event: init\ndata: ${JSON.stringify(host.town.initPayload())}\n\n`);
       leave = host.join(client);
       ka = setInterval(() => client.write(': ka\n\n'), 15000);
     },
-    cancel() { cleanup(); },
-  });
+    pull: (ctrl) => client.pull(ctrl),
+    cancel() { cleanup(); client.close({ drop: true }); },
+  }, { highWaterMark: 0 });
   function cleanup() {
     clearInterval(ka);
     leave?.();
     leave = null;
   }
-  c.req.raw.signal?.addEventListener?.('abort', cleanup);
+  c.req.raw.signal?.addEventListener?.('abort', () => { cleanup(); client.close({ drop: true }); });
   return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no', ...SECURITY_HEADERS } });
+}
+
+const sseEnc = new TextEncoder();
+
+/**
+ * 一位 SSE 观众的发送缓冲。broadcast 调 push(event, bytes)（所有观众共用同一份字节）；write(text) 用于单独发给这一位的消息。
+ * pull(ctrl) 在底层可写时被流调用：把排队的消息与最新一帧 tick 合成一块交出去；没有数据时等到有为止。
+ * @param {string} ip
+ * @param {() => void} onClose 连接被关闭（积压超限）时的清理
+ */
+export function sseClient(ip, onClose = () => {}) {
+  let queue = [], queued = 0, tick = null;
+  let wake = null, ctrl = null, overflow = false;
+  const notify = () => { const w = wake; wake = null; w?.(); };
+  const client = {
+    ip,
+    closed: false,
+    /** 当前积压的字节数（队列 + 未发出的 tick） */
+    get backlog() { return queued + (tick?.length || 0); },
+    push(event, bytes) {
+      if (client.closed) return;
+      if (event === 'tick') { tick = bytes; return notify(); }
+      if (event === 'init') tick = null; // 新的 init 之后，旧 Town 的快照不再有意义
+      queue.push(bytes);
+      queued += bytes.length;
+      // 单条消息（例如很大的 init）本身可以超过上限；排着两条以上还超限，说明这位观众已经收不动了
+      if (queue.length > 1 && queued > setting('SSE_MAX_BUFFER_KB') * 1024) { overflow = true; return client.close({ drop: true }); }
+      notify();
+    },
+    write(s) { client.push(/^event: init\n/.test(s) ? 'init' : 'msg', sseEnc.encode(s)); },
+    /** 关闭：默认先把已排队的消息（例如 closed 事件）发完再断开；drop 时立即丢弃 */
+    close({ drop = false } = {}) {
+      if (client.closed) return;
+      client.closed = true;
+      tick = null;
+      if (drop || !queue.length) { queue = []; queued = 0; try { ctrl?.close(); } catch { /* 已关闭 */ } }
+      notify();
+      onClose();
+    },
+    get overflowed() { return overflow; },
+    async pull(c) {
+      ctrl = c;
+      while (!client.closed && !queue.length && !tick) await new Promise((r) => { wake = r; });
+      if (!queue.length && !tick) { try { c.close(); } catch { /* 已关闭 */ } return; }
+      const parts = tick ? [...queue, tick] : queue;
+      queue = []; queued = 0; tick = null;
+      let out = parts[0];
+      if (parts.length > 1) {
+        out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+        let o = 0;
+        for (const p of parts) { out.set(p, o); o += p.length; }
+      }
+      c.enqueue(out);
+    },
+  };
+  return client;
 }
 
 function servePluginUi(c, host, p) {

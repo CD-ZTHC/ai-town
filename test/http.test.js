@@ -78,6 +78,63 @@ test('SSE：先推送 init，断开后观众计数归零', async (t) => {
   assert.equal(host.clients.size, 0);
 });
 
+test('SSE 背压：不读数据的观众只留最新一帧 tick，其他事件积压超限时断开', async (t) => {
+  const { app, host } = setup();
+  t.after(() => host.close({ save: false }));
+  const res = await app.request('/api/stream');
+  const reader = res.body.getReader();
+  let text = '';
+  while (!text.includes('event: init')) text += new TextDecoder().decode((await reader.read()).value);
+  const [client] = host.clients;
+  // 观众不读：推 1000 帧 tick，积压的只有最后一帧
+  const frame = { pad: 'x'.repeat(2000) };
+  for (let i = 0; i < 1000; i++) host.broadcast('tick', { i, ...frame });
+  assert.ok(client.backlog < 3000, `积压 ${client.backlog} 字节`);
+  const chunk = new TextDecoder().decode((await reader.read()).value);
+  assert.match(chunk, /"i":999/);
+  assert.doesNotMatch(chunk, /"i":998/);
+  // 其他事件：积压超过 SSE_MAX_BUFFER_KB（默认 256KB）就断开，并离开观众列表
+  for (let i = 0; i < 200 && !client.closed; i++) host.broadcast('log', { i, ...frame });
+  assert.ok(client.overflowed);
+  assert.equal(host.clients.size, 0);
+  const rest = await reader.read();
+  assert.equal(rest.done, true, '积压的消息直接丢弃，连接结束');
+});
+
+test('SSE 关闭：已排队的消息（例如 closed）发完再断开', async () => {
+  const { sseClient } = await import('../server/http/app.js');
+  let left = 0;
+  const c = sseClient('1.1.1.1', () => left++);
+  const stream = new ReadableStream({ pull: (ctrl) => c.pull(ctrl) }, { highWaterMark: 0 });
+  const enc = new TextEncoder();
+  c.push('tick', enc.encode('event: tick\ndata: 1\n\n'));
+  c.push('closed', enc.encode('event: closed\ndata: {}\n\n'));
+  c.close();
+  assert.equal(left, 1);
+  const r = stream.getReader();
+  const got = new TextDecoder().decode((await r.read()).value);
+  assert.match(got, /event: closed/);
+  assert.doesNotMatch(got, /event: tick/, '关闭时丢弃快照');
+  assert.equal((await r.read()).done, true);
+  c.push('log', enc.encode('x'));
+  assert.equal(c.backlog, 0, '关闭后不再接收');
+});
+
+test('快照频率：没有观众时不生成，按 TICK_HZ 推送', async (t) => {
+  const { host } = setup();
+  t.after(() => host.close({ save: false }));
+  const town = host.town;
+  clearInterval(town.timer);
+  let n = 0;
+  const orig = town.snapshot.bind(town);
+  town.snapshot = () => { n++; return orig(); };
+  for (let i = 0; i < 20; i++) town.advance(0.05);
+  assert.equal(n, 0, '没有观众');
+  host.clients.add({ write() {} });
+  for (let i = 0; i < 20; i++) town.advance(0.05); // 1 秒
+  assert.ok(n >= 3 && n <= 5, `默认每秒 4 次，实际 ${n}`);
+});
+
 test('静态资源：首页、ETag、禁止路径穿越与点开头的文件', async (t) => {
   const { app, host } = setup();
   t.after(() => host.close({ save: false }));

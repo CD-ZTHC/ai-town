@@ -305,7 +305,11 @@ export class Town extends EventEmitter {
     // 访客化身按真实时间行走（暂停、调速都不影响玩家操作）
     this.avatars.tick(dtReal);
     acc.snapshot += dtReal;
-    if (acc.snapshot >= 0.1) { acc.snapshot = 0; this.emit('tick', this.snapshot()); }
+    // 快照：托管方可以调低频率（snapshotEvery，秒），没有观众时（wantsSnapshot 为假）不生成
+    if (acc.snapshot >= (this.snapshotEvery ? this.snapshotEvery() : 0.1)) {
+      acc.snapshot = 0;
+      if (!this.wantsSnapshot || this.wantsSnapshot()) this.emit('tick', this.snapshot());
+    }
     acc.save += dtReal;
     if (acc.save > 20) { acc.save = 0; this.save(); }
   }
