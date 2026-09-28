@@ -14,6 +14,8 @@ const DAILY_QUOTA = { minor: 3, major: 1 };
 const MAX_OPEN = 10;
 const PROTECT_DAYS = 7; // 建成不满这么多天的建筑不能拆（地图演变 §6.3）
 const DEMOLISH_GAP_DAYS = 3; // 两次拆除至少间隔
+const EXPAND_GAP_DAYS = 7; // 两次扩展（含新建相邻 / 远处的地图）至少间隔
+const EXPANSION = new Set(['expandMap', 'addAdjacentRegion', 'addRegion']);
 const RESIDENTIAL = new Set(['hut', 'cabin', 'cottage', 'house', 'farmhouse', 'inn', 'tavern']);
 /** 操作的审批等级：有的操作按参数决定（变成废墟是大改） */
 export const levelOf = (o) => OPS[o.op].levelOf?.(o.args) || OPS[o.op].level;
@@ -99,6 +101,7 @@ export class ProposalSystem {
           const within = Math.max(4, Math.min(16, Number(place.within ?? args.within) || 12));
           const w = Math.round(Number(args.w) || 4), h = Math.round(Number(args.h) || 4);
           const r = findPlacement(spec, { id: args.id, name: args.name, w, h, near, within });
+          if (r.error) this.town.mapPressure?.placeFailed();
           if (r.error) return { error: `第 ${i + 1} 个操作（${args.name || args.id}）：${r.error}` };
           Object.assign(args, { x: r.x, y: r.y, w, h, near });
         }
@@ -107,7 +110,14 @@ export class ProposalSystem {
         if (e) return { error: `第 ${i + 1} 个操作（${args.name || args.id}）：${e}` };
       }
       const solved = this.solveTerrain(spec, name, args);
-      if (solved) return { error: `第 ${i + 1} 个操作（${name}）：${solved}` };
+      if (solved) {
+        if (/找不到/.test(solved)) this.town.mapPressure?.placeFailed();
+        return { error: `第 ${i + 1} 个操作（${name}）：${solved}` };
+      }
+      if (EXPANSION.has(name) && allowed === ARCHITECT_OPS) {
+        const last = this.list.filter((p) => p.status === 'applied' && p.ops.some((o) => EXPANSION.has(o.op))).map((p) => p.appliedDay).sort((x, y) => y - x)[0];
+        if (last != null && this.town.day - last < EXPAND_GAP_DAYS) return { error: `第 ${last} 天刚扩展过地图，${EXPAND_GAP_DAYS} 天之内不再扩展` };
+      }
       if (isDemolition({ op: name, args })) {
         const err = this.demolitionProblem(spec, args.id);
         if (err) return { error: `第 ${i + 1} 个操作：${err}` };
@@ -158,7 +168,7 @@ export class ProposalSystem {
 
   originText(origin) {
     if (origin.startsWith('agent:')) return `${this.town.byId[origin.slice(6)]?.name || '居民'}的点子`;
-    return { director: '叙事导演', visitor: '访客的建议', admin: '管理员', architect: '世界架构师' }[origin] || origin;
+    return { director: '叙事导演', visitor: '访客的建议', admin: '管理员', architect: '世界架构师', planner: '地图压力表' }[origin] || origin;
   }
 
   route(p) {

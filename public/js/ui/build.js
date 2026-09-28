@@ -12,6 +12,17 @@ const P_STATUS = {
   building: ['🚧 施工中', 'build'], applied: ['✅ 已落地', 'ok'], rejected: ['❌ 已驳回', 'no'], failed: ['⚠️ 未能实施', 'no'], expired: ['⌛ 已作废', 'no'], reverted: ['↩️ 已撤销', 'no'],
 };
 
+/** 地图压力表（地图演变 §6.1）：镇子为什么想改变 */
+function pressureHTML(p) {
+  if (!p) return '';
+  const items = [`🗺️ 地图 ${esc(p.size)}，空地约 ${Math.round(p.freeRatio * 100)}%${p.fails ? `，最近 ${p.fails} 次找不到地方建房` : ''}`,
+    `🏠 每处住处平均 ${p.perHome} 人${p.full ? `，${p.full} 次有人找不到空房` : ''}`,
+    ...(p.idle.length ? [`💤 好几天没人去：${p.idle.slice(0, 3).map((x) => esc(x.name)).join('、')}`] : []),
+    ...(p.decay.length ? [`🏚️ ${p.decay.map((x) => `${esc(x.name)}${x.state === 'ruin' ? '成了废墟' : '受损'} ${x.days} 天`).join('、')}`] : []),
+    ...(p.walk ? [`🚶 一趟路平均 ${p.walk} 格${p.walkRatio ? `（最初的 ${p.walkRatio} 倍）` : ''}`] : [])];
+  return `<div class="pcouncil"><div><b>镇子的现状</b>（每天早上更新）${p.top ? ` · 最需要：${esc(p.top)}` : ''}</div>${items.map((x) => `<div>${x}</div>`).join('')}</div>`;
+}
+
 /** 拆除的议事：当事人是否同意、每位居民的表态与理由、判定结果 */
 function councilHTML(c) {
   if (!c) return '';
@@ -97,7 +108,7 @@ async function renderBuild() {
             ${(open || p.status === 'queued') && d.admin ? `<button class="mini adm" data-pd="${p.id}" data-ok="1">✅ 批准</button><button class="mini adm" data-pd="${p.id}" data-ok="0">✖ 驳回</button>` : ''}
           </div></div>`;
       }).join('');
-      html = form + queue + (cards || '<div class="empty">还没有建设提案。居民聊天时、导演推进剧情时，或者你在上面提一个点子，都可能催生新的提案。</div>');
+      html = form + pressureHTML(d.pressure) + queue + (cards || '<div class="empty">还没有建设提案。居民聊天时、导演推进剧情时，或者你在上面提一个点子，都可能催生新的提案。</div>');
     } else if (tab === 'history') {
       const list = await app.api('/api/world/history');
       html = list.slice().reverse().map((r) => `<div class="dec"><b>第${Math.floor(r.t / 1440) + 1}天 ${fmtTime(r.t)}</b> ${esc(r.desc)} <small class="quota">（${esc({ proposal: '建设提案', admin: '管理员', director: '叙事导演' }[r.cause?.by] || r.cause?.by || '')}）</small></div>`).join('')

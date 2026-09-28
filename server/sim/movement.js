@@ -119,6 +119,7 @@ export class Movement {
     const p = findPath(here, a.x, a.y, dest.x, dest.y);
     if (!p) { a.x = dest.x; a.y = dest.y; a.path = []; }
     else a.path = p;
+    if (p && a.kind !== 'creature') this.mapPressure?.walk(p.length);
     a.status = 'walking';
     a.moving = true;
     a.action = { text: `前往${loc.name}${e.sleep ? '' : '·' + e.activity}`, emoji: e.sleep ? '🥱' : '🚶' };
@@ -167,6 +168,7 @@ export class Movement {
     if (!e.sleep) this.rules.onEnter(a, a.locId);
     this.runAct(a, e);
     if (!e.sleep) this.hooks.emit('agent.arrive', { agent: a, locId: a.locId });
+    if (a.kind !== 'creature') this.mapPressure?.visit(a.locId);
     if (!e.sleep) {
       if (a.dest.indoor) a.dir = 'up';
       else a.dir = rand(['down', 'left', 'right', 'down']);

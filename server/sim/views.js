@@ -103,6 +103,7 @@ export class Views {
       thinking: Boolean(this.architect?.busy),
       gaps: admin ? this.gapsWithRfc() : undefined,
       requireAdmin: ps.requireAdmin,
+      pressure: this.mapPressure?.view() || null,
     };
   }
 

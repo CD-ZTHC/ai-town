@@ -18,6 +18,7 @@ import { MigrationSystem } from './story/migration.js';
 import { AvatarSystem } from './avatars.js';
 import { ProposalSystem } from './worldai/proposals.js';
 import { Council } from './worldai/council.js';
+import { MapPressure } from './worldai/pressure.js';
 import { HookBus } from './kernel/hooks.js';
 import { DecisionQueue } from './kernel/decisions.js';
 import { PluginHost } from '../plugin-host/index.js';
@@ -132,6 +133,7 @@ export class Town extends EventEmitter {
     // P4：建设提案（世界架构师、施工等功能由 plugins/builtin/ 下的插件提供）
     this.proposalSystem = new ProposalSystem(this);
     this.council = new Council(this); // 拆除的议事（地图演变 §3.4）
+    this.mapPressure = new MapPressure(this); // 地图压力表（地图演变 §6.1）
     this.architect = null;
     // 自主演化 E0：钩子总线 + 插件宿主
     this.hooks = new HookBus();
@@ -306,6 +308,7 @@ export class Town extends EventEmitter {
     const m = this.minute, d = this.day;
     const rh = this.rhythm;
     if (m >= rh.plan && m < this.dayEnd && this.flags.plannedDay !== d) this.planAll();
+    if (m >= 6 * 60 && this.flags.pressureDay !== d) { this.flags.pressureDay = d; this.mapPressure.daily(); }
     if (m >= rh.diary && this.flags.diaryDay !== d) {
       this.flags.diaryDay = d;
       // 写完日记顺便整理记忆：太多时把较早一天的琐事浓缩成一条

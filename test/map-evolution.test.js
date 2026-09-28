@@ -77,6 +77,7 @@ const { loadPack } = await import('../server/worlds/pack.js');
 const { manifestText } = await import('../server/worldai/manifest.js');
 const llm = await import('../server/llm.js');
 const { judge } = await import('../server/worldai/council.js');
+const { ARCHITECT_OPS, ADMIN_OPS } = await import('../server/worldai/proposals.js');
 const redPack = loadPack(path.resolve('worlds/little-red'));
 const redTown = () => new Town({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'town-map-')), worldId: 'little-red', pack: redPack, instantTalk: true });
 const persona = (town, id) => town.spec.personas.find((p) => p.id === id);
@@ -431,4 +432,67 @@ test('远处的区域：经路口往返；开放时的旁白、传闻、第一�
   assert.ok(text.includes('北山'));
   assert.ok(!/暗月界|月之渡口/.test(text), '没有暗月界的字样');
   assert.ok(red.memories.some((m) => m.text.includes('第一次穿过北山山口，来到了北山')));
+});
+
+// ---------- E7 需求驱动 ----------
+test('地图压力表：选址失败、住处满员、破败、闲置、走得远各自引出相应的意图；每两天最多交给架构师一个', (t) => {
+  const town = redTown();
+  t.after(() => town.stop());
+  const mp = town.mapPressure;
+  mp.compute();
+  assert.equal(mp.top(), null, '刚开始没有明显的需求');
+  // 走得远：第 1 天平均 10 格，之后变成 15 格
+  mp.walk(10); mp.walk(10);
+  town.t += 1440; mp.walk(15);
+  town.t += 1440; mp.walk(15);
+  town.t += 1440;
+  assert.equal(mp.compute().walkRatio, 1.5);
+  assert.equal(mp.top().key, 'walk');
+  // 闲置：五天没人去、没人住、没人工作的建筑
+  mp.st.visits[1] = { red_house: 3 };
+  town.t += 3 * 1440;
+  assert.ok(mp.compute().idle.some((x) => x.id === 'bakery') === false, '妈妈在面包房工作，不算闲置');
+  town.applyWorldOp({ op: 'renovateBuilding', args: { id: 'bakery', name: '旧仓库' } });
+  town.byId.mom.work = 'village_square';
+  persona(town, 'mom').work = 'village_square';
+  assert.ok(mp.compute().idle.some((x) => x.id === 'bakery'));
+  assert.equal(mp.top().key, 'idle');
+  // 破败：受损三天
+  town.applyWorldOp({ op: 'setBuildingState', args: { id: 'red_house', state: 'damaged' } });
+  town.t += 3 * 1440;
+  assert.equal(mp.top(mp.compute()).key, 'decay');
+  // 空地紧张优先于破败；住处紧张最优先
+  mp.placeFailed(); mp.placeFailed();
+  assert.equal(mp.top(mp.compute()).key, 'space');
+  mp.homeFull(); mp.homeFull();
+  assert.equal(mp.top(mp.compute()).key, 'homes');
+  assert.match(mp.text(), /地图现状/);
+  // 交给架构师：来源是地图压力表；两天之内不再交
+  town.architectQueue = [];
+  mp.daily();
+  assert.equal(town.architectQueue.length, 1);
+  assert.equal(town.architectQueue[0].origin, 'planner');
+  assert.match(town.architectQueue[0].intent, /住处快住满了/);
+  town.architectQueue = [];
+  town.t += 1440;
+  mp.daily();
+  assert.equal(town.architectQueue.length, 0, '两天之内不再交');
+  assert.ok(town.proposalsView().pressure.top);
+});
+
+test('架构师的扩展每 7 天最多一次（管理员不受限制）；人员流动找不到空房时记入压力表', async (t) => {
+  const town = redTown();
+  t.after(() => town.stop());
+  const ps = town.proposalSystem;
+  const { proposal: p } = ps.submit({ title: '往南长', ops: [EXT('south', 8, { places: [] })] });
+  for (let i = 0; i < 20 && p.status === 'review'; i++) await new Promise((r) => setImmediate(r));
+  assert.equal(ps.decide(p.id, true, 'admin'), null);
+  assert.equal(p.status, 'applied', p.result?.reason);
+  assert.match(ps.prepare([EXT('north', 8, { places: [] })], ARCHITECT_OPS).error, /7 天之内不再扩展/);
+  assert.ok(!ps.prepare([EXT('north', 8, { places: [] })], ADMIN_OPS).error, '管理员直接提交不受限制');
+  // 住处全满
+  town.migration.homes = () => [{ id: 'red_house', name: '小红帽家', residential: true, n: 3 }, { id: 'grandma_house', name: '外婆家', residential: true, n: 3 }];
+  const before = town.mapPressure.st.homeFull.length;
+  town.migration.pickHome(null);
+  assert.equal(town.mapPressure.st.homeFull.length, before + 1);
 });

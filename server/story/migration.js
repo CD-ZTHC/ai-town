@@ -115,7 +115,7 @@ export class MigrationSystem {
   homes() {
     const w = this.town.world;
     const occ = this.occupancy();
-    return Object.values(w.locations).filter((l) => l.indoor).map((l) => {
+    return Object.values(w.locations).filter((l) => l.indoor && !l.closed).map((l) => {
       const b = w.buildings.find((x) => x.id === l.indoor);
       return { id: l.id, name: l.name, residential: RESIDENTIAL.has(b?.kind) || Boolean(occ[l.id]), n: occ[l.id] || 0 };
     }).filter((h) => h.residential);
@@ -125,7 +125,11 @@ export class MigrationSystem {
     const homes = this.homes();
     const h = homes.find((x) => x.id === wanted && x.n < HOME_CAP);
     if (h) return h.id;
-    return homes.filter((x) => x.n < HOME_CAP).sort((a, b) => a.n - b.n)[0]?.id || homes.sort((a, b) => a.n - b.n)[0]?.id || null;
+    const free = homes.filter((x) => x.n < HOME_CAP).sort((a, b) => a.n - b.n)[0]?.id;
+    if (free) return free;
+    // 住满了：记一笔住处紧张，架构师会看到（地图压力表）
+    this.town.mapPressure?.homeFull();
+    return homes.sort((a, b) => a.n - b.n)[0]?.id || null;
   }
 
   spawnAt(wanted) {
