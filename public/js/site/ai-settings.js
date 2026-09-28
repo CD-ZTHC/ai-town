@@ -122,8 +122,9 @@ export function aiForm(ai, creds, { maxConcurrency = 4, allowed = true, serverNo
       <label>默认模型</label>${modelInput('m-default', ai.models?.default, models, '必填')}
       <label>快模型（内心独白等高频小任务）</label>${modelInput('m-fast', ai.models?.fast, models, '不填用默认模型')}
       <label>强模型（导演、日报、世界架构师）</label>${modelInput('m-smart', ai.models?.smart, models, '不填用默认模型')}
-      <div class="row"><div><label>并发（最多 ${maxConcurrency}）</label><input name="concurrency" type="number" min="1" max="${maxConcurrency}" value="${ai.concurrency || 2}" style="width:90px"></div>
+      <div class="row"><div><label title="同时发给模型服务的请求上限。其中 1 个名额留给交互（旅人聊天、心声），居民等后台调用最多用「设置值 − 1」个；想要后台 2 个并行就设 3">并发（最多 ${maxConcurrency}，含 1 个交互名额）</label><input name="concurrency" type="number" min="1" max="${maxConcurrency}" value="${ai.concurrency || 2}" style="width:90px"></div>
         <div><label>每日上限（token，0 = 不限）</label><input name="dailyTokens" type="number" min="0" value="${ai.dailyTokens || 0}" style="width:140px"></div></div>
+      <div class="muted small">并发里有 1 个名额留给交互（旅人聊天、心声），居民、导演等后台调用最多同时用「并发 − 1」个；例如设 3 时后台最多 2 个并行。</div>
       <details><summary class="small muted">高级</summary>
         <label>单次请求超时（毫秒）</label><input name="timeoutMs" type="number" min="5000" value="${ai.timeoutMs || 150000}">
         <label class="row"><input type="checkbox" name="jsonMode" ${ai.jsonMode !== false ? 'checked' : ''}> JSON 模式（网关不支持时会自动关闭）</label>
