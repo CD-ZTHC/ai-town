@@ -168,15 +168,23 @@ export class Movement {
       return;
     }
     a.moving = false;
-    a.locId = a.dest.locId;
-    if (a.dest.indoor) { a.inside = a.dest.indoor; a.openedAt = this.t; }
+    // 目的地先取出来：到达过程中的规则、行动、到达钩子（插件、规律型威胁）可能让这个人死去、离开或被带走，
+    // 那时 a.dest 会被清空。每一步之后都确认人还在场，不在就不再继续（否则整个进程会因为读 null 而崩溃）
+    const dest = a.dest;
+    if (!dest) return;
+    const here = () => this.agents.includes(a);
+    a.locId = dest.locId;
+    if (dest.indoor) { a.inside = dest.indoor; a.openedAt = this.t; }
     this.settle(a, e);
     if (!e.sleep) this.rules.onEnter(a, a.locId);
+    if (!here()) return;
     this.runAct(a, e);
+    if (!here()) return;
     if (!e.sleep) this.hooks.emit('agent.arrive', { agent: a, locId: a.locId });
+    if (!here()) return;
     if (a.kind !== 'creature') this.mapPressure?.visit(a.locId);
     if (!e.sleep) {
-      if (a.dest.indoor) a.dir = 'up';
+      if (dest.indoor) a.dir = 'up';
       else a.dir = rand(['down', 'left', 'right', 'down']);
       if (this.t - a.lastThoughtT > 80 && Math.random() < 0.45) this.innerThought(a);
     }

@@ -527,3 +527,46 @@ test('创世参考模式：只借题材要素生成原创世界，威胁的规�
   const second = await run();
   assert.ok(second.report.problems.some((p) => /避免清单/.test(p)), '文本里出现了避免清单里的词');
 });
+
+test('到达时被害：到达地点的过程中（规则、行动、到达钩子）死去，不会让整个进程崩溃', (t) => {
+  const town = nwTown();
+  t.after(() => town.stop());
+  at(town, 21);
+  const zhi = byName(town, '沈知');
+  const loc = { id: 'fire_lane' };
+  const walkTo = (a) => {
+    a.curEntry = { key: 'k', activity: '散步', locId: loc.id, sleep: false };
+    a.curKey = 'k';
+    Object.assign(a, { dest: { locId: loc.id, x: a.x, y: a.y, indoor: loc.id }, path: [], status: 'walking', moving: true });
+  };
+  // 到达钩子里死去（插件、规律都可能这样做）
+  const off = town.hooks.on('agent.arrive', ({ agent }) => { if (agent === zhi) town.killAgent(agent, { cause: 'test' }); });
+  walkTo(zhi);
+  assert.doesNotThrow(() => town.step(zhi, 0.1));
+  assert.equal(zhi.status, 'dead');
+  assert.ok(!town.agents.includes(zhi));
+  off?.();
+  // 到达前目的地就已经被清掉（例如被瞬移、被关押）：原地停下，不崩溃
+  const qian = byName(town, '钱伯');
+  walkTo(qian);
+  qian.dest = null;
+  assert.doesNotThrow(() => town.step(qian, 0.1));
+  assert.equal(qian.moving, false);
+});
+
+test('隔离：一个居民的更新出错时，他原地停下，其他人照常推进，世界不停', (t) => {
+  const town = nwTown();
+  t.after(() => town.stop());
+  const bad = town.agents[0];
+  const orig = town.updateAgent.bind(town);
+  town.updateAgent = (a, dt) => { if (a === bad) throw new Error('模拟的坏状态'); return orig(a, dt); };
+  const errors = [];
+  const origErr = console.error;
+  console.error = (...x) => errors.push(x.join(' '));
+  t.after(() => { console.error = origErr; });
+  const t0 = town.t;
+  assert.doesNotThrow(() => { for (let i = 0; i < 20; i++) town.advance(0.5); });
+  assert.ok(town.t > t0, '时间照常推进');
+  assert.equal(bad.moving, false);
+  assert.equal(errors.filter((e) => e.includes('模拟的坏状态')).length, 1, '同一处错误每分钟只记一次');
+});
