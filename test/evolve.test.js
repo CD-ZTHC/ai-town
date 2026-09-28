@@ -7,7 +7,7 @@ import path from 'node:path';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER']) delete process.env[k];
 const { Town } = await import('../server/sim.js');
-const llm = await import('../server/llm.js');
+const llm = await import('../server/llm.ts');
 const { registerEffect, registerExprFn, extensions } = await import('../plugin-host/registry.js');
 const { EFFECTS, checkEffects } = await import('../server/kernel/effects.ts');
 const { manifestText, manifestMarkdown } = await import('../server/worldai/manifest.js');

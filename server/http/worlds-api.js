@@ -22,7 +22,7 @@ const EDITABLE = new Set(['drafting', 'preview']);
  * @param {import('../worlds/registry.js').WorldRegistry} deps.registry
  * @param {import('../worlds/manager.js').WorldManager} deps.manager
  * @param {import('../accounts/index.js').Accounts} [deps.accounts]
- * @param {ReturnType<import('../world-llm.js').createWorldLlm>} [deps.worldLlm] 按世界配置模型服务
+ * @param {ReturnType<import('../world-llm.ts').createWorldLlm>} [deps.worldLlm] 按世界配置模型服务
  * @param {(w) => object[]} [deps.credentialsFor] 这个世界可以引用的凭据（主人的；官方世界是站点凭据）
  * @param {(worldId) => object} [deps.usage] 今日用量 { server, own }
  */

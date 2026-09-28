@@ -4,7 +4,7 @@
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { buildRegions, buildRegion } from './worldgen/index.js';
-import * as llm from './llm.js';
+import * as llm from './llm.ts';
 import { addMemory, parseHM } from './memory.ts';
 import { officialPack, packSpec } from './worlds/pack.js';
 import { defaultSpec, validateSpec, weekdayOf, calendarHint, pickWeather, publicSpec, PARAM_BOUNDS } from './kernel/spec.ts';
@@ -28,7 +28,7 @@ import { findAbility } from './kernel/abilities.ts';
 import { applyOp, replay, OpJournal, OPS, OpError } from './kernel/ops.ts';
 import { checkPlacement } from './kernel/placement.ts';
 import { applyMods } from './kernel/mods.ts';
-import { createEmbedder } from './embeddings.js';
+import { createEmbedder } from './embeddings.ts';
 import { clamp, rand } from './sim/util.js';
 import { Regions } from './sim/regions.js';
 import { Movement } from './sim/movement.js';

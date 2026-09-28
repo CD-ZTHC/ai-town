@@ -18,7 +18,7 @@ const clip = (v, max) => String(v ?? '').trim().slice(0, max);
 /**
  * @param {object} deps
  * @param {import('../accounts/llm-credentials.js').LlmCredentials} deps.credentials
- * @param {ReturnType<import('../world-llm.js').createWorldLlm>} deps.worldLlm
+ * @param {ReturnType<import('../world-llm.ts').createWorldLlm>} deps.worldLlm
  * @param {import('../accounts/index.js').Accounts} [deps.accounts]
  * @param {'user'|'site'} deps.scope
  */

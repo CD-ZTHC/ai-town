@@ -3,8 +3,8 @@
 //   - 通道：一把钥匙（凭据）一条通道，同一个人的几个世界共用；并发取这些世界设置的最大值
 //   - 故障：鉴权失败、余额不足、地址被拒、持续连不上 → 暂停用这份凭据的所有世界；模型不存在 → 只暂停这个世界
 //   - 恢复：凭据或配置修好后测试连接，通过就恢复；「持续连不上」每 15 分钟自动探测一次
-import * as llm from './llm.js';
-import { credentialProvider, CREDENTIAL_PROVIDERS } from './llm-providers.js';
+import * as llm from './llm.ts';
+import { credentialProvider, CREDENTIAL_PROVIDERS } from './llm-providers.ts';
 import { makeSafeFetch, urlProblem } from './net/safe-fetch.ts';
 import { SITE } from './accounts/llm-credentials.js';
 import { scrub } from './secrets.ts';

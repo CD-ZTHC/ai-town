@@ -1,6 +1,6 @@
 // 叙事导演（设计文档 5.2）：每游戏小时评估张力；与目标曲线偏离太大、太久没有新鲜事、或玩家发布了事件时，
 // 调用强模型决定下一步（按兵不动 / 埋伏笔 / 添麻烦 / 升级 / 喘息 / 收束 / 开启剧情弧），输出的剧情节拍经校验后执行。
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { fmtTime } from '../memory.ts';
 import { computeTension, targetTension, BOREDOM_HOURS } from './tension.js';
 import { runBeats, DIRECTOR_KINDS, ALL_KINDS } from './beats.js';

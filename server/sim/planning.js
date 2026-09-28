@@ -1,6 +1,6 @@
 // 日程：每日规划、兜底日程、约定、收到消息后重新规划
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { addMemory, fmtTime, parseHM } from '../memory.ts';
 import { rand, clampStr, GUARD } from './util.js';
 

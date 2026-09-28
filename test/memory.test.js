@@ -36,7 +36,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { MEMORY_CAP, condenseCandidate, ruleSummary, replaceWithSummary, cosine } from '../server/memory.ts';
-import { createEmbedder } from '../server/embeddings.js';
+import { createEmbedder } from '../server/embeddings.ts';
 
 test('记忆满了：最早一天的琐事压缩成一条摘要，而不是直接删掉；重要记忆与反思不动', () => {
   const a = agent();
@@ -76,7 +76,7 @@ test('候选与规则摘要：只挑够数的最早一天；摘要不再被压�
 test('每晚整理：有模型时用模型的第一人称概括，失败时用规则摘要；没超过阈值不整理', async (t) => {
   for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'LLM_PROVIDER', 'EMBED_MODEL']) delete process.env[k];
   const { Town } = await import('../server/sim.js');
-  const llm = await import('../server/llm.js');
+  const llm = await import('../server/llm.ts');
   const town = new Town({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'town-mem-')) });
   t.after(() => { town.stop(); llm.setMock(null); });
   const a = town.byId.lin;
@@ -142,7 +142,7 @@ test('embedding：超时或出错时不抛错，这次退回双字组；没配�
 
 test('接进小镇：配置了 embedding 时，语义相关的记忆会出现在提示词里', async (t) => {
   const { Town } = await import('../server/sim.js');
-  const llm = await import('../server/llm.js');
+  const llm = await import('../server/llm.ts');
   const topic = (s) => (/湖|水|紫光|涟漪/.test(s) ? [1, 0, 0] : [0, 1, 0]);
   const embedder = createEmbedder({ embed: async (texts) => ({ vectors: texts.map(topic) }) });
   const town = new Town({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'town-recall-')), embedder });

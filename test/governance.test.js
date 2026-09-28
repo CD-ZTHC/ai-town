@@ -22,7 +22,7 @@ const { worldsApi } = await import('../server/http/worlds-api.js');
 const { authorize } = await import('../server/accounts/authz.js');
 const { config } = await import('../server/guard.js');
 const { _resetQuota } = await import('../server/accounts/quota.js');
-const llm = await import('../server/llm.js');
+const llm = await import('../server/llm.ts');
 const { memoryHooks } = await import('../server/memory.ts');
 
 const PW = 'correct-horse-9';

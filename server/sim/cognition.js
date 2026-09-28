@@ -1,6 +1,6 @@
 // 认知：提示词片段、记忆检索与整理、内心独白、反思、日记、日报
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { addMemory, retrieve, fmtTime, fmtStamp, condenseCandidate, replaceWithSummary, ruleSummary } from '../memory.ts';
 import { useAbility } from '../kernel/abilities.ts';
 import { clampStr } from './util.js';

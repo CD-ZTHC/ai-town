@@ -5,7 +5,7 @@
 //   G4 生成  地图（语义布局）、居民、线程、物品与能力 → 组装世界包；结构 / 规格 / 布局校验不过时带着错误让模型改一次
 //   G5 验证  考据官对照圣经审查；无头试跑 1 个游戏日（子进程，不调用模型）；对外可见的文本做关键词审核
 // 所有模型调用都在统一队列的 P3 级（label「创世：…」），记在创世者名下，从 genesisTokens 里扣。
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { keywordCheck } from '../guard.js';
 import { chunkSource } from './source.js';
 import { assembleMap, assemblePersonas, assembleExtras, assembleWorld } from './assemble.js';

@@ -3,8 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'LLM_PROVIDER', 'LLM_CONCURRENCY', 'LLM_JSON_MODE', 'LLM_DAILY_TOKENS', 'PUBLIC_MODE', 'LLM_RECORD']) delete process.env[k];
-const llm = await import('../server/llm.js');
-const { createProvider, registerProvider, openaiCompatible } = await import('../server/llm-providers.js');
+const llm = await import('../server/llm.ts');
+const { createProvider, registerProvider, openaiCompatible } = await import('../server/llm-providers.ts');
 
 /** 假 provider：按顺序执行 steps 里的回复（函数或返回值），记录每次请求 */
 function fake(steps) {
@@ -132,7 +132,7 @@ test('结构化输出：开启后把 schema 交给 provider；网关不支持时
 });
 
 test('OpenAI 兼容 provider：有 schema 时发送非严格的 json_schema', async (t) => {
-  const { responseFormat } = await import('../server/llm-providers.js');
+  const { responseFormat } = await import('../server/llm-providers.ts');
   assert.deepEqual(responseFormat(null), { type: 'json_object' });
   const { ARCHITECT_SCHEMA } = await import('../plugins/builtin/architect/architect.js');
   const rf = responseFormat(ARCHITECT_SCHEMA);

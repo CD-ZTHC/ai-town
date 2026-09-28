@@ -6,7 +6,7 @@ import { Hono } from 'hono';
 import { llmPublic, listSnapshots, restoreSnapshot } from '../sim.js';
 import { ADMIN_OPS } from '../worldai/proposals.js';
 import { registry, forkTimeline, setActive } from '../timelines.js';
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { useAbility } from '../kernel/abilities.ts';
 import { config, sanitize, moderate, targetsResident } from '../guard.js';
 import { authorize } from '../accounts/authz.js';

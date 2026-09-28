@@ -7,7 +7,7 @@ import path from 'node:path';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER', 'MODS']) delete process.env[k];
 const { Town } = await import('../server/sim.js');
-const llm = await import('../server/llm.js');
+const llm = await import('../server/llm.ts');
 const { exportMod, applyMods, readMod } = await import('../server/kernel/mods.ts');
 const { defaultSpec } = await import('../server/kernel/spec.ts');
 const { registry, forkTimeline, setActive, activeDir, timelineDir } = await import('../server/timelines.js');

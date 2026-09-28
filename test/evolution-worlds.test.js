@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const llm = await import('../server/llm.js');
+const llm = await import('../server/llm.ts');
 const { paths, Budget, rotation, readJSON, saveJobs } = await import('../evolution/common.js');
 const { makeLLM } = await import('../evolution/llm.js');
 const { runJob, currentSpec } = await import('../evolution/pipeline.js');

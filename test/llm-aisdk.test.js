@@ -3,8 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { aisdkProvider, parseModelName, toPrompt } from '../server/llm-aisdk.js';
-import { createProvider, credentialProvider } from '../server/llm-providers.js';
+import { aisdkProvider, parseModelName, toPrompt } from '../server/llm-aisdk.ts';
+import { createProvider, credentialProvider } from '../server/llm-providers.ts';
 import { SETTINGS, parseString } from '../server/settings/schema.ts';
 
 let installed = true;
@@ -137,7 +137,7 @@ test('凭据绝不借用服务器环境变量里的密钥；请求经过注入�
 test('接进 llm.js：LLM_PROVIDER=aisdk 时 chatJSON 端到端可用，不支持 JSON 模式会自动降级', { skip }, async (t) => {
   const s = await fakeServer(t);
   s.mode = 'no-json';
-  const llm = await import('../server/llm.js');
+  const llm = await import('../server/llm.ts');
   llm.setProvider(createProvider('aisdk', { BASE_URL: s.base, API_KEY: 'k', MODEL: 'glm-test' }));
   t.after(() => { llm.setProvider(null); llm.setJsonMode(true); });
   assert.deepEqual(await llm.chatJSON([{ role: 'user', content: 'x' }], { label: 'aisdk', tier: 'default', model: 'glm-test' }), { ok: true });

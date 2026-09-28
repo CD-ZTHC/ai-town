@@ -7,7 +7,7 @@
 // 每次调用按调用上下文（scheduler/context.js 的 worldId）解析配置档：由服务入口 setProfileResolver 注入；
 // 没有注入解析器时一律用服务器的配置档，行为与只有一个模型时完全一样。审核类调用永远用服务器（SERVER_ONLY）。
 import fs from 'node:fs';
-import { createProvider } from './llm-providers.js';
+import { createProvider } from './llm-providers.ts';
 import { get as setting, env as settingsEnv } from './settings/index.ts';
 import { Scheduler } from './scheduler/index.ts';
 import { classOf, SERVER_ONLY } from './scheduler/classes.ts';

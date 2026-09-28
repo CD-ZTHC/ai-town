@@ -5,7 +5,7 @@
 //   GET  /api/genesis/quota    我的创世配额与用量
 //   GET  /api/genesis/:jobId   进度、排队位置、用量
 import { Hono } from 'hono';
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { authorize } from '../accounts/authz.js';
 import { get as setting } from '../settings/index.ts';
 import { normalizeSource, screenSource, sampleParagraphs } from '../genesis/source.js';
@@ -38,7 +38,7 @@ export function genesisQuota(grant) {
  * @param {GenesisJobs} deps.jobs
  * @param {(userId) => number} deps.used 创世已用 token（P3，按创世者累计）
  * @param {() => number} [deps.userDiskTotal]
- * @param {ReturnType<import('../world-llm.js').createWorldLlm>} [deps.worldLlm] 创世时可以选用自己的模型服务
+ * @param {ReturnType<import('../world-llm.ts').createWorldLlm>} [deps.worldLlm] 创世时可以选用自己的模型服务
  */
 export function genesisApi(deps) {
   const api = new Hono();

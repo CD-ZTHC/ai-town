@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import path from 'node:path';
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { fmtStamp } from '../memory.ts';
 import { findAbility } from '../kernel/abilities.ts';
 import { OpJournal } from '../kernel/ops.ts';

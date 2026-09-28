@@ -7,7 +7,7 @@ import path from 'node:path';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER']) delete process.env[k];
 const { Town, listSnapshots, restoreSnapshot } = await import('../server/sim.js');
-const llm = await import('../server/llm.js');
+const llm = await import('../server/llm.ts');
 const { buildWorld } = await import('../server/world.js');
 const { defaultSpec } = await import('../server/kernel/spec.ts');
 const { findPlacement, checkPlacement } = await import('../server/kernel/placement.ts');

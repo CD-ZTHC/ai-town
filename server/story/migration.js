@@ -2,7 +2,7 @@
 // 节奏由代码把关（每天掷一次骰子、冷却、人数上限、同时离开的人数上限），到点时调用一次模型决定「谁来、谁走、谁回来」并生成新人的人物卡。
 // 非致死原则：离开总是可逆的（出门的人按约定的日子回来，owner / 管理员也可以随时召回或请人离开）。
 // 新人先以「外来者」（traveller）身份住下，和大家熟悉之后转为常住居民（settlePersona）。
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { addMemory } from '../memory.ts';
 import { keywordCheck } from '../guard.js';
 import { ruleCheck } from '../worldai/canon.js';

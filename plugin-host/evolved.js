@@ -5,7 +5,7 @@
 // - 小镇服务器只写 data/evolution/registry.json 与账本，从不写插件代码；插件代码只由进化引擎写入
 import fs from 'node:fs';
 import path from 'node:path';
-import * as llm from '../server/llm.js';
+import * as llm from '../server/llm.ts';
 import { EFFECTS, checkEffects, runEffects, posOf } from '../server/kernel/effects.ts';
 import { replay, OPS } from '../server/kernel/ops.ts';
 import { registerEffect, unregisterSource } from './registry.js';

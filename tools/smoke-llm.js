@@ -20,7 +20,7 @@ process.env.STORYTELLER = 'gentle';
 process.env.STORY_RATING ||= 'adventure';
 
 const { Town } = await import('../server/sim.js');
-const llm = await import('../server/llm.js');
+const llm = await import('../server/llm.ts');
 const { useAbility } = await import('../server/kernel/abilities.ts');
 
 if (MOCK) {

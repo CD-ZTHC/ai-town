@@ -1,7 +1,7 @@
 // 进化引擎的模型调用：实施类 Agent 用 MODEL_SMART；评审类 Agent 可以单独配置另一个模型（甚至另一家服务），
 // 避免「同一个模型写、同一个模型审」的共同盲区。所有调用计入进化预算（EVOLVE_BUDGET，0 为不限）。
-import * as base from '../server/llm.js';
-import { openaiCompatible } from '../server/llm-providers.js';
+import * as base from '../server/llm.ts';
+import { openaiCompatible } from '../server/llm-providers.ts';
 import { BudgetExceeded } from './common.js';
 import { get as setting } from '../server/settings/index.ts';
 import { currentContext } from '../server/scheduler/context.ts';

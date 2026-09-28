@@ -150,7 +150,7 @@ const { Town } = await import('../server/sim.js');
 const { WorldHost } = await import('../server/worlds/host.js');
 const { createApp } = await import('../server/http/app.js');
 const { config } = await import('../server/guard.js');
-const llm = await import('../server/llm.js');
+const llm = await import('../server/llm.ts');
 
 function setupPublic(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-acc-'));

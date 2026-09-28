@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER', 'EVOLVE', 'PUBLIC_MODE']) delete process.env[k];
 const { Town } = await import('../server/sim.js');
-const llm = await import('../server/llm.js');
+const llm = await import('../server/llm.ts');
 const { EFFECTS, runEffects } = await import('../server/kernel/effects.ts');
 const { staticCheck } = await import('../plugin-host/sandbox/static-check.js');
 const { SandboxClient, runPluginTests } = await import('../plugin-host/sandbox/client.js');

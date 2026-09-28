@@ -13,7 +13,7 @@
 // 世界自带的模型服务（job.billing === 'own'，world-llm 设计 §5.3）：不占上面任何一项站点额度，
 // 只受世界自己设的每日上限约束（0 = 不限），降级档位照搬（分母换成自己的上限）。
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
-import { localDayKey } from '../llm.js';
+import { localDayKey } from '../llm.ts';
 import { get as setting } from '../settings/index.ts';
 import type { Job, LlmClass } from '../types/scheduler.ts';
 

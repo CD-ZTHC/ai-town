@@ -1,7 +1,7 @@
 // LLM 客户端：JSON 提取与常见格式错误的修复
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractJSON } from '../server/llm.js';
+import { extractJSON } from '../server/llm.ts';
 
 test('提取 JSON：去掉 markdown 代码块与前后说明文字', () => {
   assert.deepEqual(extractJSON('好的：\n```json\n{"a":1}\n```'), { a: 1 });

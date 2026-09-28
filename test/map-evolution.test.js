@@ -75,7 +75,7 @@ for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { Town } = await import('../server/sim.js');
 const { loadPack } = await import('../server/worlds/pack.js');
 const { manifestText } = await import('../server/worldai/manifest.js');
-const llm = await import('../server/llm.js');
+const llm = await import('../server/llm.ts');
 const { judge } = await import('../server/worldai/council.js');
 const { ARCHITECT_OPS, ADMIN_OPS } = await import('../server/worldai/proposals.js');
 const redPack = loadPack(path.resolve('worlds/little-red'));

@@ -3,7 +3,7 @@
 //   访客投票期 ──► 管理员终审窗口 ──► 超时 ──► AI 裁决官（在代码执行的硬规则之内决定）
 // 硬规则不依赖模型：硬闸门只能驳回、明确民意不能被推翻、高风险需要两个角色都同意、低置信度延期（最多一次）、
 // 模型不可用时走确定性兜底。所有裁决公示在动态栏，管理员事后可以撤销。
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { get as setting } from '../settings/index.ts';
 import type { TownLike } from '../types/town.ts';
 

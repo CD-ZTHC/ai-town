@@ -8,7 +8,7 @@ import path from 'node:path';
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { withTrialSlot } = await import('../server/trial-lock.js');
-const { createEmbedder } = await import('../server/embeddings.js');
+const { createEmbedder } = await import('../server/embeddings.ts');
 const { memoryView, trackChild, sseStats } = await import('../server/memstat.js');
 const { Town } = await import('../server/sim.js');
 const { WorldHost } = await import('../server/worlds/host.js');

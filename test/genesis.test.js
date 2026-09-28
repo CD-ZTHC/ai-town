@@ -8,7 +8,7 @@ import path from 'node:path';
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
-const llm = await import('../server/llm.js');
+const llm = await import('../server/llm.ts');
 const { chunkSource, screenSource } = await import('../server/genesis/source.js');
 const { assembleMap, assemblePersonas, assembleExtras, assembleWorld } = await import('../server/genesis/assemble.js');
 const { checkPack } = await import('../server/genesis/pipeline.js');

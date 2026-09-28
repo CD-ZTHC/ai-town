@@ -1,6 +1,6 @@
 // 设定考据官（设计文档 5.4）：世界补丁落地前的一致性审查。
 // 第一层：规则检查（重名、支柱设定关键词），不调用 LLM；第二层：检索相关正典，由 LLM 判断是否与既有设定矛盾。
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { similarity } from '../memory.ts';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);

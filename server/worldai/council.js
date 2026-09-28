@@ -4,7 +4,7 @@
 //   3 判定：当事人都同意 → 投票人过半数即通过；有当事人不同意 → 需要投票人全票；过半数反对一律否决
 //   4 通过之后照常交给终审人（终审人可以否决，但不能推翻居民的否决）；否决之后 10 天内不能再提
 // 拆除落地时，当事人得到一条重要记忆；被全票通过的当事人心情失落，并留下一条「旧居」的剧情线程。
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { addMemory } from '../memory.ts';
 import { impactOf } from '../kernel/impact.ts';
 

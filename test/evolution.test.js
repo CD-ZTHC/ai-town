@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'EVOLVE', 'EVOLVE_REVIEW_MODEL', 'EVOLVE_REVIEW_BASE_URL']) delete process.env[k];
 process.env.EVOLVE_SHADOW_HOURS = '2';
-const llm = await import('../server/llm.js');
+const llm = await import('../server/llm.ts');
 const { paths, Budget, readJSON } = await import('../evolution/common.js');
 const { makeLLM } = await import('../evolution/llm.js');
 const { runJob } = await import('../evolution/pipeline.js');

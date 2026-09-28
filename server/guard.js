@@ -1,6 +1,6 @@
 // 公网部署防护：配置、权限、限流、内容审核
 import crypto from 'node:crypto';
-import * as llm from './llm.js';
+import * as llm from './llm.ts';
 import { get as setting } from './settings/index.ts';
 import { lethal } from './kernel/ratings.ts';
 

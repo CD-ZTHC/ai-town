@@ -264,23 +264,23 @@ server/
   worldai/manifest.js 能力清单（自动生成）
   kernel/mods.ts  Mod 导出与加载；timelines.js 时间线分支；avatars.js 访客化身
   main.js         守护进程：拉起服务、请求重启（退出码 75）、设置导致启动失败时回退
-  settings/       设置中心：schema.js 声明表（唯一出处）、index.js 三层来源、版本与回退
+  settings/       设置中心：schema.ts 声明表（唯一出处）、index.ts 三层来源、版本与回退
   http/           Hono 应用：app.js 路由与中间件、identity.js 身份、world-api.js 世界接口、auth-api.js 账号、
                   admin-api.js 管理、worlds-api.js 大厅与世界管理、genesis-api.js 创世、pages.js 满员 / 下架页
   accounts/       账号：db.js（node:sqlite）、passwords.js、nickname.js、authz.js 授权、quota.js 配额、refs.js 记忆里的账号引用
   worlds/         pack.js 世界包、registry.js 世界登记与状态机、manager.js 世界管理器、host.js 单个世界的托管、
                   disk.js 磁盘上限、review.js 发布审核与抽样审核、migrate.js 数据迁移
   worldgen/       地图生成器：index.js 注册表、layout.js 语义布局（layout-v1）
-  scheduler/      统一 AI 调度：classes.js 级别表、index.js 调度器、budget.js 账本与分层预算、context.js 调用归属
+  scheduler/      统一 AI 调度：classes.ts 级别表、index.ts 调度器、budget.ts 账本与分层预算、context.ts 调用归属
   genesis/        创世：source.js 原文、pipeline.js G1~G5、assemble.js 组装、jobs.js 任务、shadow.js 无头试跑
   ext/            扩展点：registry.js 注册表、index.js 加载器、go-to.js（RFC 0001）
   worldai/architect.js 世界架构师；worldai/proposals.js 提案与审批；worldai/canon.js 设定考据官
   story/arcs.js   剧情弧引擎；story/creatures.js 异界生物
-  llm.js       LLM 客户端：按通道（一把钥匙一条）排队、自适应限流、重试、预算与统计、JSON 提取、回复录制
-  llm-providers.js 模型服务接口与默认的 OpenAI 兼容实现；llm-aisdk.js Vercel AI SDK 适配器（anthropic / google / aisdk）
-  world-llm.js 按世界配置模型服务：世界 → 通道的解析、暂停与恢复、测试连接；secrets.js 凭据加密；net/safe-fetch.js 防 SSRF 的请求
-  memory.js    记忆流：写入、压缩成摘要、检索（双字组 + 可选的语义相似度）
-  embeddings.js 可选的 embedding（EMBED_MODEL）与向量缓存（node:sqlite）
+  llm.ts       LLM 客户端：按通道（一把钥匙一条）排队、自适应限流、重试、预算与统计、JSON 提取、回复录制
+  llm-providers.ts 模型服务接口与默认的 OpenAI 兼容实现；llm-aisdk.ts Vercel AI SDK 适配器（anthropic / google / aisdk）
+  world-llm.ts 按世界配置模型服务：世界 → 通道的解析、暂停与恢复、测试连接；secrets.ts 凭据加密；net/safe-fetch.ts 防 SSRF 的请求
+  memory.ts    记忆流：写入、压缩成摘要、检索（双字组 + 可选的语义相似度）
+  embeddings.ts 可选的 embedding（EMBED_MODEL）与向量缓存（node:sqlite）
   world.js     手工布局的地图生成器（云溪镇 yunxi-v1、暗月界 moonrealm-v1）与 A* 寻路
 public/
   js/render.js 世界渲染器：数据更新、坐标换算、每帧调度；render/ 下是 terrain 静态层、objects 物体与角色、

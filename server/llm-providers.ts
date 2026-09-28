@@ -10,7 +10,7 @@
 //                 Promise<{ content: string, usage: { prompt: number, completion: number }, finishReason?: string }>
 //               schema：{ name, schema }（JSON Schema），只在开启结构化输出时传入；不支持的实现可以忽略
 //   失败时抛出 Error，message 带上上游的原始错误信息：llm.js 据此识别限流、鉴权失败、不支持 JSON 模式。
-import { aisdkProvider } from './llm-aisdk.js';
+import { aisdkProvider } from './llm-aisdk.ts';
 
 export function openaiCompatible({ baseUrl = '', apiKey = '', fetch: f = null } = {}) {
   const base = baseUrl.replace(/\/+$/, '');

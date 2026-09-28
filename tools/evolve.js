@@ -160,7 +160,7 @@ export async function evolve(opts = {}) {
   const { manifestText, effectsText } = await import('../server/worldai/manifest.js');
   const spec = replay(defaultSpec(), save.specOps || []).spec;
   const context = { manifest: manifestText(spec), effects: effectsText() };
-  const llm = await import('../server/llm.js');
+  const llm = await import('../server/llm.ts');
   const useLlm = !o.offline && llm.stats.enabled;
 
   const written = [];

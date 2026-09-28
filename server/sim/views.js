@@ -2,7 +2,7 @@
 // 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
 import fs from 'node:fs';
 import path from 'node:path';
-import * as llm from '../llm.js';
+import * as llm from '../llm.ts';
 import { fmtTime, fmtStamp } from '../memory.ts';
 import { publicSpec } from '../kernel/spec.ts';
 import { findAbility } from '../kernel/abilities.ts';
