@@ -8,10 +8,11 @@
     "start": "node server/main.js",
     "dev": "node --watch server/index.js",
     "test": "node --test test/*.test.js",
-    "check": "node tools/check.js"
+    "check": "node tools/check.js",
+    "typecheck": "tsc -p ."
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.18"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.17",
@@ -24,5 +25,9 @@
     "@ai-sdk/openai": "^4.0.78",
     "@ai-sdk/openai-compatible": "^3.0.57",
     "ai": "^7.0.118"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2"
   }
 }

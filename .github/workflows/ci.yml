@@ -14,10 +14,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 22：package.json 声明的最低版本，不装可选依赖（AI SDK 相关测试会跳过）
+        # 22.18：package.json 声明的最低版本（类型剥离默认开启），不装可选依赖（AI SDK 相关测试会跳过）
         # 26：mise.toml 使用的版本，装上可选依赖 AI SDK 一起测
         include:
-          - node: 22
+          - node: '22.18'
             sdk: false
           - node: 26
             sdk: true
@@ -31,6 +31,9 @@ jobs:
         run: npm ci --no-audit --no-fund ${{ !matrix.sdk && '--omit=optional' || '' }}
       - name: 语法检查
         run: node tools/check.js
+      - name: 类型检查（TypeScript 7 的原生编译器在可选依赖里，只在装了可选依赖的任务里跑）
+        if: matrix.sdk
+        run: npx tsc -p .
       - name: 测试（含 7 个游戏日的无头回放，不调用 LLM）
         run: node --test test/*.test.js
       - name: AI 模块流程检查（录制回复，不联网）

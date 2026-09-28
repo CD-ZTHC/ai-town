@@ -14,6 +14,7 @@ mise run reset      # 清空存档，从第一天重新开始
 mise run public     # 以公网模式启动（需要 ADMIN_TOKEN）
 mise run token      # 生成管理员令牌
 mise run check      # 语法检查
+mise run typecheck  # 类型检查（服务端逐步迁移到原生 TypeScript，Node 直接剥离类型运行，不编译）
 mise run test       # 运行测试（不调用 LLM；含用录制回复跑 7 个游戏日的无头回放）
 mise run spec       # 打印默认世界规格
 mise run evolve     # 让进化引擎处理一个需求（需求文档 → 评审 → 实施 → 多轮评审 → 试运行 → 提交表决）
@@ -304,7 +305,7 @@ core.lock      冻结区文件哈希（tools/core-guard.js）
 tools/         rotate-secrets.js（更换凭据加密主密钥）、evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查 + 冻结区校验）、browser-check.js（无头 Chrome 冒烟检查）、core-guard.js（冻结区校验）
 spec/mods/     Mod（AI 创造的内容包）
 test/          node:test 测试（AI SDK 相关的在没装时跳过）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复
-.github/       CI：Node 22（不装可选依赖）/ Node 26（装上 AI SDK）跑语法检查、测试与 smoke --mock；Node 26 另跑无头 Chrome 冒烟检查
+.github/       CI：Node 22.18（不装可选依赖）/ Node 26（装上 AI SDK）跑语法检查、测试与 smoke --mock；Node 26 另跑类型检查与无头 Chrome 冒烟检查
 docs/design/   设计方案；docs/settings.md 全部设置项（自动生成）
 data/          accounts.db 账号 / 世界登记 / 举报 / 用量账本 / 审计 / 模型服务凭据（加密）；secret.key 凭据加密主密钥（没有用 SECRETS_KEY 时）；settings.json 面板保存的设置（版本）；evolution/ 进化引擎的任务与账本；
                genesis/ 创世任务；worlds/<id>/ 每个世界：save.json 存档（每 20 秒）、ops.jsonl 世界变更日志、snapshots/ 每小时快照、

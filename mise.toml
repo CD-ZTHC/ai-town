@@ -41,6 +41,10 @@ run = "node -e \"console.log('ADMIN_TOKEN=' + require('crypto').randomBytes(24).
 description = "语法检查"
 run = "node tools/check.js"
 
+[tasks.typecheck]
+description = "类型检查（tsc --noEmit；服务端 .ts 由 Node 直接剥离类型运行，不编译）"
+run = "npx tsc -p ."
+
 [tasks.test]
 description = "运行测试（不调用 LLM，使用临时存档目录）"
 run = "node --test test/*.test.js"

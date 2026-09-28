@@ -1,0 +1,19 @@
+// 类型检查（重构方案 §8）：服务端用原生 .ts + Node 类型剥离，不编译；tsc 只做检查（npm run typecheck）
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmit": true,
+    "allowJs": true, // 迁移期间 JS 与 TS 共存
+    "checkJs": false, // JS 文件暂不检查
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true, // 禁止 enum / namespace / 参数属性等 Node 无法剥离的语法
+    "verbatimModuleSyntax": true, // 强制 import type
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["server", "plugin-host", "evolution", "plugins/builtin", "tools", "test"]
+}

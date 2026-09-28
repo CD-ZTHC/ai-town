@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// mise run check：对所有 JS 文件做语法检查（递归扫描，新增目录不用改这里）
+// mise run check：对所有 JS / TS 文件做语法检查（递归扫描，新增目录不用改这里）。
+// .ts 由 node --check 按类型剥离检查：enum、namespace 等不可擦除的语法会报错；类型本身由 npm run typecheck 检查
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -10,7 +11,7 @@ function* walk(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) yield* walk(p);
-    else if (e.name.endsWith('.js')) yield p;
+    else if (/\.(js|ts)$/.test(e.name) && !e.name.endsWith('.d.ts')) yield p;
   }
 }
 
