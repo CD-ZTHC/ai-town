@@ -118,8 +118,8 @@ export const SETTINGS = {
   PLUGINS_DISABLE: { group: 'evolution', ...list(), default: [], apply: 'restart', label: '不加载的内置插件' },
 
   // ---------- 世界级（多世界设计 §14.8：属于某个世界，只在世界设置里改；环境变量只在迁移时写入官方世界）----------
-  STORY_RATING: { group: 'world', scope: 'world', ...oneOf(['cozy', 'adventure', 'epic', 'tragic']), default: 'cozy', apply: 'restart', label: '内容分级' },
-  STORYTELLER: { group: 'world', scope: 'world', ...oneOf(['gentle', 'voyage', 'chaos']), default: 'voyage', apply: 'restart', label: '叙事者' },
+  STORY_RATING: { group: 'world', scope: 'world', ...oneOf(['cozy', 'adventure', 'epic', 'dark', 'tragic']), default: 'cozy', apply: 'restart', label: '内容分级' },
+  STORYTELLER: { group: 'world', scope: 'world', ...oneOf(['gentle', 'voyage', 'chaos', 'horror']), default: 'voyage', apply: 'restart', label: '叙事者' },
   MODS: { group: 'world', scope: 'world', ...list(), default: [], apply: 'restart', label: '加载的 Mod' },
 
   // ---------- 开发与测试 ----------

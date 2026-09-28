@@ -10,6 +10,9 @@ import { keywordCheck, sanitize } from '../guard.js';
 import { publishReview } from '../worlds/review.js';
 import { quota } from '../accounts/quota.js';
 import { get as setting } from '../settings/index.js';
+import { reviewRating } from '../kernel/ratings.js';
+import { STORYTELLERS } from '../kernel/spec.js';
+import { DEATH_NAMED_DEFAULT } from './genesis-api.js';
 
 const clip = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const EDITABLE = new Set(['drafting', 'preview']);
@@ -107,7 +110,7 @@ export function worldsApi(deps) {
       if (!x) throw new HttpError(404, `地点不存在：${e.id}`);
       set(x, 'name', e.name, 16); set(x, 'desc', e.desc, 110); if (e.emoji !== undefined) x.emoji = clip(e.emoji, 4);
     }
-    const bad = texts.filter((t) => t && !keywordCheck(t, world.meta.rating === 'tragic' ? 'tragic' : 'epic').ok);
+    const bad = texts.filter((t) => t && !keywordCheck(t, reviewRating(world.meta.rating)).ok);
     if (bad.length) throw new HttpError(422, `这些内容不合适：${bad.slice(0, 2).join('；')}`);
     const errs = checkPack(world, p.map);
     if (errs.length) throw new HttpError(422, `改完之后世界包不合法：${errs.slice(0, 3).join('；')}`);
@@ -186,8 +189,20 @@ export function worldsApi(deps) {
     const settings = {};
     // 世界级设置（§14.8）：叙事者、Mod；分级改动要在授予范围内（管理员可以改任何世界）
     if (b.migration !== undefined) settings.migration = Boolean(b.migration);
-    if (b.storyteller !== undefined) { if (!['gentle', 'voyage', 'chaos'].includes(b.storyteller)) throw new HttpError(400, '未知叙事者'); settings.storyteller = b.storyteller; }
+    if (b.storyteller !== undefined) { if (!STORYTELLERS.includes(b.storyteller)) throw new HttpError(400, '未知叙事者'); settings.storyteller = b.storyteller; }
     if (b.rating !== undefined && c.get('admin')) settings.rating = String(b.rating);
+    // 死亡预算（每 3 天最多几名具名角色死亡）：owner 只能在授予的上限之内调整，管理员不限
+    if (b.deathNamed !== undefined) {
+      const n = Number(b.deathNamed);
+      if (!Number.isInteger(n) || n < 0 || n > 20) throw new HttpError(400, '死亡预算应为 0~20 的整数');
+      if (!c.get('admin')) {
+        const owner = w.ownerId ? accounts?.get(w.ownerId) : null;
+        const q = w.ownerId ? accounts?.grant(w.ownerId, 'genesis')?.quota : null;
+        const cap = owner && ['admin', 'super'].includes(owner.role) ? 20 : Number.isInteger(q?.deathNamed) ? q.deathNamed : DEATH_NAMED_DEFAULT;
+        if (n > cap) throw new HttpError(403, `你的死亡预算上限是 ${cap}`);
+      }
+      settings.deathNamed = n;
+    }
     if (b.mods !== undefined && c.get('admin')) settings.mods = (Array.isArray(b.mods) ? b.mods : []).map(String).slice(0, 12);
     if (Object.keys(settings).length) patch.settings = settings;
     const next = registry.update(w.id, patch);
@@ -195,7 +210,8 @@ export function worldsApi(deps) {
     // 叙事者、Mod、进化开关要重新加载世界才生效；人员流动开关直接生效
     const running = manager.get(w.id);
     if (running && settings.migration !== undefined) running.town.worldSettings.migration = settings.migration;
-    const reload = Object.keys(settings).some((k) => k !== 'migration');
+    if (running && settings.deathNamed !== undefined) running.town.worldSettings.deathNamed = settings.deathNamed;
+    const reload = Object.keys(settings).some((k) => !['migration', 'deathNamed'].includes(k));
     if (reload || patch.evolution !== undefined) manager.close(w.id, '世界设置已修改');
     return c.json({ ok: true, world: next });
   });

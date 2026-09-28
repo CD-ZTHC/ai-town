@@ -75,7 +75,7 @@ function makeTown(world, root) {
     dataDir: activeDir(root),
     worldId: world.id,
     pack,
-    worldSettings: { rating: s.rating, storyteller: s.storyteller, mods: s.mods || [], migration: s.migration !== false },
+    worldSettings: { rating: s.rating, storyteller: s.storyteller, mods: s.mods || [], migration: s.migration !== false, ...(Number.isInteger(s.deathNamed) ? { deathNamed: s.deathNamed } : {}) },
     // 每个世界的 AI 插件只在自己的目录里（为 A 世界生成的插件不会被 B 世界加载）；
     // 官方世界的进化开关是 EVOLVE，用户世界是创世时（或之后在设置里）打开的开关，超时交给 AI 裁决官
     evolution: { dir: path.join(root, 'evolution'), pluginsDir: path.join(root, 'plugins'), config: { publicMode: config.publicMode, mode: evolutionMode(world) } },

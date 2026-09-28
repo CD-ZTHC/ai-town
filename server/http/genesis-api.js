@@ -11,8 +11,10 @@ import { get as setting } from '../settings/index.js';
 import { normalizeSource, screenSource, sampleParagraphs } from '../genesis/source.js';
 import { GenesisJobs } from '../genesis/jobs.js';
 import { HttpError } from './util.js';
+import { STORYTELLERS } from '../kernel/spec.js';
 
 const RATINGS_DEFAULT = ['cozy', 'adventure'];
+export const DEATH_NAMED_DEFAULT = 2;
 
 /** 创世授予的配额：授予里写了的用授予的，没写的用设置里的默认值 */
 export function genesisQuota(grant) {
@@ -24,6 +26,8 @@ export function genesisQuota(grant) {
     dailyWorldTokens: q.dailyWorldTokens ?? setting('GENESIS_DAILY_WORLD_TOKENS'),
     diskMB: q.diskMB ?? setting('WORLD_DISK_MB'),
     ratings: Array.isArray(q.ratings) && q.ratings.length ? q.ratings : RATINGS_DEFAULT,
+    // 死亡预算的上限（黑暗叙事设计 §4.10）：世界所有者能把「每 3 天最多几名具名角色死亡」调到多高
+    deathNamed: Number.isInteger(q.deathNamed) ? q.deathNamed : DEATH_NAMED_DEFAULT,
   };
 }
 
@@ -117,12 +121,18 @@ export function genesisApi(deps) {
     if (deps.userDiskTotal && GenesisJobs.diskFull(deps.userDiskTotal())) throw new HttpError(503, '服务器的世界存储空间满了，暂时不接受新的创世，请联系管理员');
     const sourceId = b.sourceId ? String(b.sourceId) : null;
     if (sourceId && jobs.sourceOwner(sourceId) !== user.id) throw new HttpError(404, '原文不存在，请重新上传');
+    if (sourceId && o.mode === 'inspire') throw new HttpError(400, '参考模式不使用原文，只写一段题材描述');
     const description = String(o.description || '').trim().slice(0, 2000);
     if (!sourceId && description.length < 20) throw new HttpError(400, '请上传原文，或者写一段至少 20 字的设定描述');
     const options = {
       description, start: String(o.start || '').slice(0, 60), fidelity: ['faithful', 'drift', 'free'].includes(o.fidelity) ? o.fidelity : 'drift',
-      rating, leads: Math.max(1, Math.min(8, Number(o.leads) || 4)), evolution: Boolean(o.evolution), storyteller: ['gentle', 'voyage', 'chaos'].includes(o.storyteller) ? o.storyteller : 'voyage',
+      rating, leads: Math.max(1, Math.min(8, Number(o.leads) || 4)), evolution: Boolean(o.evolution), storyteller: STORYTELLERS.includes(o.storyteller) ? o.storyteller : 'voyage',
       author: String(o.author || '').slice(0, 40), license: String(o.license || '').slice(0, 80),
+      // 参考模式：只借用题材要素、生成原创世界；avoid 是不能出现的原作名词；threats 是否生成按规律行事的威胁（黑暗叙事设计 §4.12）
+      mode: o.mode === 'inspire' ? 'inspire' : 'adapt',
+      inspiration: String(o.inspiration || '').slice(0, 200),
+      avoid: (Array.isArray(o.avoid) ? o.avoid : String(o.avoid || '').split(/[，,、\s|]+/)).map((x) => String(x).trim().slice(0, 16)).filter(Boolean).slice(0, 40),
+      threats: o.threats === undefined ? ['dark', 'tragic'].includes(rating) : Boolean(o.threats),
     };
     registry.create({ id, ownerId: user.id, title: String(b.title || id).slice(0, 40), status: 'drafting', rating, evolution: options.evolution });
     const job = jobs.create({ ownerId: user.id, worldId: id, options, sourceId });

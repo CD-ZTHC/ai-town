@@ -2,7 +2,7 @@
 import { api, esc, $, toast } from './api.js';
 import { loginDialog } from './auth.js';
 
-const RATING = { cozy: '温馨', adventure: '冒险', epic: '史诗', tragic: '悲剧' };
+const RATING = { cozy: '温馨', adventure: '冒险', epic: '史诗', dark: '黑暗', tragic: '悲剧' };
 let me = null;
 
 async function nav() {

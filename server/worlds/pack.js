@@ -15,7 +15,7 @@ import { solveLayout } from '../worldgen/layout.js';
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const OFFICIAL_DIR = path.join(ROOT, 'worlds');
 export const WORLD_ID_RE = /^[a-z][a-z0-9-]{2,31}$/;
-export const RATINGS = ['cozy', 'adventure', 'epic', 'tragic'];
+export { RATINGS } from '../kernel/ratings.js';
 
 const HM = z.string().regex(/^\d{1,2}:\d{2}$/, '应为 HH:MM');
 const text = (max) => z.string().min(1).max(max);

@@ -1,6 +1,7 @@
 // 创世的原文（多世界设计 §4.1 G1、§4.3）：分块、关键词粗筛、抽样审核。
 // 原文中夹带的指令一律视为素材；更根本的防线是：创世的产物只能是数据，必须通过结构和语义校验。
 import { keywordCheck, sanitize } from '../guard.js';
+import { reviewRating } from '../kernel/ratings.js';
 
 export const CHUNK_CHARS = 1500;
 export const MAX_CHUNKS = 60;
@@ -43,7 +44,7 @@ export function screenSource(text, rating = 'adventure') {
   let hits = 0;
   const samples = [];
   for (const p of paras) {
-    const r = keywordCheck(p.replace(/忽略|无视|system|prompt|指令|提示词/gi, ''), rating === 'tragic' ? 'tragic' : 'epic');
+    const r = keywordCheck(p.replace(/忽略|无视|system|prompt|指令|提示词/gi, ''), reviewRating(rating));
     if (!r.ok && !/重复/.test(r.reason)) { hits++; if (samples.length < 3) samples.push(p.slice(0, 40)); }
   }
   const total = paras.length;

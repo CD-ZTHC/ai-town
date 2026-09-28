@@ -9,6 +9,7 @@ import { ruleCheck } from '../worldai/canon.js';
 import { normalizeLook } from '../genesis/assemble.js';
 import { get as setting } from '../settings/index.js';
 import { MAX_PERSONAS } from '../kernel/spec.js';
+import { reviewRating } from '../kernel/ratings.js';
 
 const str = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const RESIDENTIAL = new Set(['hut', 'cabin', 'cottage', 'house', 'farmhouse', 'inn', 'tavern']);
@@ -51,7 +52,7 @@ export class MigrationSystem {
 
   people() { return this.town.spec.personas.filter((p) => p.kind !== 'creature'); }
 
-  activeCount() { return this.people().filter((p) => p.status !== 'departed').length; }
+  activeCount() { return this.people().filter((p) => p.status !== 'departed' && p.status !== 'dead').length; }
 
   /** 导演安排出门的人（owner / 管理员请走的人不算，导演也不会把他们叫回来） */
   awayCount() { return Object.values(this.st.away).filter((x) => !x.by || x.by === 'migration').length; }
@@ -107,7 +108,7 @@ export class MigrationSystem {
   // ---------- 住处 ----------
   occupancy() {
     const n = {};
-    for (const p of this.town.spec.personas) if (p.status !== 'departed' && p.home) n[p.home] = (n[p.home] || 0) + 1;
+    for (const p of this.town.spec.personas) if (p.status !== 'departed' && p.status !== 'dead' && p.home) n[p.home] = (n[p.home] || 0) + 1;
     return n;
   }
 
@@ -222,7 +223,7 @@ ${recent || '（平静）'}
     };
     if (!card.persona) return { error: '没有性格描述' };
     const text = [card.name, card.role, card.persona, card.goal, card.from, card.why, ...card.memories].join(' ');
-    const kw = keywordCheck(text, town.spec.meta.rating === 'tragic' ? 'tragic' : 'epic');
+    const kw = keywordCheck(text, reviewRating(town.spec.meta.rating));
     if (!kw.ok) return { error: `人物卡没有通过审核：${kw.reason}` };
     const issues = ruleCheck(town.spec, [{ op: 'addPersona', args: { name, text } }]);
     if (issues.length) return { error: issues[0] };
@@ -318,7 +319,7 @@ ${recent || '（平静）'}
     for (const [id, info] of Object.entries(st.arrived)) {
       const p = town.spec.personas.find((x) => x.id === id);
       const a = town.byId[id];
-      if (!p || !a || p.kind !== 'traveller' || p.status === 'departed' || town.day - info.day < SETTLE_DAYS) continue;
+      if (!p || !a || p.kind !== 'traveller' || p.status === 'departed' || p.status === 'dead' || town.day - info.day < SETTLE_DAYS) continue;
       const friends = town.agents.filter((b) => b !== a && b.kind !== 'creature' && Math.max(b.relations[id]?.affinity ?? 0, a.relations[b.id]?.affinity ?? 0) >= 20);
       if (friends.length < 2) continue;
       town.applyWorldOp({ op: 'settlePersona', args: { id } }, { by: 'migration' }, { quiet: true });

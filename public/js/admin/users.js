@@ -10,7 +10,8 @@ const QUOTA = [
   ['dailyWorldTokens', '每个世界每日 token', 'GENESIS_DAILY_WORLD_TOKENS'],
   ['diskMB', '每个世界磁盘上限（MB）', 'WORLD_DISK_MB'],
 ];
-const RATINGS = ['cozy', 'adventure', 'epic', 'tragic'];
+const RATINGS = ['cozy', 'adventure', 'epic', 'dark', 'tragic'];
+const EXPLICIT = ['dark', 'tragic']; // 需要显式勾选的分级：默认不授予
 
 async function render(el, ctx) {
   el.innerHTML = `<div class="row" style="margin-bottom:12px">
@@ -44,7 +45,8 @@ async function openUser(id, ctx, reload) {
     <h3 style="margin-top:16px">✨ 创世权限 ${g ? '<span class="pill good">已授予</span>' : '<span class="pill">未授予</span>'}</h3>
     <div class="small muted">留空的项使用设置里的默认值。</div>
     ${QUOTA.map(([k, label, sk]) => `<label>${label}（默认 ${esc(def[sk] ?? '—')}）</label><input data-q="${k}" type="number" min="0" value="${q[k] ?? ''}" placeholder="${esc(def[sk] ?? '')}">`).join('')}
-    <label>允许的分级</label><div class="row">${RATINGS.map((r) => `<label class="row small" style="margin:0"><input type="checkbox" data-rating="${r}" ${(q.ratings || ['cozy', 'adventure']).includes(r) ? 'checked' : ''}> ${r}${r === 'tragic' ? '（需显式勾选）' : ''}</label>`).join('')}</div>
+    <label>允许的分级</label><div class="row">${RATINGS.map((r) => `<label class="row small" style="margin:0"><input type="checkbox" data-rating="${r}" ${(q.ratings || ['cozy', 'adventure']).includes(r) ? 'checked' : ''}> ${r}${EXPLICIT.includes(r) ? '（需显式勾选）' : ''}</label>`).join('')}</div>
+    <label>死亡预算上限（dark / tragic 世界里，每 3 天最多几名具名角色死亡；默认 2，20 表示基本不限）</label><input data-q="deathNamed" type="number" min="0" max="20" value="${q.deathNamed ?? ''}" placeholder="2">
     <label>有效期（留空为长期）</label><input id="g-exp" type="date" value="${g?.expiresAt ? new Date(g.expiresAt).toISOString().slice(0, 10) : ''}">
     <label>备注</label><input id="g-note" value="${esc(g?.note || '')}" maxlength="200">
     <div class="row" style="margin-top:10px"><button class="primary" id="g-save">${g ? '更新授予' : '授予创世权限'}</button>${g ? '<button class="danger" id="g-revoke">收回</button>' : ''}</div>

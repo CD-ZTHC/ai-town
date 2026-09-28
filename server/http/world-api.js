@@ -8,7 +8,7 @@ import { ADMIN_OPS } from '../worldai/proposals.js';
 import { registry, forkTimeline, setActive } from '../timelines.js';
 import * as llm from '../llm.js';
 import { useAbility } from '../kernel/abilities.js';
-import { config, sanitize, moderate } from '../guard.js';
+import { config, sanitize, moderate, targetsResident } from '../guard.js';
 import { authorize } from '../accounts/authz.js';
 import { quota, remaining as quotaLeft } from '../accounts/quota.js';
 import { HttpError } from './util.js';
@@ -140,6 +140,8 @@ export function worldApi(deps) {
     take(c, 'eventAttempt');
     const m = await moderate(text, 'event', t.spec.meta.rating, worldCtx(t));
     if (!m.ok) throw new HttpError(422, m.reason);
+    // 点名要伤害某位居民的事件：只有世界所有者和管理员可以发布（黑暗叙事设计 §3.3）
+    if ((m.targeted || targetsResident(text, t.agents.map((x) => x.name))) && !reviewer(c)) throw new HttpError(403, '点名伤害某位居民的事件，只有世界的主人可以发布');
     take(c, 'event');
     console.log(`[event] ${c.get('host').id} ${c.get('vid')}@${c.get('ip')} → ${target}: ${text}`);
     t.godEvent(text, target).catch((e) => console.warn('[event]', e.message));

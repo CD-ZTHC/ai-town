@@ -4,9 +4,9 @@ import { findPath } from '../world.js';
 import * as llm from '../llm.js';
 import { addMemory, parseHM } from '../memory.js';
 import { posOf } from '../kernel/effects.js';
+import { ratingAtLeast } from '../kernel/ratings.js';
 
 const MAX_CREATURES = 24;
-const RATING_ORDER = { cozy: 0, adventure: 1, epic: 2 };
 const rand = (a) => a[Math.floor(Math.random() * a.length)];
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const PORTAL_TEXT = {
@@ -50,7 +50,7 @@ export class CreatureSystem {
     const town = this.town;
     const def = town.spec.creatures[type];
     if (!def || def.leader) return 0;
-    if (def.minRating && RATING_ORDER[town.spec.meta.rating] < RATING_ORDER[def.minRating]) return 0;
+    if (def.minRating && !ratingAtLeast(town.spec.meta.rating, def.minRating)) return 0;
     let n = 0;
     for (let i = 0; i < count && this.list.length < MAX_CREATURES; i++) {
       const at = this.spawnPoint();

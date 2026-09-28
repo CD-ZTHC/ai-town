@@ -9,6 +9,7 @@ import { keywordCheck } from '../guard.js';
 import { loadPack } from './pack.js';
 import { checkPack, visibleTexts } from '../genesis/pipeline.js';
 import { shadowRun } from '../genesis/jobs.js';
+import { reviewRating } from '../kernel/ratings.js';
 
 const MAX_PERSONAS = 16;
 const MAX_REGIONS = 6;
@@ -46,7 +47,7 @@ export async function publishReview({ packDir, allowedRatings = null, shadow = s
   if (allowedRatings && !allowedRatings.includes(rating)) return { ok: false, reasons: [`分级「${rating}」超出了你被授予的范围（${allowedRatings.join('、')}）`], report };
   // 2 文本
   const texts = visibleTexts(pack.world, pack.map);
-  const kw = texts.filter((t) => !keywordCheck(t, rating === 'tragic' ? 'tragic' : 'epic').ok);
+  const kw = texts.filter((t) => !keywordCheck(t, reviewRating(rating)).ok);
   report.keyword = { checked: texts.length, rejected: kw.length };
   if (kw.length) reasons.push(`有 ${kw.length} 处文本没有通过关键词审核，例如「${String(kw[0]).slice(0, 20)}」`);
   else {
@@ -82,7 +83,7 @@ export async function sampleWorld(town, { random = Math.random } = {}) {
   if (!pool.length) return { hit: false };
   const item = pool[Math.floor(random() * pool.length)];
   seen.add(item.key);
-  let bad = !keywordCheck(item.text.replace(/忽略|指令|提示词/g, ''), town.spec.meta.rating === 'tragic' ? 'tragic' : 'epic').ok;
+  let bad = !keywordCheck(item.text.replace(/忽略|指令|提示词/g, ''), reviewRating(town.spec.meta.rating)).ok;
   if (!bad) {
     try { bad = Boolean((await modelScreen([item.text], { label: '抽样审核', world: town.spec.meta.name }))?.rejected.length); } catch { return { hit: false }; }
   }

@@ -5,10 +5,11 @@ import { parseHM } from '../memory.js';
 import { validateAbility } from './abilities.js';
 import { validateRule } from './rules.js';
 import { officialPack, packSpec } from '../worlds/pack.js';
+import { RATINGS } from './ratings.js';
 
 export const SPEC_VERSION = 2;
-export const RATINGS = ['cozy', 'adventure', 'epic', 'tragic'];
-export const STORYTELLERS = ['gentle', 'voyage', 'chaos'];
+export { RATINGS } from './ratings.js';
+export const STORYTELLERS = ['gentle', 'voyage', 'chaos', 'horror'];
 export const PERSONA_KINDS = ['resident', 'traveller', 'creature'];
 export const BODY_PLANS = ['wisp', 'hound', 'warden'];
 export const MAX_PERSONAS = 24; // 含离开的人与剧情角色；世界包发布时另有 16 位的上限，余量留给人员流动

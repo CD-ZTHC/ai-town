@@ -1,7 +1,7 @@
 // 创世 G4 的组装（多世界设计 §4.1）：把模型给出的人物、地图、叙述口吻等拼成一个世界包。
 // 模型的输出只是素材：所有字段在这里裁剪、补默认值、换成合法的 id；最后仍要通过结构校验（zod）与内核规格校验。
 import { BUILDING_KINDS, OUTDOOR_KINDS, BIOME_IDS } from '../worldgen/layout.js';
-import { SPEC_VERSION } from '../kernel/spec.js';
+import { SPEC_VERSION, RATINGS, STORYTELLERS } from '../kernel/spec.js';
 
 const str = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -11,7 +11,7 @@ const ACC = ['apron', 'strawhat', 'beard', 'glasses', 'coat', 'cap', 'earring'];
 const SKIN = ['#f7d5bd', '#f3cfb3', '#e8b896', '#d9a88a', '#c68f6a', '#8d5a3c'];
 const CLOTH = ['#d62c2c', '#4a90d9', '#5bb56b', '#e8a33d', '#8e6bb8', '#4db6ac', '#f06292', '#a1887f', '#607d8b'];
 const ROOFS = ['#c0392b', '#8e44ad', '#2e8b57', '#d9a441', '#5b7bb4', '#7b5b4b', '#b86b4b'];
-const RATING_ORDER = ['cozy', 'adventure', 'epic', 'tragic'];
+const RATING_ORDER = RATINGS;
 const hashStr = (s) => { let h = 2166136261; for (const c of String(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; };
 const pick = (arr, seed) => arr[hashStr(seed) % arr.length];
 
@@ -162,7 +162,7 @@ export function assembleWorld({ id, title, adapt, personas, extras, threads, opt
   const tUsed = new Set();
   return {
     id, specVersion: SPEC_VERSION,
-    meta: { name: str(title, 16), rating, storyteller: ['gentle', 'voyage', 'chaos'].includes(options.storyteller) ? options.storyteller : 'voyage' },
+    meta: { name: str(title, 16), rating, storyteller: STORYTELLERS.includes(options.storyteller) ? options.storyteller : 'voyage' },
     lore: {
       summary: str(adapt?.summary, 1500) || str(title, 16),
       pillars: (Array.isArray(adapt?.pillars) ? adapt.pillars : []).map((p) => str(p, 80)).filter(Boolean).slice(0, 6).concat(['没有血腥与残酷的描写']).slice(0, 6),

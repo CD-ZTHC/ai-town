@@ -8,11 +8,14 @@ const PORTAL_THREAT = { crack: 0.15, open: 0.55, wide: 0.9, stable: 0.05, sealed
 export function computeTension(town) {
   const people = town.agents.filter((a) => a.kind !== 'creature');
   const hostile = town.creatures.list.filter((c) => !c.friendly && !c.hidden).length;
-  const threat = clamp01(hostile / 10 + (PORTAL_THREAT[town.creatures.portal?.stage] || 0));
+  // 规律型威胁：在外游荡的每个 0.2，被标记的每人 0.1，进行中的打斗每场 0.1
+  const roaming = town.threats?.enabled ? town.threats.live().filter((x) => x.state === 'roam').length : 0;
+  const marked = people.filter((a) => a.marks?.length).length;
+  const threat = clamp01(hostile / 10 + (PORTAL_THREAT[town.creatures.portal?.stage] || 0) + roaming * 0.2 + marked * 0.1 + (town.fights?.length || 0) * 0.1);
 
   let negative = 0, pairs = 0;
   for (const a of people) for (const r of Object.values(a.relations)) { pairs++; if (r.affinity < 0) negative++; }
-  const scared = people.filter((a) => a.body.conditions.some((c) => c === '受惊' || c === '晕倒')).length;
+  const scared = people.filter((a) => a.body.conditions.some((c) => ['受惊', '晕倒', '重伤', '被俘'].includes(c))).length;
   const conflict = clamp01((pairs ? negative / pairs : 0) * 3 + scared / Math.max(1, people.length));
 
   const threads = town.spec.threads;
@@ -32,11 +35,14 @@ export function computeTension(town) {
 
 // 三种叙事者的目标曲线
 const VOYAGE = [20, 28, 36, 60, 55, 68, 30]; // 一季 7 天：伏笔 → 爆发 → 高潮 → 回落
+const HORROR = [22, 40, 65, 35];
 export function targetTension(town) {
   const st = town.spec.meta.storyteller;
   const hour = town.minute / 60;
   const night = hour < 7 || hour > 22 ? -5 : 0;
   if (st === 'voyage') return VOYAGE[(town.day - 1) % 7] + night;
+  // 恐怖：四天一个循环（平静 → 征兆 → 爆发 → 喘息），夜里比白天更紧张
+  if (st === 'horror') return HORROR[(town.day - 1) % HORROR.length] + (hour < 5 || hour >= 20 ? 10 : 0);
   if (st === 'chaos') {
     // 每 6 小时换一个伪随机目标（同一时段内稳定）
     const k = Math.floor(town.t / 360);
@@ -47,4 +53,4 @@ export function targetTension(town) {
   return (town.day % 3 === 0 && hour > 13 && hour < 20 ? 40 : 22) + night;
 }
 
-export const BOREDOM_HOURS = { gentle: 8, voyage: 5, chaos: 3 };
+export const BOREDOM_HOURS = { gentle: 8, voyage: 5, chaos: 3, horror: 5 };

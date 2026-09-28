@@ -133,8 +133,8 @@
 
 | 键 | 说明 | 取值 | 默认 | 生效 |
 | --- | --- | --- | --- | --- |
-| `STORY_RATING` | 内容分级 **世界级** | `cozy` / `adventure` / `epic` / `tragic` | `cozy` | 重启 |
-| `STORYTELLER` | 叙事者 **世界级** | `gentle` / `voyage` / `chaos` | `voyage` | 重启 |
+| `STORY_RATING` | 内容分级 **世界级** | `cozy` / `adventure` / `epic` / `dark` / `tragic` | `cozy` | 重启 |
+| `STORYTELLER` | 叙事者 **世界级** | `gentle` / `voyage` / `chaos` / `horror` | `voyage` | 重启 |
 | `MODS` | 加载的 Mod **世界级** | 逗号分隔的列表 | （空） | 重启 |
 
 ## 开发
