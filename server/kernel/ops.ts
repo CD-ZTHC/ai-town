@@ -544,11 +544,11 @@ export const OPS: Record<string, OpDef> = {
       if (!Array.isArray(a.passages) || !a.passages.length || a.passages.length > 3 || !a.passages.every((p: number) => Number.isInteger(p) && p >= 2 && p <= edge - 3)) return '通道（passages）不合法：让系统选';
       const next = structuredClone(spec);
       adjacentApply(next, a);
-      const r = next.regions.find((x) => x.id === a.id);
+      const r = next.regions.find((x) => x.id === a.id)!;
       const problems = layoutProblems(r, next);
       if (problems.length) return `布局不可行：${problems[0]}`;
       const w = buildRegion(r, next);
-      const wf = buildRegion(next.regions.find((x) => x.id === from.id), next);
+      const wf = buildRegion(next.regions.find((x) => x.id === from.id)!, next);
       const mine = (w.passages || []).length, theirs = (wf.passages || []).filter((p: Args) => p.to === a.id).length;
       if (mine < a.passages.length || theirs < a.passages.length) return '接壤的边上开不出通道（被水或建筑挡住了），换个位置';
       return null;

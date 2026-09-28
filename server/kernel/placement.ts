@@ -2,28 +2,17 @@
 // 校验标准：占地可建、与其他建筑隔一格、门口能走到、原有建筑入口仍然可达、各地点的可达站位一个都不少。
 import { T } from '../world.ts';
 import { buildRegion } from '../worldgen/index.ts';
-import type { Region, WorldSpec } from '../types/spec.ts';
+import type { Building, Location, Region, WorldSpec } from '../types/spec.ts';
 
-// 生成出来的地图（worldgen/，B4 迁移前先在这里声明用到的字段）
-type Cell = { x: number; y: number };
-interface GenLocation { name: string; indoor?: string | null; rect?: { x: number; y: number; w: number; h: number } | null; spots: Cell[] }
-interface GenBuilding { id: string; name: string; x: number; y: number; w: number; h: number; entrance: Cell }
-export interface GenWorld {
-  W: number;
-  H: number;
-  tiles: ArrayLike<number>;
-  walk: ArrayLike<number | boolean>;
-  objects: Array<Cell & { type: string }>;
-  buildings: GenBuilding[];
-  locations: Record<string, GenLocation>;
-  overlayErrors: Record<string, string>;
-}
+import type { Cell, GenSpec, GenWorld } from '../types/map.ts';
+
+export type { GenWorld } from '../types/map.ts';
 /** 新建筑的描述（addBuilding 的参数加上求得的位置） */
 export interface BuildingDef { id: string; name?: string; emoji?: string; desc?: string; x?: number; y?: number; w: number; h: number; [k: string]: unknown }
 /** 地形编辑（地图演变 §4） */
 export interface TerrainEdit { kind: 'clear' | 'grove' | 'place' | (string & {}); id?: string | null; placeKind?: string | null; rect?: { x: number; y: number; w: number; h: number }; trees?: Array<[number, number, string]>; seed?: number; [k: string]: unknown }
 type Region2 = Region & { edits?: TerrainEdit[] };
-const build = (region: Region | undefined, spec: object): GenWorld => buildRegion(region, spec) as GenWorld;
+const build = (region: Region | undefined, spec: GenSpec): GenWorld => buildRegion(region!, spec);
 
 const BUILDABLE = new Set<number>([T.GRASS, T.FLOWER, T.DIRT, T.SAND]);
 const MAX_FULL_CHECKS = 24;
@@ -31,8 +20,9 @@ const MAX_FULL_CHECKS = 24;
 // 用主地图自己的生成器重建（云溪镇是 yunxi-v1，创世生成的世界是 layout-v1）
 const worldOf = (spec: WorldSpec, extra: BuildingDef | null = null): GenWorld => build(spec.regions!.find((r) => r.id === 'town'), {
   ...spec,
-  buildings: extra ? [...spec.buildings, { ...extra, added: true }] : spec.buildings,
-  locations: extra ? { ...spec.locations, [extra.id]: { name: extra.name, emoji: extra.emoji || '🏠', desc: extra.desc || '' } } : spec.locations,
+  // 候选建筑只用来校验能不能放下：字段不全，按建筑处理即可
+  buildings: extra ? [...spec.buildings, { ...extra, added: true } as unknown as Building] : spec.buildings,
+  locations: extra ? { ...spec.locations, [extra.id]: { name: extra.name, emoji: extra.emoji || '🏠', desc: extra.desc || '' } as Location } : spec.locations,
 });
 
 /** 地点的中心点（站位、入口或区域中心） */

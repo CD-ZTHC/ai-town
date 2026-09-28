@@ -1,10 +1,12 @@
 // 云溪镇地图生成：瓦片、建筑、装饰物、地点与站位点（确定性随机，前后端共享同一份数据）
 import { T, WALKABLE } from './worldgen/tiles.ts';
 import { finishRegion } from './worldgen/finish.ts';
+import type { Cell, GenSpec, GenWorld, MapBuilding, MapLocation, MapObject, Rect } from './types/map.ts';
+import type { Building, Location, Region } from './types/spec.ts';
 
 export { T };
 
-function mulberry32(a) {
+function mulberry32(a: number): () => number {
   return function () {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
@@ -14,17 +16,17 @@ function mulberry32(a) {
 }
 
 // 生成器 yunxi-v1（手工布局）：建筑与地点信息来自世界规格（worlds/yunxi/world.json），保证云溪镇逐格不变
-export function buildWorld({ buildings: buildingDefs, locationInfo, region = null, spec = null }) {
+export function buildWorld({ buildings: buildingDefs, locationInfo, region = null, spec = null }: { buildings: Building[]; locationInfo: Record<string, Location>; region?: Region | null; spec?: GenSpec | null }): GenWorld {
   const W = 64, H = 44;
   const rnd = mulberry32(20260924);
-  const tiles = new Array(W * H).fill(T.GRASS);
+  const tiles: number[] = new Array(W * H).fill(T.GRASS);
   const solid = new Uint8Array(W * H);
-  const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
-  const get = (x, y) => (inb(x, y) ? tiles[y * W + x] : -1);
-  const set = (x, y, t) => inb(x, y) && (tiles[y * W + x] = t);
-  const isSolid = (x, y) => !inb(x, y) || solid[y * W + x] || !WALKABLE.has(get(x, y));
-  const block = (x, y) => inb(x, y) && (solid[y * W + x] = 1);
-  const objects = [];
+  const inb = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < W && y < H;
+  const get = (x: number, y: number): number => (inb(x, y) ? tiles[y * W + x] : -1);
+  const set = (x: number, y: number, t: number) => inb(x, y) && (tiles[y * W + x] = t);
+  const isSolid = (x: number, y: number) => !inb(x, y) || solid[y * W + x] || !WALKABLE.has(get(x, y));
+  const block = (x: number, y: number) => inb(x, y) && (solid[y * W + x] = 1);
+  const objects: MapObject[] = [];
 
   // ---- 湖、溪流 ----
   for (let y = 0; y < H; y++) {
@@ -47,7 +49,7 @@ export function buildWorld({ buildings: buildingDefs, locationInfo, region = nul
   }
 
   // ---- 道路 ----
-  const road = (x0, y0, w, h) => {
+  const road = (x0: number, y0: number, w: number, h: number) => {
     for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
       const t = get(x, y);
       set(x, y, t === T.WATER || t === T.DEEP ? T.BRIDGE : T.PATH);
@@ -82,20 +84,20 @@ export function buildWorld({ buildings: buildingDefs, locationInfo, region = nul
   // ---- 建筑 ----
   // 世界规格里后来新增的建筑（added）不参与基础生成，而是在最后叠加（worldgen/finish.js），保证原地图的随机序列与其余部分不变；
   // 被拆除的基础建筑照常参与基础生成，同样在叠加层里变回空地。别的区域的建筑不在这张图上。
-  const buildings = buildingDefs.filter((b) => !b.added && (b.region || 'town') === 'town').map((b) => {
+  const buildings: MapBuilding[] = buildingDefs.filter((b) => !b.added && (b.region || 'town') === 'town').map((b) => {
     const door = { x: b.x + Math.floor(b.w / 2), y: b.y + b.h - 1 };
     for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) block(x, y);
     return { ...b, door, entrance: { x: door.x, y: door.y + 1 } };
   });
 
   // 从入口开辟小路连到最近的道路
-  const carve = (sx, sy) => {
-    const prev = new Map();
-    const key = (x, y) => y * W + x;
-    const q = [[sx, sy]];
+  const carve = (sx: number, sy: number) => {
+    const prev = new Map<number, number | null>();
+    const key = (x: number, y: number): number => y * W + x;
+    const q: Array<[number, number]> = [[sx, sy]];
     prev.set(key(sx, sy), null);
     while (q.length) {
-      const [x, y] = q.shift();
+      const [x, y] = q.shift()!;
       const t = get(x, y);
       if ((t === T.PATH || t === T.PLAZA || t === T.BRIDGE) && !(x === sx && y === sy)) {
         let k = prev.get(key(x, y));
@@ -119,7 +121,7 @@ export function buildWorld({ buildings: buildingDefs, locationInfo, region = nul
   carve(50, 32);
 
   // ---- 广场设施 ----
-  const obj = (o, solidTiles = true) => {
+  const obj = (o: MapObject, solidTiles = true) => {
     objects.push(o);
     if (solidTiles) for (let y = o.y; y < o.y + (o.h || 1); y++) for (let x = o.x; x < o.x + (o.w || 1); x++) block(x, y);
   };
@@ -160,8 +162,8 @@ export function buildWorld({ buildings: buildingDefs, locationInfo, region = nul
   });
 
   // 路灯
-  const lamps = [];
-  const lamp = (x, y) => {
+  const lamps: Cell[] = [];
+  const lamp = (x: number, y: number) => {
     if (isSolid(x, y) || get(x, y) !== T.GRASS) return;
     obj({ type: 'lamp', x, y }); lamps.push({ x, y });
   };
@@ -171,9 +173,9 @@ export function buildWorld({ buildings: buildingDefs, locationInfo, region = nul
   lamp(49, 33); lamp(52, 32);
 
   // ---- 地点与站位 ----
-  const B = Object.fromEntries(buildings.map((b) => [b.id, b]));
-  const locations = {};
-  const addLoc = (id, extra) => {
+  const B: Record<string, MapBuilding> = Object.fromEntries(buildings.map((b) => [b.id, b]));
+  const locations: Record<string, MapLocation> = {};
+  const addLoc = (id: string, extra: Partial<MapLocation>) => {
     const info = locationInfo[id] || { name: B[id]?.name, emoji: '🏠', desc: '' };
     locations[id] = { id, name: info.name, emoji: info.emoji, desc: info.desc, spots: [], ...extra };
   };
@@ -205,11 +207,11 @@ export function buildWorld({ buildings: buildingDefs, locationInfo, region = nul
   [[13, 37], [8, 41], [22, 36], [27, 40], [18, 41]].forEach(([x, y]) => locations.park.spots.push({ x, y }));
 
   // ---- 树木、花丛（避开道路/站位/入口）----
-  const reserved = new Set();
-  const reserve = (x, y, r = 1) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) reserved.add((y + dy) * W + x + dx); };
+  const reserved = new Set<number>();
+  const reserve = (x: number, y: number, r = 1) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) reserved.add((y + dy) * W + x + dx); };
   for (const l of Object.values(locations)) for (const s of l.spots) reserve(Math.round(s.x), Math.round(s.y), 1);
   for (const b of buildings) reserve(b.entrance.x, b.entrance.y, 1);
-  const nearRoad = (x, y) => {
+  const nearRoad = (x: number, y: number): boolean => {
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
       const t = get(x + dx, y + dy);
       if (t === T.PATH || t === T.DIRT || t === T.PLAZA || t === T.BRIDGE || t === T.WOOD) return true;
@@ -217,7 +219,7 @@ export function buildWorld({ buildings: buildingDefs, locationInfo, region = nul
     }
     return false;
   };
-  const inPark = (x, y) => y >= 33 && x <= 30;
+  const inPark = (x: number, y: number): boolean => y >= 33 && x <= 30;
   for (let y = 1; y < H; y++) {
     for (let x = 0; x < W; x++) {
       if (get(x, y) !== T.GRASS || reserved.has(y * W + x) || solid[y * W + x] || nearRoad(x, y)) continue;
@@ -244,21 +246,21 @@ export function buildWorld({ buildings: buildingDefs, locationInfo, region = nul
   // gate：通往其他区域（暗月界）的渡口位置，与裂隙的出怪点相同；连通性从喷泉广场出发
   return finishRegion({ W, H, tiles, solid, objects, buildings, locations, lamps, gate: { x: 51, y: 37 }, origin: { x: 22, y: 20 }, lampForAdded: true,
     roads: [T.PATH, T.PLAZA, T.BRIDGE], dirtOver: [T.GRASS, T.SAND] },
-    region || { id: 'town' }, spec || { buildings: buildingDefs, locations: locationInfo });
+    region || ({ id: 'town' } as Region), spec || { buildings: buildingDefs, locations: locationInfo });
 }
 
 // ---------- 区域生成器 moonrealm-v1：暗月界（裂隙另一头的口袋地图）；地点名称与描述来自世界规格 ----------
-export function buildMoonRealm({ locationInfo = {}, region = null, spec = null } = {}) {
+export function buildMoonRealm({ locationInfo = {}, region = null, spec = null }: { locationInfo?: Record<string, Location>; region?: Region | null; spec?: GenSpec | null } = {}): GenWorld {
   const W = 36, H = 26;
   const rnd = mulberry32(19260404);
-  const tiles = new Array(W * H).fill(T.VOID);
+  const tiles: number[] = new Array(W * H).fill(T.VOID);
   const solid = new Uint8Array(W * H);
-  const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
-  const get = (x, y) => (inb(x, y) ? tiles[y * W + x] : -1);
-  const set = (x, y, t) => inb(x, y) && (tiles[y * W + x] = t);
-  const objects = [];
-  const lamps = [];
-  const obj = (o) => { objects.push(o); for (let y = o.y; y < o.y + (o.h || 1); y++) for (let x = o.x; x < o.x + (o.w || 1); x++) if (inb(x, y)) solid[y * W + x] = 1; };
+  const inb = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < W && y < H;
+  const get = (x: number, y: number): number => (inb(x, y) ? tiles[y * W + x] : -1);
+  const set = (x: number, y: number, t: number) => inb(x, y) && (tiles[y * W + x] = t);
+  const objects: MapObject[] = [];
+  const lamps: Cell[] = [];
+  const obj = (o: MapObject) => { objects.push(o); for (let y = o.y; y < o.y + (o.h || 1); y++) for (let x = o.x; x < o.x + (o.w || 1); x++) if (inb(x, y)) solid[y * W + x] = 1; };
   // 漂浮的月岛
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const dx = (x - 18) / 15.5, dy = (y - 12.5) / 10.8;
@@ -287,41 +289,42 @@ export function buildMoonRealm({ locationInfo = {}, region = null, spec = null }
     const nearPath = [[0, 1], [0, -1], [1, 0], [-1, 0]].some(([dx, dy]) => get(x + dx, y + dy) === T.MOONPATH);
     if (edge && !nearPath) obj({ type: 'crystal', x, y, v: rnd() });
   }
-  const locations = {};
-  const addLoc = (id, rect, spots) => { locations[id] = { id, ...locationInfo[id], rect, spots: spots.map(([x, y]) => ({ x, y })) }; };
+  const locations: Record<string, MapLocation> = {};
+  const addLoc = (id: string, rect: Rect, spots: number[][]) => { locations[id] = { id, ...locationInfo[id], rect, spots: spots.map(([x, y]) => ({ x: x!, y: y! })) } as MapLocation; };
   addLoc('moon_gate', { x: 15, y: 19, w: 7, h: 4 }, [[18, 21], [17, 21], [19, 21], [17, 20], [19, 20]]);
   addLoc('moon_plaza', { x: 14, y: 9, w: 9, h: 7 }, [[16, 10], [20, 10], [16, 13], [20, 13], [17, 14], [19, 14], [18, 9]]);
   addLoc('moon_garden', { x: 4, y: 8, w: 9, h: 10 }, [[7, 11], [9, 13], [6, 14], [10, 10], [8, 16], [11, 15]]);
   addLoc('moon_lookout', { x: 24, y: 4, w: 8, h: 6 }, [[27, 6], [29, 7], [26, 8], [30, 6]]);
   // 叠加层与连通性（从渡口出发）：见 worldgen/finish.js
   return finishRegion({ name: '暗月界', W, H, tiles, solid, objects, buildings: [], locations, lamps, gate: { x: 18, y: 21 }, roads: [T.MOONPATH], dirtOver: [] },
-    region || { id: 'moonrealm' }, spec || { buildings: [], locations: locationInfo });
+    region || ({ id: 'moonrealm' } as Region), spec || { buildings: [], locations: locationInfo });
 }
 
 // A* 寻路（4 邻接）
-export function findPath(world, sx, sy, tx, ty) {
+/** 返回不含起点的路径；走不到返回 null */
+export function findPath(world: Pick<GenWorld, 'W' | 'H' | 'walk' | 'tiles'>, sx: number, sy: number, tx: number, ty: number): Cell[] | null {
   const { W, H, walk } = world;
   sx = Math.round(sx); sy = Math.round(sy); tx = Math.round(tx); ty = Math.round(ty);
   if (sx === tx && sy === ty) return [];
-  const idx = (x, y) => y * W + x;
+  const idx = (x: number, y: number): number => y * W + x;
   const g = new Float32Array(W * H).fill(Infinity);
   const came = new Int32Array(W * H).fill(-1);
-  const open = [[0, sx, sy]];
+  const open: Array<[number, number, number]> = [[0, sx, sy]];
   g[idx(sx, sy)] = 0;
   const closed = new Uint8Array(W * H);
   while (open.length) {
     // 小规模地图，线性取最小即可
     let bi = 0;
-    for (let i = 1; i < open.length; i++) if (open[i][0] < open[bi][0]) bi = i;
-    const [, x, y] = open[bi];
-    open[bi] = open[open.length - 1]; open.pop();
+    for (let i = 1; i < open.length; i++) if (open[i]![0] < open[bi]![0]) bi = i;
+    const [, x, y] = open[bi]!;
+    open[bi] = open[open.length - 1]!; open.pop();
     const ci = idx(x, y);
     if (closed[ci]) continue;
     closed[ci] = 1;
     if (x === tx && y === ty) {
-      const path = [];
+      const path: Cell[] = [];
       let k = ci;
-      while (k !== idx(sx, sy)) { path.push({ x: k % W, y: Math.floor(k / W) }); k = came[k]; }
+      while (k !== idx(sx, sy)) { path.push({ x: k % W, y: Math.floor(k / W) }); k = came[k]!; }
       return path.reverse();
     }
     for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
@@ -332,8 +335,8 @@ export function findPath(world, sx, sy, tx, ty) {
       // 走在道路上更便宜，让居民自然地沿路行走
       const t = world.tiles[ni];
       const cost = t === T.PATH || t === T.PLAZA || t === T.BRIDGE || t === T.WOOD || t === T.DIRT ? 1 : 2.2;
-      const ng = g[ci] + cost;
-      if (ng < g[ni]) {
+      const ng = g[ci]! + cost;
+      if (ng < g[ni]!) {
         g[ni] = ng; came[ni] = ci;
         open.push([ng + Math.abs(nx - tx) + Math.abs(ny - ty), nx, ny]);
       }
