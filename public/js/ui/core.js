@@ -20,7 +20,7 @@ export const voice = () => app?.spec?.voice || { name: '云溪镇', emoji: '🌸
 
 export const name = (id) => app.meta[id]?.name || id;
 
-export const ui = { tab: 'sched', memFilter: 'all', chatMode: 'visitor', feedFilter: 'all', detail: null, rosterT: 0, refreshT: 0, pending: false };
+export const ui = { tab: 'attr', memFilter: 'all', chatMode: 'visitor', feedFilter: 'all', detail: null, rosterT: 0, refreshT: 0, pending: false };
 
 export function toast(html, ms = 4200) {
   const box = $('#toasts');

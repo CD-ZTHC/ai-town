@@ -1,4 +1,4 @@
-// 居民检查器：日程、记忆、关系、日记、状态卡、与居民聊天
+// 居民检查器：状态卡、属性、日程、记忆、关系、日记、与居民聊天
 import { $, $$, app, esc, face, toast, ui, weekday } from './core.js';
 import { refreshRoster } from '../ui.js';
 export function openInspector(id) {
@@ -56,7 +56,7 @@ function renderInspector(fresh) {
       <div class="ihead" id="ih"></div>
       <div class="inow" id="inow"></div>
       <div class="itabs">
-        ${[['sched', '🗓️ 日程'], ['mem', '🧠 记忆'], ['rel', '💞 关系'], ['diary', '📖 日记'], ...(app.perms.canTry ? [['chat', '💬 交谈']] : [])].map(([k, l]) => `<button data-t="${k}" class="${ui.tab === k ? 'on' : ''}">${l}</button>`).join('')}
+        ${[['attr', '📊 属性'], ['sched', '🗓️ 日程'], ['mem', '🧠 记忆'], ['rel', '💞 关系'], ['diary', '📖 日记'], ...(app.perms.canTry ? [['chat', '💬 交谈']] : [])].map(([k, l]) => `<button data-t="${k}" class="${ui.tab === k ? 'on' : ''}">${l}</button>`).join('')}
       </div>
       <div class="ipane" id="ipane"></div>`;
     $$('.itabs button', body).forEach((b) => b.addEventListener('click', () => {
@@ -90,10 +90,7 @@ function renderInspector(fresh) {
   $('#inow').innerHTML = `
     <div class="act">${esc(d.action.emoji)} ${esc(d.action.text)}</div>
     <div class="where">📍 ${esc(d.locName)}</div>
-    ${d.thought ? `<div class="thought">“${esc(d.thought)}”</div>` : ''}
-    <div class="goal"><b>长期目标</b> ${esc(d.goal)}</div>
-    ${d.todayGoal ? `<div class="goal"><b>今日心愿</b> ${esc(d.todayGoal)}</div>` : ''}
-    ${bodyHTML(d)}`;
+    ${d.thought ? `<div class="thought" title="${esc(d.thought)}"><span>“${esc(d.thought)}”</span></div>` : ''}`;
   renderPane(fresh);
 }
 
@@ -129,13 +126,20 @@ function renderPane(reset) {
   if (!pane || !d) return;
   const scroll = pane.scrollTop;
   if (ui.tab === 'chat') return renderChat(reset);
-  if (ui.tab === 'sched') {
+  if (ui.tab === 'attr') {
+    pane.innerHTML = `<div class="iattr">
+      <div class="goal"><b>长期目标</b> ${esc(d.goal)}</div>
+      ${d.todayGoal ? `<div class="goal"><b>今日心愿</b> ${esc(d.todayGoal)}</div>` : ''}
+      ${bodyHTML(d)}
+    </div>`;
+  } else if (ui.tab === 'sched') {
     const now = app.snap.t % 1440;
     pane.innerHTML = d.schedule.length ? `<div class="sched">${d.schedule.map((e) => {
       const cls = now >= e.end ? 'past' : now >= e.start ? 'now' : '';
       return `<div class="sitem ${cls} ${e.src === 'commit' ? 'commit' : ''}"><div class="se">${esc(e.emoji)}</div><div><div class="st">${e.time}${e.src === 'commit' ? ' · 📌 约定' : ''}</div><div class="sa">${esc(e.activity)}</div><div class="sl">📍 ${esc(e.locName)}</div></div></div>`;
     }).join('')}</div>` : '<div class="empty">🧠 正在规划今天的日程……</div>';
-    if (reset) $('.sitem.now', pane)?.scrollIntoView({ block: 'center' });
+    const cur = reset && $('.sitem.now', pane);
+    if (cur) { pane.scrollTop += cur.getBoundingClientRect().top - pane.getBoundingClientRect().top - (pane.clientHeight - cur.offsetHeight) / 2; return; }
   } else if (ui.tab === 'mem') {
     const filters = [['all', '全部'], ['reflect', '✨ 反思'], ['convo', '💬 对话'], ['thought', '💭 想法'], ['event', '📢 事件'], ['chat', '🧳 旅人']];
     const list = d.memories.filter((mm) => ui.memFilter === 'all' || mm.type === ui.memFilter);

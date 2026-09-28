@@ -134,7 +134,7 @@ await step('01-observe', async () => {
 await step('02-inspector', async () => {
   await click('#roster .rcard[data-id="lin"]');
   await waitFor(() => evaluate(`!document.querySelector('#inspector').hidden && document.querySelector('#insp-body').textContent.includes('林晓雨')`), 8000, '检查器');
-  for (const tab of ['sched', 'mem', 'rel', 'diary', 'chat']) await evaluate(`document.querySelector('#insp-body [data-tab="${tab}"]')?.click()`);
+  for (const tab of ['sched', 'mem', 'rel', 'diary', 'chat', 'attr']) await evaluate(`document.querySelector('#insp-body [data-t="${tab}"]')?.click()`);
 });
 await step('03-story', async () => { await click('#story-chip'); await waitFor(() => modalHas(), 8000, '故事面板'); });
 await step('04-build', async () => { await closeModal(); await click('#btn-build'); await waitFor(() => modalHas(), 8000, '建设面板'); });
