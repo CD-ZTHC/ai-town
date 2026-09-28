@@ -239,8 +239,19 @@ export class Town extends EventEmitter {
       const now = Date.now();
       const dtReal = Math.min(0.5, (now - last) / 1000);
       last = now;
-      this.advance(dtReal);
+      // 一个世界的模拟出错不能让整个进程崩溃（所有世界一起停、守护进程反复重启）：记下来，下一个 tick 继续
+      try { this.advance(dtReal); } catch (e) { this.fault('tick', e); }
     }, 50);
+  }
+
+  /** 模拟出错：打日志（同一处错误每分钟最多一次），不抛出 */
+  fault(where, e) {
+    const key = `${where}|${e?.message}`;
+    const now = Date.now();
+    this.faults ||= new Map();
+    if (now - (this.faults.get(key) || 0) < 60_000) return;
+    this.faults.set(key, now);
+    console.error(`[sim] ${this.worldId} ${where} 出错（已跳过，世界继续运行）：`, e?.stack || e);
   }
 
   /** 推进一次模拟（dtReal 为真实秒数）。主循环与无头测试共用。 */
@@ -260,7 +271,14 @@ export class Town extends EventEmitter {
       }
       const dtGame = dtReal * (this.nightSkip ? Math.max(this.speed, 15) : this.speed * this.paced);
       this.t += dtGame;
-      for (const a of this.agents) this.updateAgent(a, dtGame);
+      // 逐个居民隔离：一个人的状态出错时让他原地停下，不影响其他人（遍历副本：更新过程中可能有人死去或离开）
+      for (const a of [...this.agents]) {
+        if (!this.agents.includes(a)) continue; // 这一轮里已经死去或离开
+        try { this.updateAgent(a, dtGame); } catch (e) {
+          this.fault(`居民 ${a.id}`, e);
+          Object.assign(a, { path: [], dest: null, moving: false, curKey: null, status: a.status === 'walking' ? 'idle' : a.status });
+        }
+      }
       this.expire();
       this.rules.tick();
       this.creatures.tick(dtGame);
