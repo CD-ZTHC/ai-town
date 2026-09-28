@@ -16,12 +16,12 @@ const list = (item = z.string().min(1).max(64)) => ({ kind: 'list', type: z.arra
 const url = () => ({ kind: 'string', type: z.union([z.literal(''), z.string().url().max(500)]) });
 
 export const GROUPS = {
-  site: '站点', llm: '模型', embed: '语义检索', limits: '频率与审核', accounts: '账号', worlds: '世界',
+  site: '站点', llm: '模型', userLlm: '自带模型', embed: '语义检索', limits: '频率与审核', accounts: '账号', worlds: '世界',
   genesis: '创世', decisions: '决策', evolution: '自主进化', world: '世界级（在世界设置里修改）', dev: '开发',
 };
 
 export const SETTINGS = {
-  // ---------- 站点（前 6 项是启动必需，只能用环境变量）----------
+  // ---------- 站点（前 6 项是启动必需，只能用环境变量；另一项是 SECRETS_KEY）----------
   PORT: { group: 'site', ...int(1, 65535), default: 3000, apply: 'restart', bootstrap: true, label: '端口' },
   HOST: { group: 'site', ...str(200), default: '', apply: 'restart', bootstrap: true, label: '监听地址', help: '放在反向代理后面时建议 127.0.0.1；留空监听所有地址' },
   DATA_DIR: { group: 'site', ...str(500), default: 'data', apply: 'restart', bootstrap: true, label: '数据目录', help: '存档、账号数据库、设置文件都在这里' },
@@ -57,6 +57,23 @@ export const SETTINGS = {
   PACE_QUEUE: { group: 'llm', ...int(1, 1000), default: 6, apply: 'live', label: '开始放慢时间的排队长度', help: '按世界计算：本世界在队列里积压超过这个数时放慢' },
   PINNED_BUDGET_SHARE: { group: 'llm', ...num(0, 1), default: 0.3, apply: 'live', label: '常驻世界的预算保留比例' },
   PRIORITY_AGING_MIN: { group: 'llm', ...int(1, 1440), default: 30, apply: 'live', label: '低优先级任务防饿死阈值（分钟）' },
+
+  // ---------- 自带模型（按世界配置模型服务，设计见 docs/design/world-llm.md）----------
+  SECRETS_KEY: {
+    group: 'userLlm', ...str(200), default: '', apply: 'restart', bootstrap: true, secret: true, label: '凭据加密主密钥',
+    help: '32 字节（base64 或 hex）。不填时首次启动自动生成 <数据目录>/secret.key；丢失后所有模型服务凭据都要重填，生产环境建议用环境变量提供',
+  },
+  USER_LLM: { group: 'userLlm', ...bool(), default: true, apply: 'live', label: '允许世界使用自己的模型服务', help: '关闭后用户世界一律使用服务器的模型（凭据保留）；官方世界不受影响' },
+  USER_LLM_PROVIDERS: {
+    group: 'userLlm', ...list(z.enum(['openai', 'anthropic', 'google'])), default: ['openai', 'anthropic', 'google'], apply: 'live', label: '可以选的服务类型',
+    help: 'openai：OpenAI 兼容接口；anthropic / google 需要安装 AI SDK（可选依赖）',
+  },
+  USER_LLM_PRIVATE_NET: { group: 'userLlm', ...bool(), default: (get) => !get('PUBLIC_MODE'), apply: 'live', label: '允许内网地址与 http', help: '默认只在非公网模式下允许（例如本机的 Ollama）；公网模式下开启有 SSRF 风险' },
+  USER_LLM_MAX_CONCURRENCY: { group: 'userLlm', ...int(1, 32), default: 4, apply: 'live', label: '单个自带通道的并发上限' },
+  USER_LLM_TOTAL_CONCURRENCY: { group: 'userLlm', ...int(0, 1000), default: 0, apply: 'live', label: '所有自带通道合计的并发上限', help: '0 = 不限' },
+  USER_LLM_MAX_TIMEOUT_MS: { group: 'userLlm', ...int(5000, 600000), default: 300000, apply: 'live', label: '自带通道可设的最长超时（毫秒）' },
+  USER_LLM_CREDENTIALS_MAX: { group: 'userLlm', ...int(0, 50), default: 5, apply: 'live', label: '每个账号最多几份模型服务凭据' },
+  USER_LLM_HALT_NET_FAILS: { group: 'userLlm', ...int(1, 100), default: 8, apply: 'live', label: '连续多少次网络错误后暂停世界', help: '同时要求持续 3 分钟以上' },
 
   // ---------- 语义检索 ----------
   EMBED_MODEL: { group: 'embed', ...str(200), default: '', apply: 'restart', label: 'embedding 模型', help: '配置后记忆检索同时参考语义相似度' },

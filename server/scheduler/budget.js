@@ -18,10 +18,11 @@ export class Ledger {
     this.db = db;
     this.now = now;
     this.day = '';
-    this.byWorld = new Map(); // 当天：世界 → { total, P0..P4 }
+    this.byWorld = new Map(); // 当天：世界 → { total, P0..P4 }（只算服务器通道：全站与世界的站点额度）
+    this.byOwn = new Map(); // 当天：世界 → { total, P0..P4 }（世界自带的模型服务，不占站点额度）
     this.byUser = new Map();
-    this.upsert = db.prepare(`INSERT INTO usage (day, world_id, user_id, class, tokens, calls) VALUES (?, ?, ?, ?, ?, 1)
-      ON CONFLICT (day, world_id, user_id, class) DO UPDATE SET tokens = tokens + excluded.tokens, calls = calls + 1`);
+    this.upsert = db.prepare(`INSERT INTO usage (day, world_id, user_id, class, billing, tokens, calls) VALUES (?, ?, ?, ?, ?, ?, 1)
+      ON CONFLICT (day, world_id, user_id, class, billing) DO UPDATE SET tokens = tokens + excluded.tokens, calls = calls + 1`);
     this.roll();
   }
 
@@ -31,37 +32,44 @@ export class Ledger {
     if (d === this.day) return;
     this.day = d;
     this.byWorld.clear();
+    this.byOwn.clear();
     this.byUser.clear();
-    for (const r of this.db.prepare('SELECT world_id, user_id, class, SUM(tokens) AS t FROM usage WHERE day = ? GROUP BY world_id, user_id, class').all(d)) this.bump(r.world_id, r.user_id, r.class, r.t);
+    for (const r of this.db.prepare('SELECT world_id, user_id, class, billing, SUM(tokens) AS t FROM usage WHERE day = ? GROUP BY world_id, user_id, class, billing').all(d)) this.bump(r.world_id, r.user_id, r.class, r.t, r.billing);
   }
 
-  bump(worldId, userId, cls, tokens) {
-    const w = this.byWorld.get(worldId) || { total: 0, P0: 0, P1: 0, P2: 0, P3: 0, P4: 0 };
+  bump(worldId, userId, cls, tokens, billing = 'server') {
+    const map = billing === 'own' ? this.byOwn : this.byWorld;
+    const w = map.get(worldId) || { total: 0, P0: 0, P1: 0, P2: 0, P3: 0, P4: 0 };
     w.total += tokens;
     w[cls] = (w[cls] || 0) + tokens;
-    this.byWorld.set(worldId, w);
-    if (userId) this.byUser.set(userId, (this.byUser.get(userId) || 0) + tokens);
+    map.set(worldId, w);
+    if (userId && billing !== 'own') this.byUser.set(userId, (this.byUser.get(userId) || 0) + tokens);
   }
 
-  add({ worldId, userId, cls, tokens }) {
+  add({ worldId, userId, cls, tokens, billing = 'server' }) {
     this.roll();
     const w = worldId || '-';
-    this.bump(w, userId || null, cls, tokens);
-    try { this.upsert.run(this.day, w, userId || '', cls, Math.round(tokens)); } catch (e) { console.warn('[ledger] 写入失败：', e.message); }
+    const b = billing === 'own' ? 'own' : 'server';
+    this.bump(w, userId || null, cls, tokens, b);
+    try { this.upsert.run(this.day, w, userId || '', cls, b, Math.round(tokens)); } catch (e) { console.warn('[ledger] 写入失败：', e.message); }
   }
 
+  /** 当天用了多少站点额度（服务器通道） */
   world(worldId) { this.roll(); return this.byWorld.get(worldId) || { total: 0, P0: 0, P1: 0, P2: 0, P3: 0, P4: 0 }; }
+
+  /** 当天用了多少自带的模型服务 */
+  own(worldId) { this.roll(); return this.byOwn.get(worldId) || { total: 0, P0: 0, P1: 0, P2: 0, P3: 0, P4: 0 }; }
 
   /** 当天用量排行 */
   ranking() { this.roll(); return [...this.byWorld.entries()].map(([id, u]) => ({ id, ...u })).sort((a, b) => b.total - a.total); }
 
-  /** 某个世界最近 n 天的用量（owner 页面用） */
+  /** 某个世界最近 n 天的用量（owner 页面用）：{ day, class, billing, tokens } */
   history(worldId, n = 7) {
-    return this.db.prepare('SELECT day, class, SUM(tokens) AS tokens FROM usage WHERE world_id = ? GROUP BY day, class ORDER BY day DESC LIMIT ?').all(worldId, n * 5);
+    return this.db.prepare('SELECT day, class, billing, SUM(tokens) AS tokens FROM usage WHERE world_id = ? GROUP BY day, class, billing ORDER BY day DESC LIMIT ?').all(worldId, n * 10);
   }
 
-  /** 某个用户在某个级别的累计（创世额度：不按天） */
-  userTotal(userId, cls) { return this.db.prepare('SELECT COALESCE(SUM(tokens), 0) AS t FROM usage WHERE user_id = ? AND class = ?').get(userId, cls).t; }
+  /** 某个用户在某个级别用掉的站点额度累计（创世额度：不按天；自带的模型服务不算） */
+  userTotal(userId, cls) { return this.db.prepare("SELECT COALESCE(SUM(tokens), 0) AS t FROM usage WHERE user_id = ? AND class = ? AND billing = 'server'").get(userId, cls).t; }
 }
 
 export const LEVELS = ['normal', 'quiet', 'rules', 'exhausted'];

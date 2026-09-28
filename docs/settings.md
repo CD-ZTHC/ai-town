@@ -45,6 +45,20 @@
 | `PINNED_BUDGET_SHARE` | 常驻世界的预算保留比例 | 数字 | `0.3` | 即时 |
 | `PRIORITY_AGING_MIN` | 低优先级任务防饿死阈值（分钟） | 整数 | `30` | 即时 |
 
+## 自带模型
+
+| 键 | 说明 | 取值 | 默认 | 生效 |
+| --- | --- | --- | --- | --- |
+| `SECRETS_KEY` | 凭据加密主密钥：32 字节（base64 或 hex）。不填时首次启动自动生成 <数据目录>/secret.key；丢失后所有模型服务凭据都要重填，生产环境建议用环境变量提供 **启动必需** **密钥** | 文本 | （空） | 重启 |
+| `USER_LLM` | 允许世界使用自己的模型服务：关闭后用户世界一律使用服务器的模型（凭据保留）；官方世界不受影响 | 开关 | 开 | 即时 |
+| `USER_LLM_PROVIDERS` | 可以选的服务类型：openai：OpenAI 兼容接口；anthropic / google 需要安装 AI SDK（可选依赖） | 逗号分隔的列表 | `openai,anthropic,google` | 即时 |
+| `USER_LLM_PRIVATE_NET` | 允许内网地址与 http：默认只在非公网模式下允许（例如本机的 Ollama）；公网模式下开启有 SSRF 风险 | 开关 | `（按其他设置推导）` | 即时 |
+| `USER_LLM_MAX_CONCURRENCY` | 单个自带通道的并发上限 | 整数 | `4` | 即时 |
+| `USER_LLM_TOTAL_CONCURRENCY` | 所有自带通道合计的并发上限：0 = 不限 | 整数 | `0` | 即时 |
+| `USER_LLM_MAX_TIMEOUT_MS` | 自带通道可设的最长超时（毫秒） | 整数 | `300000` | 即时 |
+| `USER_LLM_CREDENTIALS_MAX` | 每个账号最多几份模型服务凭据 | 整数 | `5` | 即时 |
+| `USER_LLM_HALT_NET_FAILS` | 连续多少次网络错误后暂停世界：同时要求持续 3 分钟以上 | 整数 | `8` | 即时 |
+
 ## 语义检索
 
 | 键 | 说明 | 取值 | 默认 | 生效 |
