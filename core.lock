@@ -46,7 +46,7 @@
   "server/llm-aisdk.js": "bfc48eec2e111b386897127d5f518069424b97cdaf4385e76b7a296d4d92a606",
   "server/llm-providers.js": "1281c5bbb42911a3a927c84f1a63a3e331d624413f7b8a6de95ed63e67d7fb84",
   "server/llm.js": "c847d0a74db7082bb85293013cb09e4eaf1bee53450b5c7b1bc79bcd9dd76ce6",
-  "server/main.js": "7278575cb3650c20173b561d795ed797ceaf98fa68ed6a513ea179e480b63cc0",
+  "server/main.js": "a734d570aeb7ad521bc0908c73742ea7aebef0b13560cf68099a120d7be3bd31",
   "server/memory.js": "9c08558fb7b94d6c1a727418d76526a6fa3c72a4b1edcabf88bc2a1ebac46fe0",
   "server/memstat.js": "57849734974497fece242c9f58ee6406d82aa419577786028837932beb94c2bd",
   "server/net/safe-fetch.js": "10bfb8152332e53227cf5eeb7e57894b4599c0c0532dcdafbabfa9be62952dfe",

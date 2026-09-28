@@ -40,7 +40,9 @@ function childExecArgv() {
 function start() {
   let ready = false;
   lastErr = '';
-  child = fork(ENTRY, process.argv.slice(2), { stdio: ['inherit', 'inherit', 'pipe', 'ipc'], execArgv: [...process.execArgv, ...childExecArgv()] });
+  // 守护进程自己的堆上限（命令行的 --max-old-space-size）不传给服务进程：服务进程用 NODE_OPTIONS 里的上限
+  const inherited = process.execArgv.filter((f) => !/^--max-old-space-size(=|$)/.test(f));
+  child = fork(ENTRY, process.argv.slice(2), { stdio: ['inherit', 'inherit', 'pipe', 'ipc'], execArgv: [...inherited, ...childExecArgv()] });
   // 转发错误输出，同时留下最后一段，作为回退原因
   child.stderr.on('data', (d) => { process.stderr.write(d); lastErr = (lastErr + d.toString()).slice(-600); });
   child.on('message', (m) => {

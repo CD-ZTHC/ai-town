@@ -71,10 +71,11 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 
 容器以非 root 用户运行，根文件系统只读，并丢弃所有 capabilities。
 
-**2B. 直接用 Node 部署**：参考 `deploy/ai-town.service`（systemd，带沙箱加固）。
+**2B. 直接用 Node 部署**：参考 `deploy/ai-town.service`（systemd，带沙箱加固与整个进程组的内存上限，直接启动 `node`、不经过 mise）。原来用 `nohup mise run start` 运行的，用 `deploy/migrate-to-systemd.sh` 一次性迁到 `/opt/ai-town`；之后 `tools/deploy.sh` 会自动识别 systemd 方式。`tools/deploy.sh` 在本机装好生产依赖、打包上传，线上不再 `npm ci`。
 
 **3. 反向代理**：`deploy/Caddyfile` 和 `deploy/nginx.conf` 给出了**独立子域名**和**子路径**（如 `https://example.com/town/`）两种写法。页面使用相对路径，挂在任意子路径下都能用。注意：
 - 设置 `TRUST_PROXY=1`（compose 与 systemd 模板里已设置），否则所有访客会共用反向代理的 IP 和限流额度；
+- 反向代理前面还有 CDN（例如 Cloudflare）时，反向代理要信任 CDN 的地址段（Caddy 的 `trusted_proxies`），`TRUST_PROXY` 相应改为 2；CDN 的「浏览器缓存 TTL」请设为遵循源站（页面资源已经带内容哈希，源站会给出合适的缓存头）；
 - 代理必须关闭对 SSE 的缓冲（模板里已配置）。
 
 **4. 管理**：先在首页注册一个账号，然后打开 `/admin`，用 `ADMIN_TOKEN` 把这个账号认领为超级管理员；之后用这个账号登录即可管理（令牌保留为应急入口，每次使用都写审计）。世界页面里管理员可以调速、暂停、立即出版号外和重置世界。
