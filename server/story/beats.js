@@ -160,6 +160,88 @@ const KINDS = {
     run(town, b) { town.arcs.start(b.template, 'director'); },
   },
 
+  // ---------- 黑暗叙事（设计 §4.11）：只有世界包声明了 threats 时可用。导演只能安排局面，没有「杀死某人」这个动作 ----------
+  incident: {
+    check(b, town) {
+      if (!town.threats?.enabled) return '这个世界没有威胁';
+      if (!Object.hasOwn(town.spec.threats, b.threat || '')) return `未知威胁：${b.threat}`;
+      if (b.at != null && !Object.hasOwn(town.spec.locations, b.at)) return `未知地点：${b.at}`;
+      if (town.threats.live().filter((x) => x.type === b.threat).length >= 2) return '同一种威胁已经够多了';
+      return null;
+    },
+    run(town, b, ctx) { town.threats.spawn(b.threat, { loc: b.at || null, cause: ctx.source || 'director' }); },
+  },
+  omenAt: {
+    check(b, town) {
+      if (!town.threats?.enabled) return '这个世界没有威胁';
+      if (!Object.hasOwn(town.spec.locations, b.at || '')) return `未知地点：${b.at}`;
+      return str(b.text, 60) ? null : 'text 不能为空';
+    },
+    run(town, b) {
+      const here = town.agents.filter((a) => a.kind !== 'creature' && a.locId === b.at);
+      for (const a of here) addMemory(a, { t: town.t, type: 'omen', text: str(b.text, 60), importance: 6 });
+      const p = town.locCenter(b.at);
+      if (p) town.emit('vfx', { preset: 'ripple', x: p.x, y: p.y, color: '#5a2340', radius: 3 });
+      town.log('omen', `🕯️ ${town.locName(b.at)}：${str(b.text, 60)}`, { agents: here.map((a) => a.id) });
+    },
+  },
+  clue: {
+    check(b, town) {
+      if (!town.threats?.enabled) return '这个世界没有威胁';
+      if (!['rule', 'next_victim', 'origin'].includes(b.clueKind || 'rule')) return 'clueKind 只能是 rule / next_victim / origin';
+      if (b.threat != null && !Object.hasOwn(town.spec.threats, b.threat)) return `未知威胁：${b.threat}`;
+      return resolveWho(town, b.who).length ? null : 'who 不在场';
+    },
+    // 线索的内容由引擎从真假线索里抽取，导演只能决定给谁
+    run(town, b) { for (const a of resolveWho(town, b.who)) town.threats.giveClue(a, b.clueKind || 'rule', b.threat || null, { confidence: 0.6 }); },
+  },
+  dispatch: {
+    check(b, town) {
+      if (!town.threats?.enabled) return '这个世界没有威胁';
+      if (!town.dark.incidents.some((i) => (i.id === b.incident || i.loc === b.incident) && ['omen', 'outbreak', 'spread'].includes(i.stage))) return `没有进行中的事件：${b.incident}`;
+      return resolveWho(town, b.who).length ? null : 'who 不在场';
+    },
+    run(town, b) { for (const a of resolveWho(town, b.who)) town.dispatch(a, b.incident); },
+  },
+  surge: {
+    check(b, town) {
+      if (!Object.hasOwn(town.spec.burdens || {}, b.burden || '')) return `未知负担值：${b.burden}`;
+      if (!inRange(b.amount, -30, 30)) return 'amount 应在 -30~30';
+      return resolveWho(town, b.who).some((a) => a.burdens?.[b.burden] != null) ? null : 'who 没有这种负担值';
+    },
+    run(town, b) { for (const a of resolveWho(town, b.who)) if (a.burdens?.[b.burden] != null) town.addBurden(a, b.burden, b.amount); },
+  },
+  leak: {
+    check(b, town) { return town.dark?.contained?.length ? null : '没有收容着的威胁'; },
+    run(town) {
+      const c = town.dark.contained[0];
+      town.dark.contained = town.dark.contained.slice(1);
+      const holder = town.byId[c.holder];
+      const inst = town.threats.spawn(c.type, { at: holder && town.agents.includes(holder) ? posOf(town, holder) : null, cause: 'leak', quiet: true });
+      if (inst) town.log('threat', `💥 收容${inst.name}的容器开裂了`, { threat: inst.id });
+    },
+  },
+  abandon: {
+    check(b, town) { return town.threats?.enabled && town.dark.incidents.some((i) => (i.id === b.incident || i.loc === b.incident) && ['omen', 'outbreak', 'spread'].includes(i.stage)) ? null : `没有可以放弃的事件：${b.incident}`; },
+    run(town, b) { town.threats.abandon(b.incident); },
+  },
+  ambush: {
+    check(b, town) {
+      if (!town.canBeHostile()) return '这个世界里没有人会动手';
+      const [a] = resolveWho(town, b.who), [t] = resolveWho(town, b.target);
+      if (!a || !t || a === t) return 'who / target 不在场';
+      if (!Object.hasOwn(town.spec.locations, b.at || '')) return `未知地点：${b.at}`;
+      return town.mayHarm(a, t, 'subdue');
+    },
+    // 只安排「在某处埋伏」这个局面：到了时间、对方真的出现，才会动手，结果由战斗结算决定
+    run(town, b) {
+      const [a] = resolveWho(town, b.who), [t] = resolveWho(town, b.target);
+      const start = Math.min(Math.floor(town.minute) + 30, 22 * 60);
+      const hh = `${String(Math.floor(start / 60)).padStart(2, '0')}:${String(start % 60).padStart(2, '0')}`;
+      town.addCommitment(a, { time: hh, duration: 90, location: b.at, activity: `埋伏${t.name}`, emoji: '🗡️', act: { type: 'attack', target: t.name, intent: 'subdue' } }, '（心里打着主意）');
+    },
+  },
+
   // ---------- 以下仅限剧情弧模板 ----------
   portal: {
     privileged: true,

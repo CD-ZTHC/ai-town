@@ -1,0 +1,43 @@
+{
+ "regions": [
+  {
+   "id": "town", "generator": "layout-v1", "name": "临川市", "seed": 4217, "size": [84, 58], "biome": "urban", "gate": "plaza",
+   "areas": [
+    { "id": "old_block", "name": "老城区", "biome": "old_town", "size": "large", "places": [
+      { "id": "fire_lane", "kind": "alley", "name": "槐荫巷", "emoji": "🏚️", "desc": "老城区最深的一条巷子，二十年前烧过一场大火，巷口的槐树至今是黑的" },
+      { "id": "old_apartment", "kind": "apartment", "name": "槐荫巷七号楼", "emoji": "🏢", "desc": "火灾后重修的老楼，楼道灯总是坏", "public": false,
+        "style": { "roof": "#5b5752", "wall": "#9a9186", "roofShape": "flat", "material": "brick", "decor": ["sign"] } },
+      { "id": "tea_house", "kind": "cafe", "name": "老钱茶馆", "emoji": "🍵", "desc": "老城区唯一还开着的茶馆，老街坊在这里交换消息",
+        "style": { "roof": "#6b4a2f", "wall": "#c9b48f", "roofShape": "gable", "material": "wood", "decor": ["lantern", "sign"], "sign": "🍵" } },
+      { "id": "derelict", "kind": "workshop", "name": "废弃印刷厂", "emoji": "🏭", "desc": "停工多年的印刷厂，窗户全碎了，常有人看见里面有纸片在动", "public": false,
+        "style": { "roof": "#4a4a4a", "wall": "#7a746c", "roofShape": "flat", "material": "brick" } },
+      { "id": "earth_shrine", "kind": "shrine", "name": "土地庙", "emoji": "⛩️", "desc": "巷尾的小庙，香火早就断了，供桌上堆着纸扎" }
+    ] },
+    { "id": "new_district", "name": "新区", "biome": "urban", "size": "large", "places": [
+      { "id": "watch_office", "kind": "office", "name": "夜巡司临川分部", "emoji": "🏛️", "desc": "挂着「城市安全研究中心」牌子的灰色小楼，地下室里锁着镇匣",
+        "style": { "roof": "#3f4650", "wall": "#b8bcc2", "roofShape": "flat", "material": "stone", "decor": ["sign"] } },
+      { "id": "hospital", "kind": "hospital", "name": "临川第二医院", "emoji": "🏥", "desc": "新区的医院，夜班护士说五楼的电话半夜会自己响",
+        "style": { "roof": "#6f8fa8", "wall": "#eef1f4", "roofShape": "flat", "material": "stone", "decor": ["sign"], "sign": "➕" } },
+      { "id": "metro", "kind": "station", "name": "江桥地铁站", "emoji": "🚇", "desc": "二号线的终点站，末班车之后站台上还会亮着一盏灯",
+        "style": { "roof": "#3a5f8a", "wall": "#d6dbe0", "roofShape": "flat", "material": "stone", "decor": ["sign"], "sign": "🚇" } },
+      { "id": "river_view", "kind": "apartment", "name": "江景公寓", "emoji": "🏙️", "desc": "新区的高层公寓，住着不少上班族", "public": false,
+        "style": { "roof": "#4f5d6b", "wall": "#c4ccd4", "roofShape": "flat", "material": "stone" } },
+      { "id": "plaza", "kind": "plaza", "name": "中心广场", "emoji": "⛲", "desc": "新区的中心，晚上有人跳舞，也有人站在角落一动不动" },
+      { "id": "store", "kind": "store", "name": "24小时便利店", "emoji": "🏪", "desc": "整夜亮着灯的便利店，是夜里最安全的地方之一",
+        "style": { "roof": "#2e8b57", "wall": "#f4f4f0", "roofShape": "flat", "material": "plaster", "decor": ["awning", "sign"], "sign": "🏪" } }
+    ] },
+    { "id": "school_zone", "name": "学校周边", "biome": "urban", "size": "medium", "places": [
+      { "id": "school", "kind": "school", "name": "临川七中", "emoji": "🏫", "desc": "老牌中学，晚自习下课后操场上总有个小孩的影子",
+        "style": { "roof": "#a0522d", "wall": "#efe3cf", "roofShape": "gable", "material": "brick", "decor": ["bell", "sign"] } },
+      { "id": "archive", "kind": "archive", "name": "市档案馆", "emoji": "🗄️", "desc": "存着这座城市几十年的旧报纸和户籍记录",
+        "style": { "roof": "#5b5b6b", "wall": "#d8d2c4", "roofShape": "flat", "material": "stone" } },
+      { "id": "river_flat", "kind": "apartment", "name": "滨江小区", "emoji": "🏘️", "desc": "学校旁边的老小区，租金便宜", "public": false,
+        "style": { "roof": "#7b5b4b", "wall": "#d9cbb8", "roofShape": "flat", "material": "brick" } },
+      { "id": "park", "kind": "park", "name": "滨江公园", "emoji": "🌊", "desc": "江边的公园，靠水的那段路灯坏了很久" },
+      { "id": "night_street", "kind": "street", "name": "夜市街", "emoji": "🏮", "desc": "学校后门的夜市，一到晚上就挤满了人" }
+    ] }
+   ],
+   "links": [ { "from": "old_block", "to": "new_district", "via": "path" }, { "from": "new_district", "to": "school_zone", "via": "path" }, { "from": "school_zone", "to": "old_block", "via": "bridge" } ]
+  }
+ ]
+}

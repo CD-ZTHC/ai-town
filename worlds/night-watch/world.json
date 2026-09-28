@@ -1,0 +1,319 @@
+{
+ "id": "night-watch",
+ "specVersion": 2,
+ "meta": { "name": "夜巡", "rating": "dark", "storyteller": "horror" },
+ "lore": {
+  "summary": "临川市，一座普通的江边城市。几年前开始，城里陆续出现一种被称为「祟」的东西：它们由死者没有了结的执念凝结而成，各有各的规律——触犯了规律的人会死，寻常手段伤不到它们。只有少数人知道，市里有一个挂着「城市安全研究中心」牌子的机构叫「夜巡司」，招募那些身上寄宿着祟、能借它的力量压住别的祟的人，称为「负祟人」。借祟之力要付出代价：祟蚀一天天加深，满了人就会死，身上的祟会脱出来。",
+  "pillars": ["祟杀不死，只能收容、压制、避开或化解", "借祟之力必付祟蚀，祟蚀满则人亡祟出", "规律可以被查明，但真相从不直接给出", "每一只祟都有生前的来历"],
+  "breakers": "杨间|大昌|驭鬼者|鬼域|鬼烛|人皮纸|厉鬼复苏|鬼眼|黄金关押",
+  "canon": []
+ },
+ "voice": {
+  "name": "夜巡", "emoji": "🕯️", "place": "临川", "resident": "市民", "spawn": "plaza",
+  "chronicle": { "name": "临川夜报", "kind": "夜报", "editor": "何敏", "style": "冷静克制，只写发生了什么，偶尔留一句让人背后发凉的话" },
+  "ui": {
+   "tagline": "天黑之后，请记住那些规律……",
+   "welcome": "一个参考规律怪谈题材的原创世界。死者的执念凝成了「祟」，它们按各自的规律杀人。夜巡司的负祟人借祟之力对抗祟，也一天天被祟蚀吞没。这里会有人死去。",
+   "sampleEvents": ["🕯️ 槐荫巷的路灯一盏接一盏地灭了。", "📞 医院五楼的电话又在半夜响了。", "🚇 有人说末班车之后，站台上还停着一班车。", "📓 有人在旧书摊上翻到一本写满名字的册子。"]
+  }
+ },
+ "rhythm": { "plan": "06:00", "diary": "22:30", "chronicle": "23:00" },
+ "era": { "tech": "现代都市", "forbidden": ["魔法", "飞剑", "修仙"] },
+ "source": { "title": "原创（题材参考规律怪谈）", "author": "", "license": "原创" },
+ "calendar": {
+  "weekdays": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+  "events": [ { "id": "fire_anniversary", "name": "火灾忌日", "emoji": "🕯️", "day": 5, "from": "18:00", "location": "fire_lane", "hint": "槐荫巷大火二十周年，老街坊会去巷口烧纸", "countdown": true } ]
+ },
+ "weather": {
+  "overcast": { "name": "阴", "emoji": "☁️", "weight": 40 },
+  "drizzle": { "name": "小雨", "emoji": "🌧️", "weight": 30 },
+  "fog": { "name": "起雾", "emoji": "🌫️", "weight": 15 },
+  "clear": { "name": "晴", "emoji": "🌤️", "weight": 15 }
+ },
+ "locations": {},
+ "buildings": [],
+ "population": {
+  "fire_lane": 300, "old_apartment": 600, "tea_house": 80, "earth_shrine": 60,
+  "hospital": 500, "metro": 800, "river_view": 1500, "plaza": 400, "store": 60,
+  "school": 1200, "river_flat": 700, "park": 200, "night_street": 600
+ },
+ "items": {
+  "cinnabar_lead": { "name": "朱砂铅", "emoji": "🟥", "desc": "掺了朱砂的铅，夜巡司定期配发，用来浇铸镇匣" },
+  "seal_box": { "name": "镇匣", "emoji": "📦", "desc": "朱砂铅浇铸的空匣子，能把祟收进去" },
+  "sealed_box": { "name": "封着祟的镇匣", "emoji": "🗃️", "desc": "里面关着一只祟，拿在手里是凉的；每天都有很小的可能开裂" },
+  "ever_lamp": { "name": "长明灯", "emoji": "🏮", "desc": "点着的时候，有些祟靠近不了；灯油大约能烧三个小时",
+   "use": [{ "op": "spawn", "structure": "lamp_ward", "ttl": 180 }] },
+  "death_ledger": { "name": "报丧簿", "emoji": "📓", "desc": "一本旧册子，会自己写出下一个遇害者的名字，但不说原因；读的人会染上祟蚀",
+   "use": [{ "op": "clue", "kind": "next_victim" }, { "op": "burden", "id": "erosion", "amount": 6 }, { "op": "giveItem", "item": "death_ledger", "count": 1 }] },
+  "lighter": { "name": "防风打火机", "emoji": "🔥", "desc": "对付怕火的东西", "equip": "weapon", "mods": { "atk": 3 }, "tags": ["fire"] },
+  "old_photo": { "name": "旧照片", "emoji": "🖼️", "desc": "一张烧掉一角的全家福" }
+ },
+ "structures": {
+  "lamp_ward": { "name": "长明灯", "emoji": "🏮", "tags": ["light", "lamp_ward"], "light": { "r": 70, "color": "255,196,120" } }
+ },
+ "burdens": {
+  "erosion": {
+   "name": "祟蚀", "max": 100, "drift": 1.2,
+   "driftMods": [
+    { "when": "anchors(self, 50) >= 2", "mult": 0.5 },
+    { "when": "anchors(self, 50) == 0", "mult": 1.8 }
+   ],
+   "onEvent": [{ "event": "anchor_lost", "amount": 15 }],
+   "moodAt": [[60, "疏离"], [85, "恍惚"]],
+   "selfText": "身上越来越冷，对别人的事越来越提不起兴趣，有时候会忘了自己是谁",
+   "onFull": [{ "op": "kill", "target": "self", "text": "{self}身上的祟醒了" }]
+  }
+ },
+ "threats": {
+  "waiting_mother": {
+   "name": "等门的人", "emoji": "🚪", "kind": "祟", "mortal": false, "speed": 0.8,
+   "origin": "二十年前槐荫巷大火那夜，一位母亲一直站在门口等上夜校的儿子回家，火烧过来也没走",
+   "haunt": ["fire_lane"], "movement": "stationary", "active": ["19:00", "05:00"],
+   "rule": {
+    "trigger": "night() && entered(e, 'fire_lane') && named(e)",
+    "mark": { "delay": [20, 120], "sign": "听见有人在身后喊自己的小名" },
+    "outcome": [{ "op": "kill", "target": "self", "text": "{self}在槐荫巷回了一声头，再也没有走出来" }],
+    "unless": "nearStructure(e, 'lamp_ward', 3)", "reach": 6, "rest": 120
+   },
+   "counters": [
+    { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 25, "leak": 0.02 },
+    { "type": "suppress", "power": 2 },
+    { "type": "ward", "with": "lamp_ward", "radius": 3 },
+    { "type": "resolve", "when": "flag('mother_child_found')", "text": "等门的人终于等到了她的孩子，槐荫巷的火光熄灭了" }
+   ],
+   "zone": { "radius": 4, "grow": 0.5, "replay": "火灾那一夜，一个女人站在门口喊着孩子的小名", "tint": "#6b2a1a" },
+   "clues": ["在槐荫巷里被人叫了名字", "巷子里有灯的地方没出过事"],
+   "decoys": ["死者那天都穿过那座桥", "死者都是老城区的住户"],
+   "research": ["archive", "tea_house"],
+   "crowd": { "every": 720, "kills": [0, 1] }
+  },
+  "phone_ring": {
+   "name": "半夜的铃声", "emoji": "📞", "kind": "祟", "mortal": false, "speed": 1.2,
+   "origin": "一个夜班接线员，最后一通求救电话她没接到，第二天打电话的人死了；她一直在等那通电话再响起来",
+   "haunt": ["hospital", "river_view"], "movement": "patrol", "active": ["20:00", "04:00"],
+   "sounds": [{ "id": "ringing", "every": 45, "radius": 5, "text": "不知哪里传来一阵电话铃声" }],
+   "rule": {
+    "trigger": "heard(e, 'ringing') && speaking(e)",
+    "mark": { "delay": [30, 150], "sign": "耳朵里总有一阵忽远忽近的铃声" },
+    "outcome": [{ "op": "kill", "target": "self", "text": "{self}像是接起了一通谁也听不见的电话，然后倒下了" }],
+    "unless": "posture(e, 'silent')", "reach": 8, "rest": 90
+   },
+   "counters": [
+    { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 20, "leak": 0.03 },
+    { "type": "suppress", "power": 2 },
+    { "type": "exploit", "hint": "它只在铃声响着的时候找说话的人" }
+   ],
+   "hostable": { "grants": ["dial"], "burden": "erosion", "rate": 1.1 },
+   "clues": ["听见铃声的时候开口说了话", "铃声响的时候闭嘴的人都没事"],
+   "decoys": ["出事的人都住在高层", "出事的人都用过医院的座机"],
+   "research": ["archive", "hospital"],
+   "crowd": { "every": 600, "kills": [0, 2] }
+  },
+  "back_turned": {
+   "name": "背对你的人", "emoji": "🧍", "kind": "祟", "mortal": false, "speed": 1.6,
+   "origin": "一个在人群里被推下站台的人，至死没看清是谁推的他，于是他背对所有人站着，等人看他",
+   "haunt": ["metro", "plaza", "night_street"], "movement": "wander", "active": ["20:00", "04:00"],
+   "rule": {
+    "trigger": "night() && seen(e)",
+    "mark": { "delay": [10, 60], "sign": "总觉得人群里有个背影，一回头就在那里" },
+    "outcome": [{ "op": "kill", "target": "self", "text": "{self}在人群里看见了那个背影，然后跟着它走了" }],
+    "reach": 8, "rest": 90
+   },
+   "counters": [
+    { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 30, "leak": 0.02 },
+    { "type": "suppress", "power": 3 },
+    { "type": "delay" }
+   ],
+   "hostable": {
+    "grants": ["look_back"], "burden": "erosion", "rate": 1.0, "offsets": { "shadow_child": -0.4 },
+    "via": [{ "when": "anchors(e, 60) >= 1", "p": 0.08 }]
+   },
+   "clues": ["夜里看见了一个背对着人的身影", "闭着眼走过去的人什么事也没有"],
+   "decoys": ["出事的人那天都坐过地铁", "出事的人都穿着深色衣服"],
+   "research": ["archive", "metro"],
+   "crowd": { "every": 720, "kills": [0, 1] }
+  },
+  "last_train": {
+   "name": "末班车", "emoji": "🚇", "kind": "祟", "mortal": false, "speed": 0.5,
+   "origin": "二号线通车那年，最后一趟试运行的列车上少了一个检修工，他的名字从没出现在任何记录里",
+   "haunt": ["metro"], "movement": "stationary", "active": ["21:30", "01:00"],
+   "rule": {
+    "trigger": "entered(e, 'metro') && alone(e)",
+    "mark": { "delay": [0, 30], "sign": "站台广播念了一个不存在的站名" },
+    "outcome": [{ "op": "kill", "target": "self", "text": "{self}上了一班不存在的末班车" }],
+    "reach": 5, "rest": 240
+   },
+   "counters": [
+    { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 35, "leak": 0.01 },
+    { "type": "ward", "with": "lamp_ward", "radius": 4 }
+   ],
+   "clues": ["出事的人都是一个人进的站", "结伴进站的人都平安回来了"],
+   "decoys": ["出事的人都穿着深色衣服", "出事的人都坐的是二号线"],
+   "research": ["archive"],
+   "crowd": { "every": 1440, "kills": [1, 3] }
+  },
+  "shadow_child": {
+   "name": "影子里的孩子", "emoji": "👤", "kind": "祟", "mortal": false, "speed": 2.0,
+   "origin": "一个在学校后面的江边走失的孩子，没人记得去找他；他在影子里跟着每一个落单的人，想被人牵回家",
+   "haunt": ["school", "park", "night_street"], "movement": "wander", "active": ["21:00", "05:00"],
+   "rule": {
+    "trigger": "night() && alone(e) && !posture(e, 'notAlone')",
+    "mark": { "delay": [60, 240], "sign": "路灯下的影子好像比自己多了一个" },
+    "outcome": [{ "op": "kill", "target": "self", "text": "{self}的影子被牵走了" }],
+    "reach": 10, "rest": 180
+   },
+   "counters": [
+    { "type": "suppress", "power": 2 },
+    { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 25, "leak": 0.03 }
+   ],
+   "hostable": {
+    "grants": ["shadow_bind", "shadow_sense"], "burden": "erosion", "rate": 1.2, "offsets": { "back_turned": -0.4 }
+   },
+   "clues": ["出事的人都是夜里一个人走在学校附近", "和人结伴走的人都没事"],
+   "decoys": ["出事的人都是学生", "出事的人都去过夜市"],
+   "research": ["archive", "school"]
+  },
+  "river_hand": {
+   "name": "水里的手", "emoji": "🖐️", "kind": "祟", "mortal": false, "speed": 0.4,
+   "origin": "滨江公园那段没有路灯的江堤，每年汛期都会少几个人",
+   "haunt": ["park"], "movement": "stationary", "active": ["19:30", "05:00"],
+   "rule": {
+    "trigger": "night() && near(e, 3) && !posture(e, 'stayLit')",
+    "mark": { "delay": [0, 5], "sign": "脚踝上多了一圈湿冷的指印" },
+    "outcome": [{ "op": "wound", "amount": 60, "target": "self" }, { "op": "memory", "text": "被什么东西从水边往下拖，差点没上来", "importance": 8, "target": "self" }],
+    "unless": "nearStructure(e, 'lamp_ward', 3)", "reach": 4, "rest": 120
+   },
+   "counters": [
+    { "type": "delay" },
+    { "type": "ward", "with": "lamp_ward", "radius": 3 },
+    { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 30, "leak": 0.02 }
+   ],
+   "clues": ["没有灯的水边会被拖下去", "有灯照着的地方它不上来"],
+   "decoys": ["只有穿红衣服的人会被拖"],
+   "research": ["park", "archive"]
+  },
+  "paper_man": {
+   "name": "纸扎人", "emoji": "🎎", "kind": "祟", "mortal": true, "hp": 40, "atk": 8, "def": 1, "speed": 1.4,
+   "weakness": ["fire"],
+   "origin": "土地庙供桌上的纸扎，扎它的老师傅死后没人来收，它们就自己走了出来",
+   "haunt": ["earth_shrine", "derelict"], "movement": "wander", "active": ["20:00", "04:00"],
+   "rule": {
+    "trigger": "night() && near(e, 1.5)",
+    "mark": { "delay": [0, 3], "sign": "身后传来纸片摩擦的沙沙声" },
+    "outcome": [{ "op": "wound", "amount": 25, "target": "self" }],
+    "reach": 3, "rest": 30
+   },
+   "counters": [{ "type": "slay" }, { "type": "delay" }],
+   "loot": [{ "item": "cinnabar_lead", "p": 0.5 }],
+   "clues": ["纸扎人怕火"],
+   "decoys": ["纸扎人只在下雨天出来"],
+   "research": ["earth_shrine"]
+  }
+ },
+ "incidents": { "start": [{ "threat": "waiting_mother" }, { "threat": "phone_ring" }], "autoEveryDays": 2 },
+ "factions": [
+  { "id": "watch", "name": "夜巡司", "members": ["lu", "shen", "gu"], "head": "lu", "authority": ["dispatch"], "stipend": { "every": 1440, "cinnabar_lead": 2 } }
+ ],
+ "abilities": [
+  { "id": "look_back", "name": "回望", "emoji": "🧍", "target": "area", "desc": "借背对你的人的力量回头一望，压住身边的祟", "aiHint": "身边有祟、需要压住它的时候",
+   "cost": { "stamina": 10, "burden": { "id": "erosion", "amount": 8 } }, "cooldown": 60,
+   "effects": [{ "op": "suppress", "power": 3, "minutes": 40, "radius": 5 }, { "op": "vfx", "preset": "ripple", "color": "#3a2a5a", "radius": 3 }] },
+  { "id": "shadow_bind", "name": "影缚", "emoji": "👤", "target": "area", "desc": "让影子缠住身边的祟", "aiHint": "身边有祟、需要压住它的时候",
+   "cost": { "stamina": 10, "burden": { "id": "erosion", "amount": 10 } }, "cooldown": 60,
+   "effects": [{ "op": "suppress", "power": 3, "minutes": 25, "radius": 3 }, { "op": "vfx", "preset": "ripple", "color": "#1a1a2a", "radius": 2 }] },
+  { "id": "shadow_sense", "name": "听影", "emoji": "👂", "target": "self", "desc": "听影子里的动静，摸到祟的一点规律", "aiHint": "想弄清楚某只祟的规律时",
+   "cost": { "stamina": 5, "burden": { "id": "erosion", "amount": 5 } }, "cooldown": 180,
+   "effects": [{ "op": "clue", "kind": "rule" }] },
+  { "id": "dial", "name": "拨号", "emoji": "📞", "target": "self", "desc": "拨一个不存在的号码，听那头报出下一个会出事的人", "aiHint": "想知道下一个会出事的人时",
+   "cost": { "stamina": 5, "burden": { "id": "erosion", "amount": 6 } }, "cooldown": 240,
+   "effects": [{ "op": "clue", "kind": "next_victim" }] },
+  { "id": "cast_box", "name": "浇铸镇匣", "emoji": "📦", "target": "self", "desc": "用朱砂铅浇铸一只镇匣", "aiHint": "在夜巡司、手里有两块朱砂铅时",
+   "cost": { "stamina": 15, "items": { "cinnabar_lead": 2 } }, "cooldown": 120,
+   "effects": [{ "op": "giveItem", "item": "seal_box", "count": 1 }], "learn": { "teach": true, "research": { "location": "watch_office", "keywords": ["镇匣", "浇铸", "朱砂"] } } },
+  { "id": "seek_kin", "name": "寻亲", "emoji": "🔎", "target": "self", "desc": "顺着户籍和旧报纸，找到二十年前那个没回家的孩子", "aiHint": "在档案馆、已经知道等门的人的来历时",
+   "requires": "believes(self, '等门的人来历') >= 0.6", "cost": { "stamina": 20 }, "cooldown": 1440,
+   "effects": [{ "op": "flag", "name": "mother_child_found", "value": true }, { "op": "memory", "text": "我找到了那个孩子——他还活着，就住在城东", "importance": 8 }],
+   "learn": { "teach": true, "research": { "location": "archive", "keywords": ["寻亲", "户籍", "失踪", "那个孩子"] } } },
+  { "id": "first_aid", "name": "急救", "emoji": "🩹", "target": "agent", "desc": "处理伤口", "aiHint": "身边有人受伤时",
+   "cost": { "stamina": 10 }, "cooldown": 30, "effects": [{ "op": "heal", "amount": 30, "target": "target" }], "learn": { "teach": true } }
+ ],
+ "rules": [],
+ "threads": [
+  { "id": "fire_truth", "title": "槐荫巷的火", "owners": ["qian", "he"], "hook": "二十年前那场火烧死了很多人，钱伯知道的比他说的多，何敏想把它写出来" },
+  { "id": "xiao_boxes", "title": "萧九的镇匣", "owners": ["xiao", "lu"], "hook": "萧九一直在打夜巡司地下室里那些镇匣的主意" },
+  { "id": "shen_erosion", "title": "沈砚的祟蚀", "owners": ["shen", "zhi"], "hook": "沈砚的祟蚀越来越深，他不敢让妹妹知道" }
+ ],
+ "arcs": [],
+ "creatures": {},
+ "params": { "walkSpeed": 3.4, "maxConvos": 2, "convoBaseProb": 0.25, "reflectThreshold": 40, "dayEnd": 1380, "deathNamed": 2, "deathDays": 3 },
+ "personas": [
+  { "id": "lu", "name": "陆承", "age": 48, "role": "夜巡司临川分部的巡首", "home": "river_view", "work": "watch_office",
+   "persona": "冷静、寡言、精于算计。做了二十年夜巡，见过太多人死，把每个人都当成可以用掉的棋子，包括自己。偶尔会在深夜一个人喝酒。",
+   "goal": "在上面追责之前，把临川的几起祟案压下去，别让恐慌蔓延。",
+   "look": { "skin": "#e0bfa0", "hair": "#3a3a3a", "hairStyle": "buzz", "shirt": "#2f3440", "pants": "#1f2228", "acc": ["coat"] },
+   "start": { "abilities": ["cast_box"], "inventory": { "cinnabar_lead": 2, "seal_box": 1, "ever_lamp": 1 } },
+   "relations": { "shen": [40, "最好用的一把刀，但快钝了"], "gu": [10, "不可靠，但能用"], "xiao": [-60, "叛出夜巡司的人，迟早要收拾他"], "he": [-20, "那个记者，嗅觉太灵了"] },
+   "memories": ["槐荫巷和医院的事，上面已经在问了。", "地下室里还锁着三只镇匣，萧九一直盯着它们。"] },
+  { "id": "shen", "name": "沈砚", "age": 27, "role": "夜巡司的负祟人", "home": "old_apartment", "work": "watch_office",
+   "persona": "话少、冷淡，说话只说一半。五年前为了救妹妹，让「背对你的人」进了自己的身体。怕的不是死，是哪天变成那个背影、回头去找妹妹。",
+   "goal": "在祟蚀吞掉自己之前，攒够钱让妹妹离开临川。",
+   "look": { "skin": "#ecd2bb", "hair": "#141414", "hairStyle": "messy", "shirt": "#1c1c24", "pants": "#2a2a33", "acc": ["coat"] },
+   "start": { "abilities": [], "inventory": { "seal_box": 1, "ever_lamp": 1 }, "hosted": ["back_turned"], "burdens": { "erosion": 42 } },
+   "combat": { "atk": 4, "def": 2 },
+   "relations": { "zhi": [95, "我唯一的妹妹"], "lu": [20, "巡首，他只在乎结果"], "gu": [35, "一起出过很多次任务"], "tang": [40, "替我缝过好几次伤口的医生"] },
+   "memories": ["这个月祟蚀又深了，早上照镜子的时候，镜子里的人背对着我。", "知知说想考到外地去。"] },
+  { "id": "gu", "name": "顾南星", "age": 31, "role": "夜巡司的负祟人", "home": "river_view", "work": "watch_office",
+   "persona": "嘴甜、爱开玩笑，其实自私又怕死。身上寄宿着「影子里的孩子」，祟蚀比谁都深，一直偷偷囤朱砂铅，想找到办法把身上的祟换掉。",
+   "goal": "找到压低祟蚀的办法——哪怕要拿别人的命去换。",
+   "look": { "skin": "#f0d4bc", "hair": "#6b4a2a", "hairStyle": "spiky", "shirt": "#5a4a7a", "pants": "#2a2a3a", "acc": ["earring"] },
+   "start": { "abilities": [], "inventory": { "cinnabar_lead": 3 }, "hosted": ["shadow_child"], "burdens": { "erosion": 58 } },
+   "combat": { "atk": 3, "def": 1 },
+   "relations": { "shen": [30, "老搭档，比我能扛"], "lu": [-10, "他迟早会把我用掉"], "xiao": [20, "他说他有办法"], "lin": [45, "便利店的小姑娘，夜班常给我留关东煮"] },
+   "memories": ["听萧九说，同时寄宿两只互相克制的祟，祟蚀会涨得慢。", "昨晚又梦见一个小孩牵着我的手往江边走。"] },
+  { "id": "xiao", "name": "萧九", "age": 35, "role": "叛出夜巡司的负祟人", "home": "derelict", "work": "earth_shrine",
+   "persona": "阴沉、偏执、极有耐心。三年前叛出夜巡司，身上寄宿着「半夜的铃声」。他相信祟越多人越强，打算把夜巡司收容的祟据为己有，谁挡路就除掉谁。",
+   "goal": "拿到夜巡司地下室里的镇匣，把里面的祟收进自己身体里。",
+   "alignment": "villain",
+   "drives": [{ "text": "想把镇匣里的祟据为己有", "perDay": 35 }],
+   "look": { "skin": "#d8c0a8", "hair": "#222222", "hairStyle": "long", "shirt": "#3a1f1f", "pants": "#1a1a1a", "acc": ["beard"] },
+   "start": { "abilities": [], "inventory": { "death_ledger": 1 }, "hosted": ["phone_ring"], "burdens": { "erosion": 35 } },
+   "combat": { "atk": 6, "def": 2 },
+   "relations": { "lu": [-70, "当年把我当弃子的人"], "gu": [15, "贪生怕死，好利用"], "shen": [-30, "陆承的狗"] },
+   "memories": ["报丧簿上已经写过三个名字，都应验了。", "陆承把镇匣锁在地下室，钥匙在他身上。"] },
+  { "id": "zhi", "name": "沈知", "age": 17, "role": "临川七中的高三学生", "home": "old_apartment", "work": "school",
+   "persona": "开朗、倔强、心细，总觉得哥哥有事瞒着她。晚自习下课常常一个人走回家，最近开始留意学校里那些怪事。",
+   "goal": "弄清楚哥哥每天晚上到底去做什么。",
+   "look": { "skin": "#f6dcc6", "hair": "#1a1a1a", "hairStyle": "braid", "shirt": "#f2f2f2", "pants": "#2c3e66", "acc": ["hairpin"] },
+   "start": { "abilities": [], "inventory": {} },
+   "relations": { "shen": [85, "哥哥，越来越沉默了"], "he": [30, "来学校采访过的记者姐姐"], "lin": [50, "便利店的小满姐"] },
+   "memories": ["同学说操场上有个小孩的影子，晚自习后就会出现。", "哥哥身上总是很凉。"] },
+  { "id": "tang", "name": "唐棠", "age": 29, "role": "临川第二医院的急诊医生", "home": "river_view", "work": "hospital",
+   "persona": "干脆、利落、不信邪，却比谁都清楚最近急诊送来的死者有多奇怪。给夜巡司的人缝过伤口，知道一点内情。",
+   "goal": "查清楚医院五楼那几个夜班病人到底是怎么死的。",
+   "look": { "skin": "#f3d6c0", "hair": "#4a2c20", "hairStyle": "bun", "shirt": "#e8f0f4", "pants": "#4a6a8a", "acc": ["glasses"] },
+   "start": { "abilities": ["first_aid"], "inventory": {} },
+   "relations": { "shen": [45, "伤得最重也不喊疼的那个病人"], "he": [35, "老同学，现在是记者"], "lu": [-10, "那个总来封口的人"] },
+   "memories": ["五楼的护士说，出事的人死前都接过一个电话。", "沈砚上次来缝针，手冷得像冰。"] },
+  { "id": "he", "name": "何敏", "age": 34, "role": "《临川晚报》的社会新闻记者", "home": "river_flat", "work": "archive",
+   "persona": "执着、嘴硬、胆子比谁都大。不相信鬼神，只相信证据，正在追查槐荫巷大火和最近的连环怪死，已经被人警告过两次。",
+   "goal": "把这座城市正在发生的事写出来，登上头版。",
+   "look": { "skin": "#eed0b6", "hair": "#2a1a14", "hairStyle": "long", "shirt": "#8a3a3a", "pants": "#2a2a2a", "acc": [] },
+   "start": { "abilities": [], "inventory": { "old_photo": 1 } },
+   "relations": { "tang": [40, "老同学，嘴紧"], "qian": [30, "知道火灾真相的老人"], "lu": [-30, "那个把我的稿子压下来的人"], "zhi": [25, "沈砚的妹妹，也许知道点什么"] },
+   "memories": ["在档案馆找到一张火灾后的旧照片，照片里的门口站着一个女人。", "有人往我家门缝里塞了一张纸：别查了。"] },
+  { "id": "qian", "name": "钱伯", "age": 68, "role": "老钱茶馆的掌柜", "home": "tea_house", "work": "tea_house",
+   "persona": "和气、爱唠叨，嘴上什么都说，关键的事一个字不提。二十年前那场火他就在现场，至今每年忌日都去巷口烧纸。",
+   "goal": "在自己死前，把火灾那晚的事告诉一个信得过的人。",
+   "look": { "skin": "#e4c3a4", "hair": "#d8d8d8", "hairStyle": "buzz", "shirt": "#6b5a3a", "pants": "#3a3024", "acc": ["glasses"] },
+   "start": { "abilities": [], "inventory": { "ever_lamp": 1 } },
+   "relations": { "he": [25, "那个追着问火灾的记者"], "shen": [50, "七号楼的孩子，看着长大的"], "zhi": [60, "沈家那丫头"] },
+   "memories": ["那晚巷口站着一个女人，一直在喊她儿子的小名。", "槐荫巷里千万别答应别人叫你名字——老街坊都这么说，可谁也说不清为什么。"] },
+  { "id": "lin", "name": "林小满", "age": 23, "role": "24小时便利店的夜班店员", "home": "river_flat", "work": "store",
+   "persona": "迷糊、热心、胆小，夜班见过太多奇怪的客人，已经学会了不多问。店里的灯整夜亮着，她觉得那是自己的护身符。",
+   "goal": "攒钱把奶奶从老家接过来，好好活下去。",
+   "look": { "skin": "#f8dfc8", "hair": "#5a3a2a", "hairStyle": "bun", "shirt": "#2e8b57", "pants": "#3a3a4a", "acc": ["apron"] },
+   "start": { "abilities": [], "inventory": { "ever_lamp": 1 } },
+   "relations": { "gu": [40, "常来买关东煮的顾哥"], "zhi": [50, "常来买酸奶的妹妹"], "shen": [20, "从不说话的客人"] },
+   "memories": ["凌晨两点，有个客人背对着收银台站了很久，转过身来的时候，我没敢看。", "店里的灯千万不能关。"] }
+ ]
+}

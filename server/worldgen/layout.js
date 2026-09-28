@@ -18,12 +18,15 @@ export const BUILDING_KINDS = {
   hut: [4, 4], cabin: [4, 4], cottage: [5, 5], house: [5, 5], farmhouse: [5, 5], shop: [6, 5], bakery: [6, 5], clinic: [6, 5],
   workshop: [6, 4], barn: [6, 5], mill: [5, 6], inn: [7, 6], tavern: [7, 6], library: [8, 6], school: [8, 6], temple: [7, 6],
   tower: [4, 6], castle: [10, 7], palace: [10, 7], hall: [8, 6], cafe: [7, 6],
+  // 现代题材（黑暗叙事设计 §4.13）
+  apartment: [7, 7], office: [7, 6], hospital: [9, 6], station: [8, 5], police: [6, 5], store: [6, 5], archive: [6, 5],
 };
 // 户外地点：占地
 export const OUTDOOR_KINDS = {
   plaza: [9, 7], square: [9, 7], market: [9, 6], garden: [7, 6], clearing: [7, 6], meadow: [8, 6], field: [9, 6], farm: [9, 6],
   orchard: [8, 6], well: [4, 4], pond: [7, 5], grove: [7, 6], camp: [6, 5], dock: [4, 5], gate: [4, 3], shrine: [4, 4], graveyard: [6, 5],
   bridge: [4, 4], path: [5, 4],
+  street: [8, 5], alley: [5, 4], parking: [8, 6], park: [9, 7],
 };
 const AREA_WEIGHT = { small: 1, medium: 2, large: 3 };
 
@@ -38,6 +41,10 @@ export const BIOMES = {
   autumn: { grass: ['#9fa04a', '#c4a24e'], blade: ['#8a8a3a', '#d8b860'], trees: { oak: 0.85, pine: 0.15 }, tree: 0.12, flower: 0.03, rock: 0.02, bush: 0.05 },
   swamp: { grass: ['#4d6b44', '#667f4c'], blade: ['#3c5a36', '#7a9458'], trees: { oak: 0.6, pine: 0.4 }, tree: 0.15, flower: 0.02, rock: 0.01, bush: 0.12 },
   lake: { grass: ['#68a74a', '#8cc963'], blade: ['#5a9640', '#9fd877'], trees: { oak: 0.6, pine: 0.4 }, tree: 0.05, flower: 0.06, rock: 0.02, bush: 0.03 },
+  // 城市：灰色的水泥地，行道树稀少
+  urban: { grass: ['#6f7176', '#7d7f84'], blade: ['#63656a', '#8b8d92'], trees: { oak: 1 }, tree: 0.004, flower: 0, rock: 0.015, bush: 0.01 },
+  // 老城区：更暗、更旧
+  old_town: { grass: ['#5d5a55', '#6b6760'], blade: ['#524f4a', '#77726a'], trees: { oak: 0.7, pine: 0.3 }, tree: 0.012, flower: 0, rock: 0.04, bush: 0.03 },
 };
 export const BIOME_IDS = Object.keys(BIOMES);
 
