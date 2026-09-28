@@ -4,41 +4,52 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SNAP_RE, readSnapshot } from './sim/persistence.ts';
 
+/** 一条时间线的登记项 */
+export interface Timeline {
+  id: string;
+  name: string;
+  /** 从哪条时间线的哪个快照分出来（主时间线为 null） */
+  from: { timeline: string; snapshot: string | null; day: number; hour: number } | null;
+  createdAt: string | null;
+}
+/** <data>/timelines.json */
+export interface TimelineRegistry { active: string; list: Timeline[] }
+
 const ID_RE = /^(main|tl-\d{1,4})$/;
 const MAX_TIMELINES = 12;
 
-const regFile = (root) => path.join(root, 'timelines.json');
+const regFile = (root: string): string => path.join(root, 'timelines.json');
 
-export function registry(root) {
+export function registry(root: string): TimelineRegistry {
   try {
-    const r = JSON.parse(fs.readFileSync(regFile(root), 'utf8'));
+    const r: TimelineRegistry = JSON.parse(fs.readFileSync(regFile(root), 'utf8'));
     if (Array.isArray(r.list) && r.list.some((t) => t.id === r.active)) return r;
   } catch {}
   return { active: 'main', list: [{ id: 'main', name: '主时间线', from: null, createdAt: null }] };
 }
 
-function writeRegistry(root, r) {
+function writeRegistry(root: string, r: TimelineRegistry): void {
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(regFile(root), JSON.stringify(r, null, 2));
 }
 
-export function timelineDir(root, id) {
+export function timelineDir(root: string, id: string): string {
   if (!ID_RE.test(String(id))) throw Object.assign(new Error('时间线不存在'), { status: 404 });
   return id === 'main' ? path.resolve(root) : path.resolve(root, 'timelines', id);
 }
 
-export function activeDir(root) { return timelineDir(root, registry(root).active); }
+export function activeDir(root: string): string { return timelineDir(root, registry(root).active); }
 
 /**
  * 分出一条新时间线。fromId：来源时间线；snapshot：来源时间线里的快照文件名（不填则用来源的当前存档）。
  * 返回新时间线的登记项。调用方负责在分叉前把来源小镇存盘。
  */
-export function forkTimeline(root, { fromId, snapshot = null, name = '' }) {
+export function forkTimeline(root: string, { fromId, snapshot = null, name = '' }: { fromId: string; snapshot?: string | null; name?: string }): Timeline {
   const r = registry(root);
   if (!r.list.some((t) => t.id === fromId)) throw Object.assign(new Error('来源时间线不存在'), { status: 404 });
   if (r.list.length >= MAX_TIMELINES) throw Object.assign(new Error(`时间线最多 ${MAX_TIMELINES} 条`), { status: 409 });
   const srcDir = timelineDir(root, fromId);
-  let src;
+  let src: string;
   if (snapshot) {
     if (!SNAP_RE.test(String(snapshot))) throw Object.assign(new Error('快照名称不合法'), { status: 400 });
     src = path.join(srcDir, 'snapshots', snapshot);
@@ -51,7 +62,7 @@ export function forkTimeline(root, { fromId, snapshot = null, name = '' }) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'save.json'), JSON.stringify(save));
   const t = save.t || 0;
-  const entry = {
+  const entry: Timeline = {
     id, name: String(name || '').trim().slice(0, 20) || `分支 ${n}`,
     from: { timeline: fromId, snapshot, day: Math.floor(t / 1440) + 1, hour: Math.floor((t % 1440) / 60) },
     createdAt: new Date().toISOString(),
@@ -61,7 +72,7 @@ export function forkTimeline(root, { fromId, snapshot = null, name = '' }) {
   return entry;
 }
 
-export function setActive(root, id) {
+export function setActive(root: string, id: string): string {
   const r = registry(root);
   if (!r.list.some((t) => t.id === id)) throw Object.assign(new Error('时间线不存在'), { status: 404 });
   r.active = id;

@@ -7,15 +7,21 @@
 import * as llm from '../llm.ts';
 import { addMemory } from '../memory.ts';
 import { impactOf } from '../kernel/impact.ts';
+import type { Town } from '../sim.ts';
+import type { Building } from '../types/spec.ts';
+import type { CouncilState, CouncilVote, Proposal } from '../types/story.ts';
+import type { Scene } from '../story/scene.ts';
+import type { LiveAgent } from '../types/agent.ts';
+import type { ModelJSON } from '../llm.ts';
 
-const str = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+const str = (v: unknown, max: number) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 export const VETO_DAYS = 10;
 const RETRY_MIN = 60; // 模型暂时不可用时，每游戏小时再试一次
 const GIVE_UP_MIN = 24 * 60; // 一天之内开不成议事会，提案作废
 const MEETING_EXTRA = 4; // 议事会上除当事人以外最多几位居民
 
 /** 判定（纯函数，便于测试）：stakeholders / voters 为 id 列表，consent / votes 为 { id: { yes } } */
-export function judge({ stakeholders, voters, consent, votes }) {
+export function judge({ stakeholders, voters, consent, votes }: { stakeholders: string[]; voters: string[]; consent: Record<string, CouncilVote>; votes: Record<string, CouncilVote> }): { pass: boolean; forced: boolean; why: string; tally: NonNullable<CouncilState['tally']> } {
   const cast = voters.filter((id) => votes[id]);
   const yes = cast.filter((id) => votes[id].yes).length;
   const no = cast.length - yes;
@@ -32,18 +38,19 @@ export function judge({ stakeholders, voters, consent, votes }) {
 }
 
 export class Council {
-  constructor(town) { this.town = town; }
+  declare town: Town;
+  constructor(town: Town) { this.town = town; }
 
   /** 世界状态里的否决记录：{ 建筑id: 第几天之前不能再提 } */
-  get vetoes() { return ((this.town.mapState ||= {}).vetoes ||= {}); }
+  get vetoes(): Record<string, number> { return ((this.town.mapState ||= {}).vetoes ||= {}); }
 
-  target(p) {
+  target(p: Proposal) {
     const o = p.ops.find((x) => x.op === 'removeBuilding' || (x.op === 'setBuildingState' && x.args?.state === 'ruin'));
     return o ? { op: o, id: o.args.id, b: this.town.spec.buildings.find((b) => b.id === o.args.id) } : null;
   }
 
   /** 当事人：在场或出门在外、住在这里或在这里工作的人（生物除外）；投票人：其余在场的居民 */
-  people(id) {
+  people(id: string) {
     const town = this.town;
     const im = impactOf(town.spec, id);
     const stake = [...new Set([...im.residents, ...im.workers])].filter((x) => town.byId[x] && town.spec.personas.find((p) => p.id === x)?.status !== 'departed');
@@ -52,7 +59,7 @@ export class Council {
   }
 
   /** 提案通过设定考据之后：召开议事会（模型不可用时等它回来） */
-  start(p) {
+  start(p: Proposal) {
     const town = this.town;
     const t = this.target(p);
     if (!t?.b) return town.proposalSystem.finish(p, 'failed', '要拆的建筑已经不在了');
@@ -62,7 +69,7 @@ export class Council {
     const verb = t.op.op === 'removeBuilding' ? '拆掉' : '任由它荒废成废墟';
     town.log('proposal', `🏛️ 要不要${verb}「${t.b.name}」？镇上要开议事会商量${stakeholders.length ? `，${stakeholders.map((id) => town.byId[id].name).join('、')}是当事人` : ''}`, { agents: stakeholders.slice(0, 4) });
     // 议事会：当事人 + 与他们最亲近的几位居民
-    const close = (id) => stakeholders.reduce((s, x) => s + Math.max(0, town.byId[x]?.relations[id]?.affinity ?? 0) + Math.max(0, town.byId[id]?.relations[x]?.affinity ?? 0), 0);
+    const close = (id: string) => stakeholders.reduce((s, x) => s + Math.max(0, town.byId[x]?.relations[id]?.affinity ?? 0) + Math.max(0, town.byId[id]?.relations[x]?.affinity ?? 0), 0);
     const extra = voters.filter((id) => town.agents.includes(town.byId[id])).sort((a, b) => close(b) - close(a)).slice(0, MEETING_EXTRA);
     const members = [...stakeholders.filter((id) => town.agents.includes(town.byId[id])), ...extra].slice(0, 6);
     const where = this.meetingPlace(t.b);
@@ -79,7 +86,7 @@ export class Council {
     town.emit('proposals');
   }
 
-  meetingPlace(b) {
+  meetingPlace(b: Building) {
     const town = this.town;
     const cx = b.x + b.w / 2, cy = b.y + b.h;
     let best = null;
@@ -93,8 +100,8 @@ export class Council {
   }
 
   /** 议事会结束（或没凑齐人）：开始表态 */
-  onScene(sc, res) {
-    const p = this.town.proposalSystem.get(sc.council);
+  onScene(sc: Scene, res: ModelJSON) {
+    const p = this.town.proposalSystem.get(sc.council!);
     if (!p?.council || p.status !== 'council') return;
     p.council.summary = res?.summary ? str(res.summary, 80) : null;
     p.council.status = 'deliberating';
@@ -113,15 +120,15 @@ export class Council {
     }
   }
 
-  prompt(p) {
+  prompt(p: Proposal): string {
     const town = this.town;
-    const c = p.council;
-    const t = this.target(p);
-    const nm = (id) => town.byId[id]?.name || id;
+    const c = p.council!;
+    const t = this.target(p)!;
+    const nm = (id: string) => town.byId[id]?.name || id;
     const remap = t.op.args.remap || {};
-    const about = (a) => a.memories.filter((m) => m.text.includes(c.buildingName)).slice(-2).map((m) => m.text).join('；');
-    const rel = (a) => c.stakeholders.map((x) => { const r = a.relations[x]; return r ? `对${nm(x)}好感${r.affinity}` : null; }).filter(Boolean).join('，');
-    const line = (id) => { const a = town.byId[id]; return `- ${a.name}（${a.role}）：${str(a.persona, 60)}${rel(a) ? `；${rel(a)}` : ''}${about(a) ? `；记得：${str(about(a), 80)}` : ''}`; };
+    const about = (a: LiveAgent) => a.memories.filter((m) => m.text.includes(c.buildingName)).slice(-2).map((m) => m.text).join('；');
+    const rel = (a: LiveAgent) => c.stakeholders.map((x) => { const r = a.relations[x]; return r ? `对${nm(x)}好感${r.affinity}` : null; }).filter(Boolean).join('，');
+    const line = (id: string) => { const a = town.byId[id]!; return `- ${a.name}（${a.role}）：${str(a.persona, 60)}${rel(a) ? `；${rel(a)}` : ''}${about(a) ? `；记得：${str(about(a), 80)}` : ''}`; };
     return `${town.timeBlock()}
 ${town.spec.meta.name}要决定：要不要${t.op.op === 'removeBuilding' ? '拆掉' : '任由它荒废成废墟'}「${c.buildingName}」。
 提议的理由：${p.motive || p.title}
@@ -136,18 +143,18 @@ ${c.voters.map(line).join('\n')}
 "thread":{"title":"如果当事人不情愿地搬走，之后可能的故事（≤12字）","hook":"一句话（≤60字）"}}`;
   }
 
-  async deliberate(p) {
+  async deliberate(p: Proposal): Promise<void> {
     const town = this.town;
-    const c = p.council;
+    const c = p.council!;
     const res = await llm.chatJSON([
       town.sys('你现在要代表镇上的每一位居民表态，而不是扮演某一个人。'),
       { role: 'user', content: this.prompt(p) },
     ], { label: '居民议事', agent: '议事会', maxTokens: 2500, temperature: 0.8, tier: 'smart', timeoutMs: 120_000, attempts: 2 });
     if (p.status !== 'council') return; // 等待期间被撤销了
-    const byName = (name) => town.agents.find((a) => a.name === str(name, 16) || a.id === str(name, 32));
-    const pick = (obj, ids) => {
-      const out = {};
-      for (const [k, v] of Object.entries(obj && typeof obj === 'object' ? obj : {})) {
+    const byName = (name: unknown) => town.agents.find((a) => a.name === str(name, 16) || a.id === str(name, 32));
+    const pick = (obj: unknown, ids: string[]): Record<string, CouncilVote> => {
+      const out: Record<string, CouncilVote> = {};
+      for (const [k, v] of Object.entries<any>(obj && typeof obj === 'object' ? obj : {})) { // eslint-disable-line @typescript-eslint/no-explicit-any -- 模型输出
         const a = byName(k);
         if (!a || !ids.includes(a.id)) continue;
         const yes = typeof v === 'boolean' ? v : v?.yes === true || v?.yes === 'true';
@@ -161,7 +168,7 @@ ${c.voters.map(line).join('\n')}
     for (const id of c.stakeholders) c.consent[id] ||= { yes: false, reason: '' };
     if (c.voters.length && Object.keys(c.votes).length < Math.ceil(c.voters.length * 0.6)) throw new Error('表态的人太少');
     c.memories = {};
-    for (const [k, v] of Object.entries(res.memories && typeof res.memories === 'object' ? res.memories : {})) {
+    for (const [k, v] of Object.entries<any>(res.memories && typeof res.memories === 'object' ? res.memories : {})) { // eslint-disable-line @typescript-eslint/no-explicit-any -- 模型输出
       const a = byName(k);
       if (a && c.stakeholders.includes(a.id)) c.memories[a.id] = { agree: str(v?.agree, 80), forced: str(v?.forced, 80) };
     }
@@ -184,7 +191,7 @@ ${c.voters.map(line).join('\n')}
   }
 
   /** 拆除落地：当事人的重要记忆；被全票通过的当事人失落、记下谁赞成，并留下一条剧情线程 */
-  afterApplied(p) {
+  afterApplied(p: Proposal) {
     const town = this.town;
     const c = p.council;
     if (!c?.pass) return;
@@ -192,7 +199,7 @@ ${c.voters.map(line).join('\n')}
       const a = town.byId[id];
       if (!a) continue;
       const forced = c.consent[id]?.yes === false;
-      const m = c.memories?.[id] || {};
+      const m = c.memories?.[id] || ({} as { agree?: string; forced?: string });
       const text = forced ? (m.forced || `「${c.buildingName}」还是拆了。我不同意，可镇上的人都赞成。我在门口站了很久，什么也没说。`)
         : (m.agree || `我答应了。「${c.buildingName}」拆掉那天，我回头看了好几眼。`);
       addMemory(a, { t: town.t, type: 'event', text, importance: 9 });
@@ -215,7 +222,7 @@ ${c.voters.map(line).join('\n')}
   }
 
   /** 拆除被撤销：经历过的事情还在，只是多了一段「后来不拆了」 */
-  afterUndone(p) {
+  afterUndone(p: Proposal) {
     const c = p.council;
     if (!c?.pass) return;
     for (const id of c.stakeholders) {
@@ -224,10 +231,10 @@ ${c.voters.map(line).join('\n')}
     }
   }
 
-  view(p) {
+  view(p: Proposal) {
     const c = p.council;
     if (!c) return null;
-    const nm = (id) => this.town.byId[id]?.name || id;
+    const nm = (id: string) => this.town.byId[id]?.name || id;
     return {
       status: c.status, building: c.buildingName, pass: c.pass ?? null, forced: c.forced ?? false, why: c.why || null, summary: c.summary || null,
       stakeholders: c.stakeholders.map((id) => ({ name: nm(id), yes: c.consent[id]?.yes ?? null, reason: c.consent[id]?.reason || '' })),

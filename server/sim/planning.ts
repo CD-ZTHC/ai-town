@@ -4,7 +4,7 @@ import * as llm from '../llm.ts';
 import { addMemory, fmtTime, parseHM } from '../memory.ts';
 import { rand, clampStr, GUARD } from './util.ts';
 import type { Town } from '../sim.ts';
-import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
+import type { Commitment, CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
 import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';
 import type { Persona } from '../types/spec.ts';
 import type { Cell } from '../types/map.ts';
@@ -143,13 +143,13 @@ ${this.moonHint(a)}${this.actionBlock(a)}
     a.curKey = null;
   }
 
-  addCommitment(this: Town, a: LiveAgent, c: ScheduleEntry, why = '') {
+  addCommitment(this: Town, a: LiveAgent, c: Commitment, why = ''): boolean {
     const start = parseHM(c.time);
     if (start == null || start <= this.minute || start >= 23 * 60) return false;
     const end = Math.min(start + (Number(c.duration) || 60), 23 * 60);
     const location = this.resolveLoc(a, c.location);
     const act = this.normalizeAct(c.act);
-    const entry = { start, end, location: location === a.home ? 'home' : location, activity: clampStr(c.activity, 24), emoji: clampStr(c.emoji, 4) || '📌', src: 'commit', ...(act ? { act } : {}) };
+    const entry: ScheduleEntry = { start, end, location: location === a.home ? 'home' : location, activity: clampStr(c.activity, 24), emoji: clampStr(c.emoji, 4) || '📌', src: 'commit', ...(act ? { act } : {}) };
     this.insertEntry(a, entry);
     this.noteCommitMade(a, entry);
     addMemory(a, { t: this.t, type: 'plan', text: `我打算${fmtTime(start)}去${this.locName(location)}${entry.activity}${why}`, importance: 5 });

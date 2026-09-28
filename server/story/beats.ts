@@ -3,17 +3,39 @@
 import { addMemory } from '../memory.ts';
 import { checkEffects, runEffects, posOf, VFX } from '../kernel/effects.ts';
 import { advanceThread } from './threads.ts';
+import type { Town } from '../sim.ts';
+import type { LiveAgent } from '../types/agent.ts';
+import type { Persona } from '../types/spec.ts';
+import type { SceneRequest } from './scene.ts';
 
-const str = (v, max) => String(v ?? '').trim().slice(0, max);
-const inRange = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+/** 一个剧情动作：kind 决定参数，参数来自导演（模型）或剧情弧模板，由各动作的 check() 在运行时校验 */
+export type Beat = { kind: string; [k: string]: any }; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/** 执行剧情动作时的上下文：来源、所属的剧情弧与节拍 */
+export interface BeatCtx {
+  source?: string;
+  arc?: { id: string; [k: string]: unknown } | null;
+  beatId?: string | null;
+  [k: string]: unknown;
+}
+
+interface BeatKind {
+  /** 只允许剧情弧模板使用 */
+  privileged?: boolean;
+  check(b: Beat, town: Town, privileged?: boolean, ctx?: BeatCtx): string | null;
+  run(town: Town, b: Beat, ctx: BeatCtx): unknown;
+}
+
+const str = (v: unknown, max: number): string => String(v ?? '').trim().slice(0, max);
+const inRange = (v: unknown, lo: number, hi: number): boolean => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 // 导演直接使用 effect 动作时允许的效果（不含授予能力、临时参数等影响更大的原语）
 const DIRECTOR_EFFECTS = new Set(['stat', 'condition', 'mood', 'memory', 'vfx', 'say', 'flag', 'belief']);
 
 /** 把姓名或 id 解析成在场的角色 */
-export function resolveWho(town, who, { all = false } = {}) {
+export function resolveWho(town: Town, who: unknown, { all = false }: { all?: boolean } = {}): LiveAgent[] {
   if (all && who === 'all') return town.agents.filter((a) => a.kind !== 'creature');
   const list = Array.isArray(who) ? who : [who];
-  const out = [];
+  const out: LiveAgent[] = [];
   for (const w of list) {
     const s = str(w, 16);
     const a = town.agents.find((x) => x.id === s || x.name === s) || town.agents.find((x) => s && s.includes(x.name));
@@ -22,7 +44,7 @@ export function resolveWho(town, who, { all = false } = {}) {
   return out;
 }
 
-const KINDS = {
+const KINDS: Record<string, BeatKind> = {
   omen: {
     check(b, town) {
       if (!str(b.text, 60)) return 'text 不能为空';
@@ -76,11 +98,11 @@ const KINDS = {
       if (!str(b.purpose, 160)) return 'purpose 不能为空';
       return null;
     },
-    run(town, b, ctx) { town.scenes.schedule({ ...b, arc: ctx.arc?.id || null, beatId: ctx.beatId || null }); },
+    run(town, b, ctx) { town.scenes.schedule({ ...b, arc: ctx.arc?.id || null, beatId: ctx.beatId || null } as unknown as SceneRequest); },
   },
   thread: {
     check(b, town) {
-      if (!town.spec.threads.some((t) => t.id === b.id)) return `未知剧情线程：${b.id}`;
+      if (!town.spec.threads!.some((t) => t.id === b.id)) return `未知剧情线程：${b.id}`;
       if (!['advanced', 'resolved'].includes(b.status)) return 'status 只能是 advanced / resolved';
       return null;
     },
@@ -101,7 +123,7 @@ const KINDS = {
       if (b.who !== 'all' && !resolveWho(town, b.who).length) return 'who 不在场';
       const e = checkEffects(b.effects, town.spec);
       if (e) return e;
-      if (!privileged && b.effects.some((x) => !DIRECTOR_EFFECTS.has(x.op))) return `导演只能使用这些效果：${[...DIRECTOR_EFFECTS].join('/')}`;
+      if (!privileged && b.effects.some((x: { op: string }) => !DIRECTOR_EFFECTS.has(x.op))) return `导演只能使用这些效果：${[...DIRECTOR_EFFECTS].join('/')}`;
       return null;
     },
     run(town, b, ctx) {
@@ -114,7 +136,7 @@ const KINDS = {
   },
   canon: {
     check(b) { return str(b.text, 200) ? null : 'text 不能为空'; },
-    run(town, b, ctx) { town.applyWorldOp({ op: 'addCanon', args: { text: b.text, tags: b.tags } }, { by: ctx.source }); },
+    run(town, b, ctx) { town.applyWorldOp({ op: 'addCanon', args: { text: b.text, tags: b.tags } }, { by: ctx.source! }); },
   },
   // 原著的命运节点（创世生成的世界，多世界设计 §4.2）：到达了、以变形的方式出现了、或者这次跳过
   fate: {
@@ -124,7 +146,7 @@ const KINDS = {
     },
     run(town, b) {
       town.worldFlags[`fate_${b.id}`] = b.status;
-      const f = town.spec.adaptation.fateNodes.find((x) => x.id === b.id);
+      const f = town.spec.adaptation!.fateNodes!.find((x) => x.id === b.id)!;
       town.log('thread', `📖 原著的命运节点「${f.text}」${b.status === 'reached' ? '如约发生了' : b.status === 'transformed' ? '以另一种方式发生了' : '这一次没有发生'}`, {});
     },
   },
@@ -154,7 +176,7 @@ const KINDS = {
   },
   launchArc: {
     check(b, town) {
-      if (!town.spec.arcs.some((x) => x.id === b.template)) return `未知剧情弧：${b.template}`;
+      if (!town.spec.arcs!.some((x) => x.id === b.template)) return `未知剧情弧：${b.template}`;
       return town.arcs.canStart(b.template);
     },
     run(town, b) { town.arcs.start(b.template, 'director'); },
@@ -164,7 +186,7 @@ const KINDS = {
   incident: {
     check(b, town) {
       if (!town.threats?.enabled) return '这个世界没有威胁';
-      if (!Object.hasOwn(town.spec.threats, b.threat || '')) return `未知威胁：${b.threat}`;
+      if (!Object.hasOwn(town.spec.threats!, b.threat || '')) return `未知威胁：${b.threat}`;
       if (b.at != null && !Object.hasOwn(town.spec.locations, b.at)) return `未知地点：${b.at}`;
       if (town.threats.live().filter((x) => x.type === b.threat).length >= 2) return '同一种威胁已经够多了';
       return null;
@@ -189,7 +211,7 @@ const KINDS = {
     check(b, town) {
       if (!town.threats?.enabled) return '这个世界没有威胁';
       if (!['rule', 'next_victim', 'origin'].includes(b.clueKind || 'rule')) return 'clueKind 只能是 rule / next_victim / origin';
-      if (b.threat != null && !Object.hasOwn(town.spec.threats, b.threat)) return `未知威胁：${b.threat}`;
+      if (b.threat != null && !Object.hasOwn(town.spec.threats!, b.threat)) return `未知威胁：${b.threat}`;
       return resolveWho(town, b.who).length ? null : 'who 不在场';
     },
     // 线索的内容由引擎从真假线索里抽取，导演只能决定给谁
@@ -246,12 +268,12 @@ const KINDS = {
   portal: {
     privileged: true,
     check(b) { return ['crack', 'open', 'wide', 'stable', 'sealed'].includes(b.stage) ? null : 'stage 不合法'; },
-    run(town, b) { town.creatures.setPortal(b); },
+    run(town, b) { town.creatures.setPortal(b as unknown as { stage: string }); },
   },
   spawnCreatures: {
     privileged: true,
     check(b, town) {
-      if (!Object.hasOwn(town.spec.creatures, b.type || '')) return `未知生物：${b.type}`;
+      if (!Object.hasOwn(town.spec.creatures!, b.type || '')) return `未知生物：${b.type}`;
       return inRange(b.count, 1, 8) ? null : 'count 应在 1~8';
     },
     run(town, b) { town.creatures.spawn(b.type, b.count, b.goal); },
@@ -269,10 +291,10 @@ const KINDS = {
   traveller: {
     privileged: true,
     check(b, town, _p, ctx) {
-      if (!ctx?.arc?.template?.cast?.[b.id]) return `剧情弧里没有这个角色：${b.id}`;
+      if (!(ctx?.arc?.template as { cast?: Record<string, unknown> } | undefined)?.cast?.[b.id]) return `剧情弧里没有这个角色：${b.id}`;
       return Object.hasOwn(town.spec.locations, b.at || '') ? null : `未知地点：${b.at}`;
     },
-    run(town, b, ctx) { town.enterStage(ctx.arc.template.cast[b.id], b.at, ctx.source); },
+    run(town, b, ctx) { town.enterStage((ctx.arc!.template as { cast: Record<string, Persona> }).cast[b.id]!, b.at, ctx.source); },
   },
   depart: {
     privileged: true,
@@ -295,7 +317,7 @@ const KINDS = {
     check(b) { return str(b.name, 16) && inRange(b.inDays, 1, 30) ? null : 'name / inDays 不合法'; },
     run(town, b, ctx) {
       const { inDays, kind: _k, ...rest } = b;
-      town.applyWorldOp({ op: 'addCalendarEvent', args: { countdown: true, ...rest, day: town.day + inDays } }, { by: ctx.source });
+      town.applyWorldOp({ op: 'addCalendarEvent', args: { countdown: true, ...rest, day: town.day + inDays } }, { by: ctx.source! });
     },
   },
   vote: {
@@ -313,26 +335,26 @@ const KINDS = {
   },
 };
 
-export const DIRECTOR_KINDS = Object.keys(KINDS).filter((k) => !KINDS[k].privileged);
+export const DIRECTOR_KINDS = Object.keys(KINDS).filter((k) => !KINDS[k]!.privileged);
 export const ALL_KINDS = Object.keys(KINDS);
 
-export function checkBeat(town, b, { privileged = false, ctx = {} } = {}) {
+export function checkBeat(town: Town, b: Beat | null | undefined, { privileged = false, ctx = {} }: { privileged?: boolean; ctx?: BeatCtx } = {}): string | null {
   if (!b || typeof b !== 'object' || !Object.hasOwn(KINDS, b.kind || '')) return `未知动作：${b?.kind}`;
-  const def = KINDS[b.kind];
+  const def = KINDS[b.kind]!;
   if (def.privileged && !privileged) return `只有剧情弧可以使用：${b.kind}`;
   return def.check(b, town, privileged, ctx);
 }
 
 /** 执行一组动作；返回 { done, skipped: [{kind, error}] } */
-export function runBeats(town, list, { privileged = false, ctx = {} } = {}) {
-  const skipped = [];
+export function runBeats(town: Town, list: unknown, { privileged = false, ctx = {} }: { privileged?: boolean; ctx?: BeatCtx } = {}): { done: number; skipped: Array<{ kind: unknown; error: string }> } {
+  const skipped: Array<{ kind: unknown; error: string }> = [];
   let done = 0;
   for (const b of Array.isArray(list) ? list : []) {
     const err = checkBeat(town, b, { privileged, ctx });
     if (err) { skipped.push({ kind: b?.kind, error: err }); continue; }
-    try { KINDS[b.kind].run(town, b, ctx); done++; town.hooks?.emit('story.beat', { beat: b }); } catch (e) {
-      console.warn(`[beat] ${b.kind} 执行失败：`, e.message);
-      skipped.push({ kind: b.kind, error: e.message });
+    try { KINDS[b.kind]!.run(town, b, ctx); done++; town.hooks?.emit('story.beat', { beat: b }); } catch (e) {
+      console.warn(`[beat] ${b.kind} 执行失败：`, (e as Error).message);
+      skipped.push({ kind: b.kind, error: (e as Error).message });
     }
   }
   return { done, skipped };

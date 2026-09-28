@@ -71,29 +71,78 @@ export type Fight = Record<string, any>; // eslint-disable-line @typescript-esli
 /** 存档（读档时的原始数据，字段可能缺失或来自旧版本） */
 export type SaveData = any; // eslint-disable-line @typescript-eslint/no-explicit-any -- 结构见 types/save.ts 的 SaveV2，load() 逐项兜底
 
-/** 一处正在发生的怪事（黑暗叙事的事件） */
-export type Incident = { id: string; loc: string; stage: string; assigned: string[]; threat?: string; [k: string]: any }; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6（story/threats）
+/** 一处正在发生的怪事（黑暗叙事设计 §4.7） */
+export interface Incident {
+  id: string;
+  /** 威胁实例的 id 与类型 */
+  threat: string;
+  type: string;
+  loc: string;
+  stage: 'omen' | 'outbreak' | 'spread' | 'handled' | 'abandoned' | 'aftermath' | (string & {});
+  /** 开始、最近一次有人处理的游戏日 */
+  day: number;
+  touched: number;
+  since: number;
+  victims: number;
+  crowd: number;
+  level: number;
+  /** 派去处理的人 */
+  assigned: string[];
+  cause: string;
+  outcome?: string;
+}
 
 /** 黑暗叙事的运行状态（story/threats.js 的 freshDark；存档字段 dark） */
 export interface DarkState {
   seq: number;
   threats: ThreatInstance[];
-  sounds: Array<{ id: string; x: number; y: number; r: number; t: number; region?: string; [k: string]: unknown }>;
-  zones: Array<{ threat: string; x: number; y: number; r: number; region?: string; [k: string]: unknown }>;
+  sounds: Array<{ id: string; x: number; y: number; r: number; t: number; region: string; src: string }>;
+  /** 威胁的区域（dark 地图上的色块） */
+  zones: Array<{ id: string; threat: string; x: number; y: number; r: number; region: string; tint: string; replay: string | null; born: number }>;
   incidents: Incident[];
-  contained: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6
+  /** 收容起来的威胁：谁保管、装在什么里、每天的泄漏概率 */
+  contained: Array<{ type: string; holder: string; since: number; leak: number; item: string }>;
   /** 地点 → 活着 / 死去的群众 */
   population: Record<string, { alive: number; dead: number }>;
-  deaths: Array<{ t: number; [k: string]: unknown }>;
+  deaths: Array<{ id: string; name: string; t: number; day: number; cause: string; text: string; loc: string | null }>;
   crowd: Array<{ t: number; day: number; loc: string | null; n: number; cause: string }>;
-  graves: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6
+  graves: Array<{ id: string; name: string; x: number; y: number; region: string; t: number; day: number }>;
   lastMinute: number;
   lastHour: number;
   lastDay: number;
   /** 阵营配给的上次发放时间 */
   stipendAt?: Record<string, number>;
+  /** 初始事件是否已经放出 */
+  seeded?: boolean;
+  /** 最近一次没有事件的游戏日 */
+  quietSince?: number;
   [k: string]: unknown;
 }
 
-/** 运行中的威胁实例（story/threats.js） */
-export type ThreatInstance = { id: string; type: string; x: number; y: number; region?: string; [k: string]: any }; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6
+/** 运行中的威胁实例（story/threats） */
+export interface ThreatInstance {
+  id: string;
+  type: string;
+  name: string;
+  x: number;
+  y: number;
+  region: string;
+  path: Array<{ x: number; y: number }>;
+  state: 'roam' | 'dwell' | 'rest' | 'contained' | 'gone' | (string & {});
+  /** 会死的威胁才有 */
+  hp: number | null;
+  born: number;
+  restUntil: number;
+  dwellUntil: number;
+  suppressedUntil: number;
+  /** 声音 id → 上次发出的时刻 */
+  sounds: Record<string, number>;
+  crowdAt: number;
+  incident?: string;
+  fleeing?: boolean;
+  /** 被放弃的区域里只在区域内活动 */
+  confined?: boolean;
+  patrol?: string[] | number;
+  target?: string | null;
+  [k: string]: unknown;
+}

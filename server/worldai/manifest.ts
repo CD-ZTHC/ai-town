@@ -5,9 +5,10 @@ import { EFFECTS, EXPR_FN_DOCS, VFX } from '../kernel/effects.ts';
 import { OPS } from '../kernel/ops.ts';
 import { PARAM_BOUNDS, BODY_PLANS } from '../kernel/spec.ts';
 import { extensions } from '../../plugin-host/registry.js';
+import type { WorldSpec } from '../types/spec.ts';
 
 // 世界架构师可以使用的操作及参数格式
-export const OP_DOCS = {
+export const OP_DOCS: Record<string, string> = {
   addBuilding: '{"id":"英文小写id","name":"≤10字","kind":"英文小写类型，如 tower/shrine/shop/garden","w":3~7,"h":3~6,"place":{"near":"地点id","within":6~16},"roof":"#rrggbb","wall":"#rrggbb","sign":"一个emoji","desc":"≤60字","lightAtNight":true/false} —— 不要写坐标，系统会在 near 附近自动找空地；新建筑会成为居民可以去的地点',
   renovateBuilding: '{"id":"现有建筑id","name":"新名字≤10字(可选)","kind":"新类型(可选)","desc":"≤60字(可选)","sign":"emoji(可选)","roof":"#rrggbb(可选)","public":true/false(可选)} —— 改建 / 换用途：占地不变，住户与所有引用照旧；闲置或不合用的建筑优先改建而不是拆',
   setBuildingState: '{"id":"现有建筑id","state":"closed 停业 / damaged 受损 / ruin 废墟","reason":"≤30字"} —— 变成废墟与拆除一样要给出 remap（见 removeBuilding），并经过居民议事',
@@ -31,20 +32,20 @@ export const OP_DOCS = {
   addCanon: '{"text":"写进小镇历史的事实（≤100字）","tags":["标签"]}',
 };
 
-export function effectsText() {
+export function effectsText(): string {
   return Object.entries(EFFECTS).map(([name, d]) => `- ${name}${d.ext ? '（扩展）' : ''}：${d.doc}`).join('\n');
 }
 
-export function exprText() {
+export function exprText(): string {
   return `变量：e.loc e.region e.inside e.stamina e.courage e.status e.name（规则中的居民；能力里用 self / target）、weather hour minute day flags.标记名
 函数：${Object.values(EXPR_FN_DOCS).join('；')}`;
 }
 
-const townLocs = (spec) => Object.entries(spec.locations).filter(([, l]) => !l.region);
-const farLocs = (spec) => Object.entries(spec.locations).filter(([, l]) => l.region);
+const townLocs = (spec: WorldSpec) => Object.entries(spec.locations).filter(([, l]) => !l.region);
+const farLocs = (spec: WorldSpec) => Object.entries(spec.locations).filter(([, l]) => l.region);
 
 /** 架构师提示词里的能力清单 */
-export function manifestText(spec, day = 1) {
+export function manifestText(spec: WorldSpec, day = 1): string {
   return `可用操作（ops 数组中每项为 {"op":"…","args":{…}}，只能用这些：${Object.keys(OP_DOCS).join('、')}）：
 ${Object.entries(OP_DOCS).map(([k, v]) => `- ${k} ${v.replace('必须大于今天', `必须大于今天 ${day}`)}`).join('\n')}
 效果（能力的 effects、规则的 then 里使用）：
@@ -56,16 +57,16 @@ ${exprText()}
 现有物品：${Object.entries(spec.items).map(([id, i]) => `${id}(${i.name})`).join('、')}
 现有构筑物：${Object.entries(spec.structures).map(([id, x]) => `${id}(${x.name})`).join('、')}
 现有能力：${spec.abilities.map((a) => `${a.id}(${a.name})`).join('、')}
-地图：${spec.regions.map((r) => { const sz = Array.isArray(r.size) ? r.size.join('×') : '?'; return `${r.id}(${r.name || ''}${r.id === 'town' ? '，主地图' : r.adjacent ? `，在 ${r.adjacent.to} 的${{ north: '北', south: '南', east: '东', west: '西' }[r.adjacent.side]}边` : '，远处'}，${sz})`; }).join('、')}（每张地图最大 96×64）
+地图：${spec.regions.map((r) => { const sz = Array.isArray(r.size) ? r.size.join('×') : '?'; return `${r.id}(${r.name || ''}${r.id === 'town' ? '，主地图' : r.adjacent ? `，在 ${r.adjacent.to} 的${{ north: '北', south: '南', east: '东', west: '西' }[r.adjacent.side as 'north']}边` : '，远处'}，${sz})`; }).join('、')}（每张地图最大 96×64）
 现有建筑（id(名字，状态，住着几人)）：${spec.buildings.filter((b) => !b.removed).map((b) => {
     const n = spec.personas.filter((p) => p.home === b.id && p.status !== 'departed').length;
-    const st = { closed: '停业', damaged: '受损', ruin: '废墟' }[b.state];
+    const st = { closed: '停业', damaged: '受损', ruin: '废墟' }[b.state as 'closed'];
     return `${b.id}(${b.name}${st ? `，${st}` : ''}${n ? `，住着${n}人` : ''})`;
   }).join('、')}`;
 }
 
 /** docs/capabilities.md：给人看的能力清单 */
-export function manifestMarkdown(spec) {
+export function manifestMarkdown(spec: WorldSpec): string {
   const ext = extensions();
   return `# 能力清单（自动生成）
 

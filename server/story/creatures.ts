@@ -5,11 +5,52 @@ import * as llm from '../llm.ts';
 import { addMemory, parseHM } from '../memory.ts';
 import { posOf } from '../kernel/effects.ts';
 import { ratingAtLeast } from '../kernel/ratings.ts';
+import type { Town } from '../sim.ts';
+import type { ModelJSON } from '../llm.ts';
+import type { LiveAgent } from '../types/agent.ts';
+import type { CreatureType } from '../types/spec.ts';
+import type { Cell } from '../types/map.ts';
+
+/** 一只异界生物（存档 creatureList） */
+export interface Creature {
+  id: string;
+  type: string;
+  name: string;
+  x: number;
+  y: number;
+  region?: string;
+  dir: 'up' | 'down' | 'left' | 'right';
+  moving: boolean;
+  hp: number;
+  /** 想去的地点 id */
+  goal: string | null;
+  path: Cell[];
+  friendly: boolean;
+  /** 白天躲起来了 */
+  hidden: boolean;
+  dwellUntil: number;
+  fleeUntil: number;
+  lastMischief: number;
+  nextSeek: number;
+  /** 正要去捣乱的地点 */
+  target?: string;
+}
+
+/** 镜湖裂隙（存档 portalState） */
+export interface Portal {
+  id: 'portal';
+  kind: 'portal';
+  stage: string;
+  x: number;
+  y: number;
+  spawn: Cell;
+  name: string;
+}
 
 const MAX_CREATURES = 24;
-const rand = (a) => a[Math.floor(Math.random() * a.length)];
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const PORTAL_TEXT = {
+const rand = <T>(a: readonly T[]): T => a[Math.floor(Math.random() * a.length)];
+const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
+const PORTAL_TEXT: Record<string, string> = {
   crack: '镜湖湖心出现了一道细细的紫色裂纹',
   open: '🌀 镜湖裂隙张开了！',
   wide: '🌀 裂隙扩张到了整个湖心，血色的月亮升了起来',
@@ -18,13 +59,15 @@ const PORTAL_TEXT = {
 };
 
 export class CreatureSystem {
-  constructor(town) { this.town = town; }
-  get list() { return (this.town.creatureList ||= []); }
-  get portal() { return this.town.portalState || null; }
-  def(c) { return this.town.spec.creatures[c.type]; }
+  declare town: Town;
+  declare thinking: boolean;
+  constructor(town: Town) { this.town = town; }
+  get list(): Creature[] { return (this.town.creatureList ||= []); }
+  get portal(): Portal | null { return this.town.portalState || null; }
+  def(c: Creature): CreatureType { return this.town.spec.creatures![c.type]!; }
 
   // ---------- 裂隙 ----------
-  setPortal({ stage, x, y, spawn, name }) {
+  setPortal({ stage, x, y, spawn, name }: { stage: string; x?: number; y?: number; spawn?: Cell; name?: string }): void {
     const town = this.town;
     let p = this.portal;
     if (!p) {
@@ -39,16 +82,16 @@ export class CreatureSystem {
     town.emit('story');
   }
 
-  spawnPoint() {
+  spawnPoint(): Cell {
     const p = this.portal;
     if (p) return { x: p.spawn.x, y: p.spawn.y };
     const spots = this.town.world.locations.pier?.spots || [];
     return spots.length ? { ...rand(spots) } : { x: 50, y: 34 };
   }
 
-  spawn(type, count = 1, goal = null) {
+  spawn(type: string, count = 1, goal: string | null = null): number {
     const town = this.town;
-    const def = town.spec.creatures[type];
+    const def = town.spec.creatures![type];
     if (!def || def.leader) return 0;
     if (def.minRating && !ratingAtLeast(town.spec.meta.rating, def.minRating)) return 0;
     let n = 0;
@@ -69,7 +112,7 @@ export class CreatureSystem {
   }
 
   /** 剧情收尾：生物回到裂隙那边；可以留下一只友善的 */
-  dismiss(keep = null) {
+  dismiss(keep: { type: string; name?: string; near: string } | null = null): void {
     const town = this.town;
     // 暗月界里的友善生物不受影响
     const elsewhere = this.list.filter((c) => (c.region || 'town') !== 'town');
@@ -81,12 +124,12 @@ export class CreatureSystem {
   }
 
   /** 一只友善的生物，在 near 附近闲逛；region 为所在区域 */
-  addFriend({ type, name, near, region = 'town' }) {
+  addFriend({ type, name, near, region = 'town' }: { type: string; name?: string; near: string; region?: string }): Creature | null {
     const town = this.town;
-    if (!town.spec.creatures[type] || this.list.length >= MAX_CREATURES) return null;
+    if (!town.spec.creatures![type] || this.list.length >= MAX_CREATURES) return null;
     const p = town.locCenter(near) || this.spawnPoint();
-    const c = {
-      id: `m${++town.seq}`, type, name: String(name || '').slice(0, 8) || town.spec.creatures[type].name, region,
+    const c: Creature = {
+      id: `m${++town.seq}`, type, name: String(name || '').slice(0, 8) || town.spec.creatures![type]!.name, region,
       x: p.x, y: p.y, dir: 'down', moving: false, hp: 30, goal: near, path: [], friendly: true, hidden: false, dwellUntil: 0, fleeUntil: 0, lastMischief: 0, nextSeek: 0,
     };
     this.list.push(c);
@@ -94,7 +137,7 @@ export class CreatureSystem {
   }
 
   // ---------- 每次推进 ----------
-  tick(dt) {
+  tick(dt: number): void {
     if (!this.list.length) return;
     for (const c of this.list) this.update(c, dt);
     this.encounters();
@@ -102,22 +145,22 @@ export class CreatureSystem {
     this.swarmMind();
   }
 
-  active(def) {
-    const [a, b] = (def.behavior.active || ['00:00', '23:59']).map(parseHM);
+  active(def: CreatureType): boolean {
+    const [a, b] = (def.behavior.active || ['00:00', '23:59']).map(parseHM) as [number, number];
     const m = this.town.minute;
     return a <= b ? m >= a && m <= b : m >= a || m <= b;
   }
 
-  nearLight(c, r = 3) {
-    return this.town.entities.some((e) => e.tags.includes('light') && !e.inside && (e.region || 'town') === (c.region || 'town') && Math.hypot(e.x - c.x, e.y - c.y) <= r);
+  nearLight(c: { x: number; y: number; region?: string }, r = 3): boolean {
+    return this.town.entities.some((e) => e.tags!.includes('light') && !e.inside && (e.region || 'town') === (c.region || 'town') && Math.hypot(e.x - c.x, e.y - c.y) <= r);
   }
 
-  goTo(c, x, y) {
+  goTo(c: Creature, x: number, y: number): void {
     const p = findPath(this.town.worldOf?.(c.region) || this.town.world, c.x, c.y, x, y);
     c.path = p || [{ x, y }];
   }
 
-  update(c, dt) {
+  update(c: Creature, dt: number): void {
     const town = this.town;
     const def = this.def(c);
     if (!def) { c.hp = 0; return; }
@@ -145,12 +188,12 @@ export class CreatureSystem {
     this.move(c, def, dt);
   }
 
-  choose(c, def) {
+  choose(c: Creature, def: CreatureType): void {
     const town = this.town;
     const beh = def.behavior;
     if (c.friendly || beh.archetype === 'wander') {
-      const p = town.locCenter(c.goal) || { x: c.x, y: c.y };
-      const spots = town.findLocation?.(c.goal)?.spots || [];
+      const p = town.locCenter(c.goal as string) || { x: c.x, y: c.y };
+      const spots = town.findLocation?.(c.goal as string)?.spots || [];
       const s = spots.length ? rand(spots) : { x: Math.round(p.x + (Math.random() - 0.5) * 6), y: Math.round(p.y + (Math.random() - 0.5) * 4) };
       this.goTo(c, s.x, s.y);
       c.dwellUntil = town.t + 20 + Math.random() * 40;
@@ -174,7 +217,7 @@ export class CreatureSystem {
     c.dwellUntil = town.t + 20 + Math.random() * 30;
   }
 
-  move(c, def, dt) {
+  move(c: Creature, def: CreatureType, dt: number): void {
     let dist = def.stats.speed * dt;
     c.moving = c.path.length > 0;
     while (dist > 0 && c.path.length) {
@@ -187,7 +230,7 @@ export class CreatureSystem {
     if (!c.path.length && c.moving) { c.moving = false; this.arrived(c, def); }
   }
 
-  arrived(c, def) {
+  arrived(c: Creature, def: CreatureType): void {
     const town = this.town;
     // 每只影灵 3 小时最多捣一次乱，全镇 45 分钟最多一次，避免刷屏
     if (c.friendly || def.behavior.archetype !== 'thief' || !c.target || town.t - c.lastMischief < 180 || town.t - (town.mischiefAt ?? -999) < 45) return;
@@ -201,7 +244,7 @@ export class CreatureSystem {
   }
 
   // ---------- 遭遇 ----------
-  encounters() {
+  encounters(): void {
     const town = this.town;
     for (const c of this.list) {
       if (c.friendly || c.hidden || c.hp <= 0) continue;
@@ -217,11 +260,11 @@ export class CreatureSystem {
     }
   }
 
-  resolve(c, a, rnd = Math.random) {
+  resolve(c: Creature, a: LiveAgent, rnd = Math.random): string {
     const town = this.town;
     const def = this.def(c);
     const rating = town.spec.meta.rating;
-    const at = posOf(town, a);
+    const at = posOf(town, a)!;
     town.emit('vfx', { preset: 'burst', x: at.x, y: at.y, color: '#9b6bff', radius: 1.5, region: at.region });
     // 了解影灵之后，淘气的小家伙不再与人为敌
     if (town.worldFlags.shades_understood && def.temperament !== 'hostile') {
@@ -282,7 +325,7 @@ export class CreatureSystem {
   }
 
   // ---------- 群体心智：每两小时由 LLM 决定影灵群今晚的去向 ----------
-  swarmMind() {
+  swarmMind(): void {
     const town = this.town;
     const hostile = this.list.filter((c) => !c.friendly && !c.hidden);
     if (!hostile.length || town.t - (town.swarmAt ?? -999) < 120 || this.thinking) return;
@@ -290,7 +333,7 @@ export class CreatureSystem {
     town.swarmAt = town.t;
     this.thinking = true;
     const outside = town.agents.filter((a) => a.kind !== 'creature' && !a.inside && a.status !== 'sleeping').map((a) => `${a.name}在${town.locName(a.locId) || '路上'}`);
-    const lights = town.entities.filter((e) => e.tags.includes('light')).map((e) => `${e.name}(${Math.round(e.x)},${Math.round(e.y)})`);
+    const lights = town.entities.filter((e) => e.tags!.includes('light')).map((e) => `${e.name}(${Math.round(e.x)},${Math.round(e.y)})`);
     const def = this.def(hostile[0]);
     llm.chatJSON([
       { role: 'system', content: '你是一群异界小生物的群体本能。只输出 JSON。' },
@@ -299,7 +342,7 @@ export class CreatureSystem {
 户外的人：${outside.join('、') || '没有'}；亮着的灯阵：${lights.join('、') || '没有'}
 可以去的地点：${town.publicLocs().join(', ')}
 选一个今晚要去的地点（避开灯光）。输出：{"target":"地点id","mode":"steal 或 scout 或 hide","reason":"≤20字"}` },
-    ], { label: '群体心智', agent: def.name, maxTokens: 800, tier: 'fast', attempts: 1, timeoutMs: 45_000 }).then((res) => {
+    ], { label: '群体心智', agent: def.name, maxTokens: 800, tier: 'fast', attempts: 1, timeoutMs: 45_000 }).then((res: ModelJSON) => {
       const target = town.publicLocs().includes(res.target) ? res.target : null;
       town.swarmGoal = res.mode === 'hide' ? null : target;
       if (target && res.mode !== 'hide') for (const c of this.list) if (!c.friendly) c.goal = target;

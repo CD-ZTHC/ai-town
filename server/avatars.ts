@@ -3,33 +3,63 @@
 // 每个世界最多 AVATAR_MAX 个。
 import { findPath } from './world.ts';
 import { get as setting } from './settings/index.ts';
+import type { Town } from './sim.ts';
+import type { LiveAgent } from './types/agent.ts';
+
+/** 一位访客的化身（只在内存里） */
+export interface Avatar {
+  id: string;
+  /** 账号 id */
+  uid: string;
+  ip: string;
+  name: string;
+  color: string;
+  x: number;
+  y: number;
+  dir: 'up' | 'down' | 'left' | 'right';
+  moving: boolean;
+  region: string;
+  locId: string | null;
+  path: Array<{ x: number; y: number }>;
+  /** 跨区域时下一段 */
+  hop: { to: string; locId: string; arrive?: { x: number; y: number } | null } | null;
+  /** 正在前往的地点 */
+  target?: string | null;
+  seen: number;
+  movedAt: number;
+  movedLocAt?: number;
+}
 
 const IDLE_MS = 20 * 60_000; // 20 分钟不操作就离开
 const MOVE_CD_MS = 3000;
 const GOTO_CD_MS = 250; // 游戏模式里点地 / 键盘走路，间隔可以短一些
 const SPEED = 4; // 格/真实秒：化身按真实时间行走，不受调速、暂停影响，操作手感一致
 const COLORS = ['#e57373', '#64b5f6', '#81c784', '#ffb74d', '#ba68c8', '#4db6ac', '#f06292', '#a1887f'];
-const err = (status, message) => Object.assign(new Error(message), { status });
+const err = (status: number, message: string): Error & { status: number } => Object.assign(new Error(message), { status });
 
 export class AvatarSystem {
-  constructor(town, { now = () => Date.now() } = {}) {
+  declare town: Town;
+  declare now: () => number;
+  declare list: Avatar[];
+  declare seq: number;
+  constructor(town: Town, { now = () => Date.now() } = {}) {
     this.town = town;
     this.now = now;
     this.list = [];
     this.seq = 0;
   }
 
-  mine(uid) { return this.list.find((v) => v.uid === uid) || null; }
+  mine(uid: string): Avatar | null { return this.list.find((v) => v.uid === uid) || null; }
 
   /** uid：账号 id；name：账号昵称（由服务端给出）。已经现身的账号再次现身时沿用同一个化身 */
-  join(uid, ip, { name, color } = {}) {
+  join(uid: string, ip: string, { name, color }: { name?: string; color?: string } = {}): Avatar {
     const town = this.town;
     name = String(name ?? '').replace(/[\s<>{}[\]"'`\\]/g, '').slice(0, 8);
     if (name.length < 1) throw err(400, '起个名字吧');
     if (this.list.some((v) => v.name === name && v.uid !== uid)) throw err(409, '这个名字已经有人用了');
     const old = this.mine(uid);
     if (old) {
-      Object.assign(old, { name, ip, seen: this.now(), ...(COLORS.includes(color) ? { color } : {}) });
+      Object.assign(old, { name, ip, seen: this.now(), ...(COLORS.includes(color!) ? { color } : {}) });
       town.emit('avatars');
       return old;
     }
@@ -38,8 +68,8 @@ export class AvatarSystem {
     const spawn = [town.spec.voice?.spawn, 'square', ...town.publicLocs()].find((id) => id && town.locRegion(id) === 'town' && town.findLocation(id)?.spots?.length) || 'square';
     const spots = town.findLocation(spawn)?.spots || [];
     const s = spots.length ? spots[Math.floor(Math.random() * spots.length)] : town.locCenter(spawn) || town.world.gate;
-    const v = {
-      id: `v${++this.seq}`, uid, ip, name, color: COLORS.includes(color) ? color : COLORS[this.seq % COLORS.length],
+    const v: Avatar = {
+      id: `v${++this.seq}`, uid, ip, name, color: COLORS.includes(color!) ? color! : COLORS[this.seq % COLORS.length]!,
       x: s.x, y: s.y, dir: 'down', moving: false, region: 'town', locId: spawn, path: [], hop: null,
       seen: this.now(), movedAt: 0,
     };
@@ -49,7 +79,7 @@ export class AvatarSystem {
     return v;
   }
 
-  move(uid, locId) {
+  move(uid: string, locId: string) {
     const town = this.town;
     const v = this.mine(uid);
     if (!v) throw err(404, '你还没有在小镇里现身');
@@ -62,7 +92,7 @@ export class AvatarSystem {
   }
 
   /** 游戏模式：走到当前区域里任意一个可以走到的格子 */
-  goto(uid, x, y) {
+  goto(uid: string, x: number, y: number) {
     const town = this.town;
     const v = this.mine(uid);
     if (!v) throw err(404, '你还没有在小镇里现身');
@@ -77,7 +107,7 @@ export class AvatarSystem {
     return v;
   }
 
-  walk(v, locId) {
+  walk(v: Avatar, locId: string) {
     const town = this.town;
     const here = town.worldOf(v.region);
     const to = town.locRegion(locId);
@@ -89,29 +119,29 @@ export class AvatarSystem {
       v.path = findPath(here, Math.round(v.x), Math.round(v.y), step.a.x, step.a.y) || [];
       return;
     }
-    const loc = town.findLocation(locId);
-    const s = loc.spots?.length ? loc.spots[Math.floor(Math.random() * loc.spots.length)] : town.locCenter(locId);
+    const loc = town.findLocation(locId)!;
+    const s = (loc.spots?.length ? loc.spots[Math.floor(Math.random() * loc.spots.length)] : town.locCenter(locId))!;
     v.path = findPath(here, Math.round(v.x), Math.round(v.y), s.x, s.y) || [{ x: s.x, y: s.y }];
     v.target = locId;
   }
 
-  leave(uid) {
+  leave(uid: string) {
     const v = this.mine(uid);
     if (!v) return false;
     this.remove(v, true);
     return true;
   }
 
-  remove(v, say) {
+  remove(v: Avatar, say: boolean) {
     this.list = this.list.filter((x) => x !== v);
     if (say) this.town.log('avatar', `👋 旅人「${v.name}」离开了小镇`, {});
     this.town.emit('avatars');
   }
 
-  touch(uid) { const v = this.mine(uid); if (v) v.seen = this.now(); return v; }
+  touch(uid: string) { const v = this.mine(uid); if (v) v.seen = this.now(); return v; }
 
   /** dtReal：真实秒数 */
-  tick(dtReal) {
+  tick(dtReal: number) {
     const now = this.now();
     for (const v of [...this.list]) {
       if (now - v.seen > IDLE_MS) { this.remove(v, true); continue; }
@@ -127,7 +157,7 @@ export class AvatarSystem {
     }
   }
 
-  arrived(v) {
+  arrived(v: Avatar) {
     const town = this.town;
     v.moving = false;
     if (v.hop) {
@@ -152,7 +182,7 @@ export class AvatarSystem {
   }
 
   /** 居民身边的访客化身（同一区域、户外、6 格内） */
-  near(a, r = 6) {
+  near(a: LiveAgent, r = 6) {
     if (a.inside) return [];
     return this.list.filter((v) => v.region === (a.region || 'town') && Math.hypot(v.x - a.x, v.y - a.y) < r);
   }

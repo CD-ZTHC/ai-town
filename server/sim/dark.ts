@@ -117,7 +117,7 @@ export class Dark {
   }
 
   /** 群众伤亡（只记数字，设计 §4.10）：at 可以是地点 id 或坐标；记在最近的、有人口的地点上 */
-  casualties(this: Town, at: Pos | string | null | undefined, n: number, { cause = '', text = '' }: { cause?: string; text?: string } = {}) {
+  casualties(this: Town, at: Cell & { region?: string } | string | null | undefined, n: number, { cause = '', text = '' }: { cause?: string; text?: string } = {}) {
     if (!(n > 0)) return 0;
     const st = this.darkState;
     let loc: string | null = typeof at === 'string' ? at : null;
@@ -125,9 +125,9 @@ export class Dark {
       const cands = Object.keys(st.population).length ? Object.keys(st.population) : this.publicLocs();
       let best = Infinity;
       for (const id of cands) {
-        if (this.locRegion(id) !== ((at as Pos).region || 'town')) continue;
+        if (this.locRegion(id) !== ((at as Cell & { region?: string }).region || 'town')) continue;
         const c = this.locCenter(id);
-        const d = c ? Math.hypot(c.x - (at as Pos).x, c.y - (at as Pos).y) : Infinity;
+        const d = c ? Math.hypot(c.x - (at as Cell).x, c.y - (at as Cell).y) : Infinity;
         if (d < best) { best = d; loc = id; }
       }
     }

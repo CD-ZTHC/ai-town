@@ -235,16 +235,30 @@ export interface Region {
   [k: string]: unknown;
 }
 
+/** 剧情弧里的时刻：开弧后第 d 天的 at（HH:MM） */
+export interface ArcWhen { d?: number; at: string }
+
+/** 剧情弧的一个节拍：到点（或进入阶段时）执行一串 beats */
+export interface ArcBeat {
+  id: string;
+  when: ArcWhen & { enter?: boolean };
+  do: unknown[];
+}
+
+/** 剧情弧模板（设计文档 5.2） */
 export interface Arc {
   id: string;
   title: string;
   emoji?: string;
   summary: string;
-  start: Record<string, unknown>;
-  phases: Array<{ id: string; name: string; [k: string]: unknown }>;
-  endings?: unknown[];
-  finale?: unknown;
-  cast?: unknown;
+  start: { at?: string; [k: string]: unknown };
+  /** 伏笔 → 爆发 → 发展 → 高潮 → 余波 */
+  phases: Array<{ id: string; name: string; until?: ArcWhen; beats: ArcBeat[] }>;
+  /** 投票选项 id → 结局；check 为智取判定，失败时转到 fail 结局 */
+  endings: Record<string, { title: string; do: unknown[]; check?: { base?: number }; fail?: string; failText?: string }>;
+  finale?: unknown[];
+  /** 剧情弧带来的角色：id → 人物卡 */
+  cast?: Record<string, unknown>;
   [k: string]: unknown;
 }
 
@@ -255,18 +269,51 @@ export interface CreatureType {
   tags: string[];
   look: { bodyPlan: 'wisp' | 'hound' | 'warden'; [k: string]: string };
   stats: { hp: number; speed: number; courage: number };
-  behavior: Record<string, unknown>;
+  /** 行为：原型、活动时段、怕什么、常去的地点 */
+  behavior: { archetype?: 'wander' | 'guard' | 'chaser' | 'thief' | (string & {}); active?: [string, string]; fleeFrom?: string; targets?: string[]; [k: string]: unknown };
+  temperament?: string;
+  lore?: string;
+  leader?: boolean;
+  minRating?: string;
   [k: string]: unknown;
 }
 
-/** 规律型威胁（黑暗叙事）：详细字段见 kernel/threat-spec.js */
+/** 规律型威胁（黑暗叙事设计 §4）：校验见 kernel/threat-spec.ts */
 export interface ThreatType {
   name: string;
   emoji: string;
   kind?: string;
-  mortal?: boolean;
-  rule?: Record<string, unknown>;
+  /** 会不会死（杀不死的只能收容、压制） */
+  mortal: boolean;
+  hp?: number;
+  atk?: number;
+  def?: number;
+  speed?: number;
+  origin?: string;
+  movement?: 'wander' | 'stalk_marked' | 'stationary' | 'patrol';
+  /** 常出没的地点 */
+  haunt: string[];
+  /** 活动时段 ["HH:MM","HH:MM"] */
+  active?: [string, string];
+  minRating?: string;
+  /** 规律：触发条件 → 标记（延迟、征兆）→ 结局；unless 为豁免条件 */
+  rule?: { trigger: string; unless?: string; mark: { delay: [number, number]; sign?: string }; outcome: Effect[]; reach?: number; rest?: number };
+  sounds?: Array<{ id: string; every: number; radius?: number; text?: string }>;
+  /** 对付它的办法 */
+  counters?: Array<{ type: string; with?: string; yields?: string; time?: number; leak?: number; power?: number; radius?: number; when?: string; text?: string; hint?: string }>;
+  zone?: { radius: number; grow?: number; replay?: string; tint?: string };
   hostable?: { burden: string; grants: string[]; rate?: number; offsets?: Record<string, number>; via?: Array<{ when?: string; p: number; fail?: Effect[] }> };
+  /** 真线索、假线索 */
+  clues: string[];
+  /** 攻击带这些标签时伤害加成 */
+  weakness?: string[];
+  decoys?: string[];
+  /** 可以研究它的地点 */
+  research?: string[];
+  loot?: Array<{ item: string; p: number }>;
+  /** 群众伤亡：每隔多少分钟、杀几个 */
+  crowd?: { every: number; kills: [number, number] };
+  look?: unknown;
   [k: string]: unknown;
 }
 
@@ -307,12 +354,13 @@ export interface WorldSpec {
     canon: Array<{ id: string; text: string; tags: string[]; secret: boolean; t: number }>;
   };
   source?: { title?: string; [k: string]: unknown };
+  /** 改编自原著的世界（创世）：忠实度、开场、原著里的命运节点 */
+  adaptation?: { fidelity?: string; start?: string; notes?: string; fateNodes?: Array<{ id: string; text: string; day: number }> };
   calendar: { weekdays: string[]; events: CalendarEvent[] };
   weather: Record<string, Weather>;
   locations: Record<string, Location>;
   buildings: Building[];
   personas: Persona[];
-  population?: Record<string, unknown>;
   creatures?: Record<string, CreatureType>;
   threads?: Thread[];
   items: Record<string, Item>;
@@ -322,7 +370,10 @@ export interface WorldSpec {
   factions?: Faction[];
   burdens?: Record<string, BurdenDef>;
   threats?: Record<string, ThreatType>;
-  incidents?: unknown[];
+  /** 事件：开局就有的威胁、自动出现的间隔 */
+  incidents?: { start?: Array<{ threat: string; at?: string }>; autoEveryDays?: number };
+  /** 地点 → 当地的群众人数 */
+  population?: Record<string, number>;
   params: Params;
   regions: Region[];
   arcs?: Arc[];

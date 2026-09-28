@@ -16,6 +16,7 @@ import type { Cell } from '../types/map.ts';
 import type { Pos } from '../kernel/effects.ts';
 import type { ModelJSON } from '../llm.ts';
 import type { RetrieveOptions } from '../memory.ts';
+import type { StoryState } from '../story/director.ts';
 
 export class Views {
   snapshot(this: Town) {
@@ -38,7 +39,7 @@ export class Views {
       ...(this.threats.enabled || this.dark.graves.length ? { dark: this.threats.view() } : {}),
       avatars: this.avatars.view(),
       overlay: this.evolved.snapshotExtra(),
-      story: { tension: this.story?.now?.value ?? null, arc: this.arcs.active()?.phase || null, vote: this.votes.list.some((v: { status: string }) => v.status !== 'closed') },
+      story: { tension: this.story?.now?.value ?? null, arc: this.arcs.active()?.phase || null, vote: this.votes.list.some((v) => v.status !== 'closed') },
     };
   }
 
@@ -115,7 +116,7 @@ export class Views {
   proposalsView(this: Town, key: string | null = null, admin = false) {
     const ps = this.proposalSystem;
     return {
-      proposals: ps.list.slice(-20).reverse().map((p: unknown) => ps.view(p, key as null)), // TODO(types): B6 迁移 proposals 后去掉断言（JS 推断出的参数类型过窄）
+      proposals: ps.list.slice(-20).reverse().map((p) => ps.view(p, key)),
       queue: (this.architectQueue || []).map((q) => ({ intent: q.intent, origin: ps.originText(q.origin) })),
       thinking: Boolean(this.architect?.busy),
       gaps: admin ? this.gapsWithRfc() : undefined,
@@ -125,14 +126,14 @@ export class Views {
   }
 
   storyView(this: Town, key: string | null = null) {
-    const st = this.story || {};
+    const st: Partial<StoryState> = this.story || {};
     return {
       storyteller: this.spec.meta.storyteller, rating: this.spec.meta.rating,
       tension: st.now || null, history: (st.history || []).slice(-72), decisions: (st.decisions || []).slice(-8).reverse(),
       arcs: this.arcs.view(), threads: threadList(this),
       arcTemplates: this.spec.arcs!.filter((a) => !this.arcs.runs.some((r: { template: string }) => r.template === a.id)).map((a) => ({ id: a.id, title: a.title })),
       migration: this.migration.view(),
-      votes: this.votes.list.slice(-5).reverse().map((v: unknown) => this.votes.view(v, key as null)), // TODO(types): B6
+      votes: this.votes.list.slice(-5).reverse().map((v) => this.votes.view(v, key)),
       scenes: (this.pendingScenes || []).map((s) => ({ title: s.title, time: s.time, location: this.locName(s.location) })),
       crisis: {
         ...this.crisis, defense: this.entities.filter((e) => (e.tags as string[]).includes('light')).length,

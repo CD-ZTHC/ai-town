@@ -62,6 +62,18 @@ export interface ScheduleEntry {
   [k: string]: unknown;
 }
 
+/** 约定（对话、群戏、剧情里约好的事）：几点去哪里做什么；由 addCommitment 写进日程。来自模型时字段未经校验 */
+export interface Commitment {
+  time: string;
+  location: string;
+  activity: string;
+  emoji?: string;
+  /** 游戏分钟，默认 60 */
+  duration?: number;
+  act?: import('./town.ts').Act;
+  [k: string]: unknown;
+}
+
 /** 此刻该做的事（sim/movement 的 desired）：日程里的一条，或者睡觉、起床、闲逛这类兜底 */
 export interface CurEntry {
   key: string;
@@ -154,7 +166,8 @@ export interface Agent {
   /** 负担值：负担名 → 当前值 */
   burdens?: Record<string, number>;
   hosted?: Array<{ threat: string; since: number }>;
-  marks?: Array<Record<string, unknown>>;
+  /** 身上的标记：哪个威胁、何时标上、何时应验、征兆 */
+  marks?: Array<{ threat: string; type: string; t: number; due: number; sign: string }>;
   spokeAt?: number;
   namedAt?: number;
   /** 最近一次开门进屋的时刻 */
@@ -164,7 +177,7 @@ export interface Agent {
   /** 正保持着的禁忌姿态 */
   posture?: { holds: string[]; until: number } | null;
   /** 正在收容的威胁 */
-  containing?: unknown;
+  containing?: { inst: string; until: number; started: number } | null;
   /** 负担值冻结到什么时候：负担名 → 游戏分钟 */
   burdenFreeze?: Record<string, number>;
   /** 反派的压力值 */

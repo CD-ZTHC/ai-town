@@ -203,10 +203,10 @@ export class Combat {
     if (!inst) return { ok: false, reason: `找不到${threat}` };
     if (inst.region !== (p.region || 'town') || Math.hypot(inst.x - p.x, inst.y - p.y) > 5) return { ok: false, reason: `${inst.name}不在附近`, retry: true };
     const s = this.combatStats(a);
-    const dmg = ts.hit(inst, s.atk, s.tags, a as never); // TODO(types): B6 迁移 story/threats 后去掉断言（JS 推断出的参数类型过窄）
+    const dmg = ts.hit(inst, s.atk, s.tags, a);
     const def = ts.def(inst);
     // 会死的威胁会还手
-    if (def?.mortal && inst.hp > 0 && def.atk) this.woundAgent(a, Math.max(1, Math.round(def.atk * (0.8 + Math.random() * 0.4) - s.def * 0.5)), { cause: `threat:${inst.type}` });
+    if (def?.mortal && inst.hp! > 0 && def.atk) this.woundAgent(a, Math.max(1, Math.round(def.atk * (0.8 + Math.random() * 0.4) - s.def * 0.5)), { cause: `threat:${inst.type}` });
     addMemory(a, { t: this.t, type: 'event', text: dmg ? `和${inst.name}交了手` : `对${inst.name}出手，却好像什么用也没有`, importance: 7 });
     return { ok: true };
   }

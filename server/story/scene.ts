@@ -3,17 +3,60 @@
 import * as llm from '../llm.ts';
 import { addMemory, fmtTime } from '../memory.ts';
 import { resolveWho } from './beats.ts';
+import type { Town } from '../sim.ts';
+import type { Commitment, LiveAgent } from '../types/agent.ts';
+import type { Convo } from '../types/town.ts';
+import type { ConvoRecord } from '../types/save.ts';
+import type { ModelJSON } from '../llm.ts';
 
-const str = (v, max) => String(v ?? '').trim().slice(0, max);
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+/** 安排好、等人到齐的群戏（存档 pendingScenes） */
+export interface Scene {
+  id: string;
+  title: string;
+  location: string;
+  /** 参与者的 id */
+  members: string[];
+  purpose: string;
+  /** 模型不可用时的预设台词：[[居民 id, 台词]] */
+  fallback: Array<[string, string]> | null;
+  /** 剧本预设的分工 */
+  assignments: Array<Commitment & { who: string }>;
+  /** 群戏里要表态的抉择（剧情弧的投票） */
+  choices: unknown[] | null;
+  fallbackChoice: Record<string, string> | null;
+  arc: string | null;
+  /** 开场的游戏分钟 */
+  time: number;
+  /** 拆除议事的提案 id */
+  council?: string;
+}
+
+/** schedule() 的参数（剧情节拍、议事会） */
+export interface SceneRequest {
+  location: string;
+  participants: unknown;
+  title?: string;
+  purpose?: string;
+  fallback?: Scene['fallback'];
+  assignments?: Scene['assignments'];
+  choices?: unknown[] | null;
+  fallbackChoice?: Scene['fallbackChoice'];
+  arc?: string | null;
+  beatId?: string | null;
+  council?: string;
+}
+
+const str = (v: unknown, max: number): string => String(v ?? '').trim().slice(0, max);
+const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 const WAIT_ALL = 30; // 开场时间后最多再等 30 分钟让所有人到齐
 const DEADLINE = 120; // 超过 2 小时还凑不齐两个人就取消
 
 export class SceneManager {
-  constructor(town) { this.town = town; }
-  get pending() { return (this.town.pendingScenes ||= []); }
+  declare town: Town;
+  constructor(town: Town) { this.town = town; }
+  get pending(): Scene[] { return (this.town.pendingScenes ||= []); }
 
-  schedule(b) {
+  schedule(b: SceneRequest): string {
     const town = this.town;
     const members = resolveWho(town, b.participants);
     const start = Math.floor(town.t) + 20;
@@ -33,7 +76,7 @@ export class SceneManager {
     return id;
   }
 
-  tick() {
+  tick(): void {
     const town = this.town;
     for (const sc of [...this.pending]) {
       if (town.t < sc.time) continue;
@@ -41,7 +84,7 @@ export class SceneManager {
       const allHere = here.length === sc.members.filter((id) => town.agents.includes(town.byId[id])).length;
       if (here.length >= 2 && (allHere || town.t >= sc.time + WAIT_ALL)) {
         this.pending.splice(this.pending.indexOf(sc), 1);
-        this.run(sc, here).catch((e) => console.warn('[scene]', e.message));
+        this.run(sc, here as LiveAgent[]).catch((e: Error) => console.warn('[scene]', e.message));
       } else if (town.t >= sc.time + DEADLINE) {
         this.pending.splice(this.pending.indexOf(sc), 1);
         town.log('scene_plan', `「${sc.title}」没能凑齐人，只好作罢`, {});
@@ -50,11 +93,11 @@ export class SceneManager {
     }
   }
 
-  async prompt(sc, members) {
+  async prompt(sc: Scene, members: LiveAgent[]): Promise<string> {
     const town = this.town;
-    const mems = {};
+    const mems: Record<string, string> = {};
     for (const a of members) mems[a.id] = await town.recall(a, sc.purpose, 4);
-    const side = (a) => `【${a.name}】${a.role}。${a.persona}\n目标：${a.goal}；心情：${a.mood.text}${a.beliefs.length ? `；相信：${a.beliefs.filter((b) => b.confidence >= 0.5).slice(-3).map((b) => b.claim).join('；')}` : ''}\n相关记忆：\n${mems[a.id]}`;
+    const side = (a: LiveAgent) => `【${a.name}】${a.role}。${a.persona}\n目标：${a.goal}；心情：${a.mood.text}${a.beliefs.length ? `；相信：${a.beliefs.filter((b) => b.confidence >= 0.5).slice(-3).map((b) => b.claim).join('；')}` : ''}\n相关记忆：\n${mems[a.id]}`;
     const vote = sc.choices && town.votes.openFor(sc.arc);
     return `${town.timeBlock()} 地点：${town.locName(sc.location)}。
 ${town.storyContext()}
@@ -73,15 +116,15 @@ ${members.map(side).join('\n\n')}
 assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的任务，没有就给空数组。可用地点 id：${town.publicLocs().join(', ')}`;
   }
 
-  async run(sc, members) {
+  async run(sc: Scene, members: LiveAgent[]): Promise<void> {
     const town = this.town;
-    const convo = { id: sc.id, a: members[0].id, b: members[1].id, members: members.map((a) => a.id), where: town.locName(sc.location), t: town.t, lines: [], state: 'thinking' };
+    const convo: Convo = { id: sc.id, a: members[0].id, b: members[1].id, members: members.map((a) => a.id), where: town.locName(sc.location), t: town.t, lines: [], state: 'thinking' };
     town.convos.set(sc.id, convo);
     for (const a of members) {
       Object.assign(a, { convoId: sc.id, prevStatus: a.status, status: 'chatting', moving: false, path: [], curKey: null });
       town.say(a, '…', 120000, 'think');
     }
-    let res = null;
+    let res: ModelJSON = null;
     if (llm.enabled() && llm.budgetLeft() > 0) {
       try {
         res = await town.think(members[0], '群戏', async () => llm.chatJSON([
@@ -90,7 +133,7 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
         ], { label: '多人场景', agent: sc.title, maxTokens: 5000, temperature: 0.9, timeoutMs: 120_000, attempts: 2, tier: 'smart' }));
         if (!Array.isArray(res.lines) || res.lines.length < 2) throw new Error('台词太少');
       } catch (e) {
-        console.warn(`[scene] ${sc.title} 生成失败，使用预设台词：`, e.message);
+        console.warn(`[scene] ${sc.title} 生成失败，使用预设台词：`, (e as Error).message);
         res = null;
       }
     }
@@ -98,21 +141,21 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
     let fallback = false;
     if (!res) {
       fallback = true;
-      const lines = (sc.fallback || []).filter(([id]) => present.has(id)).map(([id, text]) => ({ speaker: town.byId[id].name, text }));
+      const lines = (sc.fallback || []).filter(([id]) => present.has(id)).map(([id, text]) => ({ speaker: town.byId[id]!.name, text }));
       res = {
         lines: lines.length >= 2 ? lines : members.slice(0, 4).map((a, i) => ({ speaker: a.name, text: i ? '嗯，我听着呢。' : `大家都来了，我们说说「${sc.title}」吧。` })),
         summary: `${members.map((a) => a.name).join('、')}${sc.title}`,
       };
     }
-    const byName = Object.fromEntries(members.map((a) => [a.name, a]));
+    const byName: Record<string, LiveAgent> = Object.fromEntries(members.map((a) => [a.name, a]));
     convo.state = 'talking';
-    convo.lines = res.lines.slice(0, 12).map((l, i) => {
-      const sp = byName[str(l.speaker, 16)] || members.find((a) => String(l.speaker).includes(a.name)) || members[i % members.length];
+    convo.lines = res.lines.slice(0, 12).map((l: { speaker: unknown; text: unknown }, i: number) => {
+      const sp = byName[str(l.speaker, 16)] || members.find((a) => String(l.speaker).includes(a.name)) || members[i % members.length]!;
       return { speaker: sp.id, text: str(l.text, 90) };
-    }).filter((l) => l.text);
+    }).filter((l: { text: string }) => l.text);
     for (const a of members) a.bubble = null;
     for (const line of convo.lines) {
-      const sp = town.byId[line.speaker];
+      const sp = town.byId[line.speaker]!;
       const ms = Math.max(2600, Math.min(7000, 1600 + line.text.length * 110)) / (town.speed >= 5 ? 1.6 : 1);
       town.say(sp, line.text, ms + 400, 'say');
       town.emit('say', { convo: sc.id, speaker: sp.id, text: line.text });
@@ -121,7 +164,7 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
     this.finish(sc, members, res, convo, fallback);
   }
 
-  finish(sc, members, res, convo, fallback = false) {
+  finish(sc: Scene, members: LiveAgent[], res: ModelJSON, convo: Convo, fallback = false): void {
     const town = this.town;
     town.convos.delete(sc.id);
     const summary = str(res.summary, 80) || `${members.map((a) => a.name).join('、')}${sc.title}`;
@@ -139,7 +182,7 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
     // 信念在群戏里传播
     for (const x of members) for (const y of members) if (x !== y) town.shareBeliefs(x, y);
     // 分工：剧本预设的 + LLM 写出的
-    const commits = [];
+    const commits: string[] = [];
     for (const as of [...sc.assignments, ...(Array.isArray(res.assignments) ? res.assignments.slice(0, 8) : [])]) {
       const [x] = resolveWho(town, as.who);
       if (!x || x.kind === 'creature') continue;
@@ -155,7 +198,7 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
       }
     }
     convo.summary = summary;
-    town.convoLog.push(convo);
+    town.convoLog.push(convo as unknown as ConvoRecord);
     if (town.convoLog.length > 120) town.convoLog.shift();
     town.log('scene', summary, { agents: members.map((a) => a.id), convoId: sc.id, where: convo.where, lines: convo.lines, title: sc.title, commitments: commits, ...(fallback ? { fallback: true } : {}) });
     for (const c of commits) town.log('commit', `📌 新分工：${c}`, { agents: members.map((a) => a.id).slice(0, 2) });

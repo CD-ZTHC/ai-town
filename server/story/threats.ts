@@ -4,37 +4,45 @@
 import { findPath } from '../world.ts';
 import { addMemory, parseHM } from '../memory.ts';
 import { runEffects, posOf, agentsNear } from '../kernel/effects.ts';
+import type { Pos } from '../kernel/effects.ts';
 import { testExpr } from '../kernel/rules.ts';
 import { ratingAtLeast } from '../kernel/ratings.ts';
+import type { Town } from '../sim.ts';
+import type { LiveAgent } from '../types/agent.ts';
+import type { ThreatType } from '../types/spec.ts';
+import type { DarkState, Incident, ThreatInstance } from '../types/town.ts';
+import type { Cell } from '../types/map.ts';
 
 const MAX_THREATS = 16;
 const SOUND_WINDOW = 12; // 声音保留的游戏分钟
 const ESCALATE_DAYS = 2; // 事件放着不管，多少天升级一次
-const STAGE_NAMES = { omen: '征兆', outbreak: '爆发', spread: '扩散', handled: '处置', abandoned: '放弃', aftermath: '余波' };
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const STAGE_NAMES: Record<string, string> = { omen: '征兆', outbreak: '爆发', spread: '扩散', handled: '处置', abandoned: '放弃', aftermath: '余波' };
+const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
+const dist = (a: Cell, b: Cell): number => Math.hypot(a.x - b.x, a.y - b.y);
 
-export function freshDark() {
+export function freshDark(): DarkState {
   return { seq: 0, threats: [], sounds: [], zones: [], incidents: [], contained: [], population: {}, deaths: [], crowd: [], graves: [], lastMinute: -1, lastHour: -1, lastDay: -1 };
 }
 
 export class ThreatSystem {
-  constructor(town, { random = Math.random } = {}) { this.town = town; this.random = random; }
+  declare town: Town;
+  declare random: () => number;
+  constructor(town: Town, { random = Math.random } = {}) { this.town = town; this.random = random; }
 
-  get st() { return (this.town.dark ||= freshDark()); }
-  get enabled() { return Object.keys(this.town.spec.threats || {}).length > 0; }
-  def(inst) { return this.town.spec.threats?.[inst?.type] || null; }
-  live() { return this.st.threats.filter((x) => !['contained', 'gone'].includes(x.state)); }
-  find(ref) {
+  get st(): DarkState { return (this.town.dark ||= freshDark()); }
+  get enabled(): boolean { return Object.keys(this.town.spec.threats || {}).length > 0; }
+  def(inst: ThreatInstance | null | undefined): ThreatType | null { return this.town.spec.threats?.[inst?.type as string] || null; }
+  live(): ThreatInstance[] { return this.st.threats.filter((x) => !['contained', 'gone'].includes(x.state)); }
+  find(ref: unknown): ThreatInstance | null {
     const s = String(ref ?? '').trim();
     if (!s) return null;
     return this.live().find((x) => x.id === s || x.type === s || x.name === s || s.includes(x.name)) || null;
   }
-  rnd(lo, hi) { return lo + this.random() * (hi - lo); }
-  pick(list) { return list[Math.floor(this.random() * list.length)]; }
+  rnd(lo: number, hi: number): number { return lo + this.random() * (hi - lo); }
+  pick<T>(list: readonly T[]): T { return list[Math.floor(this.random() * list.length)]; }
 
   // ---------- 开局：人口（群众只记数字，设计 §4.10）与世界包里的初始事件 ----------
-  init() {
+  init(): void {
     const pop = this.st.population;
     for (const [id, n] of Object.entries(this.town.spec.population || {})) if (!pop[id]) pop[id] = { alive: n, dead: 0 };
     if (!this.enabled || this.st.seeded) return;
@@ -44,7 +52,7 @@ export class ThreatSystem {
 
   // ---------- 出现 ----------
   /** 在某处出现一个威胁。at：坐标（可带 region）；loc：地点 id；都没有时在它常出没的地点。返回实例或 null */
-  spawn(type, { at = null, loc = null, cause = '', incident = null, quiet = false } = {}) {
+  spawn(type: string, { at = null, loc = null, cause = '', incident = null, quiet = false }: { at?: (Cell & { region?: string }) | null; loc?: string | null; cause?: string; incident?: string | null; quiet?: boolean } = {}): ThreatInstance | null {
     const town = this.town;
     const def = town.spec.threats?.[type];
     if (!def || this.st.threats.filter((x) => !['contained', 'gone'].includes(x.state)).length >= MAX_THREATS) return null;
@@ -52,9 +60,9 @@ export class ThreatSystem {
     const home = loc || this.pick(def.haunt);
     const p = at || this.spotOf(home) || town.locCenter(home);
     if (!p) return null;
-    const inst = {
+    const inst: ThreatInstance = {
       id: `th${++this.st.seq}`, type, name: def.name, x: p.x, y: p.y, region: at?.region || town.locRegion(home) || 'town',
-      path: [], state: 'roam', hp: def.mortal ? def.hp : null, born: Math.floor(town.t), restUntil: 0, dwellUntil: 0, suppressedUntil: 0, sounds: {}, crowdAt: town.t,
+      path: [], state: 'roam', hp: def.mortal ? def.hp! : null, born: Math.floor(town.t), restUntil: 0, dwellUntil: 0, suppressedUntil: 0, sounds: {}, crowdAt: town.t,
     };
     this.st.threats.push(inst);
     if (def.zone) this.st.zones.push({ id: `z${inst.id}`, threat: inst.id, x: p.x, y: p.y, r: def.zone.radius, region: inst.region, tint: def.zone.tint || '#5a2340', replay: def.zone.replay || null, born: Math.floor(town.t) });
@@ -64,13 +72,13 @@ export class ThreatSystem {
     return inst;
   }
 
-  spotOf(locId) {
+  spotOf(locId: string): Cell | null {
     const l = this.town.findLocation(locId);
     return l?.spots?.length ? { ...this.pick(l.spots) } : null;
   }
 
   // ---------- 每次推进 ----------
-  tick(dt) {
+  tick(dt: number): void {
     if (!this.enabled) return;
     const st = this.st;
     for (const inst of this.live()) this.move(inst, dt);
@@ -83,14 +91,14 @@ export class ThreatSystem {
     if (this.town.day !== st.lastDay) { const first = st.lastDay < 0; st.lastDay = this.town.day; if (!first) this.dayTick(); }
   }
 
-  active(def) {
+  active(def: ThreatType): boolean {
     if (!def.active) return true;
-    const [a, b] = def.active.map(parseHM);
+    const [a, b] = def.active.map(parseHM) as [number, number];
     const m = this.town.minute;
     return a <= b ? m >= a && m <= b : m >= a || m <= b;
   }
 
-  minuteTick() {
+  minuteTick(): void {
     const town = this.town;
     const st = this.st;
     st.sounds = st.sounds.filter((s) => town.t - s.t <= SOUND_WINDOW);
@@ -110,19 +118,19 @@ export class ThreatSystem {
     this.containTick();
   }
 
-  hourTick() {
+  hourTick(): void {
     const town = this.town;
     // 化解：条件满足的威胁永久消散
     for (const inst of this.live()) {
       const c = (this.def(inst)?.counters || []).find((x) => x.type === 'resolve');
       if (!c) continue;
       let ok = false;
-      try { ok = testExpr(town, c.when, { threat: inst }); } catch (e) { console.warn(`[threat] ${inst.type} 的化解条件出错：`, e.message); }
+      try { ok = testExpr(town, c.when, { threat: inst }); } catch (e) { console.warn(`[threat] ${inst.type} 的化解条件出错：`, (e as Error).message); }
       if (ok) this.end(inst, 'resolved', c.text || `${inst.name}消散了`);
     }
   }
 
-  dayTick() {
+  dayTick(): void {
     const town = this.town;
     // 收容的威胁每天有一定概率泄漏
     for (const c of [...this.st.contained]) {
@@ -139,7 +147,7 @@ export class ThreatSystem {
     if (open) this.st.quietSince = town.day;
     else if (every && town.day - (this.st.quietSince ?? town.day) >= every) {
       const live = new Set(this.live().map((x) => x.type));
-      const pool = Object.keys(town.spec.threats).filter((k) => !live.has(k));
+      const pool = Object.keys(town.spec.threats!).filter((k) => !live.has(k));
       if (pool.length) { this.spawn(this.pick(pool), { cause: 'auto' }); this.st.quietSince = town.day; }
     }
     // 事件放着不管就升级：区域变大、群众伤亡加快
@@ -158,12 +166,12 @@ export class ThreatSystem {
   }
 
   // ---------- 移动 ----------
-  goTo(inst, x, y) {
+  goTo(inst: ThreatInstance, x: number, y: number): void {
     const w = this.town.worldOf?.(inst.region) || this.town.world;
     inst.path = findPath(w, inst.x, inst.y, Math.round(x), Math.round(y)) || [{ x, y }];
   }
 
-  move(inst, dt) {
+  move(inst: ThreatInstance, dt: number): void {
     const town = this.town;
     const def = this.def(inst);
     if (!def || inst.state === 'suppressed') { inst.path = []; return; }
@@ -183,41 +191,41 @@ export class ThreatSystem {
     }
   }
 
-  choose(inst, def) {
+  choose(inst: ThreatInstance, def: ThreatType): void {
     const town = this.town;
     const mode = def.movement || 'wander';
     inst.dwellUntil = town.t + 15 + this.random() * 30;
     if (mode === 'stationary') return;
     if (mode === 'stalk_marked' && inst.state === 'roam') {
       const prey = town.agents.filter((a) => (a.marks || []).some((m) => m.threat === inst.id) && (a.region || 'town') === inst.region)
-        .map((a) => ({ a, p: posOf(town, a) })).sort((p, q) => dist(p.p, inst) - dist(q.p, inst))[0];
+        .map((a) => ({ a, p: posOf(town, a)! })).sort((p, q) => dist(p.p, inst) - dist(q.p, inst))[0];
       if (prey) { this.goTo(inst, prey.p.x, prey.p.y); inst.dwellUntil = town.t + 5; return; }
     }
-    const i = mode === 'patrol' ? ((inst.patrol = ((inst.patrol ?? -1) + 1) % def.haunt.length)) : Math.floor(this.random() * def.haunt.length);
+    const i = mode === 'patrol' ? ((inst.patrol = (((inst.patrol as number | undefined) ?? -1) + 1) % def.haunt.length)) : Math.floor(this.random() * def.haunt.length);
     const s = this.spotOf(def.haunt[i]) || town.locCenter(def.haunt[i]);
     if (s && town.locRegion(def.haunt[i]) === inst.region) this.goTo(inst, s.x, s.y);
   }
 
   /** 附近有没有它怕的构筑物（counters 里的 ward） */
-  wardNear(inst, def, at = inst) {
+  wardNear(inst: ThreatInstance, def: ThreatType, at: Cell = inst) {
     const wards = (def.counters || []).filter((c) => c.type === 'ward');
     if (!wards.length) return null;
     return this.town.entities.find((e) => wards.some((c) => c.with === e.type && dist(e, at) <= (c.radius ?? 3)) && (e.region || 'town') === inst.region) || null;
   }
 
-  emitSounds(inst, def) {
+  emitSounds(inst: ThreatInstance, def: ThreatType): void {
     for (const s of def.sounds || []) {
       if (this.town.t - (inst.sounds[s.id] ?? -999) < s.every) continue;
       inst.sounds[s.id] = this.town.t;
       const snd = { id: s.id, x: inst.x, y: inst.y, r: s.radius ?? 5, region: inst.region, t: this.town.t, src: inst.id };
       this.st.sounds.push(snd);
-      if (s.text) for (const a of this.town.agents) if (a.kind !== 'creature' && (a.region || 'town') === inst.region && dist(posOf(this.town, a), snd) <= snd.r && a.status !== 'sleeping') addMemory(a, { t: this.town.t, type: 'obs', text: s.text, importance: 3 });
+      if (s.text) for (const a of this.town.agents) if (a.kind !== 'creature' && (a.region || 'town') === inst.region && dist(posOf(this.town, a)!, snd) <= snd.r && a.status !== 'sleeping') addMemory(a, { t: this.town.t, type: 'obs', text: s.text, importance: 3 });
     }
   }
 
   // ---------- 规律：判定、标记、应验 ----------
   /** 规律能碰到的人：同一区域、在它附近（reach）或在它的区域里；有它怕的东西护着的人不算 */
-  candidates(inst, def) {
+  candidates(inst: ThreatInstance, def: ThreatType): LiveAgent[] {
     const town = this.town;
     const zone = this.st.zones.find((z) => z.threat === inst.id);
     // 划成封锁区之后：只碰得到走进区域（没有区域时是身边 4 格）的人
@@ -225,21 +233,21 @@ export class ThreatSystem {
     return town.agents.filter((a) => {
       if (a.kind === 'creature' || a.status === 'dead' || (a.region || 'town') !== inst.region) return false;
       if ((a.hosted || []).some((h) => h.threat === inst.type)) return false;
-      const p = posOf(town, a);
+      const p = posOf(town, a)!;
       if (dist(p, inst) > reach && !(zone && dist(p, zone) <= zone.r)) return false;
       return !this.wardNear(inst, def, p);
     });
   }
 
-  evaluate(inst, def) {
+  evaluate(inst: ThreatInstance, def: ThreatType): void {
     const town = this.town;
     for (const a of this.candidates(inst, def)) {
       if ((a.marks || []).some((m) => m.threat === inst.id)) continue;
       let hit = false;
       try {
-        hit = testExpr(town, def.rule.trigger, { e: a, self: a, threat: inst }) && !(def.rule.unless && testExpr(town, def.rule.unless, { e: a, self: a, threat: inst }));
+        hit = testExpr(town, def.rule!.trigger, { e: a, self: a, threat: inst }) && !(def.rule!.unless && testExpr(town, def.rule!.unless, { e: a, self: a, threat: inst }));
       } catch (e) {
-        console.warn(`[threat] ${inst.type} 的规律出错，已停用：`, e.message);
+        console.warn(`[threat] ${inst.type} 的规律出错，已停用：`, (e as Error).message);
         inst.state = 'gone';
         return;
       }
@@ -247,17 +255,17 @@ export class ThreatSystem {
     }
   }
 
-  mark(inst, def, a, delay = def.rule.mark.delay) {
+  mark(inst: ThreatInstance, def: ThreatType, a: LiveAgent, delay: [number, number] = def.rule!.mark.delay): void {
     const town = this.town;
     const due = town.t + this.rnd(delay[0], delay[1]);
-    (a.marks ||= []).push({ threat: inst.id, type: inst.type, t: Math.floor(town.t), due, sign: def.rule.mark.sign || '' });
-    if (def.rule.mark.sign) addMemory(a, { t: town.t, type: 'omen', text: `心里一阵发毛：${def.rule.mark.sign}`, importance: 6 });
-    town.log('mark', `👁️ ${a.name}${def.rule.mark.sign ? `察觉到：${def.rule.mark.sign}` : '身上发生了什么，自己却没有察觉'}`, { agents: [a.id], threat: inst.id });
+    (a.marks ||= []).push({ threat: inst.id, type: inst.type, t: Math.floor(town.t), due, sign: def.rule!.mark.sign || '' });
+    if (def.rule!.mark.sign) addMemory(a, { t: town.t, type: 'omen', text: `心里一阵发毛：${def.rule!.mark.sign}`, importance: 6 });
+    town.log('mark', `👁️ ${a.name}${def.rule!.mark.sign ? `察觉到：${def.rule!.mark.sign}` : '身上发生了什么，自己却没有察觉'}`, { agents: [a.id], threat: inst.id });
     this.touch(inst);
     town.emit('agent', a.id);
   }
 
-  dueMarks() {
+  dueMarks(): void {
     const town = this.town;
     for (const a of [...town.agents]) {
       if (!a.marks?.length) continue;
@@ -275,11 +283,11 @@ export class ThreatSystem {
     }
   }
 
-  fulfil(inst, def, a) {
+  fulfil(inst: ThreatInstance, def: ThreatType, a: LiveAgent): 'spared' | 'hosted' | 'failed' | 'struck' {
     const town = this.town;
     const b = { e: a, self: a, threat: inst };
     let spared = false;
-    try { spared = Boolean(def.rule.unless) && testExpr(town, def.rule.unless, b); } catch { spared = false; }
+    try { spared = Boolean(def.rule!.unless) && testExpr(town, def.rule!.unless, b); } catch { spared = false; }
     if (spared) {
       addMemory(a, { t: town.t, type: 'obs', text: `那东西找上门来，又停住了——我逃过了一劫。${this.pick(def.clues)}，也许就是这个原因`, importance: 8 });
       this.believe(a, def, this.pick(def.clues), 0.85);
@@ -297,8 +305,8 @@ export class ThreatSystem {
     }
     const where = posOf(town, a);
     const seen = this.witnesses(inst, a, where);
-    runEffects(town, { self: a, target: a, e: a, at: where, source: `threat:${inst.type}`, threat: inst }, def.rule.outcome);
-    inst.restUntil = town.t + (def.rule.rest ?? 60);
+    runEffects(town, { self: a, target: a, e: a, at: where, source: `threat:${inst.type}`, threat: inst }, def.rule!.outcome);
+    inst.restUntil = town.t + (def.rule!.rest ?? 60);
     const inc = this.incidentOf(inst);
     if (inc) { inc.victims = (inc.victims || 0) + 1; if (inc.stage === 'omen') this.stage(inc, 'outbreak'); if (inc.victims >= 3 && inc.stage === 'outbreak') this.stage(inc, 'spread'); }
     this.giveWitnessClues(def, a, seen);
@@ -307,11 +315,11 @@ export class ThreatSystem {
   }
 
   /** 在场的人：同一栋楼里，或都在户外、6 格以内 */
-  witnesses(inst, a, at) {
+  witnesses(inst: ThreatInstance, a: LiveAgent, at: Pos | null): LiveAgent[] {
     return agentsNear(this.town, at, 6, a).filter((o) => o.kind !== 'creature');
   }
 
-  giveWitnessClues(def, victim, seen) {
+  giveWitnessClues(def: ThreatType, victim: LiveAgent, seen: LiveAgent[]): void {
     const town = this.town;
     for (const o of seen) {
       addMemory(o, { t: town.t, type: 'event', text: `亲眼看见${victim.name}出了事，那一幕怎么也忘不掉`, importance: 8 });
@@ -319,12 +327,12 @@ export class ThreatSystem {
       o.body.conditions = [...new Set([...o.body.conditions, '受惊'])].slice(-5);
       // 目击者记住的是死者死前做过的事：可能是真正的规律，也可能只是巧合
       const real = !def.decoys?.length || this.random() < 0.55;
-      this.believe(o, def, real ? this.pick(def.clues) : this.pick(def.decoys), real ? 0.55 : 0.5);
+      this.believe(o, def, real ? this.pick(def.clues) : this.pick(def.decoys!), real ? 0.55 : 0.5);
     }
   }
 
   /** 对某个威胁的看法（信念）：只在新的看法更确信时覆盖旧的 */
-  believe(a, def, claim, confidence) {
+  believe(a: LiveAgent, def: ThreatType, claim: string, confidence: number): boolean {
     const about = def.name.slice(0, 12);
     const mine = a.beliefs.find((b) => b.about === about);
     if (mine && mine.confidence > confidence && mine.claim !== claim) return false;
@@ -333,10 +341,10 @@ export class ThreatSystem {
   }
 
   /** 线索（设计 §4.2）：rule 规律；next_victim 下一个会出事的人；origin 来历 */
-  giveClue(a, kind, type = null, ctx = {}) {
+  giveClue(a: LiveAgent, kind: string, type: string | null = null, ctx: { confidence?: number } = {}): string | null {
     const town = this.town;
     const pool = type ? [type] : [...new Set(this.live().map((x) => x.type))];
-    const defs = pool.map((t) => [t, town.spec.threats?.[t]]).filter(([, d]) => d);
+    const defs = pool.map((t) => [t, town.spec.threats?.[t]] as const).filter(([, d]) => d) as Array<readonly [string, ThreatType]>;
     if (kind === 'next_victim') {
       const marked = town.agents.flatMap((x) => (x.marks || []).filter((m) => !type || m.type === type).map((m) => ({ x, due: m.due }))).sort((p, q) => p.due - q.due)[0];
       if (!marked) { addMemory(a, { t: town.t, type: 'omen', text: '纸上的字迹模糊，这一次没有写出任何名字', importance: 5 }); return null; }
@@ -362,14 +370,14 @@ export class ThreatSystem {
   }
 
   /** 研究（actions.finishResearch 调用）：在事发地点或资料地点研究威胁，得到规律或来历线索 */
-  research(a, r) {
+  research(a: LiveAgent, r: { topic?: string; loc: string | null }): boolean {
     const town = this.town;
     const topic = String(r.topic || '');
     for (const inst of this.live()) {
-      const def = this.def(inst);
+      const def = this.def(inst)!;
       const zone = this.st.zones.find((z) => z.threat === inst.id);
-      const inZone = zone && dist(posOf(town, a), zone) <= zone.r;
-      const where = inZone || def.haunt.includes(r.loc) || (def.research || []).includes(r.loc);
+      const inZone = zone && dist(posOf(town, a)!, zone) <= zone.r;
+      const where = inZone || def.haunt.includes(r.loc!) || (def.research || []).includes(r.loc!);
       const about = topic.includes(def.name) || /规律|怪事|死因|凶手|怎么死|来历|身世|过去/.test(topic);
       if (!where || !about) continue;
       const origin = /来历|身世|过去|生前/.test(topic) || (inZone && zone.replay);
@@ -384,13 +392,13 @@ export class ThreatSystem {
   }
 
   // ---------- 群众伤亡 ----------
-  escalation(inst) { return this.incidentOf(inst)?.level || 1; }
+  escalation(inst: ThreatInstance): number { return this.incidentOf(inst)?.level || 1; }
 
-  crowdStrike(inst, def) {
+  crowdStrike(inst: ThreatInstance, def: ThreatType): void {
     const town = this.town;
     inst.crowdAt = town.t;
     const level = this.escalation(inst);
-    const [lo, hi] = def.crowd.kills;
+    const [lo, hi] = def.crowd!.kills;
     const n = Math.round(this.rnd(lo, hi) * (1 + (level - 1) * 0.5));
     if (n > 0) town.casualties?.(inst, n, { cause: `threat:${inst.type}`, text: `${def.name}又带走了人` });
     const inc = this.incidentOf(inst);
@@ -398,13 +406,13 @@ export class ThreatSystem {
   }
 
   // ---------- 对抗方式（设计 §4.3）----------
-  suppressNear(at, power, minutes, radius, by = null) {
+  suppressNear(at: (Cell & { region?: string }) | null | undefined, power: number, minutes: number, radius: number, by: LiveAgent | null = null): number {
     const town = this.town;
     if (!at) return 0;
     let n = 0;
     for (const inst of this.live()) {
       if (inst.region !== (at.region || 'town') || dist(inst, at) > radius) continue;
-      const def = this.def(inst);
+      const def = this.def(inst)!;
       const c = (def.counters || []).find((x) => x.type === 'suppress');
       if (!c) { town.log('threat', `🌀 ${by?.name || '有人'}想压住${def.name}，可它根本不吃这一套`, { agents: by ? [by.id] : [], threat: inst.id }); continue; }
       if (power < (c.power ?? 1)) { town.log('threat', `🌀 ${by?.name || '有人'}想压住${def.name}，力量不够`, { agents: by ? [by.id] : [], threat: inst.id }); continue; }
@@ -418,7 +426,7 @@ export class ThreatSystem {
     return n;
   }
 
-  damageNear(at, amount, tags = [], radius = 3, by = null) {
+  damageNear(at: (Cell & { region?: string }) | null | undefined, amount: number, tags: string[] = [], radius = 3, by: LiveAgent | null = null): number {
     const town = this.town;
     if (!at) return 0;
     const inst = this.live().filter((x) => x.region === (at.region || 'town') && dist(x, at) <= radius).sort((p, q) => dist(p, at) - dist(q, at))[0];
@@ -427,9 +435,9 @@ export class ThreatSystem {
   }
 
   /** 攻击一个威胁：会死的扣血，杀不死的只会停顿（有 delay 对抗方式时） */
-  hit(inst, amount, tags = [], by = null) {
+  hit(inst: ThreatInstance, amount: number, tags: string[] = [], by: LiveAgent | null = null): number {
     const town = this.town;
-    const def = this.def(inst);
+    const def = this.def(inst)!;
     if (!def.mortal) {
       if ((def.counters || []).some((c) => c.type === 'delay')) {
         inst.state = 'suppressed';
@@ -440,9 +448,9 @@ export class ThreatSystem {
     }
     const weak = tags.some((t) => (def.weakness || []).includes(t));
     const dmg = Math.max(1, Math.round(amount * (weak ? 1.5 : 1) - (def.def || 0) * 0.5));
-    inst.hp -= dmg;
+    inst.hp! -= dmg;
     this.touch(inst);
-    if (inst.hp <= 0) {
+    if (inst.hp! <= 0) {
       for (const l of def.loot || []) if (by && this.random() < l.p) by.inventory[l.item] = Math.min(99, (by.inventory[l.item] || 0) + 1);
       this.end(inst, 'slain', `${by?.name || '有人'}消灭了${def.name}`, by);
     }
@@ -450,51 +458,51 @@ export class ThreatSystem {
   }
 
   /** 收容（居民行动 contain）：在它身边连续操作一段时间；被压住时一定成功，否则只有三成把握，失败会被它盯上 */
-  startContain(a, ref) {
+  startContain(a: LiveAgent, ref: unknown): { ok: boolean; reason?: string; retry?: boolean } {
     const town = this.town;
-    const p = posOf(town, a);
-    const inst = (ref ? [this.find(ref)].filter(Boolean) : this.live()).filter((x) => x.region === (p.region || 'town') && dist(x, p) <= 4).sort((x, y) => dist(x, p) - dist(y, p))[0];
+    const p = posOf(town, a)!;
+    const inst = (ref ? [this.find(ref)].filter(Boolean) as ThreatInstance[] : this.live()).filter((x) => x.region === (p.region || 'town') && dist(x, p) <= 4).sort((x, y) => dist(x, p) - dist(y, p))[0];
     if (!inst) return { ok: false, reason: '身边没有可以收容的东西', retry: true };
-    const def = this.def(inst);
+    const def = this.def(inst)!;
     const c = (def.counters || []).find((x) => x.type === 'contain');
     if (!c) return { ok: false, reason: `${def.name}收不进任何东西里` };
-    if ((a.inventory[c.with] || 0) < 1) return { ok: false, reason: `身上没有${town.spec.items[c.with]?.name || c.with}` };
+    if ((a.inventory[c.with!] || 0) < 1) return { ok: false, reason: `身上没有${town.spec.items[c.with!]?.name || c.with}` };
     a.containing = { inst: inst.id, until: town.t + (c.time ?? 20), started: Math.floor(town.t) };
     a.action = { text: `收容${def.name}`, emoji: '📦' };
     town.log('threat', `📦 ${a.name}开始收容${def.name}`, { agents: [a.id], threat: inst.id });
     return { ok: true };
   }
 
-  containTick() {
+  containTick(): void {
     const town = this.town;
     for (const a of town.agents) {
       const job = a.containing;
       if (!job) continue;
       const inst = this.st.threats.find((x) => x.id === job.inst);
-      const p = posOf(town, a);
+      const p = posOf(town, a)!;
       if (!inst || ['contained', 'gone'].includes(inst.state)) { a.containing = null; continue; }
       if (dist(inst, p) > 5 || inst.region !== (p.region || 'town')) { a.containing = null; town.log('threat', `📦 ${a.name}的收容被打断了`, { agents: [a.id] }); continue; }
       if (town.t < job.until) continue;
       a.containing = null;
-      const def = this.def(inst);
-      const c = (def.counters || []).find((x) => x.type === 'contain');
-      if ((a.inventory[c.with] || 0) < 1) continue;
+      const def = this.def(inst)!;
+      const c = (def.counters || []).find((x) => x.type === 'contain')!;
+      if ((a.inventory[c.with!] || 0) < 1) continue;
       const sure = inst.state === 'suppressed';
       if (!sure && this.random() >= 0.35) {
         if (def.rule) this.mark(inst, def, a, [5, 20]);
         town.log('threat', `📦 ${a.name}没能收住${def.name}，反而被它盯上了`, { agents: [a.id], threat: inst.id });
         continue;
       }
-      a.inventory[c.with] -= 1;
-      if (!a.inventory[c.with]) delete a.inventory[c.with];
+      a.inventory[c.with!] -= 1;
+      if (!a.inventory[c.with!]) delete a.inventory[c.with!];
       if (c.yields) a.inventory[c.yields] = Math.min(99, (a.inventory[c.yields] || 0) + 1);
-      this.st.contained.push({ type: inst.type, holder: a.id, since: Math.floor(town.t), leak: c.leak ?? 0, item: c.yields || c.with });
-      this.end(inst, 'contained', `${a.name}把${def.name}收进了${town.spec.items[c.yields || c.with]?.name || '容器'}里`, a);
+      this.st.contained.push({ type: inst.type, holder: a.id, since: Math.floor(town.t), leak: c.leak ?? 0, item: c.yields || c.with! });
+      this.end(inst, 'contained', `${a.name}把${def.name}收进了${town.spec.items[c.yields || c.with!]?.name || '容器'}里`, a);
     }
   }
 
   /** 威胁结束：收容、消散（化解）、消灭。区域消失，事件进入处置 */
-  end(inst, how, text, by = null) {
+  end(inst: ThreatInstance, how: string, text: string, by: LiveAgent | null = null): void {
     const town = this.town;
     inst.state = how === 'contained' ? 'contained' : 'gone';
     inst.path = [];
@@ -511,7 +519,7 @@ export class ThreatSystem {
   }
 
   /** 宿主死亡：身上寄宿的威胁在原地脱出（效果 spawnThreat from host） */
-  releaseHosted(a) {
+  releaseHosted(a: LiveAgent): void {
     const town = this.town;
     const at = posOf(town, a);
     for (const h of a.hosted || []) {
@@ -522,17 +530,17 @@ export class ThreatSystem {
   }
 
   // ---------- 事件（设计 §4.7）----------
-  openIncident(inst, loc, cause = '') {
+  openIncident(inst: ThreatInstance, loc: string, cause = ''): Incident {
     const town = this.town;
-    const inc = { id: `inc${++this.st.seq}`, threat: inst.id, type: inst.type, loc, stage: 'omen', day: town.day, touched: town.day, since: Math.floor(town.t), victims: 0, crowd: 0, level: 1, assigned: [], cause };
+    const inc: Incident = { id: `inc${++this.st.seq}`, threat: inst.id, type: inst.type, loc, stage: 'omen', day: town.day, touched: town.day, since: Math.floor(town.t), victims: 0, crowd: 0, level: 1, assigned: [], cause };
     this.st.incidents.push(inc);
     if (this.st.incidents.length > 60) this.st.incidents.shift();
     return inc;
   }
 
-  incidentOf(inst) { return inst && this.st.incidents.find((x) => x.id === inst.incident); }
+  incidentOf(inst: ThreatInstance | null | undefined): Incident | null | undefined { return inst && this.st.incidents.find((x) => x.id === inst.incident); }
 
-  stage(inc, stage) {
+  stage(inc: Incident, stage: string): void {
     if (inc.stage === stage) return;
     inc.stage = stage;
     inc.touched = this.town.day;
@@ -541,13 +549,13 @@ export class ThreatSystem {
   }
 
   /** 有人在处理（打、压、收、查）：事件的升级倒计时重新开始 */
-  touch(inst) {
+  touch(inst: ThreatInstance): void {
     const inc = this.incidentOf(inst);
     if (inc) inc.touched = this.town.day;
   }
 
   /** 放弃一片区域（剧情动作 abandon）：划为封锁区，威胁只在区域里活动 */
-  abandon(incId) {
+  abandon(incId: string): boolean {
     const town = this.town;
     const inc = this.st.incidents.find((x) => x.id === incId || x.loc === incId);
     if (!inc || !['omen', 'outbreak', 'spread'].includes(inc.stage)) return false;

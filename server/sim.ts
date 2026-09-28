@@ -45,11 +45,19 @@ import { get as setting } from './settings/index.ts';
 import type { Embedder } from './embeddings.ts';
 import type { WorldSpec, Params, Persona } from './types/spec.ts';
 import type { OpRecord } from './types/ops.ts';
-import type { GenWorld } from './types/map.ts';
+import type { Cell, GenWorld } from './types/map.ts';
 import type { LiveAgent } from './types/agent.ts';
 import type { ConvoRecord, Entity, LogItem, Newspaper, SaveV2 } from './types/save.ts';
 import type { Convo, DarkState, MetricsDay, TownOptions } from './types/town.ts';
 import type { Decision } from './kernel/decisions.ts';
+import type { ThreadState } from './story/threads.ts';
+import type { MigrationState } from './story/migration.ts';
+import type { Creature, Portal } from './story/creatures.ts';
+import type { ArcRun } from './story/arcs.ts';
+import type { StoryState } from './story/director.ts';
+import type { PressureState } from './worldai/pressure.ts';
+import type { Scene } from './story/scene.ts';
+import type { Proposal, Vote } from './types/story.ts';
 import type { EffectCtx, Pos } from './kernel/effects.ts';
 import type { BuildingDef } from './kernel/placement.ts';
 import type { OpCause } from './types/ops.ts';
@@ -119,25 +127,30 @@ export class Town extends EventEmitter {
   declare ruleState: SaveV2['ruleState'];
   declare rules: RuleEngine;
   // ---- 叙事、异界与黑暗叙事（各子系统自己的状态结构较大，B6 迁移子系统时再细化） ----
-  declare threadState: SaveV2['threadState'];
+  declare threadState: Record<string, ThreadState>;
   declare crisis: SaveV2['crisis'];
   declare discovered: string[];
   declare encounterCd: Record<string, number>;
-  declare story: any; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6（story/）
-  declare migrationState: SaveV2['migrationState'];
-  declare mapState: SaveV2['mapState'];
-  declare arcRuns: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6（story/arcs）
-  declare voteState: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6（story/votes）
-  declare pendingScenes: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6（story/scene）
-  declare creatureList: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6（story/creatures）
+  declare story: StoryState | undefined;
+  declare migrationState: MigrationState | undefined;
+  /** 地图演变的状态：压力表、拆除否决（建筑 id → 第几天之前不能再提） */
+  declare mapState: { pressure?: PressureState; vetoes?: Record<string, number>; [k: string]: unknown } | undefined;
+  declare arcRuns: ArcRun[];
+  declare voteState: Vote[];
+  declare pendingScenes: Scene[];
+  declare creatureList: Creature[];
   declare dark: DarkState;
   declare fights: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): 战斗记录（sim/combat）
-  declare portalState: any; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6（story/beats 的裂隙）
-  declare swarmGoal: any; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6（story/creatures）
-  declare proposals: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6（worldai/proposals）
+  declare portalState: Portal | null;
+  declare swarmGoal: string | null;
+  /** 异界生物：上次捣乱、上次和平相遇、上次群体心智的游戏分钟 */
+  declare mischiefAt?: number;
+  declare peacefulAt?: number;
+  declare swarmAt?: number;
+  declare proposals: Proposal[];
   declare decisionState: Decision[];
-  declare architectQueue: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6（worldai/architect）
-  declare gaps: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B6（能力缺口 / 心愿单）
+  declare architectQueue: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B8（架构师在 plugins/builtin 里）
+  declare gaps: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B8（能力缺口 / 心愿单，由架构师插件写入）
   declare architectUsage: unknown;
   /** 世界架构师插件（plugins/builtin/architect）装上时设置 */
   declare architect: { enqueue(text: string, origin: string): string | null; recordGap(g: object, o?: object): unknown; [k: string]: any } | null; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -510,7 +523,7 @@ export class Town extends EventEmitter {
     this.rules.onWeather(w);
   }
 
-  spawnStructure(type: string, at: Pos, ttl: number, ctx: EffectCtx = {}): Entity | null {
+  spawnStructure(type: string, at: Cell & Partial<Pos>, ttl: number, ctx: EffectCtx = {}): Entity | null {
     const def = this.spec.structures[type];
     if (!def) return null;
     const e: Entity = {
@@ -763,7 +776,7 @@ export class Town extends EventEmitter {
       if (p.construction?.site) mv(p.construction.site);
       for (const o of p.ops) {
         const a = o.args || {};
-        if (o.op === 'addBuilding' && Number.isInteger(a.x)) mv(a);
+        if (o.op === 'addBuilding' && Number.isInteger(a.x)) mv(a as { x: number; y: number });
         if (Array.isArray(a.cells)) a.cells = a.cells.map(([x, y]: number[]) => [x! + dx, y! + dy]);
         if (Array.isArray(a.trees)) a.trees = a.trees.map(([x, y, k]: [number, number, string]) => [x + dx, y + dy, k]);
         if (a.rect) a.rect = { ...a.rect, x: a.rect.x + dx, y: a.rect.y + dy };

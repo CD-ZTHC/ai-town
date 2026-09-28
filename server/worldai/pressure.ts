@@ -6,15 +6,46 @@
 //   走得远：居民日常一趟路的平均格数比开始时明显变长          → 修路、架桥
 // 结果写进架构师的提示词、显示在建设面板；压力明显时每两天最多交给架构师一个意图。
 import { T } from './../worldgen/tiles.ts';
+import type { Town } from '../sim.ts';
+
+/** 当天算出来的压力 */
+export interface PressureNow {
+  day: number;
+  size: string;
+  freeRatio: number;
+  fails: number;
+  perHome: number;
+  full: number;
+  idle: Array<{ id: string; name: string }>;
+  decay: Array<{ id: string; name: string; state?: string; days: number }>;
+  walk: number | null;
+  walkRatio: number | null;
+}
+/** 存档 mapState.pressure */
+export interface PressureState {
+  day: number;
+  /** 选址失败、住处满员发生在哪几天 */
+  placeFails: number[];
+  homeFull: number[];
+  /** 游戏日 → 地点 → 到访次数 */
+  visits: Record<string, Record<string, number>>;
+  /** 游戏日 → 走路的趟数与总格数 */
+  walks: Record<string, { n: number; sum: number }>;
+  walkBaseDay?: number;
+  lastIntentDay: number;
+  lastIntent?: { key: string; text: string };
+  now: PressureNow | null;
+}
 
 const KEEP_DAYS = 14;
 const IDLE_DAYS = 5;
 const INTENT_GAP_DAYS = 2;
 
 export class MapPressure {
-  constructor(town) { this.town = town; }
+  declare town: Town;
+  constructor(town: Town) { this.town = town; }
 
-  get st() {
+  get st(): PressureState {
     const m = (this.town.mapState ||= {});
     return (m.pressure ||= { day: 0, placeFails: [], homeFull: [], visits: {}, walks: {}, lastIntentDay: -99, now: null });
   }
@@ -22,12 +53,12 @@ export class MapPressure {
   // ---------- 记录 ----------
   placeFailed() { this.st.placeFails.push(this.town.day); this.trim(); }
   homeFull() { this.st.homeFull.push(this.town.day); this.trim(); }
-  visit(locId) {
+  visit(locId: string | null | undefined): void {
     if (!locId) return;
     const d = (this.st.visits[this.town.day] ||= {});
     d[locId] = (d[locId] || 0) + 1;
   }
-  walk(len) {
+  walk(len: number): void {
     if (!(len > 0)) return;
     const w = (this.st.walks[this.town.day] ||= { n: 0, sum: 0 });
     w.n++; w.sum += len;
@@ -42,7 +73,7 @@ export class MapPressure {
   }
 
   // ---------- 计算 ----------
-  compute() {
+  compute(): PressureNow {
     const town = this.town;
     const st = this.st;
     const day = town.day;
@@ -60,7 +91,7 @@ export class MapPressure {
     const perHome = homes.size ? people.length / homes.size : 0;
     const full = st.homeFull.filter((d) => d > day - 7).length;
     // 闲置：没人住、没人工作、最近 IDLE_DAYS 天没人去
-    const visited = new Set();
+    const visited = new Set<string>();
     for (let d = day - IDLE_DAYS; d <= day; d++) for (const k of Object.keys(st.visits[d] || {})) visited.add(k);
     const used = new Set(people.flatMap((p) => [p.home, p.work]));
     const trackedSince = Math.min(...Object.keys(st.visits).map(Number), day);
@@ -69,12 +100,12 @@ export class MapPressure {
       : [];
     // 破败：受损 / 废墟从哪天开始（最后一次改状态的操作）
     const decay = w.buildings.filter((b) => b.state === 'damaged' || b.state === 'ruin').map((b) => {
-      const op = [...town.specOps].reverse().find((r) => r.op === 'setBuildingState' && r.args.id === b.id);
+      const op = [...town.specOps].reverse().find((r) => r.op === 'setBuildingState' && (r.args as { id: string }).id === b.id);
       return { id: b.id, name: b.name, state: b.state, days: op ? day - (Math.floor(op.t / 1440) + 1) : 0 };
     });
     // 走得远：最近 3 天一趟路的平均格数，与最早记录的那天相比
     if (st.walkBaseDay == null) { const first = Object.keys(st.walks).map(Number).sort((a, b) => a - b)[0]; if (first != null && first < day) st.walkBaseDay = first; }
-    const avg = (ds) => { let n = 0, s = 0; for (const d of ds) { const x = st.walks[d]; if (x) { n += x.n; s += x.sum; } } return n ? s / n : null; };
+    const avg = (ds: number[]): number | null => { let n = 0, s = 0; for (const d of ds) { const x = st.walks[d]; if (x) { n += x.n; s += x.sum; } } return n ? s / n : null; };
     const recent = avg([day - 1, day - 2, day - 3].filter((d) => d !== st.walkBaseDay));
     const base = st.walkBaseDay != null ? avg([st.walkBaseDay]) : null;
     const walkRatio = recent && base ? recent / base : null;
@@ -85,20 +116,20 @@ export class MapPressure {
   }
 
   /** 最突出的一个需求：{ key, text（给架构师的意图） } 或 null */
-  top(p = this.st.now) {
+  top(p: PressureNow | null = this.st.now): { key: string; text: string } | null {
     if (!p) return null;
     const place = this.town.spec.voice?.place || '小镇';
     if (p.full >= 2 || p.perHome >= 2.6) return { key: 'homes', text: `${place}的住处快住满了（最近 ${p.full} 次有人找不到空房），给新来的人盖或改一处住处` };
     if (p.fails >= 2 || p.freeRatio < 0.05) return { key: 'space', text: `${place}的空地快用完了（最近 ${p.fails} 次找不到地方建房），考虑清理树丛腾地方、向外扩展地图，或者在已经到头的一侧开辟相邻的地图` };
     const longDecay = p.decay.find((d) => d.days >= 3);
     if (longDecay) return { key: 'decay', text: `「${longDecay.name}」${longDecay.state === 'ruin' ? '成了废墟' : '受损'}已经 ${longDecay.days} 天了，修好它，或者清走另作他用` };
-    if (p.idle.length) return { key: 'idle', text: `「${p.idle[0].name}」好几天没人去了，考虑改建成大家用得上的地方` };
+    if (p.idle.length) return { key: 'idle', text: `「${p.idle[0]!.name}」好几天没人去了，考虑改建成大家用得上的地方` };
     if (p.walkRatio && p.walkRatio >= 1.3) return { key: 'walk', text: `居民每天走的路比以前远了不少（平均 ${p.walk} 格），修一条近路或者架座桥` };
     return null;
   }
 
   /** 每天一次：算压力；压力明显时交给架构师一个意图（每两天最多一个；已经有地图相关的提案在处理时不交） */
-  daily() {
+  daily(): void {
     const town = this.town;
     const p = this.compute();
     const t = this.top(p);
@@ -110,7 +141,7 @@ export class MapPressure {
   }
 
   /** 写进架构师提示词的一段 */
-  text() {
+  text(): string {
     const p = this.st.now;
     if (!p) return '';
     const lines = [`地图 ${p.size}，可建空地约占 ${Math.round(p.freeRatio * 100)}%${p.fails ? `，最近 7 天有 ${p.fails} 次找不到地方建房` : ''}`,

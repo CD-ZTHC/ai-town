@@ -55,7 +55,7 @@ export function checkPlacement(spec: WorldSpec, def: BuildingDef, base: GenWorld
  * 在 near 地点附近（within 格内）寻找放得下 w×h 建筑的位置。
  * 返回 { x, y } 或 { error }。
  */
-export function findPlacement(spec: WorldSpec, { id, name = '', w, h, near, within = 12 }: { id: string; name?: string; w: number; h: number; near: string; within?: number }): { x: number; y: number; error?: undefined } | { error: string } {
+export function findPlacement(spec: WorldSpec, { id, name = '', w, h, near, within = 12 }: { id: string; name?: string; w: number; h: number; near: string; within?: number }): { x: number; y: number; error?: undefined } | { error: string; x?: undefined; y?: undefined } {
   const base = worldOf(spec);
   const c = locationCenter(base, near);
   if (!c) return { error: `未知地点：${near}` };
@@ -111,7 +111,7 @@ export function checkEdit(spec: WorldSpec, edit: TerrainEdit, base: GenWorld = w
 }
 
 /** 修路：两地点之间代价最低的一条路（已有的路最便宜，草地其次，树丛要砍，窄水面架桥），只返回需要铺的格子 */
-export function solvePath(spec: WorldSpec, from: string, to: string): { cells: Array<[number, number]>; error?: undefined } | { error: string } {
+export function solvePath(spec: WorldSpec, from: string, to: string): { cells: Array<[number, number]>; error?: undefined } | { error: string; cells?: undefined } {
   const w = worldOf(spec);
   const a = locationCenter(w, from), b = locationCenter(w, to);
   if (!a) return { error: `未知地点：${from}` };
@@ -159,7 +159,7 @@ export function solvePath(spec: WorldSpec, from: string, to: string): { cells: A
 }
 
 /** 架桥：地点附近最窄的一段水面（横着或竖着），两头都是能走的地 */
-export function solveBridge(spec: WorldSpec, near: string, within = 12): { cells: Array<[number, number]>; error?: undefined } | { error: string } {
+export function solveBridge(spec: WorldSpec, near: string, within = 12): { cells: Array<[number, number]>; error?: undefined } | { error: string; cells?: undefined } {
   const w = worldOf(spec);
   const c = locationCenter(w, near);
   if (!c) return { error: `未知地点：${near}` };
@@ -186,7 +186,7 @@ export function solveBridge(spec: WorldSpec, near: string, within = 12): { cells
  * 在地点附近找一块 w×h 的地：
  *   clear 清地（里面至少有 3 棵树 / 灌木 / 石头）；grove 种树（空草地）；place 新户外地点（可以建房的空地）
  */
-export function solveRect(spec: WorldSpec, { mode, w: rw, h: rh, near, within = 14, id = null, placeKind = null, seed = 1 }: { mode: 'clear' | 'grove' | 'place'; w: number; h: number; near: string; within?: number; id?: string | null; placeKind?: string | null; seed?: number }): { rect: { x: number; y: number; w: number; h: number }; trees?: Array<[number, number, string]>; error?: undefined } | { error: string } {
+export function solveRect(spec: WorldSpec, { mode, w: rw, h: rh, near, within = 14, id = null, placeKind = null, seed = 1 }: { mode: 'clear' | 'grove' | 'place'; w: number; h: number; near: string; within?: number; id?: string | null; placeKind?: string | null; seed?: number }): { rect: { x: number; y: number; w: number; h: number }; trees?: Array<[number, number, string]>; error?: undefined } | { error: string; rect?: undefined; trees?: undefined } {
   const w = worldOf(spec);
   const c = locationCenter(w, near);
   if (!c) return { error: `未知地点：${near}` };
@@ -247,7 +247,7 @@ export const outdoorSize = (kind: string) => (OUTDOOR_KINDS as Record<string, un
  * 相邻地图的通道（地图演变 §5.2）：沿接壤的边找离现有道路最近的位置（沿途只能是能走的地或可以清掉的树丛），
  * 边长 ≥ 40 时再找一个相隔至少 12 格的。返回 { passages: [坐标] } 或 { error }
  */
-export function choosePassages(spec: WorldSpec, regionId: string, side: 'east' | 'west' | 'north' | 'south'): { passages: number[]; error?: undefined } | { error: string } {
+export function choosePassages(spec: WorldSpec, regionId: string, side: 'east' | 'west' | 'north' | 'south'): { passages: number[]; error?: undefined } | { error: string; passages?: undefined } {
   const region = spec.regions!.find((r) => r.id === regionId);
   if (!region) return { error: `未知区域：${regionId}` };
   const w = build(region, spec);
