@@ -2,6 +2,11 @@
 // 沙箱插件的效果在内核里是同步校验的（能力、规则、剧情节拍都会先 check），所以参数格式必须以数据的形式写在清单里，
 // 由宿主按下面的规则校验，而不是执行插件代码。
 import { checkTarget } from '../server/kernel/effects.ts';
+import type { WorldSpec } from '../server/types/spec.ts';
+import type { ArgField, OverlayItem, WorldView } from './types/plugin.d.ts';
+
+/** 读进来还没校验的 JSON（plugin.json、插件返回的数据） */
+type Raw = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 export const TIERS = ['T0', 'T1', 'T2'];
 export const PERMISSIONS = ['world.read', 'effects', 'store', 'llm', 'routes', 'ui.panel', 'ui.overlay'];
@@ -13,11 +18,11 @@ const ID = /^[a-z][a-z0-9-]{2,31}$/;
 const NAME = /^[a-z][a-zA-Z0-9]{1,23}$/;
 const ROUTE = /^[a-z][a-z0-9-]{1,23}$/;
 const FIELD_TYPES = ['int', 'number', 'string', 'enum', 'bool', 'location', 'item', 'agent'];
-const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
-const fin = (v) => typeof v === 'number' && Number.isFinite(v);
+const isObj = (v: unknown) => v && typeof v === 'object' && !Array.isArray(v);
+const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /** 校验一个效果的参数 schema 本身（数值必须有上下限，字符串必须有长度上限） */
-export function checkSchema(schema) {
+export function checkSchema(schema: Raw): string | null {
   if (!isObj(schema)) return 'args 必须是对象';
   const keys = Object.keys(schema);
   if (keys.length > 8) return 'args 最多 8 个字段';
@@ -27,13 +32,13 @@ export function checkSchema(schema) {
     if (!isObj(f) || !FIELD_TYPES.includes(f.type)) return `字段 ${k} 的 type 只能是 ${FIELD_TYPES.join('/')}`;
     if ((f.type === 'int' || f.type === 'number') && !(fin(f.min) && fin(f.max) && f.min <= f.max && Math.abs(f.min) <= 1e4 && Math.abs(f.max) <= 1e4)) return `字段 ${k} 需要合理的 min / max`;
     if (f.type === 'string' && !(Number.isInteger(f.max) && f.max >= 1 && f.max <= 80)) return `字段 ${k} 需要 max（1~80）`;
-    if (f.type === 'enum' && !(Array.isArray(f.values) && f.values.length >= 1 && f.values.length <= 12 && f.values.every((v) => typeof v === 'string' && v.length <= 20))) return `字段 ${k} 需要 values（1~12 个短字符串）`;
+    if (f.type === 'enum' && !(Array.isArray(f.values) && f.values.length >= 1 && f.values.length <= 12 && f.values.every((v: unknown) => typeof v === 'string' && v.length <= 20))) return `字段 ${k} 需要 values（1~12 个短字符串）`;
   }
   return null;
 }
 
 /** 按 schema 校验效果参数；target / radius 按内核规则校验 */
-export function checkArgs(schema, args, spec) {
+export function checkArgs(schema: Record<string, ArgField>, args: Raw, spec: WorldSpec): string | null {
   for (const k of Object.keys(args)) if (!['op', 'target', 'radius', 'includeSelf'].includes(k) && !Object.hasOwn(schema, k)) return `未知参数：${k}`;
   for (const [k, f] of Object.entries(schema)) {
     const v = args[k];
@@ -51,8 +56,8 @@ export function checkArgs(schema, args, spec) {
 }
 
 /** 校验 plugin.json；dirName 为插件目录名（<id>@<version>） */
-export function validateManifest(m, dirName = null) {
-  const errs = [];
+export function validateManifest(m: Raw, dirName: string | null = null): string[] {
+  const errs: string[] = [];
   if (!isObj(m)) return ['plugin.json 必须是对象'];
   if (!ID.test(String(m.id || ''))) errs.push('id 只能是小写字母、数字、短横线（3~32 位，字母开头）');
   if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(String(m.version || ''))) errs.push('version 格式应为 x.y.z');
@@ -86,10 +91,10 @@ export function validateManifest(m, dirName = null) {
 }
 
 /** 覆盖层绘制指令（插件只能返回这些，由前端统一绘制） */
-export function cleanOverlay(list, world) {
+export function cleanOverlay(list: unknown, world: Pick<WorldView, 'width' | 'height'> | null | undefined): Array<Required<Omit<OverlayItem, 'emoji'>>> {
   if (!Array.isArray(list)) return [];
   const W = world?.width || 64, Hh = world?.height || 44;
-  const out = [];
+  const out: Array<Required<Omit<OverlayItem, 'emoji'>>> = [];
   for (const c of list.slice(0, 20)) {
     if (!isObj(c) || !['emoji', 'text', 'ring', 'sparkle'].includes(c.kind)) continue;
     if (!(fin(c.x) && fin(c.y) && c.x >= 0 && c.y >= 0 && c.x <= W && c.y <= Hh)) continue;

@@ -12,12 +12,13 @@ import { makeLLM, reviewInfo } from './llm.ts';
 import { discover } from './discover.ts';
 import { runJob } from './pipeline.ts';
 import { get as setting } from '../server/settings/index.ts';
+import type { EvoJob, Paths } from './common.ts';
 
 const G = paths(); // 全站的目录（任务、引擎状态、账本、开启进化的世界列表）
 const once = process.argv.includes('--once');
 const INTERVAL = setting('EVOLVE_INTERVAL_MIN') * 60_000;
 const PACE_QUEUE = setting('PACE_QUEUE');
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let stopping = false;
 process.on('SIGTERM', () => { stopping = true; setEngine(G, { state: 'stopped', pid: null }); process.exit(0); });
 process.on('SIGINT', () => { stopping = true; setEngine(G, { state: 'stopped', pid: null }); process.exit(0); });
@@ -30,8 +31,8 @@ function worlds() {
 }
 
 /** 这个世界的模型队列太忙时让路（世界每隔几秒写一次心跳） */
-function worldBusy(P) {
-  const hb = readJSON(P.heartbeat, null);
+function worldBusy(P: Paths) {
+  const hb = readJSON<{ at: string; queue: number } | null>(P.heartbeat, null);
   return hb && Date.now() - Date.parse(hb.at) < 60_000 && hb.queue > PACE_QUEUE;
 }
 
@@ -39,11 +40,11 @@ async function cycle() {
   const list = worlds();
   if (!list.length) { setEngine(G, { state: 'idle', job: null, stage: null, worlds: [] }); return 'idle'; }
   // 上次异常退出时遗留的「进行中」任务
-  const jobs = readJSON(G.jobs, []);
+  const jobs = readJSON<EvoJob[]>(G.jobs, []);
   let fixed = false;
   for (const j of jobs) if (j.status === 'running' && j.pid !== process.pid) { j.status = 'failed'; j.reason = '进化引擎中途退出'; fixed = true; }
   if (fixed) fs.writeFileSync(G.jobs, JSON.stringify(jobs, null, 1));
-  const engine = readJSON(G.engine, {});
+  const engine = readJSON<{ lastWorld?: string }>(G.engine, {});
   let lastState = 'idle';
   for (const w of rotation(list, loadJobs(G), engine.lastWorld)) {
     const P = paths({ world: w.id, packDir: w.packDir || null });
@@ -57,7 +58,7 @@ async function cycle() {
     if (!need) continue;
     console.log(`[evolve] ${w.id} 开始：${need.text}`);
     setEngine(G, { state: 'working', world: w.id });
-    const job = await runJob({ P, llm, onStage: (s) => console.log(`[evolve]   · ${w.id} ${s}`) }, need);
+    const job = await runJob({ P, llm, onStage: (s: string) => console.log(`[evolve]   · ${w.id} ${s}`) }, need);
     console.log(`[evolve] ${w.id} 结束：${job.status}${job.reason ? `（${job.reason}）` : ''}`);
     setEngine(G, { state: 'idle', job: null, stage: null, world: null, last: { id: job.id, world: w.id, status: job.status, reason: str(job.reason, 120), title: job.title || null, at: new Date().toISOString() } });
     return job.status;
@@ -75,7 +76,7 @@ async function main() {
   if (once) { await cycle(); return; }
   while (!stopping) {
     let r;
-    try { r = await cycle(); } catch (e) { console.warn('[evolve]', e.message); r = 'error'; }
+    try { r = await cycle(); } catch (e) { console.warn('[evolve]', (e as Error).message); r = 'error'; }
     // 刚做完一个需求就休息一个周期；空闲 / 忙 / 没预算时隔一会儿再看
     await sleep(['idle', 'busy', 'budget', 'no-llm', 'error'].includes(r) ? Math.min(INTERVAL, 5 * 60_000) : INTERVAL);
   }

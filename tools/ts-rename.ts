@@ -14,14 +14,14 @@ const targets = args.filter((a) => !a.startsWith('--'));
 if (!targets.length) { console.error('用法：node tools/ts-rename.ts <文件或目录>… [--dry]'); process.exit(2); }
 
 const ROOTS = ['server', 'plugin-host', 'plugins/builtin', 'evolution', 'tools', 'test'];
-function* walk(dir, ext = /\.(js|ts)$/) {
+function* walk(dir: string, ext = /\.(js|ts)$/): Generator<string> {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) { if (e.name !== 'node_modules') yield* walk(p, ext); } else if (ext.test(e.name)) yield p;
   }
 }
 
-const moving = new Set();
+const moving = new Set<string>();
 for (const t of targets) {
   const st = fs.statSync(t);
   if (st.isDirectory()) for (const f of walk(t, /\.js$/)) moving.add(path.resolve(f));
@@ -32,7 +32,7 @@ if (!moving.size) { console.error('没有要改名的 .js 文件'); process.exit
 const SPEC = /((?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['"])(\.{1,2}\/[^'"]+?\.js)(['"])/g;
 const HARD = /['"]([\w./-]*\.js)['"]/g;
 let edits = 0;
-const warnings = [];
+const warnings: string[] = [];
 for (const root of ROOTS) {
   if (!fs.existsSync(root)) continue;
   for (const f of walk(root)) {

@@ -10,15 +10,15 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { stripTypeScriptTypes } from 'node:module';
 process.removeAllListeners('warning');
 const [base, head, ...files] = process.argv.slice(2);
-const show = (rev, f) => (rev === 'WORKTREE' ? fs.readFileSync(f, 'utf8') : execFileSync('git', ['show', `${rev}:${f}`], { encoding: 'utf8' }));
-const toks = (src) => stripTypeScriptTypes(src, { mode: 'strip' })
+const show = (rev: string, f: string): string => (rev === 'WORKTREE' ? fs.readFileSync(f, 'utf8') : execFileSync('git', ['show', `${rev}:${f}`], { encoding: 'utf8' }));
+const toks = (src: string): string[] => stripTypeScriptTypes(src, { mode: 'strip' })
   .replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1')
   .match(/`(?:\\.|[^`])*`|'(?:\\.|[^'])*'|"(?:\\.|[^"])*"|[A-Za-z_$一-龥][\w$一-龥]*|\d+(?:\.\d+)?|\S/g) || [];
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ld-'));
 let total = 0;
 for (const f of files) {
   let a, b;
-  try { a = toks(show(base, f)); b = toks(show(head, f)); } catch (e) { console.log(`? ${f}: ${e.message.split('\n')[0]}`); continue; }
+  try { a = toks(show(base!, f)); b = toks(show(head!, f)); } catch (e) { console.log(`? ${f}: ${(e as Error).message.split('\n')[0]}`); continue; }
   fs.writeFileSync(path.join(dir, 'a'), a.join('\n') + '\n');
   fs.writeFileSync(path.join(dir, 'b'), b.join('\n') + '\n');
   const r = spawnSync('diff', [path.join(dir, 'a'), path.join(dir, 'b')], { encoding: 'utf8' });
@@ -27,7 +27,7 @@ for (const f of files) {
   for (const block of r.stdout.split(/\n(?=\d)/)) {
     const [hdr, ...lines] = block.split('\n');
     const m = /^(\d+)/.exec(hdr);
-    const at = Number(m[1]);
+    const at = Number(m![1]);
     const ctx = a.slice(Math.max(0, at - 8), at - 1).join(' ');
     hunks.push(`   …${ctx}  ‖ ${lines.filter((l) => /^[<>]/.test(l)).map((l) => l.replace(/^< /, '−').replace(/^> /, '+')).join(' ')}`);
   }

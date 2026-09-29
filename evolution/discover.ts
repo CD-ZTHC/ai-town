@@ -4,36 +4,37 @@
 //   3. 没有别的事可做时，每天最多一次，让引擎根据小镇近况自己想一个小功能（EVOLVE_IDEAS=0 关闭）
 import { readJSON, loadJobs, str } from './common.ts';
 import { get as setting } from '../server/settings/index.ts';
+import type { Need, Paths, RegistryEntry, Signals } from './common.ts';
 
 const MAX_TRIES = 2;
 const MAX_PENDING = 2; // 等待裁决的插件太多时先不做新的
 const ADMIN_REASONS = /管理员/;
 
-export function discover(P, { now = Date.now(), ideas = setting('EVOLVE_IDEAS') } = {}) {
+export function discover(P: Paths, { now = Date.now(), ideas = setting('EVOLVE_IDEAS') }: { now?: number; ideas?: boolean } = {}): Need | null {
   // 任务是全站的：只看这个世界的
   const jobs = loadJobs(P).filter((j) => (j.worldId || 'yunxi') === (P.world?.id || 'yunxi'));
   if (jobs.some((j) => j.status === 'running')) return null;
-  const reg = readJSON(P.registry, { plugins: {} }).plugins;
-  if (Object.values(reg).filter((e) => ['pending', 'approved'].includes(e.status)).length >= MAX_PENDING) return null;
-  const tries = (pred) => jobs.filter((j) => pred(j.need) && !['paused'].includes(j.status)).length;
+  const reg = readJSON<{ plugins: Record<string, RegistryEntry> }>(P.registry, { plugins: {} }).plugins;
+  if (Object.values(reg).filter((e) => ['pending', 'approved'].includes(e.status!)).length >= MAX_PENDING) return null;
+  const tries = (pred: (n: Need) => boolean) => jobs.filter((j) => pred(j.need) && !['paused'].includes(j.status)).length;
 
   // 1. 修复
   for (const [key, e] of Object.entries(reg)) {
     if (e.status !== 'rolledBack' || ADMIN_REASONS.test(e.reason || '')) continue;
-    const id = key.split('@')[0];
+    const id = key.split('@')[0]!;
     if (Object.keys(reg).some((k) => k.startsWith(`${id}@`) && k > key)) continue; // 已经有更新的版本
     if (tries((n) => n.fixId === id) >= MAX_TRIES) continue;
     return { source: 'bugfix', text: `修复插件「${e.title}」：${str(e.reason, 120)}`, fixOf: key, fixId: id, detail: e.summary };
   }
 
   // 2. 心愿单
-  const signals = readJSON(P.signals, {});
+  const signals = readJSON<Signals>(P.signals, {});
   for (const g of signals.gaps || []) {
     const past = jobs.filter((j) => j.need?.gapKey === g.need);
     if (past.some((j) => ['running', 'submitted', 't3'].includes(j.status))) continue;
     const done = past.filter((j) => j.status !== 'paused');
     // 失败过的需求：出现次数又增加 3 次以上才再试
-    if (done.length >= MAX_TRIES || (done.length && g.count < (done.at(-1).need.count || 0) + 3)) continue;
+    if (done.length >= MAX_TRIES || (done.length && g.count < (done.at(-1)!.need.count || 0) + 3)) continue;
     return { source: 'gap', text: g.need, why: g.why, count: g.count, gapKey: g.need, adopted: g.adopted };
   }
 

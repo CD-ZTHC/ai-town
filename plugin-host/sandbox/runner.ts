@@ -9,9 +9,15 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import assertModule from 'node:assert/strict';
 
-const send = process.send.bind(process);
+/** 插件注册的处理函数：插件代码不可信，参数与返回值都在宿主那边校验 */
+type Fn = (...args: any[]) => unknown; // eslint-disable-line @typescript-eslint/no-explicit-any
+/** 宿主发来的消息（sandbox/client.ts） */
+type Msg = { type?: string; id?: number; name?: string; payload?: any; ok?: boolean; text?: string; error?: string; store?: unknown }; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Side = { logs?: string[]; overlay?: unknown[]; store?: Record<string, unknown> };
+
+const send = process.send!.bind(process);
 const proc = process;
-const onMessage = (fn) => proc.on('message', fn);
+const onMessage = (fn: (msg: Msg) => void) => proc.on('message', fn);
 const exit = process.exit.bind(process);
 const [pluginDir, mode = 'run'] = process.argv.slice(2);
 const DIR = path.resolve(pluginDir);
@@ -36,21 +42,21 @@ for (const F of [function () {}, async function () {}, function* () {}, async fu
 }
 
 const MAX_STORE = 64 * 1024;
-const reg = { effects: {}, hooks: {}, routes: {}, overlay: null };
-let store = {};
-let side = null; // 本次调用中插件产生的副作用（日志、覆盖层、存储）
+const reg: { effects: Record<string, Fn>; hooks: Record<string, Fn>; routes: Record<string, Fn>; overlay: null } = { effects: {}, hooks: {}, routes: {}, overlay: null };
+let store: Record<string, unknown> = {};
+let side: Side | null = null; // 本次调用中插件产生的副作用（日志、覆盖层、存储）
 let llmSeq = 0;
-const llmWait = new Map();
+const llmWait = new Map<number, { resolve: (text: string) => void; reject: (e: Error) => void }>();
 
 const api = Object.freeze({
-  effect(name, fn) { if (typeof fn === 'function') reg.effects[String(name)] = fn; },
-  on(event, fn) { if (typeof fn === 'function') reg.hooks[String(event)] = fn; },
-  route(name, fn) { if (typeof fn === 'function') reg.routes[String(name)] = fn; },
-  log(text) { if (side) (side.logs ||= []).push(String(text).slice(0, 60)); },
-  overlay(list) { if (side) side.overlay = Array.isArray(list) ? list.slice(0, 20) : []; },
+  effect(name: unknown, fn: Fn) { if (typeof fn === 'function') reg.effects[String(name)] = fn; },
+  on(event: unknown, fn: Fn) { if (typeof fn === 'function') reg.hooks[String(event)] = fn; },
+  route(name: unknown, fn: Fn) { if (typeof fn === 'function') reg.routes[String(name)] = fn; },
+  log(text: unknown) { if (side) (side.logs ||= []).push(String(text).slice(0, 60)); },
+  overlay(list: unknown) { if (side) side.overlay = Array.isArray(list) ? list.slice(0, 20) : []; },
   store: Object.freeze({
-    get(key) { const v = store[String(key)]; return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); },
-    set(key, value) {
+    get(key: unknown) { const v = store[String(key)]; return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); },
+    set(key: unknown, value: unknown) {
       const next = { ...store, [String(key)]: value === undefined ? undefined : JSON.parse(JSON.stringify(value)) };
       if (JSON.stringify(next).length > MAX_STORE) throw new Error('插件存储超过 64KB');
       store = next;
@@ -58,28 +64,28 @@ const api = Object.freeze({
     },
   }),
   /** 请宿主调用模型（需要在 plugin.json 里申请 llm 权限；宿主负责额度与注入防护） */
-  llm(prompt) {
+  llm(prompt: unknown) {
     const id = ++llmSeq;
     send({ type: 'llm', id, prompt: String(prompt).slice(0, 1500) });
-    return new Promise((resolve, reject) => llmWait.set(id, { resolve, reject }));
+    return new Promise<string>((resolve, reject) => llmWait.set(id, { resolve, reject }));
   },
 });
 
 // 一个极简的测试框架（插件自带的 test.js 使用）
 function harness() {
-  const cases = [];
+  const cases: Array<{ name: string; fn: Fn }> = [];
   return {
     cases,
     t: Object.freeze({
-      test: (name, fn) => cases.push({ name: String(name).slice(0, 60), fn }),
+      test: (name: unknown, fn: Fn) => cases.push({ name: String(name).slice(0, 60), fn }),
       assert: assertModule,
       /** 一个记录注册结果的假 api，供测试直接调用插件的处理函数 */
       api() {
-        const r = { effects: {}, hooks: {}, routes: {}, logs: [], overlay: null, store: {} };
+        const r: { effects: Record<string, Fn>; hooks: Record<string, Fn>; routes: Record<string, Fn>; logs: string[]; overlay: unknown; store: Record<string, unknown> } = { effects: {}, hooks: {}, routes: {}, logs: [], overlay: null, store: {} };
         return Object.freeze({
-          effect: (n, fn) => { r.effects[n] = fn; }, on: (e, fn) => { r.hooks[e] = fn; }, route: (n, fn) => { r.routes[n] = fn; },
-          log: (t) => r.logs.push(String(t)), overlay: (l) => { r.overlay = l; },
-          store: { get: (k) => r.store[k], set: (k, v) => { r.store[k] = v; } },
+          effect: (n: string, fn: Fn) => { r.effects[n] = fn; }, on: (e: string, fn: Fn) => { r.hooks[e] = fn; }, route: (n: string, fn: Fn) => { r.routes[n] = fn; },
+          log: (t: unknown) => r.logs.push(String(t)), overlay: (l: unknown) => { r.overlay = l; },
+          store: { get: (k: string) => r.store[k], set: (k: string, v: unknown) => { r.store[k] = v; } },
           llm: async () => '（测试中的模型回复）',
           registered: r,
         });
@@ -88,14 +94,14 @@ function harness() {
   };
 }
 
-async function call(msg) {
+async function call(msg: Msg) {
   side = {};
   try {
     let result;
     const p = msg.payload || {};
-    if (msg.type === 'effect') result = await reg.effects[msg.name]?.(p.args, p.ctx, p.world);
-    else if (msg.type === 'hook') result = await reg.hooks[msg.name]?.(p.event, p.world);
-    else if (msg.type === 'route') result = await reg.routes[msg.name]?.(p.body, p.world);
+    if (msg.type === 'effect') result = await reg.effects[msg.name!]?.(p.args, p.ctx, p.world);
+    else if (msg.type === 'hook') result = await reg.hooks[msg.name!]?.(p.event, p.world);
+    else if (msg.type === 'route') result = await reg.routes[msg.name!]?.(p.body, p.world);
     else throw new Error(`未知调用：${msg.type}`);
     return { ok: true, result: result === undefined ? null : JSON.parse(JSON.stringify(result)), side };
   } finally {
@@ -105,17 +111,17 @@ async function call(msg) {
 
 onMessage(async (msg) => {
   if (msg?.type === 'llmReply') {
-    const w = llmWait.get(msg.id);
-    llmWait.delete(msg.id);
+    const w = llmWait.get(msg.id!);
+    llmWait.delete(msg.id!);
     if (w) (msg.ok ? w.resolve(String(msg.text || '')) : w.reject(new Error(msg.error || '模型调用失败')));
     return;
   }
-  if (msg?.type === 'init') { store = msg.store && typeof msg.store === 'object' ? msg.store : {}; return; }
+  if (msg?.type === 'init') { store = (msg.store && typeof msg.store === 'object' ? msg.store : {}) as Record<string, unknown>; return; }
   if (!msg?.id) return;
   try {
     send({ id: msg.id, ...(await call(msg)) });
   } catch (e) {
-    send({ id: msg.id, ok: false, error: String(e?.message || e).slice(0, 300) });
+    send({ id: msg.id, ok: false, error: String((e as Error)?.message || e).slice(0, 300) });
   }
 });
 
@@ -125,9 +131,9 @@ try {
     const mod = await import(`${DIR_URL}test.js`);
     if (typeof mod.default !== 'function') throw new Error('test.js 需要 export default function (t) { t.test(...) }');
     await mod.default(h.t);
-    const results = [];
+    const results: Array<{ name: string; ok: boolean; error?: string }> = [];
     for (const c of h.cases) {
-      try { await c.fn(); results.push({ name: c.name, ok: true }); } catch (e) { results.push({ name: c.name, ok: false, error: String(e?.message || e).slice(0, 300) }); }
+      try { await c.fn(); results.push({ name: c.name, ok: true }); } catch (e) { results.push({ name: c.name, ok: false, error: String((e as Error)?.message || e).slice(0, 300) }); }
     }
     send({ type: 'testResults', results });
   } else {
@@ -137,6 +143,6 @@ try {
     send({ type: 'ready', registered: { effects: Object.keys(reg.effects), hooks: Object.keys(reg.hooks), routes: Object.keys(reg.routes) } });
   }
 } catch (e) {
-  send({ type: 'fatal', error: String(e?.message || e).slice(0, 300) });
+  send({ type: 'fatal', error: String((e as Error)?.message || e).slice(0, 300) });
   exit(1);
 }

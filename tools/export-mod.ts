@@ -8,9 +8,9 @@ import { exportMod } from '../server/kernel/mods.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
-const arg = (k, d) => (argv.includes(k) ? argv[argv.indexOf(k) + 1] : d);
-const data = path.resolve(ROOT, arg('--data', process.env.DATA_DIR || 'data'));
-const out = path.resolve(ROOT, arg('--out', 'spec/mods'));
+const arg = (k: string, d?: string): string | undefined => (argv.includes(k) ? argv[argv.indexOf(k) + 1] : d);
+const data = path.resolve(ROOT, arg('--data', process.env.DATA_DIR || 'data')!);
+const out = path.resolve(ROOT, arg('--out', 'spec/mods')!);
 const save = JSON.parse(fs.readFileSync(path.join(data, 'save.json'), 'utf8'));
 const mod = exportMod(save.specOps || [], { id: arg('--id'), name: arg('--name'), description: arg('--desc', ''), source: `第${Math.floor((save.t || 0) / 1440) + 1}天的存档`, proposalsOnly: argv.includes('--proposals-only') });
 fs.mkdirSync(out, { recursive: true });

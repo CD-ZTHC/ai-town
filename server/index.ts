@@ -25,6 +25,8 @@ import { worldPage } from './http/pages.ts';
 import { evolveConfig } from '../plugin-host/evolved.ts';
 import { engineArgs } from '../evolution/common.ts';
 import { hostCall, setReviewResolver } from '../evolution/llm.ts';
+import type { HostCallRequest } from '../evolution/llm.ts';
+import type { EvoJob as EvolutionJob } from '../evolution/common.ts';
 import { loadMasterKey } from './secrets.ts';
 import { LlmCredentials, SITE } from './accounts/llm-credentials.ts';
 import { createWorldLlm, normalizeAi } from './world-llm.ts';
@@ -47,7 +49,7 @@ type AnyAi = AiConfig & Partial<Extract<AiConfig, { source: 'own' }>>;
 /** 进化引擎经 IPC 发来的模型调用请求（evolution/llm.ts 的 hostCall 处理） */
 type EngineMsg = { type?: string; id?: string; worldId?: string; [k: string]: any }; // eslint-disable-line @typescript-eslint/no-explicit-any
 /** 进化引擎的任务（data/evolution/jobs.json，由 evolution/ 写入） */
-type EvoJob = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- evolution/ 在 B8 迁移
+type EvoJob = EvolutionJob;
 
 // 设置中心：保存的值（data/settings.json）> 环境变量（只作初始值）> 默认值。
 // 还起作用的环境变量写错时直接报错退出，不悄悄用默认值；先读设置文件，才知道哪些环境变量已经不起作用
@@ -356,8 +358,8 @@ function startEngine() {
   const dirs = list.flatMap((w) => [path.join(manager!.root(w.id), 'plugins'), path.join(manager!.root(w.id), 'evolution')]);
   for (const d of [...dirs, EVO_DIR]) fs.mkdirSync(d, { recursive: true });
   // 引擎不联网：模型调用经 IPC 交给主进程，放进统一队列的 P4 级（§7.5）
-  // TODO(types): B8 迁移 evolution/common 后去掉 extraWrite 的断言（JS 从默认值 [] 推断出 never[]）
-  const args = [`--max-old-space-size=${settings.get('CHILD_HEAP_MB')}`, ...engineArgs({ root: ROOT, data: DATA, evolvedDir: dirs[0], evoDir: EVO_DIR, extraWrite: dirs.slice(1) as never[], net: false }), path.join(ROOT, 'evolution', 'daemon.ts')];
+
+  const args = [`--max-old-space-size=${settings.get('CHILD_HEAP_MB')}`, ...engineArgs({ root: ROOT, data: DATA, evolvedDir: dirs[0], evoDir: EVO_DIR, extraWrite: dirs.slice(1), net: false }), path.join(ROOT, 'evolution', 'daemon.ts')];
   engine = spawn(process.execPath, args, { cwd: ROOT, env: settings.env({ ...process.env, DATA_DIR: DATA, EVOLVE_IPC: '1', EVOLVE_LLM: llm.stats.enabled || list.some((w) => worldLlm.isOwn(w.id)) ? '1' : '0' }), stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
   const proc = trackChild('evolve', engine);
   proc.on('message', async (m: EngineMsg) => {
@@ -366,7 +368,7 @@ function startEngine() {
     try {
       // 只替开启了进化的世界调用模型
       if (!JSON.parse(engineWorlds).some((w: { id: string }) => w.id === (m.worldId || 'yunxi'))) throw new Error('这个世界没有开启进化');
-      const r = await withContext({ worldId: m.worldId || 'yunxi', userId: null }, () => hostCall(m as Parameters<typeof hostCall>[0]));
+      const r = await withContext({ worldId: m.worldId || 'yunxi', userId: null }, () => hostCall(m as HostCallRequest));
       reply = { type: 'llm-result', id: m.id, ok: true, json: r.json, tokens: r.tokens };
     } catch (e) { reply = { type: 'llm-result', id: m.id, ok: false, error: String((e as Error).message).slice(0, 300), code: (e as { code?: string }).code }; }
     if (proc.connected) proc.send(reply);

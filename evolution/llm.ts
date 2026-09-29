@@ -5,6 +5,14 @@ import { openaiCompatible } from '../server/llm-providers.ts';
 import { BudgetExceeded } from './common.ts';
 import { get as setting } from '../server/settings/index.ts';
 import { currentContext } from '../server/scheduler/context.ts';
+import type { Budget } from './common.ts';
+import type { ChatMessage, Provider } from '../server/types/llm.ts';
+import type { ModelJSON } from '../server/llm.ts';
+
+/** 进化引擎经 IPC 请主进程调用模型（server/index.ts 转给 hostCall） */
+export interface HostCallRequest { role: string; messages: ChatMessage[]; review?: boolean; maxTokens?: number; temperature?: number; worldId?: string | null }
+/** 世界自带的评审模型：null 表示用服务器的配置 */
+type ReviewResolver = (worldId: string) => { model: string; provider: Provider | null } | null;
 
 const REVIEW = {
   url: setting('EVOLVE_REVIEW_BASE_URL').replace(/\/+$/, ''),
@@ -12,13 +20,13 @@ const REVIEW = {
   model: setting('EVOLVE_REVIEW_MODEL'),
 };
 
-export function reviewInfo() {
+export function reviewInfo(): { model: string; separateService: boolean; sameModel: boolean } {
   const own = Boolean(REVIEW.url && REVIEW.key && REVIEW.model);
   const model = own || REVIEW.model ? REVIEW.model : base.stats.models.smart;
   return { model, separateService: own, sameModel: model === base.stats.models.smart };
 }
 
-async function reviewChat(messages, { maxTokens, temperature }) {
+async function reviewChat(messages: ChatMessage[], { maxTokens, temperature }: { maxTokens: number; temperature: number }): Promise<{ json: ModelJSON; tokens: number }> {
   const res = await fetch(`${REVIEW.url}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${REVIEW.key}` },
@@ -32,15 +40,15 @@ async function reviewChat(messages, { maxTokens, temperature }) {
 
 // 世界用自己的模型服务时（按世界配置模型服务设计 §5.6），评审也用世界配置的评审模型，不借用服务器的 EVOLVE_REVIEW_*。
 // 由服务入口注入：(worldId) => null（用服务器的配置）| { model, provider }（model 为空 = 世界的强模型；provider 为空 = 世界的主凭据）
-let worldReview = null;
-export function setReviewResolver(fn) { worldReview = fn || null; }
+let worldReview: ReviewResolver | null = null;
+export function setReviewResolver(fn: ReviewResolver | null): void { worldReview = fn || null; }
 
 /**
  * 在主进程里执行一次进化引擎的模型调用（多世界设计 §7.5）：放进统一队列的 P4 级，记在 worldId 名下。
  * 评审模型单独配置了另一家服务时，同样走这个队列，只是换一个 provider。返回 { json, tokens }。
  */
-export async function hostCall({ role, messages, review = false, maxTokens = 4000, temperature = 0.4, worldId = null }) {
-  const w = worldReview ? worldReview(worldId || currentContext().worldId) : null;
+export async function hostCall({ role, messages, review = false, maxTokens = 4000, temperature = 0.4, worldId = null }: HostCallRequest): Promise<{ json: ModelJSON; tokens: number }> {
+  const w = worldReview ? worldReview((worldId || currentContext().worldId)!) : null;
   const own = !w && Boolean(REVIEW.url && REVIEW.key && REVIEW.model);
   const reviewModel = w ? w.model : REVIEW.model;
   const reviewProvider = w ? w.provider : own ? openaiCompatible({ baseUrl: REVIEW.url, apiKey: REVIEW.key }) : null;
@@ -49,32 +57,37 @@ export async function hostCall({ role, messages, review = false, maxTokens = 400
     tier: 'smart', label: `进化：${role}`, agent: '进化引擎', maxTokens, temperature, attempts: 2, timeoutMs: 180_000,
     ...(review && reviewModel ? { model: reviewModel } : {}),
     ...(review && reviewProvider ? { provider: reviewProvider } : {}),
-    onTokens: (n) => { tokens += n; },
+    onTokens: (n: number) => { tokens += n; },
   });
   return { json, tokens };
 }
 
 // 守护进程由小镇服务器以 IPC 通道启动时，模型调用交给主进程排队（守护进程自己不联网、不持有第二份队列）
 let ipcSeq = 0;
-const ipcWaiting = new Map();
-function ipcCall(payload) {
+/** 主进程发回的结果 */
+type IpcResult = { type?: string; id: number; ok?: boolean; json?: ModelJSON; tokens: number; error?: string; code?: string };
+const ipcWaiting = new Map<number, { resolve: (r: IpcResult) => void; reject: (e: Error) => void }>();
+function ipcCall(payload: HostCallRequest): Promise<IpcResult> {
   if (!ipcWaiting.size) process.on('message', onIpc);
   const id = ++ipcSeq;
   return new Promise((resolve, reject) => {
     ipcWaiting.set(id, { resolve, reject });
-    process.send({ type: 'llm', id, ...payload });
+    process.send!({ type: 'llm', id, ...payload });
   });
 }
-function onIpc(m) {
+function onIpc(m: IpcResult): void {
   if (m?.type !== 'llm-result' || !ipcWaiting.has(m.id)) return;
-  const w = ipcWaiting.get(m.id);
+  const w = ipcWaiting.get(m.id)!;
   ipcWaiting.delete(m.id);
   if (!ipcWaiting.size) process.off('message', onIpc);
   m.ok ? w.resolve(m) : w.reject(Object.assign(new Error(m.error || '模型调用失败'), { code: m.code }));
 }
-export const viaIpc = () => typeof process.send === 'function' && process.env.EVOLVE_IPC === '1';
+export const viaIpc = (): boolean => typeof process.send === 'function' && process.env.EVOLVE_IPC === '1';
 
-export function makeLLM(budget, { worldId = null } = {}) {
+/** 进化引擎的模型调用（各 Agent 共用） */
+export type EvoLLM = ReturnType<typeof makeLLM>;
+
+export function makeLLM(budget: Pick<Budget, 'add' | 'left'>, { worldId = null }: { worldId?: string | null } = {}) {
   let last = base.stats.promptTokens + base.stats.completionTokens;
   const settle = () => {
     const now = base.stats.promptTokens + base.stats.completionTokens;
@@ -85,12 +98,8 @@ export function makeLLM(budget, { worldId = null } = {}) {
   return {
     // 通过 IPC 调用时由主进程判断模型是否可用；启动参数里的 EVOLVE_LLM=1 表示主进程配置了模型
     enabled: () => (viaIpc() ? process.env.EVOLVE_LLM === '1' : base.stats.enabled),
-    /**
-     * @param {string} role Agent 角色（用于统计）
-     * @param {Array} messages
-     * @param {{ review?: boolean, maxTokens?: number, temperature?: number }} opts review：评审类 Agent
-     */
-    async call(role, messages, { review = false, maxTokens = 4000, temperature = 0.4 } = {}) {
+    /** role：Agent 角色（用于统计）；review：评审类 Agent */
+    async call(role: string, messages: ChatMessage[], { review = false, maxTokens = 4000, temperature = 0.4 }: { review?: boolean; maxTokens?: number; temperature?: number } = {}): Promise<ModelJSON> {
       if (budget.left() <= 0) throw new BudgetExceeded();
       if (viaIpc()) {
         const r = await ipcCall({ role, messages, review, maxTokens, temperature, worldId });

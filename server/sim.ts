@@ -55,6 +55,7 @@ import type { MigrationState } from './story/migration.ts';
 import type { Creature, Portal } from './story/creatures.ts';
 import type { ArcRun } from './story/arcs.ts';
 import type { StoryState } from './story/director.ts';
+import type { Architect, ArchitectItem, ArchitectUsage, Gap } from '../plugins/builtin/architect/architect.ts';
 import type { PressureState } from './worldai/pressure.ts';
 import type { Scene } from './story/scene.ts';
 import type { Proposal, Vote } from './types/story.ts';
@@ -151,11 +152,11 @@ export class Town extends EventEmitter {
   declare swarmAt?: number;
   declare proposals: Proposal[];
   declare decisionState: Decision[];
-  declare architectQueue: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B8（架构师在 plugins/builtin 里）
-  declare gaps: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): B8（能力缺口 / 心愿单，由架构师插件写入）
-  declare architectUsage: unknown;
+  declare architectQueue: ArchitectItem[];
+  declare gaps: Gap[];
+  declare architectUsage: ArchitectUsage | undefined;
   /** 世界架构师插件（plugins/builtin/architect）装上时设置 */
-  declare architect: { enqueue(text: string, origin: string): string | null; recordGap(g: object, o?: object): unknown; [k: string]: any } | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+  declare architect: Architect | null;
   declare usage: { days: Record<string, { tokens: number; calls: number; byLabel: Record<string, { calls: number; tokens: number }>; speed: number }>; mark: unknown } | undefined;
   declare metricsState: { days: Record<string, MetricsDay> };
   // ---- 子系统 ----

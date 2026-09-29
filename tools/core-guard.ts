@@ -12,17 +12,17 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const FROZEN = ['server', 'public', 'plugin-host', 'evolution', 'plugins/builtin', 'worlds'];
 const LOCK = path.join(ROOT, 'core.lock');
 
-export function currentHashes(root = ROOT) {
-  const out = {};
+export function currentHashes(root = ROOT): Record<string, string> {
+  const out: Record<string, string> = {};
   for (const d of FROZEN) for (const [f, h] of Object.entries(fileHashes(path.join(root, d)))) out[`${d}/${f}`] = h;
   return out;
 }
 
 /** 与 core.lock 比较，返回 { ok, changed, added, removed }；没有 core.lock 时 ok = null */
-export function verifyCore(root = ROOT) {
+export function verifyCore(root = ROOT): { ok: boolean | null; changed: string[]; added: string[]; removed: string[] } {
   const file = path.join(root, 'core.lock');
   if (!fs.existsSync(file)) return { ok: null, changed: [], added: [], removed: [] };
-  const lock = JSON.parse(fs.readFileSync(file, 'utf8')).files || {};
+  const lock: Record<string, string> = JSON.parse(fs.readFileSync(file, 'utf8')).files || {};
   const now = currentHashes(root);
   const changed = Object.keys(now).filter((f) => lock[f] && lock[f] !== now[f]);
   const added = Object.keys(now).filter((f) => !lock[f]);
@@ -31,9 +31,9 @@ export function verifyCore(root = ROOT) {
 }
 
 /** AI 插件只能引用自己目录里的文件 */
-export function checkEvolvedImports(root = ROOT) {
+export function checkEvolvedImports(root = ROOT): string[] {
   const dir = path.join(root, 'plugins', 'evolved');
-  const problems = [];
+  const problems: string[] = [];
   if (!fs.existsSync(dir)) return problems;
   for (const p of fs.readdirSync(dir)) {
     for (const f of Object.keys(fileHashes(path.join(dir, p))).filter((x) => x.endsWith('.js'))) {

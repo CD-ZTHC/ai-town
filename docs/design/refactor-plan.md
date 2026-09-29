@@ -1,7 +1,7 @@
 # 架构重构方案：TypeScript 迁移与 2 核 2G 线上环境适配 —— 设计方案
 
-> 状态：实施中（2026-09-28 开始）。已完成 P0 诊断（[记录](../reports/2026-09-28-p0-diagnosis.md)）、P1 的代码部分（systemd 单元、迁移脚本、部署改造；线上迁移待执行）、P2、P2b、P3、P4 的 B1~B7。
-> 其余（P4 的 B8~B9、P5~P9）未开始。P0 发现云溪镇存档已有 3MB，建议 P5 提前到 P4 的前几个批次之后。
+> 状态：实施中（2026-09-28 开始）。已完成 P0 诊断（[记录](../reports/2026-09-28-p0-diagnosis.md)）、P1 的代码部分（systemd 单元、迁移脚本、部署改造；线上迁移待执行）、P2、P2b、P3、P4 的 B1~B8。
+> 其余（P4 的 B9、P5~P9）未开始。P0 发现云溪镇存档已有 3MB，建议 P5 提前到 P4 的前几个批次之后。
 > 前提：线上服务器 **2 核 2G**，已出现内存（分页）耗尽导致整机卡死。
 > 相关：[multi-world.md](multi-world.md) §7 统一 AI 调度；[autonomous-evolution.md](autonomous-evolution.md) §8 内核冻结；[world-llm.md](world-llm.md)。
 

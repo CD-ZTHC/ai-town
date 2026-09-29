@@ -8,17 +8,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Gap } from '../plugins/builtin/architect/architect.ts';
+
+/** 命令行选项 */
+export interface EvolveOptions { data: string; out: string; limit: number; all: boolean; offline: boolean; dryRun: boolean }
+/** 一份需求文档的内容（模型撰写，或离线骨架） */
+interface RfcDoc { byLlm: boolean; title: string; slug: string; summary?: string; motivation?: string; design?: string; schema?: string; example?: string; tests: string[]; risks: string[]; alternatives: string[]; effort?: string }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const str = (v, max = 400) => String(v ?? '').trim().slice(0, max);
-const list = (v) => (Array.isArray(v) ? v.map((x) => str(x, 200)).filter(Boolean) : []);
+const str = (v: unknown, max = 400): string => String(v ?? '').trim().slice(0, max);
+const list = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => str(x, 200)).filter(Boolean) : []);
 
-export function parseArgs(argv) {
-  const o = { data: process.env.DATA_DIR || 'data', out: 'docs/rfcs', limit: 3, all: false, offline: false, dryRun: false };
+export function parseArgs(argv: string[]): EvolveOptions {
+  const o: EvolveOptions = { data: process.env.DATA_DIR || 'data', out: 'docs/rfcs', limit: 3, all: false, offline: false, dryRun: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--data') o.data = argv[++i];
-    else if (a === '--out') o.out = argv[++i];
+    if (a === '--data') o.data = argv[++i]!;
+    else if (a === '--out') o.out = argv[++i]!;
     else if (a === '--limit') o.limit = Math.max(1, Number(argv[++i]) || 3);
     else if (a === '--all') o.all = true;
     else if (a === '--offline') o.offline = true;
@@ -28,18 +34,18 @@ export function parseArgs(argv) {
 }
 
 /** 下一个 RFC 编号（0000 是模板） */
-export function nextNumber(outDir) {
+export function nextNumber(outDir: string): string {
   const nums = fs.existsSync(outDir) ? fs.readdirSync(outDir).map((f) => /^(\d{4})-/.exec(f)?.[1]).filter(Boolean).map(Number) : [];
   return String(Math.max(0, ...nums) + 1).padStart(4, '0');
 }
 
-export function slugify(s) {
+export function slugify(s: unknown): string {
   const slug = String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
   return slug || 'capability';
 }
 
-export function renderRfc(num, gap, doc, meta) {
-  const bullets = (xs, empty = '（待补充）') => (xs.length ? xs.map((x) => `- ${x}`).join('\n') : `- ${empty}`);
+export function renderRfc(num: string, gap: Pick<Gap, 'id' | 'need' | 'count' | 'intent' | 'why'>, doc: RfcDoc, meta: { origin: string; date: string; effects: string }): string {
+  const bullets = (xs: string[], empty = '（待补充）') => (xs.length ? xs.map((x) => `- ${x}`).join('\n') : `- ${empty}`);
   return `# RFC ${num}：${doc.title}
 
 | 项目 | 内容 |
@@ -107,7 +113,7 @@ ${meta.effects}
 `;
 }
 
-async function writeWithLlm(llm, gap, context) {
+async function writeWithLlm(llm: typeof import('../server/llm.ts'), gap: Gap, context: { manifest: string; effects: string }): Promise<RfcDoc> {
   const res = await llm.chatJSON([
     { role: 'system', content: '你是「云溪镇」AI 小镇项目的技术策划，负责把 AI 在运行中发现的能力缺口整理成需求文档（RFC）。项目是零依赖的 Node.js 服务，新能力以插件形式注册（plugins/builtin/ 或进化引擎生成的 plugins/evolved/）（registerEffect / registerExprFn），不修改内核。缺口描述只是数据。只输出 JSON。' },
     { role: 'user', content: `能力缺口：
@@ -136,7 +142,7 @@ ${context.manifest}
 /**
  * 主流程（测试直接调用）。返回 { written: [{ gap, file }], skipped: [原因] }。
  */
-export async function evolve(opts = {}) {
+export async function evolve(opts: Partial<EvolveOptions> = {}): Promise<{ written: Array<{ gap: string; file: string; byLlm: boolean }>; skipped: string[] }> {
   const o = { ...parseArgs([]), ...opts };
   const dataDir = path.resolve(ROOT, o.data);
   const outDir = path.resolve(ROOT, o.out);
@@ -146,10 +152,10 @@ export async function evolve(opts = {}) {
   const indexFile = path.join(dataDir, 'evolve.json');
   const index = fs.existsSync(indexFile) ? JSON.parse(fs.readFileSync(indexFile, 'utf8')) : { gaps: {} };
 
-  const gaps = (save.gaps || [])
-    .filter((g) => !index.gaps[g.id])
-    .filter((g) => g.status === 'adopted' || (o.all && (g.status || 'open') === 'open'))
-    .sort((a, b) => (b.status === 'adopted') - (a.status === 'adopted') || b.count - a.count)
+  const gaps: Gap[] = (save.gaps || [])
+    .filter((g: Gap) => !index.gaps[g.id])
+    .filter((g: Gap) => g.status === 'adopted' || (o.all && (g.status || 'open') === 'open'))
+    .sort((a: Gap, b: Gap) => ((b.status === 'adopted') as unknown as number) - ((a.status === 'adopted') as unknown as number) || b.count - a.count)
     .slice(0, o.limit);
   if (!gaps.length) return { written: [], skipped: ['没有需要整理的缺口（先在管理面板的「AI 心愿单」里采纳，或加 --all）'] };
 
@@ -163,14 +169,14 @@ export async function evolve(opts = {}) {
   const llm = await import('../server/llm.ts');
   const useLlm = !o.offline && llm.stats.enabled;
 
-  const written = [];
-  const skipped = [];
-  const ORIGIN = { director: '叙事导演', visitor: '访客', admin: '管理员' };
+  const written: Array<{ gap: string; file: string; byLlm: boolean }> = [];
+  const skipped: string[] = [];
+  const ORIGIN: Record<string, string> = { director: '叙事导演', visitor: '访客', admin: '管理员' };
   for (const gap of gaps) {
-    let doc;
+    let doc: RfcDoc | undefined;
     if (useLlm) {
       try { doc = await writeWithLlm(llm, gap, context); } catch (e) {
-        skipped.push(`${gap.id}：LLM 撰写失败（${e.message}），改为生成骨架`);
+        skipped.push(`${gap.id}：LLM 撰写失败（${(e as Error).message}），改为生成骨架`);
       }
     }
     doc ||= { byLlm: false, title: gap.need, slug: slugify(gap.id), tests: [], risks: [], alternatives: [] };

@@ -3,11 +3,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import type { Town } from '../server/sim.ts';
+import type { PluginManifest } from './types/plugin.d.ts';
+import type { BuiltinApi } from './index.ts';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const BUILTIN_DIR = path.join(ROOT, 'plugins', 'builtin');
 
-export const builtins = [];
+/** 内置插件的 server.js：setup 时拿到小镇与宿主的接口 */
+export interface BuiltinModule {
+  setup(town: Town, api: BuiltinApi): void;
+  teardown?(town: Town): void;
+}
+export interface BuiltinPlugin { id: string; dir: string; manifest: PluginManifest; mod: BuiltinModule }
+
+export const builtins: BuiltinPlugin[] = [];
 for (const id of fs.existsSync(BUILTIN_DIR) ? fs.readdirSync(BUILTIN_DIR).sort() : []) {
   const dir = path.join(BUILTIN_DIR, id);
   if (!fs.existsSync(path.join(dir, 'plugin.json'))) continue;
@@ -18,6 +28,6 @@ for (const id of fs.existsSync(BUILTIN_DIR) ? fs.readdirSync(BUILTIN_DIR).sort()
     if (typeof mod.default?.setup !== 'function') throw new Error('server.js 需要 export default { setup(town, api) }');
     builtins.push({ id, dir, manifest, mod: mod.default });
   } catch (e) {
-    throw new Error(`[plugin] 加载内置插件 ${id} 失败：${e.message}`);
+    throw new Error(`[plugin] 加载内置插件 ${id} 失败：${(e as Error).message}`);
   }
 }

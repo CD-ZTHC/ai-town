@@ -249,7 +249,7 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
   api.post('/evolution/vote', (c) => {
     voteGate(c);
     const b = c.get('body');
-    const err = town(c).evolved.vote(String(b.key || ''), c.get('vid'), Boolean(b.yes));
+    const err = town(c).evolved.vote(String(b.key || ''), c.get('vid')!, Boolean(b.yes));
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
   });

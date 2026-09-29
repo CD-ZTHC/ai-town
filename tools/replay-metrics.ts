@@ -20,11 +20,12 @@ town.speed = 30;
 const end = town.t + 7 * 1440;
 while (town.t < end) { town.advance(0.1); await new Promise((r) => setImmediate(r)); }
 const m = town.metricsView();
+type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- 居民、日志等（只取来算摘要）
 const state = {
   t: Math.round(town.t),
-  agents: town.agents.map((a) => [a.id, Math.round(a.x * 100), Math.round(a.y * 100), a.status, a.locId, a.memories.map((x) => x.text), a.relations, a.inventory, a.abilities, a.beliefs.map((b) => b.claim)]),
-  logs: town.logs.map((l) => [l.type, l.text]),
-  specOps: town.specOps.map((r) => [r.op, r.t]),
+  agents: town.agents.map((a: Row) => [a.id, Math.round(a.x * 100), Math.round(a.y * 100), a.status, a.locId, a.memories.map((x: Row) => x.text), a.relations, a.inventory, a.abilities, a.beliefs.map((b: Row) => b.claim)]),
+  logs: town.logs.map((l: Row) => [l.type, l.text]),
+  specOps: town.specOps.map((r: Row) => [r.op, r.t]),
   story: town.story?.now?.value ?? null,
 };
 const h = crypto.createHash('sha256').update(JSON.stringify(state)).digest('hex').slice(0, 16);

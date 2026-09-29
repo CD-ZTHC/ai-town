@@ -20,6 +20,6 @@ if (cur.source === 'env') {
   console.log(`✅ 已用新主密钥重写 ${n} 份凭据。请把环境变量 SECRETS_KEY 改成：\n${text}`);
 } else {
   fs.writeFileSync(`${cur.file}.tmp`, `${text}\n`, { mode: 0o600 });
-  fs.renameSync(`${cur.file}.tmp`, cur.file);
+  fs.renameSync(`${cur.file}.tmp`, cur.file!);
   console.log(`✅ 已用新主密钥重写 ${n} 份凭据，并更新了 ${cur.file}（记得重新备份）`);
 }

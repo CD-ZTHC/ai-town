@@ -21,7 +21,7 @@ town.save = () => {}; // 试运行不写存档
 const start = town.t;
 const end = start + job.hours * 60;
 town.speed = 20;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 await sleep(300); // 等沙箱启动
 let steps = 0;
 let ms = 0;
@@ -34,7 +34,7 @@ while (town.t < end) {
 }
 await sleep(300);
 const id = job.candidate?.key.split('@')[0];
-const usage = id ? town.evolved.usage[id] || {} : {};
+const usage: { errors?: number; lastError?: string; total?: number } = id ? town.evolved.usage[id] || {} : {};
 const metrics = {
   hours: job.hours, steps, tickMs: +(ms / steps).toFixed(3),
   errors: (usage.errors || 0) + Object.values(town.hooks.errors).reduce((s, x) => s + x, 0),

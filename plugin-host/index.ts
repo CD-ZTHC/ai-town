@@ -4,13 +4,24 @@
 import { builtins } from './builtin.ts';
 import { registerEffect, registerExprFn } from './registry.ts';
 import { get as setting } from '../server/settings/index.ts';
+import type { Town } from '../server/sim.ts';
+import type { PluginManifest } from './types/plugin.d.ts';
+import type { EffectDef, EXT_FNS } from '../server/kernel/effects.ts';
+
+/** 内置插件拿到的接口（可信代码，可以直接操作小镇） */
+export interface BuiltinApi {
+  id: string;
+  on(event: string, fn: (payload: any) => unknown): () => void; // eslint-disable-line @typescript-eslint/no-explicit-any -- 钩子负载见 kernel/hooks
+  registerEffect(name: string, def: Pick<EffectDef, 'doc' | 'check' | 'apply'>): void;
+  registerExprFn(name: string, impl: (typeof EXT_FNS)[string], doc: string): void;
+  log(text: string): void;
+}
 
 export class PluginHost {
-  /**
-   * @param {import('../server/sim.ts').Town} town
-   * @param {{ disable?: string[] }} [opts] disable：不加载的内置插件（测试或排查用，也可用环境变量 PLUGINS_DISABLE=a,b）
-   */
-  constructor(town, opts = {}) {
+  declare town: Town;
+  declare list: Array<{ id: string; kind: 'builtin'; manifest: PluginManifest; status: string }>;
+  /** disable：不加载的内置插件（测试或排查用，也可用环境变量 PLUGINS_DISABLE=a,b） */
+  constructor(town: Town, opts: { disable?: string[] } = {}) {
     this.town = town;
     this.list = [];
     const disable = new Set(opts.disable ?? setting('PLUGINS_DISABLE'));
@@ -22,24 +33,24 @@ export class PluginHost {
   }
 
   /** 内置插件拿到的接口（可信代码，可以直接操作小镇） */
-  api(id) {
+  api(id: string): BuiltinApi {
     const town = this.town;
     return {
       id,
       on: (event, fn) => town.hooks.on(event, fn, id),
       registerEffect: (name, def) => registerEffect(name, def, id),
       registerExprFn: (name, impl, doc) => registerExprFn(name, impl, doc, id),
-      log: (text) => town.log('plugin', text, { plugin: id }),
+      log: (text: string) => town.log('plugin', text, { plugin: id }),
     };
   }
 
-  has(id) { return this.list.some((p) => p.id === id && p.status !== 'disabled'); }
+  has(id: string): boolean { return this.list.some((p) => p.id === id && p.status !== 'disabled'); }
 
   view() {
     return this.list.map((p) => ({ id: p.id, kind: p.kind, title: p.manifest.title, summary: p.manifest.summary, version: p.manifest.version, tier: p.manifest.tier, status: p.status, errors: this.town.hooks.errors[p.id] || 0 }));
   }
 
-  stop() {
+  stop(): void {
     for (const b of builtins) b.mod.teardown?.(this.town);
   }
 }

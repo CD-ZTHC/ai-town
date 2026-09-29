@@ -9,10 +9,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SETTINGS } from '../server/settings/schema.ts';
+import type { ChildProcess } from 'node:child_process';
+
+/** DevTools 协议的消息与返回值（结构由 Chrome 决定，只取用到的字段） */
+type Cdp = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 const args = process.argv.slice(2);
-const opt = (k, d) => (args.includes(k) ? args[args.indexOf(k) + 1] : d);
-const OUT = opt('--out', fs.mkdtempSync(path.join(os.tmpdir(), 'town-shots-')));
+const opt = (k: string, d: string | undefined) => (args.includes(k) ? args[args.indexOf(k) + 1] : d);
+const OUT = opt('--out', fs.mkdtempSync(path.join(os.tmpdir(), 'town-shots-')))!;
 const CHROME = opt('--chrome', process.env.CHROME || [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
@@ -20,15 +24,15 @@ const CHROME = opt('--chrome', process.env.CHROME || [
 if (!CHROME) { console.error('找不到 Chrome，用 --chrome 或 CHROME 指定路径'); process.exit(2); }
 fs.mkdirSync(OUT, { recursive: true });
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const procs = [];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const procs: ChildProcess[] = [];
 const cleanup = () => { for (const p of procs) try { p.kill('SIGKILL'); } catch {} };
 process.on('exit', cleanup);
 
-async function waitFor(fn, ms, what) {
+async function waitFor<T>(fn: () => T | Promise<T>, ms: number, what: string): Promise<NonNullable<T>> {
   const end = Date.now() + ms;
   for (;;) {
-    try { const v = await fn(); if (v) return v; } catch {}
+    try { const v = await fn(); if (v) return v as NonNullable<T>; } catch {}
     if (Date.now() > end) throw new Error(`等待超时：${what}`);
     await sleep(150);
   }
@@ -36,7 +40,7 @@ async function waitFor(fn, ms, what) {
 
 // 1. 小镇服务器（临时存档、不连模型）
 const port = 3900 + Math.floor(Math.random() * 90);
-const env = { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'town-bc-')) };
+const env: NodeJS.ProcessEnv = { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'town-bc-')) };
 // 不受开发机 .env 的影响：只保留上面的几项
 for (const k of Object.keys(SETTINGS)) if (!['PORT', 'HOST', 'DATA_DIR'].includes(k)) delete env[k];
 const server = spawn(process.execPath, ['server/index.ts'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -57,21 +61,21 @@ const wsUrl = await waitFor(() => /DevTools listening on (ws:\/\/\S+)/.exec(chro
 const devtools = new URL(wsUrl);
 const pageWs = await waitFor(async () => {
   const list = await (await fetch(`http://${devtools.host}/json/list`)).json();
-  return list.find((t) => t.type === 'page')?.webSocketDebuggerUrl;
+  return list.find((t: Cdp) => t.type === 'page')?.webSocketDebuggerUrl as string | undefined;
 }, 10000, '页面');
 
 // 3. DevTools 协议
 const ws = new WebSocket(pageWs);
 await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
 let seq = 0;
-const pending = new Map();
-const problems = [];
-const net = []; // 资源版本检查用：页面加载时的每个响应 { url, status, cached }
+const pending = new Map<number, { resolve: (r: Cdp) => void; reject: (e: Error) => void }>();
+const problems: string[] = [];
+const net: Array<{ id: string; url: string; status: number; cached: boolean }> = []; // 资源版本检查用：页面加载时的每个响应 { url, status, cached }
 const cachedIds = new Set();
 ws.onmessage = (ev) => {
   const msg = JSON.parse(ev.data);
   if (msg.id && pending.has(msg.id)) {
-    const { resolve, reject } = pending.get(msg.id);
+    const { resolve, reject } = pending.get(msg.id)!;
     pending.delete(msg.id);
     msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result);
   } else if (msg.method === 'Network.responseReceived') {
@@ -83,7 +87,7 @@ ws.onmessage = (ev) => {
     const d = msg.params.exceptionDetails;
     problems.push(`异常：${d.exception?.description || d.text}（${d.url || ''}:${d.lineNumber}）`);
   } else if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') {
-    problems.push(`console.error：${msg.params.args.map((a) => a.value ?? a.description).join(' ')}`);
+    problems.push(`console.error：${msg.params.args.map((a: Cdp) => a.value ?? a.description).join(' ')}`);
   } else if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') {
     const e = msg.params.entry;
     // favicon 之类的 404 与本次检查无关
@@ -91,40 +95,40 @@ ws.onmessage = (ev) => {
     if (!/favicon/.test(e.url || '') && !/status of 401/.test(e.text)) problems.push(`日志：${e.text}${e.url ? `（${e.url}）` : ''}`);
   }
 };
-const send = (method, params = {}) => new Promise((resolve, reject) => {
+const send = (method: string, params: object = {}) => new Promise<Cdp>((resolve, reject) => {
   const id = ++seq;
   pending.set(id, { resolve, reject });
   ws.send(JSON.stringify({ id, method, params }));
 });
-const evaluate = async (expr) => {
+const evaluate = async (expr: string) => {
   const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
   if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
   return r.result.value;
 };
-const shot = async (name) => {
+const shot = async (name: string) => {
   const { data } = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(data, 'base64'));
 };
-const key = async (k) => {
+const key = async (k: string) => {
   for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: k, code: `Key${k.toUpperCase()}`, text: type === 'keyDown' ? k : undefined, windowsVirtualKeyCode: k.toUpperCase().charCodeAt(0) });
 };
 await send('Runtime.enable');
 await send('Log.enable');
 await send('Page.enable');
 
-const steps = [];
-async function step(name, fn, { wait = 700, screenshot = true } = {}) {
+const steps: Array<{ name: string; errors: string[] }> = [];
+async function step(name: string, fn: () => Promise<unknown>, { wait = 700, screenshot = true }: { wait?: number; screenshot?: boolean } = {}) {
   const before = problems.length;
   try {
     await fn();
     await sleep(wait);
     if (screenshot) await shot(name);
   } catch (e) {
-    problems.push(`步骤「${name}」出错：${e.message}`);
+    problems.push(`步骤「${name}」出错：${(e as Error).message}`);
   }
   steps.push({ name, errors: problems.slice(before) });
 }
-const click = (sel) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) throw new Error('找不到 ${sel}'); el.click(); return true; })()`);
+const click = (sel: string) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) throw new Error('找不到 ${sel}'); el.click(); return true; })()`);
 const modalHas = (min = 20) => evaluate(`(() => { const m = document.querySelector('#modal'); return !m.hidden && document.querySelector('#modal-card').textContent.trim().length >= ${min}; })()`);
 const closeModal = () => evaluate(`document.querySelector('#modal').hidden = true`);
 
@@ -278,7 +282,7 @@ await step('23-admin-evolution', async () => {
 });
 // 按世界配置模型服务：站点凭据、官方世界改用它、调度页的通道表、世界的 AI 设置与世界设置对话框
 await step('25-admin-site-credentials', async () => {
-  const post = (url, body, method = 'POST') => fetch(`${base}/${url}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+  const post = (url: string, body: unknown, method = 'POST') => fetch(`${base}/${url}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
   const c = await post('api/admin/llm-credentials', { name: '巡检用网关', provider: 'openai', baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'sk-browser-check-0000' });
   const r = await post('api/worlds/yunxi/ai', { source: 'own', credential: c.credential.id, models: { default: 'check-model' } }, 'PUT');
   if (!r.ok) throw new Error(`绑定失败：${JSON.stringify(r)}`);

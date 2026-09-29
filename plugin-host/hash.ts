@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 /** 列出目录下的所有文件（相对路径，排序；跳过以 . 开头的文件与目录） */
-export function listFiles(dir, base = dir) {
+export function listFiles(dir: string, base = dir): string[] {
   if (!fs.existsSync(dir)) return [];
-  const out = [];
+  const out: string[] = [];
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     if (e.name.startsWith('.')) continue;
     const p = path.join(dir, e.name);
@@ -16,15 +16,15 @@ export function listFiles(dir, base = dir) {
   return out.sort();
 }
 
-export const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
+export const sha256 = (buf: string | NodeJS.ArrayBufferView): string => crypto.createHash('sha256').update(buf).digest('hex');
 
 /** 每个文件的哈希 */
-export function fileHashes(dir) {
+export function fileHashes(dir: string): Record<string, string> {
   return Object.fromEntries(listFiles(dir).map((f) => [f, sha256(fs.readFileSync(path.join(dir, f)))]));
 }
 
 /** 整个目录的哈希：文件名与内容都参与计算，任何改动（哪怕一个字符）都会改变结果 */
-export function hashDir(dir, skip = []) {
+export function hashDir(dir: string, skip: string[] = []): string {
   const h = crypto.createHash('sha256');
   for (const [f, v] of Object.entries(fileHashes(dir))) {
     if (skip.includes(f)) continue;

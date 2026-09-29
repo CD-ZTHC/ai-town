@@ -2,6 +2,7 @@
 // 实施 Agent 按它写代码；审查员按它判断代码是否越界。内容从代码生成（能力清单），宿主接口更新后自动同步。
 import { OP_DOCS, effectsText, exprText } from '../server/worldai/manifest.ts';
 import { SANDBOX_HOOKS, PERMISSIONS, CONTENT_OPS } from '../plugin-host/schema.ts';
+import type { WorldSpec } from '../server/types/spec.ts';
 
 export const EXAMPLE_T2 = {
   'plugin.json': {
@@ -57,7 +58,7 @@ export function pluginCapabilities() {
 - 做不到（属于 T3）：新增钩子、改寻路/移动、改渲染器本身、改存档格式、改居民的思考提示词、改审批与安全模块`;
 }
 
-export function hostApiDoc(spec) {
+export function hostApiDoc(spec: WorldSpec): string {
   const locs = Object.entries(spec.locations).filter(([, l]) => l.public !== false).map(([id, l]) => `${id}(${l.name})`).join('、');
   return `# 云溪镇插件宿主接口（插件能做的全部事情）
 

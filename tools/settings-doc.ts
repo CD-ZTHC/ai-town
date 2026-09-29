@@ -2,15 +2,16 @@
 // mise run settings:doc：由设置声明表（server/settings/schema.js）生成 docs/settings.md
 import fs from 'node:fs';
 import { SETTINGS, GROUPS } from '../server/settings/schema.ts';
+import type { SettingDef } from '../server/settings/schema.ts';
 
-const fmt = (d) => {
+const fmt = (d: SettingDef) => {
   const v = typeof d.default === 'function' ? '（按其他设置推导）' : d.default;
   if (Array.isArray(v)) return v.length ? `\`${v.join(',')}\`` : '（空）';
   if (v === '' || v === undefined) return '（空）';
   if (typeof v === 'boolean') return v ? '开' : '关';
   return `\`${v}\``;
 };
-const kind = (d) => ({ int: '整数', number: '数字', bool: '开关', string: '文本', list: '逗号分隔的列表', enum: (d.values || []).map((x) => `\`${x || '（空）'}\``).join(' / ') }[d.kind]);
+const kind = (d: SettingDef) => ({ int: '整数', number: '数字', bool: '开关', string: '文本', list: '逗号分隔的列表', enum: (d.values || []).map((x) => `\`${x || '（空）'}\``).join(' / ') }[d.kind]);
 
 let out = `# 设置项
 
@@ -25,7 +26,7 @@ let out = `# 设置项
 - 还起作用的环境变量（启动必需的项，或还没保存过、要导入的项）写错时，服务拒绝启动并指出是哪一项。
 `;
 for (const [g, title] of Object.entries(GROUPS)) {
-  const rows = Object.entries(SETTINGS).filter(([, d]) => d.group === g);
+  const rows = Object.entries(SETTINGS as Record<string, SettingDef>).filter(([, d]) => d.group === g);
   if (!rows.length) continue;
   out += `\n## ${title}\n\n| 键 | 说明 | 取值 | 默认 | 生效 |\n| --- | --- | --- | --- | --- |\n`;
   for (const [k, d] of rows) {
