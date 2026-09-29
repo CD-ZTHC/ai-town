@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defaultSpec } from '../server/kernel/spec.ts';
-import '../plugin-host/builtin.js';
+import '../plugin-host/builtin.ts';
 import { manifestMarkdown } from '../server/worldai/manifest.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');

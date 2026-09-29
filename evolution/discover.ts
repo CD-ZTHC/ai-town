@@ -2,7 +2,7 @@
 //   1. 修复被自动回滚的插件（每个插件最多修 2 次）
 //   2. AI 心愿单里的能力缺口（管理员「采纳」的优先，其次按出现次数；「忽略」的不做）
 //   3. 没有别的事可做时，每天最多一次，让引擎根据小镇近况自己想一个小功能（EVOLVE_IDEAS=0 关闭）
-import { readJSON, loadJobs, str } from './common.js';
+import { readJSON, loadJobs, str } from './common.ts';
 import { get as setting } from '../server/settings/index.ts';
 
 const MAX_TRIES = 2;

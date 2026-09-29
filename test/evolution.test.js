@@ -9,11 +9,11 @@ import { fileURLToPath } from 'node:url';
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'EVOLVE', 'EVOLVE_REVIEW_MODEL', 'EVOLVE_REVIEW_BASE_URL']) delete process.env[k];
 process.env.EVOLVE_SHADOW_HOURS = '2';
 const llm = await import('../server/llm.ts');
-const { paths, Budget, readJSON } = await import('../evolution/common.js');
-const { makeLLM } = await import('../evolution/llm.js');
-const { runJob } = await import('../evolution/pipeline.js');
-const { discover } = await import('../evolution/discover.js');
-const { hashDir } = await import('../plugin-host/hash.js');
+const { paths, Budget, readJSON } = await import('../evolution/common.ts');
+const { makeLLM } = await import('../evolution/llm.ts');
+const { runJob } = await import('../evolution/pipeline.ts');
+const { discover } = await import('../evolution/discover.ts');
+const { hashDir } = await import('../plugin-host/hash.ts');
 const { Town } = await import('../server/sim.ts');
 
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'evolved');

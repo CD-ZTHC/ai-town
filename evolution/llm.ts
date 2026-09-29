@@ -2,7 +2,7 @@
 // 避免「同一个模型写、同一个模型审」的共同盲区。所有调用计入进化预算（EVOLVE_BUDGET，0 为不限）。
 import * as base from '../server/llm.ts';
 import { openaiCompatible } from '../server/llm-providers.ts';
-import { BudgetExceeded } from './common.js';
+import { BudgetExceeded } from './common.ts';
 import { get as setting } from '../server/settings/index.ts';
 import { currentContext } from '../server/scheduler/context.ts';
 

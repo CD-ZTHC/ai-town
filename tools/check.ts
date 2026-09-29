@@ -64,4 +64,4 @@ for (const f of files('public/js', '.js')) {
 }
 if (problems.length) { console.error(`✖ 前端资源引用有问题：\n  ${problems.join('\n  ')}`); process.exit(1); }
 // 冻结区（server/ public/ plugin-host/ evolution/ plugins/builtin/）的哈希锁：人工改动后要 mise run core:lock
-process.exit(spawnSync(process.execPath, ['tools/core-guard.js'], { stdio: 'inherit' }).status ?? 1);
+process.exit(spawnSync(process.execPath, ['tools/core-guard.ts'], { stdio: 'inherit' }).status ?? 1);

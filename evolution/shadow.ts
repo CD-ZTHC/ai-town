@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { ROOT } from './common.js';
+import { ROOT } from './common.ts';
 import { activeDir } from '../server/timelines.ts';
 import { get as setting } from '../server/settings/index.ts';
 import { withTrialSlot } from '../server/trial-lock.ts';
@@ -20,7 +20,7 @@ function runOne(P, job, timeoutMs) {
     // 路径里有符号链接时（例如 macOS 的 /var → /private/var），权限模型有的地方按原路径、有的按真实路径比对，两种都放行
     const both = (flag, p) => [...new Set([p, real(p)])].map((x) => `${flag}=${x}`);
     const packRead = P.world?.packDir ? both('--allow-fs-read', P.world.packDir) : [];
-    const args = ['--no-warnings', `--max-old-space-size=${setting('CHILD_HEAP_MB')}`, '--permission', ...both('--allow-fs-read', ROOT), ...both('--allow-fs-read', P.evo), ...packRead, ...both('--allow-fs-read', job.workDir), ...both('--allow-fs-write', job.workDir), '--allow-child-process', path.join(ROOT, 'evolution', 'shadow-runner.js'), JSON.stringify(job)];
+    const args = ['--no-warnings', `--max-old-space-size=${setting('CHILD_HEAP_MB')}`, '--permission', ...both('--allow-fs-read', ROOT), ...both('--allow-fs-read', P.evo), ...packRead, ...both('--allow-fs-read', job.workDir), ...both('--allow-fs-write', job.workDir), '--allow-child-process', path.join(ROOT, 'evolution', 'shadow-runner.ts'), JSON.stringify(job)];
     const child = spawn(process.execPath, args, { cwd: ROOT, env: { PATH: process.env.PATH || '', NODE_ENV: 'shadow' }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';

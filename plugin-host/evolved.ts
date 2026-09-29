@@ -8,12 +8,12 @@ import path from 'node:path';
 import * as llm from '../server/llm.ts';
 import { EFFECTS, checkEffects, runEffects, posOf } from '../server/kernel/effects.ts';
 import { replay, OPS } from '../server/kernel/ops.ts';
-import { registerEffect, unregisterSource } from './registry.js';
-import { validateManifest, checkArgs, CONTENT_OPS, cleanOverlay } from './schema.js';
-import { hashDir } from './hash.js';
-import { staticCheck } from './sandbox/static-check.js';
-import { SandboxClient } from './sandbox/client.js';
-import { ROOT } from './builtin.js';
+import { registerEffect, unregisterSource } from './registry.ts';
+import { validateManifest, checkArgs, CONTENT_OPS, cleanOverlay } from './schema.ts';
+import { hashDir } from './hash.ts';
+import { staticCheck } from './sandbox/static-check.ts';
+import { SandboxClient } from './sandbox/client.ts';
+import { ROOT } from './builtin.ts';
 import { env as settingsEnv } from '../server/settings/index.ts';
 
 const readJSON = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };

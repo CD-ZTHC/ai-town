@@ -8,11 +8,11 @@ import path from 'node:path';
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER']) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
 const llm = await import('../server/llm.ts');
-const { registerEffect, registerExprFn, extensions } = await import('../plugin-host/registry.js');
+const { registerEffect, registerExprFn, extensions } = await import('../plugin-host/registry.ts');
 const { EFFECTS, checkEffects } = await import('../server/kernel/effects.ts');
 const { manifestText, manifestMarkdown } = await import('../server/worldai/manifest.ts');
 const { defaultSpec } = await import('../server/kernel/spec.ts');
-const { evolve, nextNumber } = await import('../tools/evolve.js');
+const { evolve, nextNumber } = await import('../tools/evolve.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-p5-'));
 const tick = () => new Promise((r) => setImmediate(r));

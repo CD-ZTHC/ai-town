@@ -4,7 +4,7 @@
 import { EFFECTS, EXPR_FN_DOCS, VFX } from '../kernel/effects.ts';
 import { OPS } from '../kernel/ops.ts';
 import { PARAM_BOUNDS, BODY_PLANS } from '../kernel/spec.ts';
-import { extensions } from '../../plugin-host/registry.js';
+import { extensions } from '../../plugin-host/registry.ts';
 import type { WorldSpec } from '../types/spec.ts';
 
 // 世界架构师可以使用的操作及参数格式

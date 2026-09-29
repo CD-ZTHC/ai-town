@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 7 个游戏日的无头回放（固定随机种子 + 录制的模型回复），输出 AI 表现指标与最终状态的摘要。
 // 用来确认重构没有改变模拟的行为（重构方案 §8.2：B5、B6 迁移前后对比）：
-//   node tools/replay-metrics.js > after.json；git stash；node tools/replay-metrics.js > before.json；git stash pop；cmp before.json after.json
+//   node tools/replay-metrics.ts > after.json；git stash；node tools/replay-metrics.ts > before.json；git stash pop；cmp before.json after.json
 // 与 test/replay.test.js 用同一个种子与录制回复；那边检查不变量，这里只输出可比较的结果。
 import crypto from 'node:crypto';
 import fs from 'node:fs';

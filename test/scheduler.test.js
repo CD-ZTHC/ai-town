@@ -149,7 +149,7 @@ test('进化引擎经 IPC 调用模型：进入主进程的统一队列（P4）�
   const fs = await import('node:fs');
   const os = await import('node:os');
   const path = await import('node:path');
-  const { hostCall } = await import('../evolution/llm.js');
+  const { hostCall } = await import('../evolution/llm.ts');
   const events = [];
   const off = llm.onUsage((e) => events.push(e));
   llm.setProvider({ name: 'fake', enabled: true, complete: async () => ({ content: '{"verdict":"ok"}', usage: { prompt: 20, completion: 10 } }) });
@@ -157,7 +157,7 @@ test('进化引擎经 IPC 调用模型：进入主进程的统一队列（P4）�
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-ipc-'));
   const script = path.join(dir, 'child.mjs');
   fs.writeFileSync(script, `
-import { makeLLM } from ${JSON.stringify(path.resolve('evolution/llm.js'))};
+import { makeLLM } from ${JSON.stringify(path.resolve('evolution/llm.ts'))};
 let used = 0;
 const llm = makeLLM({ left: () => Infinity, add: (n) => { used += n; } }, { worldId: 'little-red' });
 const r = await llm.call('评审', [{ role: 'user', content: 'x' }], { review: true });

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // 内核冻结守卫（自主演化设计 §8）
-//   node tools/core-guard.js          校验：冻结区的文件与 core.lock 一致；AI 插件没有引用插件目录以外的代码
-//   node tools/core-guard.js --lock   人工修改冻结区之后，重新生成 core.lock（mise run core:lock）
+//   node tools/core-guard.ts          校验：冻结区的文件与 core.lock 一致；AI 插件没有引用插件目录以外的代码
+//   node tools/core-guard.ts --lock   人工修改冻结区之后，重新生成 core.lock（mise run core:lock）
 // 冻结区：server/ public/ plugin-host/ evolution/ plugins/builtin/ —— 只能由人修改；进化引擎在运行时也没有写权限。
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fileHashes } from '../plugin-host/hash.js';
+import { fileHashes } from '../plugin-host/hash.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const FROZEN = ['server', 'public', 'plugin-host', 'evolution', 'plugins/builtin', 'worlds'];

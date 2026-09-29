@@ -30,17 +30,17 @@ jobs:
       - name: 安装依赖（Node 26 连同可选依赖 AI SDK 一起装）
         run: npm ci --no-audit --no-fund ${{ !matrix.sdk && '--omit=optional' || '' }}
       - name: 语法检查
-        run: node tools/check.js
+        run: node tools/check.ts
       - name: 类型检查（TypeScript 7 的原生编译器在可选依赖里，只在装了可选依赖的任务里跑）
         if: matrix.sdk
         run: npx tsc -p .
       - name: 测试（含 7 个游戏日的无头回放，不调用 LLM）
         run: node --test test/*.test.js
       - name: AI 模块流程检查（录制回复，不联网）
-        run: node tools/smoke-llm.js --mock
+        run: node tools/smoke-llm.ts --mock
       - name: 前端冒烟检查（无头 Chrome：各个面板与三种模式没有控制台错误）
         if: matrix.sdk
-        run: node tools/browser-check.js --out shots
+        run: node tools/browser-check.ts --out shots
       - name: 保存截图
         if: matrix.sdk && always()
         uses: actions/upload-artifact@v4

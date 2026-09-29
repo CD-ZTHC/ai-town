@@ -2,7 +2,7 @@
 // mise run smoke：用真实模型对每个 AI 模块各做一次调用，检查输出能否被系统接受，并统计耗时与 token 用量。
 // 用于接入新的模型 / 网关时的快速验收；默认 token 上限 200000（LLM_DAILY_TOKENS 可覆盖），不会跑完整一季。
 //
-// 用法：BASE_URL=… API_KEY=… [MODEL=… MODEL_FAST=… MODEL_SMART=…] node tools/smoke-llm.js [--only 模块名,…] [--mock]
+// 用法：BASE_URL=… API_KEY=… [MODEL=… MODEL_FAST=… MODEL_SMART=…] node tools/smoke-llm.ts [--only 模块名,…] [--mock]
 //   --mock：不联网，用假回复走一遍流程（检查脚本本身）
 import fs from 'node:fs';
 import os from 'node:os';
@@ -93,7 +93,7 @@ const STEPS = {
   async evolve() {
     town.gaps = [{ id: 'gapS', need: '拆除新增的建筑', why: '想给新集市腾地方', by: 'visitor', intent: '把观星塔拆了建集市', count: 2, status: 'adopted' }];
     town.save();
-    const { evolve } = await import('./evolve.js');
+    const { evolve } = await import('./evolve.ts');
     const out = fs.mkdtempSync(path.join(os.tmpdir(), 'town-smoke-rfc-'));
     const r = await evolve({ data: dir, out, limit: 1 });
     const w = r.written[0];

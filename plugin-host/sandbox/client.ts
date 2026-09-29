@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trackChild } from '../../server/memstat.ts';
 
-const RUNNER = path.join(path.dirname(fileURLToPath(import.meta.url)), 'runner.js');
+const RUNNER = path.join(path.dirname(fileURLToPath(import.meta.url)), 'runner.ts');
 // 路径里有符号链接时（例如 macOS 的 /var → /private/var），权限模型有的地方按原路径、有的按真实路径比对，两种都放行
 const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
 const readable = (p) => [...new Set([path.resolve(p), real(p)])].map((x) => `--allow-fs-read=${x}`);

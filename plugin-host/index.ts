@@ -1,8 +1,8 @@
 // 插件宿主（自主演化设计 §3、§5）：内核与插件之间唯一的接口层。
 // - 内置插件（plugins/builtin/）：人工维护，进程内运行，可以直接使用小镇对象
 // - AI 插件（plugins/evolved/）：见 evolved.js，数据类以规格覆盖层叠加，代码类在沙箱子进程里运行
-import { builtins } from './builtin.js';
-import { registerEffect, registerExprFn } from './registry.js';
+import { builtins } from './builtin.ts';
+import { registerEffect, registerExprFn } from './registry.ts';
 import { get as setting } from '../server/settings/index.ts';
 
 export class PluginHost {

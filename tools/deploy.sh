@@ -38,7 +38,7 @@ trap 'rm -rf "$BUILD"' EXIT
 git archive "$REF" | tar -x -C "$BUILD"
 echo "$REV" > "$BUILD/REVISION"
 (cd "$BUILD" && npm ci --omit=dev --no-audit --no-fund --loglevel=error)
-(cd "$BUILD" && node tools/check.js >/dev/null)
+(cd "$BUILD" && node tools/check.ts >/dev/null)
 echo "▶ 上传（$(du -sh "$BUILD" | cut -f1)）"
 ssh "$HOST" "rm -rf '$DIR.new' && mkdir -p '$DIR.new'"
 tar -czf - -C "$BUILD" . | ssh "$HOST" "tar -xzf - -C '$DIR.new'"

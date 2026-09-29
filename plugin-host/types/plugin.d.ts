@@ -1,5 +1,5 @@
 // AI 插件契约（重构方案 §8.1、D4）：插件保持 JS，这份声明只作为生成器与人工编写时的参考，
-// 与 plugin-host/schema.js（清单校验）、plugin-host/sandbox/runner.js（沙箱里的 api）、plugin-host/evolved.js（世界视图）保持一致。
+// 与 plugin-host/schema.ts（清单校验）、plugin-host/sandbox/runner.ts（沙箱里的 api）、plugin-host/evolved.ts（世界视图）保持一致。
 
 export type Tier = 'T0' | 'T1' | 'T2';
 export type Permission = 'world.read' | 'effects' | 'store' | 'llm' | 'routes' | 'ui.panel' | 'ui.overlay';

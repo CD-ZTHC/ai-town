@@ -3,13 +3,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { validateManifest, CONTENT_OPS, checkArgs, cleanOverlay } from '../plugin-host/schema.js';
-import { staticCheck } from '../plugin-host/sandbox/static-check.js';
-import { SandboxClient, runPluginTests } from '../plugin-host/sandbox/client.js';
+import { validateManifest, CONTENT_OPS, checkArgs, cleanOverlay } from '../plugin-host/schema.ts';
+import { staticCheck } from '../plugin-host/sandbox/static-check.ts';
+import { SandboxClient, runPluginTests } from '../plugin-host/sandbox/client.ts';
 import { checkEffects } from '../server/kernel/effects.ts';
 import { replay } from '../server/kernel/ops.ts';
 import { ruleCheck } from '../server/worldai/canon.ts';
-import { readJSON } from './common.js';
+import { readJSON } from './common.ts';
 
 /** 按参数 schema 造一组合法的示例参数 */
 export function sampleArgs(schema, spec) {

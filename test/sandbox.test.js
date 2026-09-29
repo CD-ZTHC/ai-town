@@ -10,10 +10,10 @@ for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'D
 const { Town } = await import('../server/sim.ts');
 const llm = await import('../server/llm.ts');
 const { EFFECTS, runEffects } = await import('../server/kernel/effects.ts');
-const { staticCheck } = await import('../plugin-host/sandbox/static-check.js');
-const { SandboxClient, runPluginTests } = await import('../plugin-host/sandbox/client.js');
-const { hashDir } = await import('../plugin-host/hash.js');
-const { validateManifest, checkArgs } = await import('../plugin-host/schema.js');
+const { staticCheck } = await import('../plugin-host/sandbox/static-check.ts');
+const { SandboxClient, runPluginTests } = await import('../plugin-host/sandbox/client.ts');
+const { hashDir } = await import('../plugin-host/hash.ts');
+const { validateManifest, checkArgs } = await import('../plugin-host/schema.ts');
 
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'evolved');
 const tmp = (p = 'town-e3-') => fs.mkdtempSync(path.join(os.tmpdir(), p));
@@ -242,8 +242,8 @@ test('长期没人用的代码插件：提议退役 → 采纳后停用 → 撤�
 });
 
 test('独立运行的进化引擎能联网（要调用模型）；经 IPC 调用模型的引擎与沙箱进程不能', async (t) => {
-  const { engineArgs } = await import('../evolution/common.js');
-  const { sandboxArgs } = await import('../plugin-host/sandbox/client.js');
+  const { engineArgs } = await import('../evolution/common.ts');
+  const { sandboxArgs } = await import('../plugin-host/sandbox/client.ts');
   const http = await import('node:http');
   const server = http.createServer((req, res) => res.end('ok'));
   await new Promise((r) => server.listen(0, '127.0.0.1', r));

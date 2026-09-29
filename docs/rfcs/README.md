@@ -18,9 +18,9 @@
 
 ```bash
 mise run evolve:rfc                  # 处理已采纳、还没有文档的缺口（最多 3 个）
-node tools/evolve.js --all           # 也处理未处理的缺口（按出现次数）
-node tools/evolve.js --offline       # 不调用 LLM，只生成带数据的骨架
-node tools/evolve.js --dry-run       # 只看会生成什么
+node tools/evolve.ts --all           # 也处理未处理的缺口（按出现次数）
+node tools/evolve.ts --offline       # 不调用 LLM，只生成带数据的骨架
+node tools/evolve.ts --dry-run       # 只看会生成什么
 mise run manifest                    # 重新生成 docs/capabilities.md
 ```
 
@@ -32,7 +32,7 @@ mise run manifest                    # 重新生成 docs/capabilities.md
 
 ```js
 // plugins/builtin/my-feature/server.js
-import { registerEffect } from '../../../plugin-host/registry.js';
+import { registerEffect } from '../../../plugin-host/registry.ts';
 import { checkTarget, resolveTargets } from '../../../server/kernel/effects.js';
 
 // 效果是进程级的全局注册：在模块加载时注册一次

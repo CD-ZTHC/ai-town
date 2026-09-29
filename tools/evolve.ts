@@ -2,7 +2,7 @@
 // mise run evolve：把 AI 心愿单里的能力缺口整理成需求文档（RFC），写进 docs/rfcs/。
 // 按项目决定，这里只生成文档，不写代码、不开 PR；给人实现的需求（例如需要改内核的 T3 需求）用它整理；可以自动实现的需求由进化引擎（evolution/）处理。
 //
-// 用法：node tools/evolve.js [--data data] [--out docs/rfcs] [--limit 3] [--all] [--offline] [--dry-run]
+// 用法：node tools/evolve.ts [--data data] [--out docs/rfcs] [--limit 3] [--all] [--offline] [--dry-run]
 //   默认只处理管理员「采纳」且还没有需求文档的缺口；--all 同时处理未处理（open）的缺口（按出现次数排序）
 //   有 LLM 配置时由强模型撰写文档；--offline 或没有配置时生成带数据的骨架，供人补全
 import fs from 'node:fs';
@@ -156,7 +156,7 @@ export async function evolve(opts = {}) {
   // 用存档里的世界（默认规格 + 操作历史）生成当时的能力清单
   const { defaultSpec } = await import('../server/kernel/spec.ts');
   const { replay } = await import('../server/kernel/ops.ts');
-  await import('../plugin-host/builtin.js');
+  await import('../plugin-host/builtin.ts');
   const { manifestText, effectsText } = await import('../server/worldai/manifest.ts');
   const spec = replay(defaultSpec(), save.specOps || []).spec;
   const context = { manifest: manifestText(spec), effects: effectsText() };

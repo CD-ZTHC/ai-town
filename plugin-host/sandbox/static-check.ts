@@ -2,7 +2,7 @@
 // 这是纵深防御的第一层：真正的边界是沙箱进程；这里负责尽早拦下明显的危险写法、混淆与「写给审查员的指令」。
 import fs from 'node:fs';
 import path from 'node:path';
-import { listFiles } from '../hash.js';
+import { listFiles } from '../hash.ts';
 
 export const LIMITS = { files: 10, fileBytes: 40_000, totalBytes: 120_000 };
 const ALLOWED_FILES = /^(plugin\.json|content\.json|server\.js|ui\.js|test\.js|lib\/[a-z0-9-]{1,24}\.js|RFC\.md|REVIEW\.md|CHANGELOG\.md)$/;

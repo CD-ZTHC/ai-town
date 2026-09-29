@@ -4,18 +4,18 @@
 // 需要改内核的需求（T3）只写需求文档到 data/evolution/rfcs/，交给人。
 import fs from 'node:fs';
 import path from 'node:path';
-import { hashDir } from '../plugin-host/hash.js';
+import { hashDir } from '../plugin-host/hash.ts';
 import { defaultSpec } from '../server/kernel/spec.ts';
 import { replay } from '../server/kernel/ops.ts';
 import { manifestText } from '../server/worldai/manifest.ts';
 import { activeDir } from '../server/timelines.ts';
 import { loadPack, packSpec } from '../server/worlds/pack.ts';
-import { runGate } from './gate.js';
-import { runShadow } from './shadow.js';
-import { hostApiDoc, pluginCapabilities } from './prompts.js';
-import { writeRfc, reviewRfc, implement, review, finalSecurity } from './agents.js';
-import { reviewInfo } from './llm.js';
-import { readJSON, writeJSON, ledger, loadJobs, saveJobs, str, setEngine } from './common.js';
+import { runGate } from './gate.ts';
+import { runShadow } from './shadow.ts';
+import { hostApiDoc, pluginCapabilities } from './prompts.ts';
+import { writeRfc, reviewRfc, implement, review, finalSecurity } from './agents.ts';
+import { reviewInfo } from './llm.ts';
+import { readJSON, writeJSON, ledger, loadJobs, saveJobs, str, setEngine } from './common.ts';
 
 const RFC_ROUNDS = 2;
 const GATE_FIXES = 3;

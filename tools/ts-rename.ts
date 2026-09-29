@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // TypeScript 迁移的改名工具（重构方案 §8.2）：git mv 一批 .js → .ts，并把所有引用方的相对 import 改成 .ts。
-//   node tools/ts-rename.js server/scheduler server/memory.js …   （目录则递归处理其中的 .js）
+//   node tools/ts-rename.ts server/scheduler server/memory.js …   （目录则递归处理其中的 .js）
 //   --dry  只打印要改的地方
 // 只改能解析到被改名文件的相对路径：静态 import / export from、动态 import('…')、以及 path.join(…, 'x.js') 这类
 // 硬编码的入口（这些只打印提醒，需要人工确认）。
@@ -11,7 +11,7 @@ import { execFileSync } from 'node:child_process';
 const args = process.argv.slice(2);
 const dry = args.includes('--dry');
 const targets = args.filter((a) => !a.startsWith('--'));
-if (!targets.length) { console.error('用法：node tools/ts-rename.js <文件或目录>… [--dry]'); process.exit(2); }
+if (!targets.length) { console.error('用法：node tools/ts-rename.ts <文件或目录>… [--dry]'); process.exit(2); }
 
 const ROOTS = ['server', 'plugin-host', 'plugins/builtin', 'evolution', 'tools', 'test'];
 function* walk(dir, ext = /\.(js|ts)$/) {

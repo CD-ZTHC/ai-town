@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // TypeScript 迁移的核对工具（重构方案 §8.2「不借迁移改逻辑」）：两个版本的代码去掉类型与注释后，按词法单元比对，
 // 列出所有差异块。补类型的提交里应该只剩等价改写（类字段声明、非空断言、括号……），逐条过一遍即可。
-//   node tools/ts-logic-diff.js <改名提交> <补类型提交 | WORKTREE> <文件>…
+//   node tools/ts-logic-diff.ts <改名提交> <补类型提交 | WORKTREE> <文件>…
 // 注：正则字面量里含引号时分词会把一段代码当成字符串，这类差异需要人工看原文。
 import fs from 'node:fs';
 import os from 'node:os';

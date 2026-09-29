@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 更换凭据加密主密钥（按世界配置模型服务设计 §3.4）。先停掉服务再运行：
-//   node tools/rotate-secrets.js                 生成新主密钥；用 <数据目录>/secret.key 时直接改写这个文件
-//   node tools/rotate-secrets.js <新主密钥>       用指定的主密钥（32 字节 base64 / hex）
+//   node tools/rotate-secrets.ts                 生成新主密钥；用 <数据目录>/secret.key 时直接改写这个文件
+//   node tools/rotate-secrets.ts <新主密钥>       用指定的主密钥（32 字节 base64 / hex）
 // 旧主密钥来自 SECRETS_KEY 环境变量，或 <数据目录>/secret.key。用环境变量时，运行完要把 SECRETS_KEY 换成新值。
 import fs from 'node:fs';
 import path from 'node:path';

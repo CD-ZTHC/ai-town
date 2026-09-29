@@ -2,15 +2,15 @@
 // 进化引擎（自主演化设计 §3、§6；多世界设计 §9）：常驻的独立进程，无人值守地发现需求 → 写需求文档 → 评审 → 实施 → 多轮评审 → 试运行 → 提交裁决。
 // 一台引擎服务所有开启进化的世界：在它们之间轮转「发现需求」，每个世界最多同时有 1 个任务在进行。
 // 启动方式：
-//   node evolution/daemon.js           常驻（有世界开启进化时由小镇服务器自动启动，模型调用经 IPC 交给服务器排队）
-//   node evolution/daemon.js --once    只处理一个需求（mise run evolve；默认官方世界云溪镇）
+//   node evolution/daemon.ts           常驻（有世界开启进化时由小镇服务器自动启动，模型调用经 IPC 交给服务器排队）
+//   node evolution/daemon.ts --once    只处理一个需求（mise run evolve；默认官方世界云溪镇）
 // 小镇服务器启动它时会加上 Node 权限模型：只能写开启进化的世界各自的 plugins/ 与 evolution/，以及 data/evolution/。
 import fs from 'node:fs';
 import path from 'node:path';
-import { paths, readJSON, setEngine, Budget, ledger, str, enabledWorlds, rotation, loadJobs, ROOT } from './common.js';
-import { makeLLM, reviewInfo } from './llm.js';
-import { discover } from './discover.js';
-import { runJob } from './pipeline.js';
+import { paths, readJSON, setEngine, Budget, ledger, str, enabledWorlds, rotation, loadJobs, ROOT } from './common.ts';
+import { makeLLM, reviewInfo } from './llm.ts';
+import { discover } from './discover.ts';
+import { runJob } from './pipeline.ts';
 import { get as setting } from '../server/settings/index.ts';
 
 const G = paths(); // 全站的目录（任务、引擎状态、账本、开启进化的世界列表）

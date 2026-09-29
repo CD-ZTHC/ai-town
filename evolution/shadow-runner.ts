@@ -1,5 +1,5 @@
 // 影子试运行的子进程：用当前存档的副本建一个小镇（不调用模型，居民按规则生活），装上（或不装）候选插件，
-// 高倍速跑若干游戏小时，输出指标。由 evolution/shadow.js 启动，只能写自己的工作目录。
+// 高倍速跑若干游戏小时，输出指标。由 evolution/shadow.ts 启动，只能写自己的工作目录。
 import fs from 'node:fs';
 import path from 'node:path';
 

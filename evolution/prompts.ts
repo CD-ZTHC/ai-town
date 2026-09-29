@@ -1,7 +1,7 @@
 // 给进化引擎各个 Agent 的「宿主接口文档」：插件能做什么、怎么写、有哪些限制。
 // 实施 Agent 按它写代码；审查员按它判断代码是否越界。内容从代码生成（能力清单），宿主接口更新后自动同步。
 import { OP_DOCS, effectsText, exprText } from '../server/worldai/manifest.ts';
-import { SANDBOX_HOOKS, PERMISSIONS, CONTENT_OPS } from '../plugin-host/schema.js';
+import { SANDBOX_HOOKS, PERMISSIONS, CONTENT_OPS } from '../plugin-host/schema.ts';
 
 export const EXAMPLE_T2 = {
   'plugin.json': {

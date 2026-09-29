@@ -61,7 +61,7 @@ cp .env.example .env      # 启动必需的几项；模型地址与密钥也可�
 mise run token            # 生成管理员令牌，把输出的 ADMIN_TOKEN=... 写进 .env
 ```
 
-世界自带模型服务的凭据用主密钥 `SECRETS_KEY` 加密。不配置时首次启动会自动生成 `data/secret.key`：**务必备份它**，丢了所有凭据都要重填；生产环境建议改用环境变量提供（`node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`）。更换主密钥：停服务后运行 `node tools/rotate-secrets.js`。
+世界自带模型服务的凭据用主密钥 `SECRETS_KEY` 加密。不配置时首次启动会自动生成 `data/secret.key`：**务必备份它**，丢了所有凭据都要重填；生产环境建议改用环境变量提供（`node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`）。更换主密钥：停服务后运行 `node tools/rotate-secrets.ts`。
 
 **2A. Docker 部署（推荐）**
 
@@ -302,7 +302,7 @@ Dockerfile, docker-compose.yml, .env.example
 plugin-host/   插件宿主：内置插件加载、AI 插件（哈希锁定、覆盖层、沙箱、灰度与熔断）、静态检查、沙箱运行器
 plugins/       builtin/（人维护的插件：架构师、施工、go-to）
 evolution/     进化引擎：需求发现、各个 Agent、自动闸门、影子试运行、流水线、守护进程
-core.lock      冻结区文件哈希（tools/core-guard.js）
+core.lock      冻结区文件哈希（tools/core-guard.ts）
 tools/         rotate-secrets.js（更换凭据加密主密钥）、evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查 + 冻结区校验）、browser-check.js（无头 Chrome 冒烟检查）、core-guard.js（冻结区校验）
 spec/mods/     Mod（AI 创造的内容包）
 test/          node:test 测试（AI SDK 相关的在没装时跳过）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复

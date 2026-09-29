@@ -2,7 +2,7 @@
 // mise run browser-check：用本机的无头 Chrome 打开小镇页面，逐个打开主要面板与三种模式，
 // 收集控制台错误与未捕获的异常，并截图（前端改动后的冒烟检查，零依赖：直接走 Chrome DevTools 协议）。
 //
-// 用法：node tools/browser-check.js [--out 截图目录] [--chrome Chrome 路径]
+// 用法：node tools/browser-check.ts [--out 截图目录] [--chrome Chrome 路径]
 // 会在临时目录里启动一个不连模型的小镇服务器；有错误时退出码为 1。
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';

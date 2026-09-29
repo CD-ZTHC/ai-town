@@ -1,5 +1,5 @@
 // 内置插件：世界架构师。居民聊出来的建设点子（对话结束钩子）和导演、访客、管理员的意图都交给它。
-import { Architect } from './architect.js';
+import { Architect } from './architect.ts';
 
 export default {
   setup(town, api) {
