@@ -111,7 +111,7 @@
   "server/worlds/disk.ts": "cbd3885e2f01501bc7bc38149f1535eceb957dcf7e460da792411c44d477512e",
   "server/worlds/host.ts": "db449907d252ed9eeb749e30918049f289223145eaaf8401ab103d005e950226",
   "server/worlds/manager.ts": "01a45a71d81e0140279c4cc5620ecbbb75dcd486db61b5569dbdac940fa410ee",
-  "server/worlds/migrate.ts": "8fa3335c7797d178be367f452b3467151f37c582957f39debb453613bfb7cdc8",
+  "server/worlds/migrate.ts": "04e21bf59d6d26ba13bb4ce998e890c10e5d231d4e0e1d1ad1d8cbaef3ba150b",
   "server/worlds/pack.ts": "ce62a46e5f2ec81f32490e1d4764cc822d1a33164566fb0937d944fdb54a4644",
   "server/worlds/registry.ts": "88def9fb243a29aba1971e730bcafac03339078ecd9ede3520617483eb8f5e6c",
   "server/worlds/review.ts": "f760ccfbb8261fea8137476e1ff6e664002cb71b39e5461aad4e044700fa9b4c",

@@ -11,7 +11,7 @@ const { Town } = await import('../server/sim.ts');
 const llm = await import('../server/llm.ts');
 const { defaultSpec } = await import('../server/kernel/spec.ts');
 const { replay } = await import('../server/kernel/ops.ts');
-const { fixtureMock } = await import('./fixtures/llm/index.js');
+const { fixtureMock } = await import('./fixtures/llm/index.ts');
 
 const SEED = Number(process.env.REPLAY_SEED || 20260926);
 const DAYS = 7;

@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server/main.ts",
     "dev": "node --watch server/index.ts",
-    "test": "node --test test/*.test.js",
+    "test": "node --test test/*.test.ts",
     "check": "node tools/check.ts",
     "typecheck": "tsc -p ."
   },

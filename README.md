@@ -305,7 +305,7 @@ evolution/     进化引擎：需求发现、各个 Agent、自动闸门、影�
 core.lock      冻结区文件哈希（tools/core-guard.ts）
 tools/         rotate-secrets.js（更换凭据加密主密钥）、evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查 + 冻结区校验）、browser-check.js（无头 Chrome 冒烟检查）、core-guard.js（冻结区校验）
 spec/mods/     Mod（AI 创造的内容包）
-test/          node:test 测试（AI SDK 相关的在没装时跳过）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复
+test/          node:test 测试（AI SDK 相关的在没装时跳过）；replay.test.ts 无头回放，fixtures/llm/ 录制的模型回复
 .github/       CI：Node 22.18（不装可选依赖）/ Node 26（装上 AI SDK）跑语法检查、测试与 smoke --mock；Node 26 另跑类型检查与无头 Chrome 冒烟检查
 docs/design/   设计方案；docs/settings.md 全部设置项（自动生成）
 data/          accounts.db 账号 / 世界登记 / 举报 / 用量账本 / 审计 / 模型服务凭据（加密）；secret.key 凭据加密主密钥（没有用 SECRETS_KEY 时）；settings.json 面板保存的设置（版本）；evolution/ 进化引擎的任务与账本；

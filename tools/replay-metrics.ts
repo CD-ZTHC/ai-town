@@ -2,7 +2,7 @@
 // 7 个游戏日的无头回放（固定随机种子 + 录制的模型回复），输出 AI 表现指标与最终状态的摘要。
 // 用来确认重构没有改变模拟的行为（重构方案 §8.2：B5、B6 迁移前后对比）：
 //   node tools/replay-metrics.ts > after.json；git stash；node tools/replay-metrics.ts > before.json；git stash pop；cmp before.json after.json
-// 与 test/replay.test.js 用同一个种子与录制回复；那边检查不变量，这里只输出可比较的结果。
+// 与 test/replay.test.ts 用同一个种子与录制回复；那边检查不变量，这里只输出可比较的结果。
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -11,7 +11,7 @@ const root = process.cwd();
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER', 'MODS', 'PUBLIC_MODE', 'EMBED_MODEL']) delete process.env[k];
 const { Town } = await import(`${root}/server/sim.ts`);
 const llm = await import(`${root}/server/llm.ts`);
-const { fixtureMock } = await import(`${root}/test/fixtures/llm/index.js`);
+const { fixtureMock } = await import(`${root}/test/fixtures/llm/index.ts`);
 let s = 20260926 >>> 0;
 Math.random = () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32; };
 llm.setMock(fixtureMock());

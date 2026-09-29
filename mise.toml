@@ -47,7 +47,7 @@ run = "npx tsc -p ."
 
 [tasks.test]
 description = "运行测试（不调用 LLM，使用临时存档目录）"
-run = "node --test test/*.test.js"
+run = "node --test test/*.test.ts"
 
 [tasks.smoke]
 description = "用真实模型对每个 AI 模块各调用一次，检查输出与 token 用量（需要 .env 中的 BASE_URL / API_KEY）"

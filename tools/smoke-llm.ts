@@ -28,7 +28,7 @@ type Gap = import('../plugins/builtin/architect/architect.ts').Gap;
 
 if (MOCK) {
   // 与无头回放测试共用同一份录制回复
-  const { fixtureMock, loadFixtures } = await import('../test/fixtures/llm/index.js');
+  const { fixtureMock, loadFixtures } = await import('../test/fixtures/llm/index.ts');
   // 模拟模式的结果不能取决于本机 .env：不加载 Mod（Mod 会改地图，影响世界架构师的选址）；
   // 录制里有几条世界架构师的回复选址在 Mod 加的地点（lakeside_story）旁边，只用不依赖 Mod 的回复
   //（第一条选址写错、改正后的第二条通过，顺带走一遍修正流程）

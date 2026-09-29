@@ -1,5 +1,5 @@
 // 数据迁移（多世界设计 §13）：首次以多世界版本启动时，把 data/ 下的存档、操作日志、时间线、快照、向量缓存移到 data/worlds/yunxi/。
-// 迁移前先完整备份到 data/backup-4.0-<时间>/；迁移之后世界从新位置读出的状态与迁移前一致（见 test/worlds.test.js）。
+// 迁移前先完整备份到 data/backup-4.0-<时间>/；迁移之后世界从新位置读出的状态与迁移前一致（见 test/worlds.test.ts）。
 import fs from 'node:fs';
 import path from 'node:path';
 
