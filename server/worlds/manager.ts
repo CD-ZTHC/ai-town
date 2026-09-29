@@ -10,21 +10,33 @@ import { WorldRegistry } from './registry.ts';
 import { worldRoot } from './migrate.ts';
 import { checkDisk, diskLimit } from './disk.ts';
 import { get as setting } from '../settings/index.ts';
+import type { Town } from '../sim.ts';
+import type { World } from '../types/world.ts';
 
 export class WorldFullError extends Error {
-  constructor(retryAfter) { super('现在同时运行的世界已经满了，请稍后再来'); this.status = 503; this.retryAfter = retryAfter; this.full = true; }
+  declare status: number;
+  declare retryAfter: number;
+  declare full: boolean;
+  constructor(retryAfter: number) { super('现在同时运行的世界已经满了，请稍后再来'); this.status = 503; this.retryAfter = retryAfter; this.full = true; }
 }
 
 export class WorldManager {
+  declare data: string;
+  declare registry: WorldRegistry;
+  declare makeTownFor: (world: World, root: string) => Town;
+  declare onWire: ((world: World, town: Town) => void) | null;
+  declare ownerGrant: (world: World) => { quota?: { diskMB?: number } } | null;
+  declare now: () => number;
+  declare loaded: Map<string, WorldHost>;
+  declare lastDiskCheck: Map<string, number>;
   /**
-   * @param {object} o
-   * @param {string} o.data 数据根目录
-   * @param {WorldRegistry} o.registry
-   * @param {(world, root) => import('../sim.ts').Town} o.makeTown 按世界登记项创建 Town（root = data/worlds/<id>/）
-   * @param {(world, town) => void} [o.onWire] 新 Town 接线时的额外设置（例如决策的终审人）
-   * @param {(world) => object|null} [o.ownerGrant] 世界创建者的 genesis 授予（磁盘上限用）
+   * data：数据根目录；makeTown：按世界登记项创建 Town（root = data/worlds/<id>/）；
+   * onWire：新 Town 接线时的额外设置（例如决策的终审人）；ownerGrant：世界创建者的 genesis 授予（磁盘上限用）
    */
-  constructor({ data, registry, makeTown, onWire = null, ownerGrant = () => null, now = () => Date.now() }) {
+  constructor({ data, registry, makeTown, onWire = null, ownerGrant = () => null, now = () => Date.now() }: {
+    data: string; registry: WorldRegistry; makeTown: (world: World, root: string) => Town; onWire?: ((world: World, town: Town) => void) | null;
+    ownerGrant?: (world: World) => { quota?: { diskMB?: number } } | null; now?: () => number;
+  }) {
     this.data = data;
     this.registry = registry;
     this.makeTownFor = makeTown;
@@ -35,13 +47,13 @@ export class WorldManager {
     this.lastDiskCheck = new Map();
   }
 
-  pinned() { return new Set(setting('PINNED_WORLDS')); }
-  isPinned(id) { return this.pinned().has(id); }
-  get(id) { return this.loaded.get(id) || null; }
-  root(id) { return worldRoot(this.data, id); }
+  pinned(): Set<string> { return new Set(setting('PINNED_WORLDS')); }
+  isPinned(id: string): boolean { return this.pinned().has(id); }
+  get(id: string): WorldHost | null { return this.loaded.get(id) || null; }
+  root(id: string): string { return worldRoot(this.data, id); }
 
   /** 加载（或返回已加载的）世界 */
-  open(id) {
+  open(id: string): WorldHost {
     const hit = this.loaded.get(id);
     if (hit) return hit;
     const w = this.registry.get(id);
@@ -49,14 +61,14 @@ export class WorldManager {
     this.makeRoom();
     const root = this.root(id);
     fs.mkdirSync(root, { recursive: true });
-    let host = null; // 构造时就会接线第一个 Town，此时 host 还没赋值
+    let host: WorldHost | null = null; // 构造时就会接线第一个 Town，此时 host 还没赋值
     host = new WorldHost({
       id,
-      makeTown: () => this.makeTownFor(this.registry.get(id) || w, root),
+      makeTown: () => this.makeTownFor(this.registry.get(id) || w!, root),
       onWire: (t) => {
         t.paused = t.paused || this.registry.get(id)?.status === 'paused';
-        t.diskFull = host?.diskFull || false;
-        this.onWire?.(this.registry.get(id) || w, t);
+        t.diskFull = (host as WorldHost | null)?.diskFull || false;
+        this.onWire?.(this.registry.get(id) || w!, t);
       },
       idlePauseSec: () => setting('IDLE_PAUSE_SEC'),
       now: this.now,
@@ -70,27 +82,27 @@ export class WorldManager {
   }
 
   /** 腾出一个位置：卸载无人观看、空闲最久的非常驻世界；都有人在看就抛出 WorldFullError */
-  makeRoom() {
+  makeRoom(): void {
     const max = setting('MAX_ACTIVE_WORLDS');
     while (this.loaded.size >= max) {
       const idle = [...this.loaded.values()].filter((h) => !h.clients.size && !this.isPinned(h.id)).sort((a, b) => a.lastViewer - b.lastViewer);
       if (!idle.length) throw new WorldFullError(this.estimateWait());
-      this.close(idle[0].id, '为其他世界腾出位置');
+      this.close(idle[0]!.id, '为其他世界腾出位置');
     }
   }
 
   /** 世界满员时的预计等待（秒）：最早有观众离开之后，还要等休眠与卸载的时间 */
-  estimateWait() { return Math.max(60, setting('IDLE_PAUSE_SEC') + 60); }
+  estimateWait(): number { return Math.max(60, setting('IDLE_PAUSE_SEC') + 60); }
 
   /** 能不能再加载一个世界（不实际加载）；满员时返回预计等待秒数 */
-  canOpen(id) {
+  canOpen(id: string): { ok: boolean; retryAfter?: number } {
     if (this.loaded.has(id)) return { ok: true };
     if (this.loaded.size < setting('MAX_ACTIVE_WORLDS')) return { ok: true };
     const idle = [...this.loaded.values()].some((h) => !h.clients.size && !this.isPinned(h.id));
     return idle ? { ok: true } : { ok: false, retryAfter: this.estimateWait() };
   }
 
-  close(id, why = '') {
+  close(id: string, why = ''): boolean {
     const h = this.loaded.get(id);
     if (!h) return false;
     this.loaded.delete(id);
@@ -102,19 +114,19 @@ export class WorldManager {
   }
 
   /** 世界状态变了（下架、归档、暂停 / 恢复）：立即生效 */
-  onStatus(id) {
+  onStatus(id: string): void {
     const w = this.registry.get(id);
     const h = this.loaded.get(id);
     if (!h) return;
     h.world = w;
     if (!WorldRegistry.runnable(w)) { this.close(id, w ? w.statusReason || `世界已${w.status === 'suspended' ? '下架' : '关闭'}` : '世界已删除'); return; }
-    h.town.paused = w.status === 'paused';
+    h.town.paused = w!.status === 'paused';
   }
 
-  broadcastAll(event, data) { for (const h of this.loaded.values()) h.broadcast(event, data); }
+  broadcastAll(event: string, data: unknown): void { for (const h of this.loaded.values()) h.broadcast(event, data); }
 
   /** 定时调用：休眠、卸载、每小时统计磁盘 */
-  tick() {
+  tick(): void {
     const unloadAfter = (setting('IDLE_PAUSE_SEC') + setting('WORLD_UNLOAD_SEC')) * 1000;
     for (const h of [...this.loaded.values()]) {
       h.idleCheck();
@@ -124,13 +136,13 @@ export class WorldManager {
     // 常驻世界总是加载着
     for (const id of this.pinned()) {
       if (!this.loaded.has(id) && WorldRegistry.runnable(this.registry.get(id))) {
-        try { this.open(id); } catch (e) { console.warn(`[worlds] 常驻世界 ${id} 加载失败：`, e.message); }
+        try { this.open(id); } catch (e) { console.warn(`[worlds] 常驻世界 ${id} 加载失败：`, (e as Error).message); }
       }
     }
   }
 
   /** 统计磁盘（每小时一次，加载 / 卸载时立即）；超限先回收，仍然超限就标记 diskFull */
-  checkDisk(id, { force = false } = {}) {
+  checkDisk(id: string, { force = false }: { force?: boolean } = {}): ReturnType<typeof checkDisk> | null {
     const last = this.lastDiskCheck.get(id) || 0;
     if (!force && this.now() - last < 3600_000) return null;
     this.lastDiskCheck.set(id, this.now());
@@ -148,11 +160,11 @@ export class WorldManager {
   }
 
   /** 所有用户世界加起来的磁盘占用（字节） */
-  userDiskTotal() { return this.registry.list({ official: 0 }).reduce((s, w) => s + (w.diskBytes || 0), 0); }
+  userDiskTotal(): number { return this.registry.list({ official: 0 }).reduce((s, w) => s + (w.diskBytes || 0), 0); }
 
   view() {
     return [...this.loaded.values()].map((h) => ({ id: h.id, viewers: h.clients.size, idle: Boolean(h.town.idle), pinned: this.isPinned(h.id), day: h.town.day, lastViewer: h.lastViewer, diskFull: Boolean(h.diskFull) }));
   }
 
-  closeAll() { for (const id of [...this.loaded.keys()]) this.close(id, '服务器停止'); }
+  closeAll(): void { for (const id of [...this.loaded.keys()]) this.close(id, '服务器停止'); }
 }

@@ -12,8 +12,25 @@ import { identity } from './identity.ts';
 import { withContext } from '../scheduler/context.ts';
 import { get as setting } from '../settings/index.ts';
 import { Assets, etagMatches } from './assets.ts';
+import type { Accounts } from '../accounts/index.ts';
+import type { WorldHost, SseClient } from '../worlds/host.ts';
+import type { AppEnv, Ctx, Middleware } from '../types/http.ts';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
-export const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
+/** 世界页面的入口检查结果（http/pages.ts 的 worldPage） */
+export type PageResult = { ok: true; status?: undefined; html?: undefined } | { ok: false; status: number; html: string };
+
+/** 世界解析：按 id 找到（必要时加载）世界、检查可见性 */
+export interface WorldResolver {
+  defaultId(): string | null;
+  resolve(c: Ctx, id: string | null | undefined): WorldHost;
+  page(c: Ctx, id: string): PageResult | Promise<PageResult>;
+  health(): object;
+  /** 有大厅（多世界）：/ 是大厅页面 */
+  lobby?: boolean;
+}
+
+export const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 // 冻结：@hono/node-server 的轻量 Response 会往传入的 headers 对象里写 content-length，
 // 共享的对象一旦被写进去，之后所有响应都会带上错误的长度。所以这里永远只拷贝，不直接传
 export const SECURITY_HEADERS = Object.freeze({
@@ -26,13 +43,10 @@ export const SECURITY_HEADERS = Object.freeze({
 // AI 插件的前端面板：在 sandbox iframe（没有 allow-same-origin）里运行，CSP 禁止一切网络请求，只能通过 postMessage 与页面通信
 const PLUGIN_UI_CSP = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
 
-const withHeaders = (res, headers) => { for (const [k, v] of Object.entries(headers)) if (!/^content-length$/i.test(k) && !res.headers.has(k)) res.headers.set(k, v); return res; };
+const withHeaders = (res: Response, headers: Record<string, string>): Response => { for (const [k, v] of Object.entries(headers)) if (!/^content-length$/i.test(k) && !res.headers.has(k)) res.headers.set(k, v); return res; };
 
-/**
- * 只有一个世界时的适配器（测试用）：所有路径都指向这个 host
- * @param {import('../worlds/host.ts').WorldHost} host
- */
-export function singleWorld(host) {
+/** 只有一个世界时的适配器（测试用）：所有路径都指向这个 host */
+export function singleWorld(host: WorldHost): WorldResolver {
   return {
     defaultId: () => host.id,
     resolve: (c, id) => { if (id && id !== host.id) throw new HttpError(404, '世界不存在'); return host; },
@@ -42,38 +56,35 @@ export function singleWorld(host) {
 }
 
 /**
- * @param {object} o
- * @param {object} [o.worlds] 世界解析：{ defaultId(), resolve(c, id) → WorldHost（检查可见性、按需加载）, page(c, id) → { ok } | { status, html }, health() }
- * @param {(c) => import('../worlds/host.ts').WorldHost} [o.hostFor] 旧接口：只有一个世界（等同 worlds: singleWorld(host)）
- * @param {string} o.publicDir 静态资源目录
- * @param {() => object} [o.engineStatus]
- * @param {object} [o.admin] 管理员接口的依赖（见 admin-api.js）
- * @param {import('../accounts/index.ts').Accounts} [o.accounts] 账号（不传时只有本地模式可用）
- * @param {Array<[string, Hono]>} [o.routes] 其他全站接口（大厅、创世……），挂在 /api/<前缀> 下
- * @param {string|null} [o.revision] 部署时写入的 REVISION（git 短哈希，只用于展示）
+ * worlds：世界解析（检查可见性、按需加载）；hostFor：旧接口，只有一个世界（等同 worlds: singleWorld(host)）；
+ * publicDir：静态资源目录；admin：管理员接口的依赖（见 admin-api.ts）；accounts：账号（不传时只有本地模式可用）；
+ * routes：其他全站接口（大厅、创世……），挂在 /api/<前缀> 下；revision：部署时写入的 REVISION（git 短哈希，只用于展示）
  */
-export function createApp({ worlds = null, hostFor = null, publicDir, engineStatus, admin = {}, accounts = null, routes = [], revision = null }) {
+export function createApp({ worlds = null, hostFor = null, publicDir, engineStatus, admin = {}, accounts = null, routes = [], revision = null }: {
+  worlds?: WorldResolver | null; hostFor?: ((c?: Ctx) => WorldHost) | null; publicDir: string; engineStatus?: () => object; admin?: Record<string, unknown>;
+  accounts?: Accounts | null; routes?: Array<[string, Hono<AppEnv>]>; revision?: string | null;
+}): Hono<AppEnv> {
   const PUBLIC = path.resolve(publicDir);
-  const app = new Hono();
+  const app = new Hono<AppEnv>();
   // 前端资源版本（重构方案 §7）：内容哈希、HTML 改写与 import map、构建号
   const assets = new Assets(PUBLIC, { enabled: () => setting('ASSET_VERSIONING'), revision });
   if (!worlds) {
     worlds = {
       defaultId: () => null,
-      resolve: (c, id) => { const h = hostFor(c); if (id && id !== h.id) throw new HttpError(404, '世界不存在'); return h; },
+      resolve: (c, id) => { const h = hostFor!(c); if (id && id !== h.id) throw new HttpError(404, '世界不存在'); return h; },
       page: () => ({ ok: true }),
-      health: () => { const h = hostFor(); return { day: h.town.day, clients: h.clients.size, idle: !!h.town.idle }; },
+      health: () => { const h = hostFor!(); return { day: h.town.day, clients: h.clients.size, idle: !!h.town.idle }; },
     };
   }
 
-  app.onError((e, c) => {
+  app.onError((e: Error & { code?: string; status?: ContentfulStatusCode; errors?: string[] }, c) => {
     if (e instanceof HttpError) {
       const res = c.json({ error: e.message, ...e.extra }, e.status);
       if (e.extra.retryAfter) res.headers.set('Retry-After', String(e.extra.retryAfter));
       return withHeaders(res, { 'Cache-Control': 'no-store', ...SECURITY_HEADERS });
     }
     if (e.code === 'BUDGET') return withHeaders(c.json({ error: '今天小镇的 AI 额度已经用完了，明天再来吧 🌙' }, 429), { ...SECURITY_HEADERS });
-    if (e.status) return withHeaders(c.json({ error: e.message, ...(e.errors ? { errors: e.errors } : {}) }, e.status), { ...SECURITY_HEADERS });
+    if (e.status) return withHeaders(c.json({ error: e.message, ...(e.errors ? { errors: e.errors } : {}) }, e.status!), { ...SECURITY_HEADERS });
     console.warn('[api]', c.req.path, e.message);
     // 不向客户端暴露上游错误细节
     return withHeaders(c.json({ error: '居民们一时没反应过来，请稍后再试' }, 502), { ...SECURITY_HEADERS });
@@ -124,7 +135,7 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
 
   // ---------- 世界接口：/api/w/:world/*（设计里的路径）、/w/:world/api/*（世界页面的相对路径）、/api/*（旧路径 → 默认世界）----------
   const wapi = worldApi({ engineStatus, openStream, accounts });
-  const bind = (getId) => async (c, next) => {
+  const bind = (getId: (c: Ctx) => string | null | undefined): Middleware => async (c, next) => {
     const host = worlds.resolve(c, getId(c));
     c.set('host', host);
     await withContext({ worldId: host.id, userId: c.get('user')?.id || null }, () => next());
@@ -135,31 +146,31 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
   app.route('/w/:world/api', wapi);
   app.use('/api/*', async (c, next) => {
     if (c.req.path.startsWith('/api/w/')) return next();
-    return bind(() => worlds.defaultId())(c, next);
+    return bind(() => worlds!.defaultId())(c, next);
   });
   app.route('/api', wapi);
-  const notFound = (c) => { throw new HttpError(['GET', 'POST'].includes(c.req.method) ? 404 : 405, ['GET', 'POST'].includes(c.req.method) ? '不存在' : '不支持的方法'); };
+  const notFound = (c: Ctx): never => { throw new HttpError(['GET', 'POST'].includes(c.req.method) ? 404 : 405, ['GET', 'POST'].includes(c.req.method) ? '不存在' : '不支持的方法'); };
   app.all('/api/*', notFound);
   app.all('/w/:world/api/*', notFound);
 
   // ---------- AI 插件面板 ----------
   const bridge = () => (setting('ASSET_VERSIONING') ? assets.hash('js/plugin-bridge.js') : null);
-  app.get('/plugin-ui/*', (c) => servePluginUi(c, worlds.resolve(c, worlds.defaultId()), c.req.path, bridge()));
-  app.get('/w/:world/plugin-ui/*', (c) => servePluginUi(c, worlds.resolve(c, c.req.param('world')), c.req.path.replace(/^\/w\/[^/]+/, ''), bridge()));
+  app.get('/plugin-ui/*', (c) => servePluginUi(c, worlds!.resolve(c, worlds!.defaultId()), c.req.path, bridge()));
+  app.get('/w/:world/plugin-ui/*', (c) => servePluginUi(c, worlds!.resolve(c, c.req.param('world')), c.req.path.replace(/^\/w\/[^/]+/, ''), bridge()));
 
   // ---------- 页面：/ 大厅，/w/:world/ 世界页面（与原来的单世界页面相同，资源用相对路径）----------
   app.get('/w/:world', (c) => c.redirect(`${c.req.path}/`, 301));
   app.get('/w/:world/', identity({ accounts }), async (c) => {
-    const p = await worlds.page(c, c.req.param('world'));
+    const p = await worlds!.page(c, c.req.param('world'));
     if (!p.ok) return new Response(p.html, { status: p.status, headers: { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store', ...SECURITY_HEADERS } });
     return serveStatic(c, PUBLIC, '/index.html', assets);
   });
   app.all('/w/:world/*', (c) => {
-    let rel;
+    let rel: string;
     try { rel = decodeURIComponent(c.req.path).replace(/^\/w\/[^/]+/, ''); } catch { return c.json({ error: 'bad path' }, 400); }
     return serveStatic(c, PUBLIC, rel, assets);
   });
-  app.get('/', (c) => serveStatic(c, PUBLIC, worlds.lobby ? '/lobby.html' : '/index.html', assets));
+  app.get('/', (c) => serveStatic(c, PUBLIC, worlds!.lobby ? '/lobby.html' : '/index.html', assets));
   app.all('*', (c) => serveStatic(c, PUBLIC, null, assets));
   return app;
 }
@@ -170,15 +181,15 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
  *   tick   每位观众只留最新的一帧，发不出去的旧帧直接丢弃
  *   其他   进队列；队列积压超过 SSE_MAX_BUFFER_KB 时断开这个连接（页面会自动重连并重新拿 init）
  */
-export function openStream(c, host) {
+export function openStream(c: Ctx, host: WorldHost): Response {
   const ip = c.get('ip');
   let total = 0;
   for (const _ of host.clients) total++;
   if (total >= config.maxClients) throw new HttpError(503, '小镇访客太多了，请稍后再来');
   if (host.viewersFrom(ip) >= config.maxClientsPerIp) throw new HttpError(429, '同时打开的页面太多了');
   const client = sseClient(ip, () => cleanup());
-  let leave = null, ka = null;
-  const stream = new ReadableStream({
+  let leave: (() => void) | null = null, ka: ReturnType<typeof setInterval> | undefined;
+  const stream = new ReadableStream<Uint8Array>({
     start() {
       client.write('retry: 3000\n\n');
       client.write(`event: init\ndata: ${JSON.stringify({ ...host.town.initPayload(), build: c.get('build') || null })}\n\n`);
@@ -202,19 +213,18 @@ const sseEnc = new TextEncoder();
 /**
  * 一位 SSE 观众的发送缓冲。broadcast 调 push(event, bytes)（所有观众共用同一份字节）；write(text) 用于单独发给这一位的消息。
  * pull(ctrl) 在底层可写时被流调用：把排队的消息与最新一帧 tick 合成一块交出去；没有数据时等到有为止。
- * @param {string} ip
- * @param {() => void} onClose 连接被关闭（积压超限）时的清理
+ * onClose：连接被关闭（积压超限）时的清理
  */
-export function sseClient(ip, onClose = () => {}) {
-  let queue = [], queued = 0, tick = null;
-  let wake = null, ctrl = null, overflow = false;
+export function sseClient(ip: string, onClose: () => void = () => {}) {
+  let queue: Uint8Array[] = [], queued = 0, tick: Uint8Array | null = null;
+  let wake: (() => void) | null = null, ctrl: ReadableStreamDefaultController<Uint8Array> | null = null, overflow = false;
   const notify = () => { const w = wake; wake = null; w?.(); };
   const client = {
     ip,
     closed: false,
     /** 当前积压的字节数（队列 + 未发出的 tick） */
     get backlog() { return queued + (tick?.length || 0); },
-    push(event, bytes) {
+    push(event: string, bytes: Uint8Array): void {
       if (client.closed) return;
       if (event === 'tick') { tick = bytes; return notify(); }
       if (event === 'init') tick = null; // 新的 init 之后，旧 Town 的快照不再有意义
@@ -224,9 +234,9 @@ export function sseClient(ip, onClose = () => {}) {
       if (queue.length > 1 && queued > setting('SSE_MAX_BUFFER_KB') * 1024) { overflow = true; return client.close({ drop: true }); }
       notify();
     },
-    write(s) { client.push(/^event: init\n/.test(s) ? 'init' : 'msg', sseEnc.encode(s)); },
+    write(s: string): void { client.push(/^event: init\n/.test(s) ? 'init' : 'msg', sseEnc.encode(s)); },
     /** 关闭：默认先把已排队的消息（例如 closed 事件）发完再断开；drop 时立即丢弃 */
-    close({ drop = false } = {}) {
+    close({ drop = false }: { drop?: boolean } = {}): void {
       if (client.closed) return;
       client.closed = true;
       tick = null;
@@ -235,13 +245,13 @@ export function sseClient(ip, onClose = () => {}) {
       onClose();
     },
     get overflowed() { return overflow; },
-    async pull(c) {
+    async pull(c: ReadableStreamDefaultController<Uint8Array>): Promise<void> {
       ctrl = c;
-      while (!client.closed && !queue.length && !tick) await new Promise((r) => { wake = r; });
+      while (!client.closed && !queue.length && !tick) await new Promise<void>((r) => { wake = r; });
       if (!queue.length && !tick) { try { c.close(); } catch { /* 已关闭 */ } return; }
       const parts = tick ? [...queue, tick] : queue;
       queue = []; queued = 0; tick = null;
-      let out = parts[0];
+      let out = parts[0]!;
       if (parts.length > 1) {
         out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
         let o = 0;
@@ -250,10 +260,10 @@ export function sseClient(ip, onClose = () => {}) {
       c.enqueue(out);
     },
   };
-  return client;
+  return client satisfies SseClient;
 }
 
-function servePluginUi(c, host, p, bridgeHash = null) {
+function servePluginUi(c: Ctx, host: WorldHost, p: string, bridgeHash: string | null = null): Response {
   const m = /^\/plugin-ui\/([a-z][a-z0-9-]{2,31})\/(ui\.js|boot\.js)?$/.exec(p);
   const [, id, f] = m || [];
   const file = m && host.town.evolved.uiFile(id);
@@ -271,7 +281,7 @@ function servePluginUi(c, host, p, bridgeHash = null) {
  * 有 assets（资源清单）时按 §7.3 给缓存头：HTML 改写后 no-cache + 强 ETag；带正确 ?v= 的资源 immutable；其余 no-cache + 内容哈希 ETag。
  * 没有 assets 或 ASSET_VERSIONING 关闭时：全部 no-cache。
  */
-export function serveStatic(c, root, rel = null, assets = null) {
+export function serveStatic(c: Ctx, root: string, rel: string | null = null, assets: Assets | null = null): Response {
   const notFound = () => new Response('not found', { status: 404, headers: { ...SECURITY_HEADERS } });
   if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return withHeaders(c.json({ error: '不支持的方法' }, 405), { ...SECURITY_HEADERS });
   if (rel == null) {
@@ -280,7 +290,7 @@ export function serveStatic(c, root, rel = null, assets = null) {
   if (rel.endsWith('/')) rel += 'index.html';
   const file = path.normalize(path.join(root, rel));
   if (!file.startsWith(root + path.sep) || rel.split('/').some((seg) => seg.startsWith('.'))) return notFound();
-  let st;
+  let st: fs.Stats;
   try { st = fs.statSync(file); } catch { return notFound(); }
   if (!st.isFile()) return notFound();
   const type = MIME[path.extname(file)] || 'application/octet-stream';
@@ -290,12 +300,12 @@ export function serveStatic(c, root, rel = null, assets = null) {
 
   // HTML：改写入口 URL、注入构建号与 import map；CSP 放行注入的 import map（按内容哈希）
   if (on && path.extname(file) === '.html') {
-    const p = assets.page(relPosix, c.req.path);
+    const p = assets!.page(relPosix, c.req.path);
     if (p) {
       const csp = p.csp ? SECURITY_HEADERS['Content-Security-Policy'].replace("script-src 'self'", `script-src 'self' ${p.csp}`) : SECURITY_HEADERS['Content-Security-Policy'];
       const headers = { 'Content-Type': type, 'Cache-Control': 'no-cache', ETag: p.etag, ...SECURITY_HEADERS, 'Content-Security-Policy': csp };
       if (etagMatches(inm, p.etag)) return new Response(null, { status: 304, headers });
-      return new Response(c.req.method === 'HEAD' ? null : p.body, { status: 200, headers: { ...headers, 'Content-Length': String(p.body.length) } });
+      return new Response(c.req.method === 'HEAD' ? null : p.body as Uint8Array<ArrayBuffer>, { status: 200, headers: { ...headers, 'Content-Length': String(p.body.length) } });
     }
   }
 
@@ -307,5 +317,5 @@ export function serveStatic(c, root, rel = null, assets = null) {
   const headers = { 'Content-Type': type, 'Cache-Control': cache, ETag: etag, ...SECURITY_HEADERS };
   if (etagMatches(inm, etag)) return new Response(null, { status: 304, headers });
   if (c.req.method === 'HEAD') return new Response(null, { status: 200, headers: { ...headers, 'Content-Length': String(st.size) } });
-  return new Response(Readable.toWeb(fs.createReadStream(file)), { status: 200, headers: { ...headers, 'Content-Length': String(st.size) } });
+  return new Response(Readable.toWeb(fs.createReadStream(file)) as ReadableStream, { status: 200, headers: { ...headers, 'Content-Length': String(st.size) } });
 }

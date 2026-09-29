@@ -15,12 +15,12 @@ import type { FailureEvent, FailureKind, Profile } from './llm.ts';
 // 用到的世界登记项与凭据字段（worlds/registry.ts、accounts/llm-credentials.ts 在 B7 迁移）
 /** 暂停原因 */
 export interface Halt { code: string; message: string; credential?: string | null; at?: number }
-interface WorldEntry { id: string; official?: boolean; ownerId?: string | null; settings?: { ai?: RawAi | null; [k: string]: unknown } }
+interface WorldEntry { id: string; title?: string; official?: boolean; ownerId?: string | null; settings?: { ai?: RawAi | null; [k: string]: unknown } }
 /** settings.ai 的原始值（用户提交或存储的），由 normalizeAi 规范化 */
 type RawAi = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 interface Cred { id: string; owner: string; provider: string; baseUrl: string; updatedAt?: string | number; name?: string; status?: string; failCode?: string | null; lastError?: string; keyLast4?: string }
 interface Registry { get(id: string): WorldEntry | null; list(q?: object): WorldEntry[]; update(id: string, patch: object): unknown }
-interface Credentials { get(id: string): Cred | null; secret(id: string): string; mark(id: string, r: { status: string; failCode?: FailureKind | string | null; error?: string; models?: string[] | null }): void }
+interface Credentials { get(id: string): Cred | null; secret(id: string): string | null; mark(id: string, r: { status: string; failCode?: FailureKind | string | null; error?: string; models?: string[] | null }): void }
 
 /** 世界的 AI 配置（settings.ai）规范化后的形式 */
 export type AiConfig =
@@ -89,7 +89,7 @@ export interface WorldLlmOptions {
 
 export function createWorldLlm({ registry, credentials, audit = null, onHalt = null, onResume = null, makeProvider = null, now = () => Date.now() }: WorldLlmOptions) {
   const safeFetchFor = (cred: Cred) => makeSafeFetch({ allowPrivate: () => cred.owner === SITE || setting('USER_LLM_PRIVATE_NET') });
-  const raw = makeProvider || ((cred: Cred) => credentialProvider({ provider: cred.provider, baseUrl: cred.baseUrl, apiKey: credentials.secret(cred.id), fetch: safeFetchFor(cred) }));
+  const raw = makeProvider || ((cred: Cred) => credentialProvider({ provider: cred.provider, baseUrl: cred.baseUrl, apiKey: credentials.secret(cred.id)!, fetch: safeFetchFor(cred) }));
   /** 按凭据建 provider；它抛出的错误一律先脱敏（上游可能在错误里回显密钥），之后的统计、日志、接口都不会带出密钥 */
   function build(cred: Cred): Provider {
     const p = raw(cred);
@@ -360,7 +360,7 @@ export function createWorldLlm({ registry, credentials, audit = null, onHalt = n
     if (!ai.embed.model) return { env: { EMBED_MODEL: '' } };
     const cred = credentials.get(ai.embed.credential || ai.credential);
     if (!canUse(w, cred) || cred.provider !== 'openai') return { env: { EMBED_MODEL: '' } };
-    return { env: { EMBED_MODEL: ai.embed.model, EMBED_BASE_URL: cred.baseUrl, EMBED_API_KEY: credentials.secret(cred.id), EMBED_TIMEOUT_MS: String(setting('EMBED_TIMEOUT_MS')) }, fetch: safeFetchFor(cred) };
+    return { env: { EMBED_MODEL: ai.embed.model, EMBED_BASE_URL: cred.baseUrl, EMBED_API_KEY: credentials.secret(cred.id)!, EMBED_TIMEOUT_MS: String(setting('EMBED_TIMEOUT_MS')) }, fetch: safeFetchFor(cred) };
   }
 
   /** 进化评审：自带时用世界配置的评审模型（没配就用世界的强模型），不借用服务器的评审模型 */

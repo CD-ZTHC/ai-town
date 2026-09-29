@@ -13,24 +13,48 @@ import { get as setting } from '../settings/index.ts';
 import { reviewRating } from '../kernel/ratings.ts';
 import { STORYTELLERS } from '../kernel/spec.ts';
 import { DEATH_NAMED_DEFAULT } from './genesis-api.ts';
+import type { AppEnv, Ctx } from '../types/http.ts';
+import type { Accounts } from '../accounts/index.ts';
+import type { WorldRegistry } from '../worlds/registry.ts';
+import type { WorldManager } from '../worlds/manager.ts';
+import type { GenesisJobs } from '../genesis/jobs.ts';
+import type { AiConfig, createWorldLlm } from '../world-llm.ts';
+import type { AuditEntry, User } from '../types/account.ts';
+import type { World, WorldSettings } from '../types/world.ts';
+import type { Credential } from '../accounts/llm-credentials.ts';
+import type { GenArea, GenPersona } from '../genesis/assemble.ts';
 
-const clip = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+/** 世界的 AI 配置：server / own 两种，字段按 own 的形状读（server 时都是 undefined） */
+type AnyAi = AiConfig & Partial<Extract<AiConfig, { source: 'own' }>>;
+type Raw = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- 世界包里的对象（读进来的 JSON）
+
+/** 世界接口的依赖（server/index.ts 传入） */
+export interface WorldsDeps {
+  registry: WorldRegistry;
+  manager: WorldManager;
+  accounts?: Accounts | null;
+  jobs?: GenesisJobs | null;
+  /** 按世界配置模型服务 */
+  worldLlm?: ReturnType<typeof createWorldLlm> | null;
+  /** 这个世界可以引用的凭据（主人的；官方世界是站点凭据） */
+  credentialsFor?: (w: World) => Credential[];
+  /** 今日用量 { server, own } */
+  usage?: (worldId: string) => object;
+  /** 我的世界（含磁盘占用与上限） */
+  mine?: (u: User) => object[];
+  audit?: ((e: AuditEntry) => void) | null;
+  /** 测试可注入：发布审核 */
+  review?: typeof publishReview;
+}
+
+const clip = (v: unknown, max: number): string => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const EDITABLE = new Set(['drafting', 'preview']);
 
-/**
- * @param {object} deps
- * @param {import('../worlds/registry.ts').WorldRegistry} deps.registry
- * @param {import('../worlds/manager.ts').WorldManager} deps.manager
- * @param {import('../accounts/index.ts').Accounts} [deps.accounts]
- * @param {ReturnType<import('../world-llm.ts').createWorldLlm>} [deps.worldLlm] 按世界配置模型服务
- * @param {(w) => object[]} [deps.credentialsFor] 这个世界可以引用的凭据（主人的；官方世界是站点凭据）
- * @param {(worldId) => object} [deps.usage] 今日用量 { server, own }
- */
-export function worldsApi(deps) {
-  const api = new Hono();
-  deps = { audit: deps.accounts ? (e) => deps.accounts.audit(e) : null, ...deps };
+export function worldsApi(deps: WorldsDeps): Hono<AppEnv> {
+  const api = new Hono<AppEnv>();
+  deps = { audit: deps.accounts ? (e: AuditEntry) => deps.accounts!.audit(e) : null, ...deps };
   const { registry, manager, accounts } = deps;
-  const card = (w) => {
+  const card = (w: World) => {
     const h = manager.get(w.id);
     return {
       id: w.id, title: w.title, summary: w.summary, sourceTitle: w.sourceTitle, rating: w.rating, official: w.official, status: w.status,
@@ -64,14 +88,14 @@ export function worldsApi(deps) {
   });
 
   // ---------- 预览期编辑（多世界设计 §4.3 第 5 步）：owner 和管理员；发布之后不能再改世界包 ----------
-  const owned = (c, { editable = false } = {}) => {
+  const owned = (c: Ctx, { editable = false }: { editable?: boolean } = {}): World => {
     const w = registry.get(c.req.param('id'));
     const ok = authorize(c.get('who') || {}, 'world.manage', w);
-    if (!w || ok !== true) throw new HttpError(w ? 403 : 404, w ? ok : '世界不存在');
+    if (!w || ok !== true) throw new HttpError(w ? 403 : 404, w ? ok as string : '世界不存在');
     if (editable && !EDITABLE.has(w.status)) throw new HttpError(409, '世界发布之后不能再修改世界包');
     return w;
   };
-  const packDir = (id) => path.join(manager.root(id), 'pack');
+  const packDir = (id: string) => path.join(manager.root(id), 'pack');
 
   api.get('/:id/draft', (c) => {
     const w = owned(c);
@@ -79,8 +103,8 @@ export function worldsApi(deps) {
     const p = loadPack(packDir(w.id));
     const job = deps.jobs?.jobs.filter((j) => j.worldId === w.id && j.kind !== 'regen').at(-1);
     return c.json({
-      world: w, pack: { world: p.world, map: p.map, arcs: p.arcs, bible: p.bible ? { ...p.bible, characters: p.bible.characters?.map(({ witnesses, ...x }) => x) } : null },
-      report: job?.report || null, regen: deps.jobs?.jobs.filter((j) => j.worldId === w.id && j.kind === 'regen').slice(-5).reverse().map((j) => deps.jobs.view(j)) || [],
+      world: w, pack: { world: p.world, map: p.map, arcs: p.arcs, bible: p.bible ? { ...p.bible, characters: (p.bible as Raw).characters?.map(({ witnesses, ...x }: Raw) => x) } : null },
+      report: job?.report || null, regen: deps.jobs?.jobs.filter((j) => j.worldId === w.id && j.kind === 'regen').slice(-5).reverse().map((j) => deps.jobs!.view(j)) || [],
     });
   });
 
@@ -90,26 +114,26 @@ export function worldsApi(deps) {
     const dir = packDir(w.id);
     const p = loadPack(dir);
     const world = p.world;
-    const texts = [];
-    const set = (obj, k, v, max) => { if (v !== undefined) { obj[k] = clip(v, max); texts.push(obj[k]); } };
+    const texts: string[] = [];
+    const set = (obj: Raw, k: string, v: unknown, max: number) => { if (v !== undefined) { obj[k] = clip(v, max); texts.push(obj[k]); } };
     if (b.title !== undefined) { set(world.meta, 'name', b.title, 16); world.voice.name = world.meta.name; }
     if (b.lore) {
       set(world.lore, 'summary', b.lore.summary, 1500);
-      if (Array.isArray(b.lore.pillars)) { world.lore.pillars = b.lore.pillars.map((x) => clip(x, 80)).filter(Boolean).slice(0, 6); texts.push(...world.lore.pillars); }
+      if (Array.isArray(b.lore.pillars)) { world.lore.pillars = b.lore.pillars.map((x: unknown) => clip(x, 80)).filter(Boolean).slice(0, 6); texts.push(...world.lore.pillars); }
     }
     if (b.voice) {
       set(world.voice.ui, 'welcome', b.voice.welcome, 200);
       set(world.voice.chronicle, 'name', b.voice.chronicle, 16);
-      if (Array.isArray(b.voice.sampleEvents)) { world.voice.ui.sampleEvents = b.voice.sampleEvents.map((x) => clip(x, 60)).filter(Boolean).slice(0, 6); texts.push(...world.voice.ui.sampleEvents); }
+      if (Array.isArray(b.voice.sampleEvents)) { world.voice.ui.sampleEvents = b.voice.sampleEvents.map((x: unknown) => clip(x, 60)).filter(Boolean).slice(0, 6); texts.push(...world.voice.ui.sampleEvents); }
     }
     for (const e of Array.isArray(b.personas) ? b.personas.slice(0, 16) : []) {
-      const x = world.personas.find((q) => q.id === e.id);
+      const x = world.personas.find((q: GenPersona) => q.id === e.id);
       if (!x) throw new HttpError(404, `居民不存在：${e.id}`);
       set(x, 'name', e.name, 12); set(x, 'role', e.role, 30); set(x, 'persona', e.persona, 380); set(x, 'goal', e.goal, 120);
-      if (Array.isArray(e.memories)) { x.memories = e.memories.map((m) => clip(m, 80)).filter(Boolean).slice(0, 5); texts.push(...x.memories); }
+      if (Array.isArray(e.memories)) { x.memories = e.memories.map((m: unknown) => clip(m, 80)).filter(Boolean).slice(0, 5); texts.push(...x.memories); }
     }
     for (const e of Array.isArray(b.places) ? b.places.slice(0, 40) : []) {
-      const x = p.map.regions.flatMap((r) => r.areas || []).flatMap((a) => a.places).find((q) => q.id === e.id);
+      const x = p.map.regions.flatMap((r) => (r.areas as GenArea[]) || []).flatMap((a) => a.places).find((q) => q.id === e.id);
       if (!x) throw new HttpError(404, `地点不存在：${e.id}`);
       set(x, 'name', e.name, 16); set(x, 'desc', e.desc, 110); if (e.emoji !== undefined) x.emoji = clip(e.emoji, 4);
     }
@@ -131,12 +155,12 @@ export function worldsApi(deps) {
     if (!['personas', 'map', 'extras', 'voice'].includes(part)) throw new HttpError(400, '只能重新生成：personas / map / extras / voice');
     if (!deps.jobs) throw new HttpError(503, '创世未启用');
     if (deps.jobs.jobs.some((j) => j.worldId === w.id && ['queued', 'running'].includes(j.status))) throw new HttpError(409, '这个世界已经有任务在排队了');
-    const job = deps.jobs.create({ ownerId: w.ownerId || c.get('user')?.id, worldId: w.id, options: { part }, kind: 'regen' });
+    const job = deps.jobs.create({ ownerId: (w.ownerId || c.get('user')?.id)!, worldId: w.id, options: { part }, kind: 'regen' });
     return c.json({ ok: true, jobId: job.id, position: deps.jobs.position(job.id) });
   });
 
   // ---------- owner 管理（多世界设计 §5.3、§6.3）：发布（自动审核）、暂停 / 恢复、归档、世界设置 ----------
-  const act = (c, w, action, detail = {}) => deps.audit?.({ actor: c.get('user')?.id || 'admin', action, target: w.id, detail });
+  const act = (c: Ctx, w: World, action: string, detail: object = {}) => deps.audit?.({ actor: c.get('user')?.id || 'admin', action, target: w.id, detail });
 
   api.post('/:id/publish', async (c) => {
     const w = owned(c);
@@ -184,12 +208,12 @@ export function worldsApi(deps) {
   api.patch('/:id/settings', (c) => {
     const w = owned(c);
     const b = c.get('body');
-    const patch = {};
+    const patch: { title?: string; summary?: string; evolution?: boolean; settings?: WorldSettings } = {};
     if (b.title !== undefined) patch.title = sanitize(b.title, 40);
     if (b.summary !== undefined) patch.summary = sanitize(b.summary, 300);
     for (const t of [patch.title, patch.summary]) if (t && !keywordCheck(t, 'epic').ok) throw new HttpError(422, '这段文字不太合适');
     if (b.evolution !== undefined) patch.evolution = Boolean(b.evolution);
-    const settings = {};
+    const settings: WorldSettings = {};
     // 世界级设置（§14.8）：叙事者、Mod；分级改动要在授予范围内（管理员可以改任何世界）
     if (b.migration !== undefined) settings.migration = Boolean(b.migration);
     if (b.storyteller !== undefined) { if (!STORYTELLERS.includes(b.storyteller)) throw new HttpError(400, '未知叙事者'); settings.storyteller = b.storyteller; }
@@ -204,7 +228,7 @@ export function worldsApi(deps) {
       if (!c.get('admin')) {
         const owner = w.ownerId ? accounts?.get(w.ownerId) : null;
         const q = w.ownerId ? accounts?.grant(w.ownerId, 'genesis')?.quota : null;
-        const cap = owner && ['admin', 'super'].includes(owner.role) ? 20 : Number.isInteger(q?.deathNamed) ? q.deathNamed : DEATH_NAMED_DEFAULT;
+        const cap = owner && ['admin', 'super'].includes(owner.role) ? 20 : Number.isInteger(q?.deathNamed) ? q!.deathNamed : DEATH_NAMED_DEFAULT;
         if (n > cap) throw new HttpError(403, `你的死亡预算上限是 ${cap}`);
       }
       settings.deathNamed = n;
@@ -212,10 +236,10 @@ export function worldsApi(deps) {
     if (b.mods !== undefined && c.get('admin')) settings.mods = (Array.isArray(b.mods) ? b.mods : []).map(String).slice(0, 12);
     // 官方世界：管理员改过的标题 / 简介记下来，重启时不被世界包覆盖；resetOverrides 恢复为世界包的值（下次启动时生效）
     if (w.official) {
-      const o = { ...(w.settings?.overrides || {}) };
+      const o: NonNullable<WorldSettings['overrides']> = { ...(w.settings?.overrides || {}) };
       if (patch.title !== undefined) o.title = true;
       if (patch.summary !== undefined) o.summary = true;
-      for (const k of Array.isArray(b.resetOverrides) ? b.resetOverrides : []) if (k === 'title' || k === 'summary') delete o[k];
+      for (const k of Array.isArray(b.resetOverrides) ? b.resetOverrides : []) if (k === 'title' || k === 'summary') delete o[k as 'title'];
       if (JSON.stringify(o) !== JSON.stringify(w.settings?.overrides || {})) settings.overrides = o;
     }
     if (Object.keys(settings).length) patch.settings = settings;
@@ -241,8 +265,8 @@ export function worldsApi(deps) {
   });
   api.put('/:id/ai', async (c) => {
     const w = owned(c);
-    const before = wl().normalizeAi(w.settings?.ai);
-    const ai = wl().validate(c.get('body'), w);
+    const before = wl().normalizeAi(w.settings?.ai) as AnyAi;
+    const ai = wl().validate(c.get('body'), w) as AnyAi;
     registry.update(w.id, { settings: { ai } });
     wl().invalidate(w.id);
     act(c, w, 'world.ai', { source: ai.source, credential: ai.credential || null, models: ai.models || null });
@@ -251,14 +275,14 @@ export function worldsApi(deps) {
     // 暂停中的世界：保存后自动重试一次
     let retry = null;
     if (ai.halt && quota(c.get('who') || {}, 'llm-test').ok) retry = await wl().retryWorld(w.id, { by: c.get('user')?.id || 'admin' });
-    return c.json({ ok: true, ...wl().view(registry.get(w.id)), retry });
+    return c.json({ ok: true, ...wl().view(registry.get(w.id)!), retry });
   });
   api.post('/:id/ai/retry', async (c) => {
     const w = owned(c);
     const q = quota(c.get('who') || {}, 'llm-test');
-    if (!q.ok) throw new HttpError(429, q.message, { retryAfter: q.retryAfter });
+    if (!q.ok) throw new HttpError(429, q.message!, { retryAfter: q.retryAfter });
     const r = await wl().retryWorld(w.id, { by: c.get('user')?.id || 'admin' });
-    return c.json({ ...r, ...wl().view(registry.get(w.id)) });
+    return c.json({ ...r, ...wl().view(registry.get(w.id)!) });
   });
 
   // ---------- 举报（§10.2）：登录用户可以举报世界、角色或单条动态；有效举报达到阈值自动转为不公开 ----------
@@ -268,7 +292,7 @@ export function worldsApi(deps) {
     const u = c.get('user');
     if (!u || u.id === 'u_local' && setting('PUBLIC_MODE')) throw new HttpError(401, '登录后才能举报', { login: true });
     const q = quota(c.get('who'), 'report');
-    if (!q.ok) throw new HttpError(429, q.message, { retryAfter: q.retryAfter });
+    if (!q.ok) throw new HttpError(429, q.message!, { retryAfter: q.retryAfter });
     const b = c.get('body');
     const target = String(b.target || 'world').slice(0, 60);
     if (!/^(world|persona:[a-z0-9_]{2,32}|log:\d{1,9}|newspaper:\d{1,4})$/.test(target)) throw new HttpError(400, '举报对象不合法');
@@ -279,7 +303,7 @@ export function worldsApi(deps) {
     if (db.prepare('SELECT id FROM reports WHERE world_id = ? AND reporter = ? AND created_at > ?').get(w.id, u.id, Date.now() - 86400_000)) return c.json({ ok: true, duplicate: true });
     db.prepare('INSERT INTO reports (world_id, target, reason, reporter, created_at) VALUES (?, ?, ?, ?, ?)').run(w.id, target, reason, u.id, Date.now());
     // 有效举报：7 天内、未处理、不同的举报人
-    const n = db.prepare('SELECT COUNT(DISTINCT reporter) AS n FROM reports WHERE world_id = ? AND handled_at IS NULL AND created_at > ?').get(w.id, Date.now() - 7 * 86400_000).n;
+    const n = (db.prepare('SELECT COUNT(DISTINCT reporter) AS n FROM reports WHERE world_id = ? AND handled_at IS NULL AND created_at > ?').get(w.id, Date.now() - 7 * 86400_000) as { n: number }).n;
     if (!w.official && w.status === 'public' && n >= setting('REPORT_UNLIST_THRESHOLD')) {
       registry.setStatus(w.id, 'unlisted', `收到 ${n} 份举报，暂时不在大厅公开，等待管理员处理`);
       deps.audit?.({ actor: 'system', action: 'world.unlisted', target: w.id, detail: { reports: n } });

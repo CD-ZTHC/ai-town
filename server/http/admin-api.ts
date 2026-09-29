@@ -4,23 +4,46 @@ import * as settings from '../settings/index.ts';
 import { GROUPS, SETTINGS } from '../settings/schema.ts';
 import { createProvider } from '../llm-providers.ts';
 import { HttpError } from './util.ts';
+import type { AppEnv, Ctx } from '../types/http.ts';
+import type { Accounts } from '../accounts/index.ts';
+import type { AuditEntry } from '../types/account.ts';
+import type { World } from '../types/world.ts';
+import type { WorldRegistry } from '../worlds/registry.ts';
+import type { WorldManager } from '../worlds/manager.ts';
+import type { SettingKey } from '../settings/index.ts';
 
-/**
- * @param {object} deps
- * @param {() => void} deps.restart 存盘后以退出码 75 退出，由守护进程拉起
- * @param {(changes) => string[]} [deps.impactOf] 保存前提示影响范围
- * @param {(entry) => void} [deps.audit] 写审计
- * @param {() => boolean} [deps.supervised] 是否运行在守护进程下
- */
-export function adminApi(deps) {
-  const api = new Hono();
+/** SQLite 的行（reports 表） */
+type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/** 管理员接口的依赖（server/index.ts 传入） */
+export interface AdminDeps {
+  /** 存盘后以退出码 75 退出，由守护进程拉起 */
+  restart?: () => void;
+  /** 是否运行在守护进程下 */
+  supervised?: () => boolean;
+  /** 保存前提示影响范围 */
+  impactOf?: (changes: Record<string, unknown>) => string[];
+  audit?: ((e: AuditEntry) => void) | null;
+  accounts?: Accounts | null;
+  manager?: WorldManager;
+  registry?: WorldRegistry;
+  llmView?: () => object;
+  engineStatus?: () => object | null;
+  memory?: () => object;
+  siteCredentials?: Hono<AppEnv>;
+  aiSummary?: (w: World) => object | null;
+  [k: string]: unknown;
+}
+
+export function adminApi(deps: AdminDeps): Hono<AppEnv> {
+  const api = new Hono<AppEnv>();
   const accounts = deps.accounts;
-  deps = { audit: accounts ? (e) => accounts.audit(e) : null, ...deps };
+  deps = { audit: accounts ? (e: AuditEntry) => accounts.audit(e) : null, ...deps };
   api.use('*', async (c, next) => {
     if (!c.get('admin')) throw new HttpError(403, '只有管理员可以这样做');
     await next();
   });
-  const actor = (c) => c.get('user')?.id || 'admin';
+  const actor = (c: Ctx) => c.get('user')?.id || 'admin';
 
   api.get('/settings', (c) => c.json({
     groups: GROUPS, items: settings.view(), pending: settings.pendingRestart(), rollback: settings.lastRollback(),
@@ -35,11 +58,11 @@ export function adminApi(deps) {
       const { changed } = settings.validateChanges(changes);
       return c.json({ ok: true, changed, impact: deps.impactOf?.(Object.fromEntries(changed.map((k) => [k, changes[k]]))) || [] });
     }
-    const before = Object.fromEntries(Object.keys(changes).filter((k) => SETTINGS[k]).map((k) => [k, settings.get(k)]));
+    const before = Object.fromEntries(Object.keys(changes).filter((k) => SETTINGS[k as SettingKey]).map((k) => [k, settings.get(k)]));
     const r = settings.save(changes, { by: actor(c), note: String(b.note || '').slice(0, 80) });
     if (r.changed.length) {
       // 审计只记录「密钥被修改」，不记录值
-      const detail = Object.fromEntries(r.changed.map((k) => [k, SETTINGS[k].secret ? '（已修改）' : { from: before[k], to: settings.get(k) }]));
+      const detail = Object.fromEntries(r.changed.map((k) => [k, (SETTINGS[k as SettingKey] as { secret?: boolean }).secret ? '（已修改）' : { from: before[k], to: settings.get(k) }]));
       deps.audit?.({ actor: actor(c), action: 'settings.save', target: `v${r.version}`, detail });
     }
     return c.json({ ok: true, ...r });
@@ -48,18 +71,18 @@ export function adminApi(deps) {
   // 用填写的值真实调用一次模型（不保存）
   api.post('/settings/test-llm', async (c) => {
     const b = c.get('body');
-    const pick = (k) => (typeof b[k] === 'string' && b[k] && !b[k].startsWith('●') ? b[k] : settings.get(k));
+    const pick = (k: string): string => (typeof b[k] === 'string' && b[k] && !b[k].startsWith('●') ? b[k] : settings.get(k) as string);
     const env = { ...settings.env(), BASE_URL: pick('BASE_URL'), API_KEY: pick('API_KEY') };
     const model = pick('MODEL');
     let provider;
-    try { provider = createProvider(pick('LLM_PROVIDER'), env); } catch (e) { throw new HttpError(400, e.message); }
+    try { provider = createProvider(pick('LLM_PROVIDER'), env); } catch (e) { throw new HttpError(400, (e as Error).message); }
     if (!provider.enabled) throw new HttpError(400, '接口地址或密钥没有填写');
     const started = Date.now();
     try {
       const r = await provider.complete({ model, messages: [{ role: 'user', content: '只回复两个字：你好' }], temperature: 0, maxTokens: 400, json: false, signal: AbortSignal.timeout(30_000) });
       return c.json({ ok: true, ms: Date.now() - started, model, reply: String(r.content || '').slice(0, 60), tokens: r.usage.prompt + r.usage.completion });
     } catch (e) {
-      return c.json({ ok: false, ms: Date.now() - started, model, error: String(e.message || e).slice(0, 300) });
+      return c.json({ ok: false, ms: Date.now() - started, model, error: String((e as Error).message || e).slice(0, 300) });
     }
   });
 
@@ -73,18 +96,18 @@ export function adminApi(deps) {
 
   // ---------- 用户（多世界设计 §5.2、§14.9）----------
   const acc = () => { if (!accounts) throw new HttpError(503, '账号系统未启用'); return accounts; };
-  const userOr404 = (id) => { const u = acc().get(id); if (!u) throw new HttpError(404, '账号不存在'); return u; };
+  const userOr404 = (id: string) => { const u = acc().get(id); if (!u) throw new HttpError(404, '账号不存在'); return u; };
   api.get('/users', (c) => c.json({ total: acc().count(), list: acc().list({ q: String(c.req.query('q') || '').slice(0, 40), offset: Number(c.req.query('offset') || 0) }) }));
   api.get('/users/:id', (c) => {
     const u = userOr404(c.req.param('id'));
-    return c.json({ ...u, grants: accounts.grantsOf(u.id), sessions: accounts.sessionsOf(u.id), audit: accounts.auditLog({ actor: u.id, limit: 30 }) });
+    return c.json({ ...u, grants: accounts!.grantsOf(u.id), sessions: accounts!.sessionsOf(u.id), audit: accounts!.auditLog({ actor: u.id, limit: 30 }) });
   });
   api.post('/users/:id/grants', (c) => {
     const b = c.get('body');
     const u = userOr404(c.req.param('id'));
     const quota = b.quota && typeof b.quota === 'object' ? b.quota : {};
     const expiresAt = b.expiresAt ? Date.parse(b.expiresAt) || Number(b.expiresAt) || null : null;
-    return c.json({ ok: true, grant: accounts.setGrant(u.id, { cap: String(b.cap || ''), quota, expiresAt, note: String(b.note || '') }, actor(c)) });
+    return c.json({ ok: true, grant: accounts!.setGrant(u.id, { cap: String(b.cap || ''), quota, expiresAt, note: String(b.note || '') }, actor(c)) });
   });
   api.delete('/users/:id/grants/:cap', (c) => c.json({ ok: acc().revokeGrant(c.req.param('id'), c.req.param('cap'), actor(c)) }));
   api.post('/users/:id/disable', (c) => { acc().setDisabled(c.req.param('id'), true, actor(c), String(c.get('body').reason || '')); return c.json({ ok: true }); });
@@ -110,7 +133,7 @@ export function adminApi(deps) {
   });
   api.post('/worlds/:id/quota', (c) => {
     const b = c.get('body');
-    const q = {};
+    const q: Record<string, number | undefined> = {};
     for (const k of ['dailyWorldTokens', 'diskMB']) if (b[k] !== undefined) q[k] = b[k] === null || b[k] === '' ? undefined : Math.max(0, Number(b[k]) || 0);
     const w = reg().update(c.req.param('id'), { quota: q });
     deps.manager?.checkDisk(w.id, { force: true });
@@ -158,7 +181,7 @@ export function adminApi(deps) {
   api.get('/reports', (c) => {
     const open = c.req.query('all') ? '' : 'AND handled_at IS NULL';
     const rows = reg().db.prepare(`SELECT * FROM reports WHERE 1=1 ${open} ORDER BY id DESC LIMIT 200`).all();
-    return c.json(rows.map((r) => ({ ...r, reporterName: accounts?.get(r.reporter)?.nickname || r.reporter, worldTitle: reg().get(r.world_id)?.title || r.world_id, worldStatus: reg().get(r.world_id)?.status || null })));
+    return c.json(rows.map((r: Row) => ({ ...r, reporterName: accounts?.get(r.reporter)?.nickname || r.reporter, worldTitle: reg().get(r.world_id)?.title || r.world_id, worldStatus: reg().get(r.world_id)?.status || null })));
   });
   api.post('/reports/:id/handle', (c) => {
     const resolution = String(c.get('body').resolution || 'dismissed').slice(0, 40);
@@ -172,7 +195,7 @@ export function adminApi(deps) {
     const worlds = [...(deps.manager?.loaded.values() || [])].map((h) => ({
       id: h.id, title: deps.registry?.get(h.id)?.title || h.id,
       plugins: h.town.evolved.view(true).plugins,
-      pending: h.town.decisions.list.filter((d) => d.kind === 'plugin' && d.status === 'waiting').length,
+      pending: h.town.decisions.list.filter((d: { kind: string; status: string }) => d.kind === 'plugin' && d.status === 'waiting').length,
     }));
     return c.json({ engine: deps.engineStatus?.() || null, worlds });
   });
@@ -180,7 +203,7 @@ export function adminApi(deps) {
   // ---------- 概览 ----------
   api.get('/overview', (c) => {
     const view = deps.manager?.view() || [];
-    const openReports = deps.registry ? reg().db.prepare('SELECT COUNT(*) AS n FROM reports WHERE handled_at IS NULL').get().n : 0;
+    const openReports = deps.registry ? (reg().db.prepare('SELECT COUNT(*) AS n FROM reports WHERE handled_at IS NULL').get() as { n: number }).n : 0;
     const alerts = accounts ? accounts.auditLog({ limit: 200 }).filter((a) => /^(world\.(unlisted|suspend|sample-hit|publish-rejected)|settings\.rollback|disk\.full|genesis\.failed|admin\.token|memory\.high)/.test(a.action)).slice(0, 12) : [];
     const rb = settings.lastRollback();
     return c.json({
@@ -210,7 +233,7 @@ export function adminApi(deps) {
 
   api.post('/restart', (c) => {
     deps.audit?.({ actor: actor(c), action: 'server.restart', target: '', detail: { pending: settings.pendingRestart() } });
-    setTimeout(() => deps.restart(), 200);
+    setTimeout(() => deps.restart!(), 200);
     return c.json({ ok: true, supervised: deps.supervised?.() ?? false });
   });
 

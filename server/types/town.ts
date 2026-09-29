@@ -32,7 +32,7 @@ export interface TownOptions {
   embedder?: import('../embeddings.ts').Embedder | null;
   worldId?: string;
   /** 世界包；不传时是官方世界云溪镇 */
-  pack?: { hash: string; [k: string]: unknown } | null;
+  pack?: import('./world.ts').Pack | null;
   /** 世界级设置（分级、叙事者、Mod、死亡预算……） */
   worldSettings?: Record<string, any> | null; // eslint-disable-line @typescript-eslint/no-explicit-any
   mods?: string[];

@@ -2,17 +2,17 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 
-const scrypt = promisify(crypto.scrypt);
+const scrypt = promisify(crypto.scrypt) as (pw: crypto.BinaryLike, salt: crypto.BinaryLike, keylen: number, opts: crypto.ScryptOptions) => Promise<Buffer>;
 const PARAMS = { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const KEYLEN = 32;
 
-export async function hashPassword(pw) {
+export async function hashPassword(pw: unknown): Promise<string> {
   const salt = crypto.randomBytes(16);
   const key = await scrypt(String(pw).normalize('NFKC'), salt, KEYLEN, PARAMS);
   return `scrypt$${PARAMS.N}$${PARAMS.r}$${PARAMS.p}$${salt.toString('base64url')}$${key.toString('base64url')}`;
 }
 
-export async function verifyPassword(pw, stored) {
+export async function verifyPassword(pw: unknown, stored: unknown): Promise<boolean> {
   const [alg, N, r, p, salt, hash] = String(stored || '').split('$');
   if (alg !== 'scrypt' || !hash) {
     // 账号不存在或没有密码：照样算一次，避免从耗时上看出账号是否存在
@@ -20,7 +20,7 @@ export async function verifyPassword(pw, stored) {
     return false;
   }
   const want = Buffer.from(hash, 'base64url');
-  const got = await scrypt(String(pw).normalize('NFKC'), Buffer.from(salt, 'base64url'), want.length, { N: Number(N), r: Number(r), p: Number(p), maxmem: PARAMS.maxmem });
+  const got = await scrypt(String(pw).normalize('NFKC'), Buffer.from(salt!, 'base64url'), want.length, { N: Number(N), r: Number(r), p: Number(p), maxmem: PARAMS.maxmem });
   return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
@@ -33,7 +33,7 @@ const WEAK = new Set([
 ]);
 
 /** 返回问题描述，没有问题时返回 null */
-export function passwordProblem(pw, { username = '' } = {}) {
+export function passwordProblem(pw: string | null | undefined, { username = '' }: { username?: string } = {}): string | null {
   pw = String(pw ?? '');
   if (pw.length < 10) return '密码至少 10 位';
   if (pw.length > 200) return '密码太长了';
@@ -45,7 +45,7 @@ export function passwordProblem(pw, { username = '' } = {}) {
   return null;
 }
 
-function isSequence(s) {
+function isSequence(s: string): boolean {
   let up = true, down = true;
   for (let i = 1; i < s.length; i++) {
     const d = s.charCodeAt(i) - s.charCodeAt(i - 1);

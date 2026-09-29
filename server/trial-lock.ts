@@ -4,22 +4,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function alive(pid) {
-  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+function alive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; }
 }
 
-function tryTake(file, staleMs, what) {
+function tryTake(file: string, staleMs: number, what: string): boolean {
   try {
     fs.writeFileSync(file, JSON.stringify({ pid: process.pid, at: Date.now(), what }), { flag: 'wx' });
     return true;
   } catch (e) {
-    if (e.code !== 'EEXIST') throw e;
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
   }
-  let cur = null;
+  let cur: { pid?: number; at?: number } | null = null;
   try { cur = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* 刚好被释放或写了一半 */ }
-  const stale = !cur || !Number.isFinite(cur.at) || Date.now() - cur.at > staleMs || (cur.pid && !alive(cur.pid));
+  const stale = !cur || !Number.isFinite(cur.at) || Date.now() - cur.at! > staleMs || (cur.pid && !alive(cur.pid));
   if (stale) {
     try { fs.rmSync(file, { force: true }); } catch { /* 别人先删了 */ }
   }
@@ -28,13 +28,9 @@ function tryTake(file, staleMs, what) {
 
 /**
  * 拿到全站试运行名额后执行 fn；等待超过 waitMs 仍拿不到时抛错（code = 'TRIAL_BUSY'）。
- * @template T
- * @param {string} dir 锁文件所在目录（<数据目录>/evolution）
- * @param {() => Promise<T>} fn
- * @param {{ waitMs?: number, staleMs?: number, what?: string, pollMs?: number }} [o]
- * @returns {Promise<T>}
+ * dir：锁文件所在目录（<数据目录>/evolution）
  */
-export async function withTrialSlot(dir, fn, { waitMs = 10 * 60_000, staleMs = 15 * 60_000, what = '', pollMs = 1000 } = {}) {
+export async function withTrialSlot<T>(dir: string | null | undefined, fn: () => Promise<T>, { waitMs = 10 * 60_000, staleMs = 15 * 60_000, what = '', pollMs = 1000 }: { waitMs?: number; staleMs?: number; what?: string; pollMs?: number } = {}): Promise<T> {
   if (!dir) return fn();
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, 'trial.lock');

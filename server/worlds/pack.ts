@@ -11,6 +11,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { solveLayout } from '../worldgen/layout.ts';
+import type { WorldSpec } from '../types/spec.ts';
+import type { Pack } from '../types/world.ts';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const OFFICIAL_DIR = path.join(ROOT, 'worlds');
@@ -18,7 +20,7 @@ export const WORLD_ID_RE = /^[a-z][a-z0-9-]{2,31}$/;
 export { RATINGS } from '../kernel/ratings.ts';
 
 const HM = z.string().regex(/^\d{1,2}:\d{2}$/, '应为 HH:MM');
-const text = (max) => z.string().min(1).max(max);
+const text = (max: number) => z.string().min(1).max(max);
 
 /** 世界包里除内核规格以外的字段（内核规格仍由 kernel/spec.js 的 validateSpec 校验） */
 export const VoiceSchema = z.object({
@@ -67,41 +69,43 @@ export const MapSchema = z.object({
     .refine((rs) => new Set(rs.map((r) => r.id)).size === rs.length, { message: '区域 id 重复' }),
 });
 
-const readJSON = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
+const readJSON = (f: string) => JSON.parse(fs.readFileSync(f, 'utf8'));
 
-function canonical(v) {
+function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
-  if (v && typeof v === 'object') return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`;
-  return JSON.stringify(v);
+  if (v && typeof v === 'object') return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(',')}}`;
+  return JSON.stringify(v) as string;
 }
 
 /** 世界包的内容哈希（不含 source/）：存档里记下它，世界包改动后能看出来 */
-export function hashPack(pack) {
+export function hashPack(pack: Omit<Pack, 'hash'>): string {
   return crypto.createHash('sha256').update(canonical({ world: pack.world, map: pack.map, arcs: pack.arcs })).digest('hex').slice(0, 16);
 }
 
 export class PackError extends Error {
-  constructor(errors) { super(`世界包不合法：${errors.slice(0, 5).join('；')}`); this.errors = errors; this.status = 422; }
+  declare errors: string[];
+  declare status: number;
+  constructor(errors: string[]) { super(`世界包不合法：${errors.slice(0, 5).join('；')}`); this.errors = errors; this.status = 422; }
 }
 
 /** 校验世界包的结构（不含内核规格的语义校验）；返回错误列表 */
-export function packErrors(pack) {
-  const errs = [];
-  const add = (where, r) => { if (!r.success) for (const i of r.error.issues) errs.push(`${where}.${i.path.join('.')}: ${i.message}`); };
+export function packErrors(pack: { world: unknown; map: unknown; arcs?: unknown[] }): string[] {
+  const errs: string[] = [];
+  const add = (where: string, r: z.ZodSafeParseResult<unknown>) => { if (!r.success) for (const i of r.error.issues) errs.push(`${where}.${i.path.join('.')}: ${i.message}`); };
   add('world', PackMetaSchema.safeParse(pack.world));
   add('map', MapSchema.safeParse(pack.map));
-  for (const [i, a] of (pack.arcs || []).entries()) if (!a || typeof a.id !== 'string') errs.push(`arcs[${i}]: 缺少 id`);
+  for (const [i, a] of (pack.arcs || []).entries()) if (!a || typeof (a as { id?: unknown }).id !== 'string') errs.push(`arcs[${i}]: 缺少 id`);
   return errs;
 }
 
 /** 读取一个世界包目录 */
-export function loadPack(dir) {
+export function loadPack(dir: string): Pack {
   const world = readJSON(path.join(dir, 'world.json'));
   const map = fs.existsSync(path.join(dir, 'map.json')) ? readJSON(path.join(dir, 'map.json')) : { regions: world.regions || [] };
   const arcDir = path.join(dir, 'arcs');
   const arcs = fs.existsSync(arcDir) ? fs.readdirSync(arcDir).filter((f) => f.endsWith('.json')).sort().map((f) => readJSON(path.join(arcDir, f))) : [];
   const bible = fs.existsSync(path.join(dir, 'bible.json')) ? readJSON(path.join(dir, 'bible.json')) : null;
-  const pack = { dir, world, map, arcs, bible };
+  const pack = { dir, world, map, arcs, bible } as Pack;
   const errs = packErrors(pack);
   if (errs.length) throw new PackError(errs);
   pack.world = PackMetaSchema.parse(world); // 补齐默认值
@@ -110,7 +114,7 @@ export function loadPack(dir) {
 }
 
 /** 写出一个世界包（创世与导出用）；arcs 每个一个文件 */
-export function writePack(dir, { world, map, arcs = [], bible = null }) {
+export function writePack(dir: string, { world, map, arcs = [], bible = null }: { world: unknown; map: unknown; arcs?: Array<{ id: string }>; bible?: unknown }): void {
   fs.mkdirSync(path.join(dir, 'arcs'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'world.json'), `${JSON.stringify(world, null, 1)}\n`);
   fs.writeFileSync(path.join(dir, 'map.json'), `${JSON.stringify(map, null, 1)}\n`);
@@ -123,9 +127,9 @@ export function writePack(dir, { world, map, arcs = [], bible = null }) {
  * 世界包 → 内核规格。overrides：世界级设置（分级、叙事者），覆盖世界包里的默认值。
  * 顺序与之前相同：世界包（底座）→ Mod → 插件覆盖层 → 操作历史重放（后面三步在 Town 里）。
  */
-export function packSpec(pack, overrides = {}) {
+export function packSpec(pack: Pick<Pack, 'world' | 'map' | 'arcs'>, overrides: { rating?: string; storyteller?: string } = {}): WorldSpec {
   const w = structuredClone(pack.world);
-  const spec = { ...w, regions: structuredClone(pack.map.regions), arcs: structuredClone(pack.arcs) };
+  const spec = { ...w, regions: structuredClone(pack.map.regions), arcs: structuredClone(pack.arcs) } as WorldSpec;
   // 语义布局的区域：由布局求解器给出建筑坐标与地点（确定性），叠在世界包自己写的建筑与地点之前
   spec.buildings = spec.buildings || [];
   spec.locations = spec.locations || {};
@@ -135,16 +139,16 @@ export function packSpec(pack, overrides = {}) {
     spec.buildings = [...solved.buildings, ...spec.buildings.filter((b) => !solved.buildings.some((x) => x.id === b.id))];
     spec.locations = { ...solved.locations, ...spec.locations };
   }
-  spec.meta = { ...spec.meta, ...(overrides.rating ? { rating: overrides.rating } : {}), ...(overrides.storyteller ? { storyteller: overrides.storyteller } : {}) };
+  spec.meta = { ...spec.meta, ...(overrides.rating ? { rating: overrides.rating } : {}), ...(overrides.storyteller ? { storyteller: overrides.storyteller } : {}) } as WorldSpec['meta'];
   return spec;
 }
 
-const cache = new Map();
+const cache = new Map<string, Pack>();
 /** 官方世界包（仓库里的 worlds/<id>/），按目录缓存 */
-export function officialPack(id = 'yunxi') {
+export function officialPack(id = 'yunxi'): Pack {
   if (!cache.has(id)) cache.set(id, loadPack(path.join(OFFICIAL_DIR, id)));
-  return cache.get(id);
+  return cache.get(id)!;
 }
-export function officialIds() {
+export function officialIds(): string[] {
   try { return fs.readdirSync(OFFICIAL_DIR).filter((d) => fs.existsSync(path.join(OFFICIAL_DIR, d, 'world.json'))); } catch { return []; }
 }

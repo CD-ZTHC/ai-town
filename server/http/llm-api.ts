@@ -12,22 +12,23 @@ import { SITE } from '../accounts/llm-credentials.ts';
 import { quota } from '../accounts/quota.ts';
 import { get as setting } from '../settings/index.ts';
 import { HttpError } from './util.ts';
+import type { AppEnv, Ctx } from '../types/http.ts';
+import type { Accounts } from '../accounts/index.ts';
+import type { Credential, LlmCredentials } from '../accounts/llm-credentials.ts';
+import type { createWorldLlm } from '../world-llm.ts';
+import type { AuditEntry } from '../types/account.ts';
 
-const clip = (v, max) => String(v ?? '').trim().slice(0, max);
+const clip = (v: unknown, max: number): string => String(v ?? '').trim().slice(0, max);
 
-/**
- * @param {object} deps
- * @param {import('../accounts/llm-credentials.ts').LlmCredentials} deps.credentials
- * @param {ReturnType<import('../world-llm.ts').createWorldLlm>} deps.worldLlm
- * @param {import('../accounts/index.ts').Accounts} [deps.accounts]
- * @param {'user'|'site'} deps.scope
- */
-export function credentialsApi({ credentials, worldLlm, accounts = null, scope = 'user' }) {
-  const api = new Hono();
-  const audit = (e) => accounts?.audit(e);
+/** scope：user 自己的凭据；site 站点凭据（管理员） */
+export function credentialsApi({ credentials, worldLlm, accounts = null, scope = 'user' }: {
+  credentials: LlmCredentials; worldLlm: ReturnType<typeof createWorldLlm>; accounts?: Accounts | null; scope?: 'user' | 'site';
+}): Hono<AppEnv> {
+  const api = new Hono<AppEnv>();
+  const audit = (e: AuditEntry) => accounts?.audit(e);
 
   /** 这个请求操作的是谁的凭据 */
-  const ownerOf = (c) => {
+  const ownerOf = (c: Ctx) => {
     if (scope === 'site') {
       if (!c.get('admin')) throw new HttpError(403, '只有管理员可以这样做');
       return SITE;
@@ -38,14 +39,14 @@ export function credentialsApi({ credentials, worldLlm, accounts = null, scope =
     if (ok !== true) throw new HttpError(403, ok);
     return user.id;
   };
-  const actor = (c) => c.get('user')?.id || 'admin';
-  const mine = (c) => {
+  const actor = (c: Ctx) => c.get('user')?.id || 'admin';
+  const mine = (c: Ctx) => {
     const owner = ownerOf(c);
     const cred = credentials.get(c.req.param('id'));
     if (!cred || cred.owner !== owner) throw new HttpError(404, '凭据不存在');
     return cred;
   };
-  const withUse = (cred) => ({ ...cred, worlds: worldLlm.worldsUsing(cred.id).map((w) => ({ id: w.id, title: w.title, halted: Boolean(w.settings.ai.halt) })) });
+  const withUse = (cred: Credential) => ({ ...cred, worlds: worldLlm.worldsUsing(cred.id).map((w) => ({ id: w.id, title: w.title, halted: Boolean(w.settings.ai.halt) })) });
 
   api.get('/', (c) => {
     const owner = ownerOf(c);
@@ -67,7 +68,7 @@ export function credentialsApi({ credentials, worldLlm, accounts = null, scope =
   api.patch('/:id', async (c) => {
     const cred = mine(c);
     const b = c.get('body');
-    const patch = {};
+    const patch: { name?: string; provider?: string; baseUrl?: string; apiKey?: string } = {};
     if (b.name !== undefined) patch.name = clip(b.name, 20) || cred.name;
     if (b.provider !== undefined) patch.provider = clip(b.provider, 20);
     if (b.baseUrl !== undefined) patch.baseUrl = clip(b.baseUrl, 500).replace(/\/+$/, '');
@@ -81,7 +82,7 @@ export function credentialsApi({ credentials, worldLlm, accounts = null, scope =
     // 地址、类型或密钥变了：自动测试，通过就恢复因它暂停的世界
     let test = null;
     if ((patch.apiKey || patch.baseUrl !== undefined || patch.provider !== undefined) && quota(c.get('who') || {}, 'llm-test').ok) test = await worldLlm.checkCredential(cred.id, { by: actor(c) });
-    return c.json({ ok: true, credential: withUse(credentials.get(cred.id)), test });
+    return c.json({ ok: true, credential: withUse(credentials.get(cred.id)!), test });
   });
 
   api.delete('/:id', (c) => {
@@ -98,10 +99,10 @@ export function credentialsApi({ credentials, worldLlm, accounts = null, scope =
   api.post('/:id/test', async (c) => {
     const cred = mine(c);
     const q = quota(c.get('who') || {}, 'llm-test');
-    if (!q.ok) throw new HttpError(429, q.message, { retryAfter: q.retryAfter });
+    if (!q.ok) throw new HttpError(429, q.message!, { retryAfter: q.retryAfter });
     const r = await worldLlm.checkCredential(cred.id, { by: actor(c) });
     audit({ actor: actor(c), action: 'llm.credential.test', target: cred.id, detail: { ok: r.ok, kind: r.kind || null } });
-    return c.json({ ...r, credential: withUse(credentials.get(cred.id)) });
+    return c.json({ ...r, credential: withUse(credentials.get(cred.id)!) });
   });
 
   return api;

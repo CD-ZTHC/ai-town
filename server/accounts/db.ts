@@ -63,7 +63,7 @@ const MIGRATIONS = [
 ];
 
 /** 打开（或创建）账号数据库并执行迁移。file 为 ':memory:' 时只在内存里（测试用） */
-export function openDb(file) {
+export function openDb(file: string): DatabaseSync {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;');
@@ -82,7 +82,7 @@ export function openDb(file) {
 }
 
 /** 在一个事务里执行 fn */
-export function tx(db, fn) {
+export function tx<T>(db: DatabaseSync, fn: () => T): T {
   db.exec('BEGIN IMMEDIATE');
   try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; }
 }

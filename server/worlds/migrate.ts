@@ -4,20 +4,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // 属于世界的东西（其余的 accounts.db、settings.json、evolution/ 是全站的，留在原处）
-const WORLD_ITEMS = (name) => ['save.json', 'save.json.tmp', 'ops.jsonl', 'snapshots', 'timelines', 'timelines.json'].includes(name)
+const WORLD_ITEMS = (name: string): boolean => ['save.json', 'save.json.tmp', 'ops.jsonl', 'snapshots', 'timelines', 'timelines.json'].includes(name)
   || /^embeddings\.db(-wal|-shm)?$/.test(name) || /^save-.*\.bak\.json$/.test(name);
 
-export function worldRoot(data, id) { return path.join(data, 'worlds', id); }
+export function worldRoot(data: string, id: string): string { return path.join(data, 'worlds', id); }
 
 /** 需要迁移吗：旧位置有存档，新位置还没有 */
-export function needsMigration(data, id = 'yunxi') {
+export function needsMigration(data: string, id = 'yunxi'): boolean {
   const target = worldRoot(data, id);
   if (fs.existsSync(path.join(target, 'save.json')) || fs.existsSync(path.join(target, 'ops.jsonl'))) return false;
   return fs.existsSync(data) && fs.readdirSync(data).some(WORLD_ITEMS);
 }
 
 /** 执行迁移；返回 { backup, moved } 或 null（不需要迁移） */
-export function migrateLegacy(data, id = 'yunxi', { now = new Date() } = {}) {
+export function migrateLegacy(data: string, id = 'yunxi', { now = new Date() }: { now?: Date } = {}): { backup: string; moved: string[] } | null {
   if (!needsMigration(data, id)) return null;
   const items = fs.readdirSync(data).filter(WORLD_ITEMS);
   const backup = path.join(data, `backup-4.0-${now.toISOString().replace(/[:.]/g, '-')}`);
@@ -35,7 +35,7 @@ export function migrateLegacy(data, id = 'yunxi', { now = new Date() } = {}) {
  * 插件登记、锁定哈希、信号、候选与需求文档从 data/evolution/ 移到 data/worlds/yunxi/evolution/。
  * 任务、引擎状态与账本仍在 data/evolution/（全站共用）。先备份再移动；只做一次。
  */
-export function migrateEvolution(data, root, id = 'yunxi', { now = new Date() } = {}) {
+export function migrateEvolution(data: string, root: string, id = 'yunxi', { now = new Date() }: { now?: Date } = {}): { backup: string; moved: string[] } | null {
   const worldEvo = path.join(worldRoot(data, id), 'evolution');
   const worldPlugins = path.join(worldRoot(data, id), 'plugins');
   const oldEvo = path.join(data, 'evolution');

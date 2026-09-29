@@ -6,11 +6,13 @@ import { get as setting } from '../settings/index.ts';
 import { quota } from '../accounts/quota.ts';
 import { HttpError } from './util.ts';
 import { setSessionCookie, clearSessionCookie, sessionToken } from './identity.ts';
+import type { AppEnv, Ctx } from '../types/http.ts';
+import type { Accounts } from '../accounts/index.ts';
 
-const str = (v, max) => String(v ?? '').slice(0, max);
+const str = (v: unknown, max: number): string => String(v ?? '').slice(0, max);
 
 /** 人机验证（Cloudflare Turnstile）：没有配置 CAPTCHA_SECRET 时不启用 */
-async function verifyCaptcha(token, ip) {
+async function verifyCaptcha(token: unknown, ip: string): Promise<boolean> {
   const secret = setting('CAPTCHA_SECRET');
   if (!secret) return true;
   if (!token) return false;
@@ -22,11 +24,11 @@ async function verifyCaptcha(token, ip) {
   } catch { return false; }
 }
 
-export function authApi({ accounts }) {
-  const api = new Hono();
-  const need = (c) => { if (!accounts) throw new HttpError(503, '账号系统未启用'); return accounts; };
-  const me = (c) => { const u = c.get('user'); if (!u || u.id === 'u_local') throw new HttpError(401, '请先登录', { login: true }); return u; };
-  const who = (c) => c.get('who');
+export function authApi({ accounts }: { accounts: Accounts | null }): Hono<AppEnv> {
+  const api = new Hono<AppEnv>();
+  const need = (c: Ctx) => { if (!accounts) throw new HttpError(503, '账号系统未启用'); return accounts; };
+  const me = (c: Ctx) => { const u = c.get('user'); if (!u || u.id === 'u_local') throw new HttpError(401, '请先登录', { login: true }); return u; };
+  const who = (c: Ctx) => c.get('who');
 
   api.get('/captcha', (c) => c.json({ enabled: Boolean(setting('CAPTCHA_SECRET')), siteKey: setting('CAPTCHA_SITEKEY') || null }));
 
@@ -41,7 +43,7 @@ export function authApi({ accounts }) {
     if (!setting('REGISTER_OPEN')) throw new HttpError(403, '暂时不开放注册');
     const b = c.get('body');
     const q = quota(who(c), 'register');
-    if (!q.ok) throw new HttpError(429, q.message, { retryAfter: q.retryAfter });
+    if (!q.ok) throw new HttpError(429, q.message!, { retryAfter: q.retryAfter });
     if (!(await verifyCaptcha(b.captcha, c.get('ip')))) throw new HttpError(400, '人机验证没有通过', { field: 'captcha' });
     const nickname = str(b.nickname, 40);
     // 昵称先过关键词与格式检查（register 内部），再过审核模型
@@ -77,7 +79,7 @@ export function authApi({ accounts }) {
     if (pre) throw new HttpError(409, pre);
     const m = await moderateNickname(nickname);
     if (!m.ok) throw new HttpError(422, `昵称：${m.reason}`);
-    return c.json({ ok: true, user: accounts.rename(u.id, nickname) });
+    return c.json({ ok: true, user: accounts!.rename(u.id, nickname) });
   });
 
   api.post('/password', async (c) => {
@@ -91,7 +93,7 @@ export function authApi({ accounts }) {
   api.post('/reset', async (c) => {
     const b = c.get('body');
     const user = await need(c).resetPassword(str(b.token, 100), str(b.password, 300));
-    setSessionCookie(c, accounts.createSession(user.id, { ip: c.get('ip'), ua: c.req.header('user-agent') }));
+    setSessionCookie(c, accounts!.createSession(user.id, { ip: c.get('ip'), ua: c.req.header('user-agent') }));
     return c.json({ ok: true, user });
   });
 

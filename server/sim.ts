@@ -144,6 +144,8 @@ export class Town extends EventEmitter {
   declare portalState: Portal | null;
   declare swarmGoal: string | null;
   /** 异界生物：上次捣乱、上次和平相遇、上次群体心智的游戏分钟 */
+  /** 运行时抽样审核已经看过的编年 / 动态（worlds/review.ts） */
+  declare sampled?: Set<string>;
   declare mischiefAt?: number;
   declare peacefulAt?: number;
   declare swarmAt?: number;

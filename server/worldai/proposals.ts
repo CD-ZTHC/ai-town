@@ -143,19 +143,18 @@ export class ProposalSystem {
     return { ops };
   }
 
-  submit({ title, motive = '', ops: rawOps, origin = 'admin', construction = null, allowed = ARCHITECT_OPS }: { title: string; motive?: string; ops: unknown; origin?: string; construction?: { by?: unknown; hours?: unknown } | null; allowed?: readonly string[] }): { error: string } | { proposal: Proposal } {
+  submit({ title, motive = '', ops: rawOps, origin = 'admin', construction = null, allowed = ARCHITECT_OPS }: { title: string; motive?: string; ops: unknown; origin?: string; construction?: { by?: unknown; hours?: unknown } | null; allowed?: readonly string[] }): { error: string; proposal?: undefined } | { proposal: Proposal; error?: undefined } {
     const town = this.town;
     if (this.open().length >= MAX_OPEN) return { error: '待处理的提案太多了，请先处理已有的提案' };
     const r = this.prepare(rawOps, allowed);
     if (r.error) return r;
-    const rops = r.ops!;
-    const level = rops.reduce<OpLevel>((lv, o) => (LEVELS.indexOf(levelOf(o)) > LEVELS.indexOf(lv) ? levelOf(o) : lv), 'micro');
-    const building = rops.find((o) => o.op === 'addBuilding');
-    const demolish = !building && rops.find(isDemolition);
+    const level = r.ops!.reduce<OpLevel>((lv, o) => (LEVELS.indexOf(levelOf(o)) > LEVELS.indexOf(lv) ? levelOf(o) : lv), 'micro');
+    const building = r.ops!.find((o) => o.op === 'addBuilding');
+    const demolish = !building && r.ops!.find(isDemolition);
     const site = building ? { x: building.args.x, y: building.args.y, w: building.args.w, h: building.args.h, near: building.args.near || null }
       : demolish ? this.siteOf(demolish.args.id) : null;
     const p: Proposal = {
-      id: `wp${++town.seq}`, title: str(title, 24) || '小镇建设', motive: str(motive, 80), origin, ops: rops, level,
+      id: `wp${++town.seq}`, title: str(title, 24) || '小镇建设', motive: str(motive, 80), origin, ops: r.ops!, level,
       status: 'review', createdT: Math.floor(town.t), votes: {}, canon: null, result: null,
       construction: site ? {
         by: (Array.isArray(construction?.by) && construction.by.length ? construction.by : this.defaultCrew()).map((n: unknown) => str(n, 12)).slice(0, 3),
@@ -249,23 +248,22 @@ export class ProposalSystem {
       r = this.prepare(p.ops.map((o) => (o.op === 'addBuilding' && o.args.near ? { op: o.op, args: { ...o.args, x: undefined, y: undefined, place: { near: o.args.near } } } : o)), ADMIN_OPS);
     }
     if (r.error) return this.finish(p, 'failed', r.error);
-    const rops = r.ops!;
-    for (const o of rops) if (o.op === 'addBuilding' || o.op === 'expandMap') o.args.builtDay = town.day;
+    for (const o of r.ops!) if (o.op === 'addBuilding' || o.op === 'expandMap') o.args.builtDay = town.day;
     const before = town.spec;
     try {
-      for (const o of rops) town.applyWorldOp(o, { by: 'proposal', proposal: p.id, origin: p.origin });
+      for (const o of r.ops!) town.applyWorldOp(o, { by: 'proposal', proposal: p.id, origin: p.origin });
     } catch (e) {
       return this.finish(p, 'failed', (e as Error).message);
     }
-    p.ops = rops;
+    p.ops = r.ops!;
     p.appliedDay = town.day;
     this.finish(p, 'applied', null);
     town.hooks?.emit('proposal.applied', p);
-    const built = rops.find((o) => o.op === 'addBuilding');
+    const built = r.ops!.find((o) => o.op === 'addBuilding');
     if (built) {
       for (const a of town.agents) if (a.kind !== 'creature') addMemory(a, { t: town.t, type: 'event', text: `镇上新建了「${built.args.name}」`, importance: 5 });
     }
-    for (const o of rops.filter(isDemolition)) this.afterDemolition(p, o, before);
+    for (const o of r.ops!.filter(isDemolition)) this.afterDemolition(p, o, before);
     if (p.origin.startsWith('agent:')) {
       const a = town.byId[p.origin.slice(6)];
       if (a) addMemory(a, { t: town.t, type: 'event', text: `我提议的「${p.title}」实现了！`, importance: 7 });

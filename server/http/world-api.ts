@@ -13,33 +13,37 @@ import { authorize } from '../accounts/authz.ts';
 import { quota, remaining as quotaLeft } from '../accounts/quota.ts';
 import { HttpError } from './util.ts';
 import { get as setting } from '../settings/index.ts';
+import type { AppEnv, Ctx } from '../types/http.ts';
+import type { Town } from '../sim.ts';
+import type { Accounts } from '../accounts/index.ts';
+import type { WorldHost } from '../worlds/host.ts';
 
-function requireAdmin(c) {
+function requireAdmin(c: Ctx): void {
   if (!c.get('admin')) throw new HttpError(403, '只有小镇管理员可以这样做');
 }
 /**
  * 决策的终审人（多世界设计 §8）：authority(world) → owner 终审，全站管理员可以否决或撤销；
  * 官方世界（常驻世界）的一切决策由全站管理员终审。返回 'admin' / 'owner' / null
  */
-export function reviewer(c) {
+export function reviewer(c: Ctx): 'admin' | 'owner' | null {
   if (c.get('admin')) return 'admin';
   const w = c.get('host')?.world;
   const u = c.get('user');
   if (w && u && !w.official && !setting('PINNED_WORLDS').includes(w.id) && w.ownerId === u.id) return 'owner';
   return null;
 }
-function requireReviewer(c) {
+function requireReviewer(c: Ctx): void {
   if (!reviewer(c)) throw new HttpError(403, '只有这个世界的创建者或管理员可以终审');
 }
 /** 互动（现身、聊天、心声、事件、天气、投票、举报）：只有登录的用户；游客返回 401，页面弹出登录框后自动继续 */
-function requireUser(c) {
+function requireUser(c: Ctx): void {
   if (!config.allowInteraction && !c.get('admin')) throw new HttpError(403, '当前为只读观赏模式');
   if (c.get('admin')) return;
   const ok = authorize(c.get('who'), 'interact');
   if (ok !== true) throw new HttpError(401, ok, { login: true });
 }
 /** 需要调用模型的互动：再检查模型、预算与队列 */
-function requireInteraction(c) {
+function requireInteraction(c: Ctx): void {
   requireUser(c);
   const admin = c.get('admin');
   const halted = llm.blocked();
@@ -48,29 +52,24 @@ function requireInteraction(c) {
   if (llm.budgetLeft() <= 0) throw new HttpError(429, '今天的 AI 额度已经用完了，明天再来吧 🌙');
   if (llm.queueSize(c.get('host').id) > config.maxQueueForUser && !admin) throw new HttpError(503, '居民们正忙着思考，请稍后再试');
 }
-function take(c, bucket, opts = {}) {
+function take(c: Ctx, bucket: string, opts: { take?: boolean } = {}) {
   const r = quota(c.get('who'), bucket, { world: c.get('host').id, ...opts });
-  if (!r.ok) throw new HttpError(429, r.message, { retryAfter: r.retryAfter });
+  if (!r.ok) throw new HttpError(429, r.message!, { retryAfter: r.retryAfter });
   return r;
 }
-function remaining(c) {
+function remaining(c: Ctx) {
   const who = c.get('who');
   return { chat: quotaLeft(who, 'chat'), event: quotaLeft(who, 'event') };
 }
 /** 审核用的世界上下文 */
-const worldCtx = (t) => ({ name: t.spec.meta.name, place: t.spec.voice?.place || '小镇', pillars: t.spec.lore.pillars });
+const worldCtx = (t: Town) => ({ name: t.spec.meta.name, place: t.spec.voice?.place || '小镇', pillars: t.spec.lore.pillars });
 /** 当前请求的旅人身份：账号 id + 当前昵称 */
-const visitor = (c) => ({ id: c.get('vid'), name: c.get('user')?.nickname || null });
+const visitor = (c: Ctx) => ({ id: c.get('vid')!, name: c.get('user')?.nickname || null });
 
-/**
- * @param {object} deps
- * @param {import('../accounts/index.ts').Accounts} [deps.accounts]
- * @param {() => object} [deps.engineStatus] 进化引擎状态（管理员可见）
- * @param {(c, host) => Response} deps.openStream SSE
- */
-export function worldApi(deps) {
-  const api = new Hono();
-  const town = (c) => c.get('host').town;
+/** engineStatus：进化引擎状态（管理员可见）；openStream：SSE */
+export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (worldId?: string) => object | null; openStream: (c: Ctx, host: WorldHost) => Response }): Hono<AppEnv> {
+  const api = new Hono<AppEnv>();
+  const town = (c: Ctx) => c.get('host').town;
 
   api.get('/stream', (c) => deps.openStream(c, c.get('host')));
   api.get('/me', (c) => {
@@ -83,7 +82,7 @@ export function worldApi(deps) {
       loginToInteract: config.allowInteraction && !user && !admin,
       limits: { chatPerHour: config.chatPerHour, eventPerHour: config.eventPerHour, weatherCooldownSec: config.weatherCooldownSec },
       remaining: remaining(c),
-      avatar: c.get('vid') ? town(c).avatars.mine(c.get('vid'))?.id || null : null,
+      avatar: c.get('vid') ? town(c).avatars.mine(c.get('vid')!)?.id || null : null,
       budget: { total: llm.stats.dailyBudget, left: Number.isFinite(llm.budgetLeft()) ? llm.budgetLeft() : null },
       world: c.get('host').id,
       // 终审人：owner 在自己的世界里终审决策；有待终审的决策时页面提醒
@@ -110,7 +109,7 @@ export function worldApi(deps) {
   });
   api.get('/decisions', (c) => c.json({ ...town(c).decisions.view(Boolean(reviewer(c))), admin: Boolean(reviewer(c)) }));
   api.get('/snapshots', (c) => { requireAdmin(c); return c.json(listSnapshots(town(c).dataDir)); });
-  api.get('/timelines', (c) => { requireAdmin(c); return c.json(registry(c.get('host').dataRoot)); });
+  api.get('/timelines', (c) => { requireAdmin(c); return c.json(registry(c.get('host').dataRoot!)); });
 
   // ---------- 写接口（请求体已由上层中间件解析为 c.get('body')）----------
   api.post('/chat', async (c) => {
@@ -123,7 +122,7 @@ export function worldApi(deps) {
     if (text.length < 1) throw new HttpError(400, '说点什么吧');
     take(c, 'chat');
     const m = await moderate(text, 'chat', t.spec.meta.rating, worldCtx(t));
-    if (!m.ok) throw new HttpError(422, m.reason);
+    if (!m.ok) throw new HttpError(422, m.reason!);
     // 心声对居民是匿名的，但日志里记下账号，便于管理员追查滥用
     if (mode === 'whisper') console.log(`[whisper] ${c.get('host').id} ${c.get('vid')} → ${agent.id}: ${text}`);
     const r = await t.visitorChat(agent.id, text, mode, visitor(c));
@@ -141,7 +140,7 @@ export function worldApi(deps) {
     take(c, 'event', { take: false });
     take(c, 'eventAttempt');
     const m = await moderate(text, 'event', t.spec.meta.rating, worldCtx(t));
-    if (!m.ok) throw new HttpError(422, m.reason);
+    if (!m.ok) throw new HttpError(422, m.reason!);
     // 点名要伤害某位居民的事件：只有世界所有者和管理员可以发布（黑暗叙事设计 §3.3）
     if ((m.targeted || targetsResident(text, t.agents.map((x) => x.name))) && !reviewer(c)) throw new HttpError(403, '点名伤害某位居民的事件，只有世界的主人可以发布');
     take(c, 'event');
@@ -152,7 +151,7 @@ export function worldApi(deps) {
 
   api.post('/control', (c) => {
     const t = town(c), b = c.get('body');
-    const out = {};
+    const out: Record<string, unknown> = {};
     if (b.weather != null) {
       const w = String(b.weather);
       if (w !== 'auto' && !Object.hasOwn(t.spec.weather, w)) throw new HttpError(400, '未知天气');
@@ -207,7 +206,7 @@ export function worldApi(deps) {
     if (text.length < 4) throw new HttpError(400, '说得再具体一点吧');
     take(c, 'proposal');
     const m = await moderate(text, 'event', t.spec.meta.rating, worldCtx(t));
-    if (!m.ok) throw new HttpError(422, m.reason);
+    if (!m.ok) throw new HttpError(422, m.reason!);
     const err = t.architect ? t.architect.enqueue(text, admin ? 'admin' : 'visitor') : '世界架构师插件未启用';
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
@@ -219,13 +218,13 @@ export function worldApi(deps) {
     const b = c.get('body');
     const r = town(c).proposalSystem.submit({ title: b.title, motive: b.motive, ops: b.ops, construction: b.construction, origin: 'admin', allowed: ADMIN_OPS });
     if (r.error) throw new HttpError(422, r.error);
-    return c.json({ ok: true, id: r.proposal.id });
+    return c.json({ ok: true, id: r.proposal!.id });
   });
 
   api.post('/proposals/vote', (c) => {
     voteGate(c);
     const b = c.get('body');
-    const err = town(c).proposalSystem.vote(String(b.id || ''), c.get('vid'), Boolean(b.yes));
+    const err = town(c).proposalSystem.vote(String(b.id || ''), c.get('vid')!, Boolean(b.yes));
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
   });
@@ -241,7 +240,7 @@ export function worldApi(deps) {
   api.post('/proposals/decide', (c) => {
     requireReviewer(c);
     const b = c.get('body');
-    const err = town(c).proposalSystem.decide(String(b.id || ''), Boolean(b.approve), reviewer(c));
+    const err = town(c).proposalSystem.decide(String(b.id || ''), Boolean(b.approve), reviewer(c)!);
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
   });
@@ -278,7 +277,7 @@ export function worldApi(deps) {
     const d = t.decisions.get(String(b.id || ''));
     if (!d) throw new HttpError(404, '决策项不存在');
     // 提案与剧情抉择走原来的终审入口（会同时关闭决策项）
-    const by = reviewer(c);
+    const by = reviewer(c)!;
     const err = d.kind === 'proposal' ? t.proposalSystem.decide(d.ref, Boolean(b.adopt), by)
       : d.kind === 'vote' ? t.votes.decide(d.ref, String(b.option || ''), by)
         : t.decisions.decide(d.id, { adopt: Boolean(b.adopt) }, by);
@@ -318,9 +317,9 @@ export function worldApi(deps) {
     requireAdmin(c);
     const host = c.get('host'), b = c.get('body');
     if (host.diskFull) throw new HttpError(409, '这个世界的磁盘空间已经用满了，删掉一些时间线或联系管理员放宽上限后再分支');
-    const fromId = registry(host.dataRoot).active;
+    const fromId = registry(host.dataRoot!).active;
     if (!b.snapshot) host.town.save();
-    const entry = forkTimeline(host.dataRoot, { fromId, snapshot: b.snapshot ? String(b.snapshot) : null, name: sanitize(b.name, 20) });
+    const entry = forkTimeline(host.dataRoot!, { fromId, snapshot: b.snapshot ? String(b.snapshot) : null, name: sanitize(b.name, 20) });
     if (b.switch !== false) switchTimeline(host, entry.id, c.get('ip'));
     return c.json({ ok: true, timeline: entry });
   });
@@ -339,14 +338,14 @@ export function worldApi(deps) {
     const name = user?.nickname || sanitize(b.name, 8);
     if (!user) {
       const m = await moderate(name, 'chat', t.spec.meta.rating, worldCtx(t));
-      if (!m.ok) throw new HttpError(422, m.reason);
+      if (!m.ok) throw new HttpError(422, m.reason!);
     }
-    const v = t.avatars.join(c.get('vid'), c.get('ip'), { name, color: b.color });
+    const v = t.avatars.join(c.get('vid')!, c.get('ip'), { name, color: b.color });
     return c.json({ ok: true, avatar: { id: v.id, name: v.name, color: v.color } });
   });
-  api.post('/avatar/move', (c) => { requireUser(c); town(c).avatars.move(c.get('vid'), String(c.get('body').location || '')); return c.json({ ok: true }); });
-  api.post('/avatar/goto', (c) => { requireUser(c); const b = c.get('body'); town(c).avatars.goto(c.get('vid'), b.x, b.y); return c.json({ ok: true }); });
-  api.post('/avatar/leave', (c) => c.json({ ok: c.get('vid') ? town(c).avatars.leave(c.get('vid')) : false }));
+  api.post('/avatar/move', (c) => { requireUser(c); town(c).avatars.move(c.get('vid')!, String(c.get('body').location || '')); return c.json({ ok: true }); });
+  api.post('/avatar/goto', (c) => { requireUser(c); const b = c.get('body'); town(c).avatars.goto(c.get('vid')!, b.x, b.y); return c.json({ ok: true }); });
+  api.post('/avatar/leave', (c) => c.json({ ok: c.get('vid') ? town(c).avatars.leave(c.get('vid')!) : false }));
 
   // 打开 / 关闭异界区域（管理员）
   api.post('/region', (c) => {
@@ -360,14 +359,14 @@ export function worldApi(deps) {
   api.post('/vote', (c) => {
     voteGate(c);
     const b = c.get('body');
-    const err = town(c).votes.cast(String(b.id || ''), c.get('vid'), String(b.option || ''));
+    const err = town(c).votes.cast(String(b.id || ''), c.get('vid')!, String(b.option || ''));
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
   });
   api.post('/vote/decide', (c) => {
     requireReviewer(c);
     const b = c.get('body');
-    const err = town(c).votes.decide(String(b.id || ''), String(b.option || ''), reviewer(c));
+    const err = town(c).votes.decide(String(b.id || ''), String(b.option || ''), reviewer(c)!);
     if (err) throw new HttpError(409, err);
     return c.json({ ok: true });
   });
@@ -375,13 +374,13 @@ export function worldApi(deps) {
   // 人员流动：owner / 管理员可以撤销（请人离开、召回出门的人），也可以让导演立即安排一次
   api.post('/people/depart', (c) => {
     requireReviewer(c);
-    const r = town(c).migration.leave({ who: String(c.get('body').id || ''), why: '' }, { by: reviewer(c) });
+    const r = town(c).migration.leave({ who: String(c.get('body').id || ''), why: '' }, { by: reviewer(c)! });
     if (r.error) throw new HttpError(409, r.error);
     return c.json({ ok: true, ...r });
   });
   api.post('/people/recall', (c) => {
     requireReviewer(c);
-    const r = town(c).migration.recall(String(c.get('body').id || ''), reviewer(c));
+    const r = town(c).migration.recall(String(c.get('body').id || ''), reviewer(c)!);
     if (r.error) throw new HttpError(409, r.error);
     return c.json({ ok: true, ...r });
   });
@@ -389,7 +388,7 @@ export function worldApi(deps) {
     requireReviewer(c);
     if (!llm.enabled()) throw new HttpError(503, llm.blocked() || 'AI 尚未配置');
     const kind = String(c.get('body').kind || '');
-    const r = await town(c).migration.decide(['arrive', 'leave', 'return'].includes(kind) ? kind : null);
+    const r = await town(c).migration.decide(['arrive', 'leave', 'return'].includes(kind) ? kind as 'arrive' : null);
     if (r.error) throw new HttpError(409, r.error);
     return c.json({ ok: true, ...r });
   });
@@ -438,18 +437,18 @@ export function worldApi(deps) {
   return api;
 }
 
-function voteGate(c) {
+function voteGate(c: Ctx): void {
   requireUser(c);
   take(c, 'vote');
 }
 
 /** 切换到另一条时间线：当前小镇存盘停下，换成目标时间线的小镇 */
-function switchTimeline(host, id, ip) {
-  const r = registry(host.dataRoot);
+function switchTimeline(host: WorldHost, id: string, ip: string): void {
+  const r = registry(host.dataRoot!);
   if (!r.list.some((t) => t.id === id)) throw new HttpError(404, '时间线不存在');
   host.town.save();
   host.town.stop();
-  setActive(host.dataRoot, id);
+  setActive(host.dataRoot!, id);
   host.replace(host.makeTown());
   console.log(`[timeline] ${ip} 把 ${host.id} 切换到时间线 ${id}`);
 }

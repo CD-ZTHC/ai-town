@@ -209,7 +209,7 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
    * 旅人对居民说话 / 化作心声。visitor：{ id: 账号 id, name: 当前昵称 }（兼容旧写法：直接传一个 id 字符串）。
    * 心声是匿名的：居民只会觉得「突然想到」，不知道来自谁。
    */
-  async visitorChat(this: Town, id: string, text: string, mode = 'visitor', visitor: string | { id: string; name: string } = 'local') {
+  async visitorChat(this: Town, id: string, text: string, mode = 'visitor', visitor: string | { id: string; name: string | null } = 'local') {
     const a = this.byId[id];
     if (!a) throw Object.assign(new Error('居民不存在'), { status: 404 });
     if (a.chatBusy) throw Object.assign(new Error(`${a.name}正在回应别人，稍等一下再说吧`), { status: 429 });

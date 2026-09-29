@@ -7,37 +7,47 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const sha = (buf, enc = 'hex') => crypto.createHash('sha256').update(buf).digest(enc);
+const sha = (buf: string | NodeJS.ArrayBufferView, enc: crypto.BinaryToTextEncoding = 'hex'): string => crypto.createHash('sha256').update(buf).digest(enc);
 const HASH_LEN = 10;
 
 /** 服务端注入的内联脚本（import map）需要的 CSP 来源：'sha256-…' */
-export const cspHash = (text) => `'sha256-${sha(text, 'base64')}'`;
+export const cspHash = (text: string): string => `'sha256-${sha(text, 'base64')}'`;
 
 /** 解析 If-None-Match：逗号分隔的列表；忽略 W/ 前缀与反向代理压缩时追加的后缀（例如 Caddy 的 "…-zstd"） */
-export function etagMatches(header, etag) {
+export function etagMatches(header: string | null | undefined, etag: string | null | undefined): boolean {
   if (!header || !etag) return false;
-  const norm = (s) => s.trim().replace(/^W\//, '').replace(/^"|"$/g, '').replace(/-(zstd|gzip|br|deflate)$/, '');
+  const norm = (s: string): string => s.trim().replace(/^W\//, '').replace(/^"|"$/g, '').replace(/-(zstd|gzip|br|deflate)$/, '');
   const want = norm(etag);
   return header.split(',').some((t) => t.trim() === '*' || norm(t) === want);
 }
 
 /** 请求路径所在目录到站点根目录的相对路径：/ → ./，/admin/ → ../，/w/yunxi/ → ../../ */
-export function rootPrefix(reqPath) {
+export function rootPrefix(reqPath: string | null | undefined): string {
   const depth = String(reqPath || '/').split('/').length - 2;
   return depth > 0 ? '../'.repeat(depth) : './';
 }
 
+/** 一个文件的版本 */
+export interface AssetEntry { hash: string; size: number; mtimeMs: number }
+/** 改写后的 HTML */
+export interface AssetPage { src: string; body: Buffer; etag: string; csp: string | null }
+
 export class Assets {
+  declare root: string;
+  declare enabled: () => boolean;
+  declare revision: string | null;
+  /** 相对路径（posix）→ 版本 */
+  declare files: Map<string, AssetEntry>;
+  declare pages: Map<string, AssetPage>;
+  declare _build: string | null;
   /**
-   * @param {string} root public 目录（绝对路径）
-   * @param {{ enabled?: () => boolean, revision?: string|null }} [o]
-   *   enabled：ASSET_VERSIONING 开关（关闭时不改写 HTML、不给长缓存）；revision：部署时写入的 REVISION（只用于展示）
+   * root：public 目录（绝对路径）；enabled：ASSET_VERSIONING 开关（关闭时不改写 HTML、不给长缓存）；
+   * revision：部署时写入的 REVISION（只用于展示）
    */
-  constructor(root, { enabled = () => true, revision = null } = {}) {
+  constructor(root: string, { enabled = () => true, revision = null }: { enabled?: () => boolean; revision?: string | null } = {}) {
     this.root = path.resolve(root);
     this.enabled = enabled;
     this.revision = revision;
-    /** @type {Map<string, { hash: string, size: number, mtimeMs: number }>} 相对路径（posix）→ 版本 */
     this.files = new Map();
     this.pages = new Map(); // 改写后的 HTML 缓存：`${rel}|${prefix}|${build}` → { body, etag, csp }
     this._build = null;
@@ -45,9 +55,9 @@ export class Assets {
   }
 
   /** 遍历 public/（跳过点开头的文件），补上新增的、去掉删除的 */
-  scan() {
-    const seen = new Set();
-    const walk = (dir) => {
+  scan(): void {
+    const seen = new Set<string>();
+    const walk = (dir: string) => {
       for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
         if (d.name.startsWith('.')) continue;
         const abs = path.join(dir, d.name);
@@ -60,7 +70,7 @@ export class Assets {
   }
 
   /** 某个文件的版本；文件不存在返回 null。mtime 或大小变了就重新计算 */
-  entry(rel) {
+  entry(rel: string): AssetEntry | null {
     rel = String(rel).replace(/^\/+/, '');
     if (rel.split('/').some((seg) => seg.startsWith('.') || !seg)) return null; // 点开头的文件、路径穿越
     let st;
@@ -74,17 +84,17 @@ export class Assets {
     return e;
   }
 
-  hash(rel) { return this.entry(rel)?.hash || null; }
+  hash(rel: string): string | null { return this.entry(rel)?.hash || null; }
 
   /** 构建号：前端所有文件内容的整体哈希（只有前端真的变了，已打开的页面才需要刷新） */
-  get build() {
+  get build(): string {
     if (!this._build) this._build = sha([...this.files].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}:${v.hash}`).join('\n')).slice(0, HASH_LEN);
     return this._build;
   }
 
   /** import map：public/js/ 下所有模块。prefix 是 HTML 所在目录到 public/ 的相对路径（'./' 或 '../'） */
-  importMap(prefix) {
-    const imports = {};
+  importMap(prefix: string): string {
+    const imports: Record<string, string> = {};
     for (const [rel, e] of [...this.files].sort(([a], [b]) => (a < b ? -1 : 1))) {
       if (rel.startsWith('js/') && rel.endsWith('.js')) imports[`${prefix}${rel}`] = `${prefix}${rel}?v=${e.hash}`;
     }
@@ -93,11 +103,9 @@ export class Assets {
 
   /**
    * 改写后的 HTML：入口加 ?v=，注入构建号与 import map。
-   * @param {string} rel HTML 文件（相对 public/）
-   * @param {string} reqPath 请求路径（算出页面到站点根目录的相对路径，写进 meta 供页面请求 api/build）
-   * @returns {{ body: Buffer, etag: string, csp: string|null } | null}
+   * rel：HTML 文件（相对 public/）；reqPath：请求路径（算出页面到站点根目录的相对路径，写进 meta 供页面请求 api/build）
    */
-  page(rel, reqPath) {
+  page(rel: string, reqPath: string): AssetPage | null {
     rel = rel.replace(/^\/+/, '');
     // HTML 里的 import map 覆盖所有模块：先确认各文件的版本是最新的
     this.scan();
@@ -123,15 +131,15 @@ export class Assets {
  * 改写 HTML：<script src> / <link href> 里能在清单里找到的相对路径加 ?v=<哈希>；在 </head> 前注入构建号与 import map。
  * 外链、data:、绝对路径、已经带查询参数的不动。返回 { html, inline }（inline：注入的内联脚本内容，用来算 CSP 哈希）
  */
-export function rewriteHtml(html, { dir = '.', resolve, build, site = './', importMap = null }) {
-  const out = html.replace(/(<(?:script|link)\b[^>]*?\s(?:src|href)=")([^"]+)(")/gi, (m, a, url, b) => {
+export function rewriteHtml(html: string, { dir = '.', resolve, build, site = './', importMap = null }: { dir?: string; resolve: (rel: string) => string | null; build: string; site?: string; importMap?: string | null }): { html: string; inline: string | null } {
+  const out = html.replace(/(<(?:script|link)\b[^>]*?\s(?:src|href)=")([^"]+)(")/gi, (m, a: string, url: string, b: string) => {
     if (/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(url) || url.includes('?')) return m;
     const rel = path.posix.normalize(path.posix.join(dir, url));
     if (rel.startsWith('..')) return m;
     const h = resolve(rel);
     return h ? `${a}${url}?v=${h}${b}` : m;
   });
-  const esc = (s) => String(s).replace(/[&"<>]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' }[c]));
+  const esc = (s: unknown) => String(s).replace(/[&"<>]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' }[c as '&']));
   const inject = `<meta name="build" content="${esc(build)}" data-root="${esc(site)}">${importMap ? `\n<script type="importmap">${importMap}</script>` : ''}\n`;
   const i = out.search(/<\/head>/i);
   const html2 = i < 0 ? inject + out : out.slice(0, i) + inject + out.slice(i);

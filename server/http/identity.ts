@@ -8,52 +8,55 @@ import { get as setting } from '../settings/index.ts';
 import { isAdminUser } from '../accounts/authz.ts';
 import { SESSION_TTL } from '../accounts/index.ts';
 import { HttpError, nodeLike } from './util.ts';
+import type { Accounts } from '../accounts/index.ts';
+import type { User } from '../types/account.ts';
+import type { Ctx, Middleware } from '../types/http.ts';
 
 export const COOKIE = 'town_sid';
 
-function safeEqual(a, b) {
+function safeEqual(a: unknown, b: unknown): boolean {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
-function isHttps(c) {
+function isHttps(c: Ctx): boolean {
   if (c.req.url.startsWith('https:')) return true;
   if (config.trustProxy && /^https$/i.test(String(c.req.header('x-forwarded-proto') || '').split(',')[0].trim())) return true;
   return false;
 }
 
 /** 公网模式下 Cookie 带 Secure（本机调试用的 http://localhost 例外） */
-function secure(c) {
+function secure(c: Ctx): boolean {
   if (isHttps(c)) return true;
   const host = String(c.req.header('host') || '').replace(/:\d+$/, '');
   return config.publicMode && !['localhost', '127.0.0.1', '[::1]'].includes(host);
 }
 
-export function setSessionCookie(c, token) {
+export function setSessionCookie(c: Ctx, token: string): void {
   setCookie(c, COOKIE, token, { path: '/', httpOnly: true, sameSite: 'Lax', secure: secure(c), maxAge: Math.floor(SESSION_TTL / 1000) });
 }
-export function clearSessionCookie(c) { deleteCookie(c, COOKIE, { path: '/', secure: secure(c) }); }
-export const sessionToken = (c) => getCookie(c, COOKIE) || null;
+export function clearSessionCookie(c: Ctx): void { deleteCookie(c, COOKIE, { path: '/', secure: secure(c) }); }
+export const sessionToken = (c: Ctx): string | null => getCookie(c, COOKIE) || null;
 
 /**
  * 身份中间件：设置 c.get('ip' | 'user' | 'admin' | 'who' | 'vid')。
  * 写请求还要校验 Origin（跨站请求伪造：写接口只接受 JSON + Origin 必须是本站）。
  */
-export function identity({ accounts }) {
-  const lastTokenAudit = new Map();
+export function identity({ accounts }: { accounts: Accounts | null }): Middleware {
+  const lastTokenAudit = new Map<string, number>();
   return async (c, next) => {
     const ip = clientIp(nodeLike(c));
     c.set('ip', ip);
     const method = c.req.method;
     if (!['GET', 'HEAD'].includes(method)) checkOrigin(c);
 
-    let user = null;
+    let user: User | null = null;
     if (!config.publicMode) {
-      user = accounts ? accounts.localUser(setting('LOCAL_NICKNAME')) : { id: 'u_local', nickname: setting('LOCAL_NICKNAME'), role: 'super' };
+      user = accounts ? accounts.localUser(setting('LOCAL_NICKNAME')) : { id: 'u_local', nickname: setting('LOCAL_NICKNAME'), role: 'super' } as User;
     } else if (accounts) {
       const tok = sessionToken(c);
       const s = tok ? accounts.session(tok) : null;
-      if (s) { user = s.user; if (s.touched) setSessionCookie(c, tok); }
+      if (s) { user = s.user; if (s.touched) setSessionCookie(c, tok!); }
     }
     const header = c.req.header('x-admin-token');
     const viaToken = Boolean(config.adminToken && header && safeEqual(header, config.adminToken));
@@ -76,7 +79,7 @@ export function identity({ accounts }) {
   };
 }
 
-function checkOrigin(c) {
+function checkOrigin(c: Ctx): void {
   const origin = c.req.header('origin');
   if (!origin) return; // 同源的 fetch 在部分浏览器里不带 Origin；跨站请求一定带
   let o;

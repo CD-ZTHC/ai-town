@@ -7,12 +7,12 @@ const INVISIBLE = new RegExp(`[${[[0x00, 0x1f], [0x7f, 0x9f], [0x200b, 0x200f], 
   .map(([a, b]) => `${String.fromCharCode(a)}-${String.fromCharCode(b)}`).join('')}]`, 'g');
 
 /** 用于唯一性比较的键 */
-export function nicknameKey(name) {
+export function nicknameKey(name: unknown): string {
   return String(name ?? '').normalize('NFKC').replace(INVISIBLE, '').replace(/\s+/g, '').toLowerCase();
 }
 
 /** 显示用的昵称：去掉不可见字符与首尾空白 */
-export function cleanNickname(name) {
+export function cleanNickname(name: unknown): string {
   return String(name ?? '').normalize('NFKC').replace(INVISIBLE, '').replace(/\s+/g, ' ').trim();
 }
 
@@ -23,7 +23,7 @@ const IMPERSONATE = /管理员|管理組|官方|系统|系統|客服|站长|版�
  * 昵称是否可用（不查数据库里的重名，那一步由调用方做）。reserved：保留的名字（官方世界居民的名字等）。
  * 返回问题描述，没有问题时返回 null。
  */
-export function nicknameProblem(name, { reserved = [] } = {}) {
+export function nicknameProblem(name: unknown, { reserved = [] }: { reserved?: string[] } = {}): string | null {
   const n = cleanNickname(name);
   const len = [...n].length;
   if (len < 1) return '起个昵称吧';
@@ -38,8 +38,8 @@ export function nicknameProblem(name, { reserved = [] } = {}) {
 }
 
 /** 用户名（登录用）：3~20 位，只允许字母数字和下划线 */
-export function usernameProblem(u) {
+export function usernameProblem(u: unknown): string | null {
   if (!/^[A-Za-z0-9_]{3,20}$/.test(String(u ?? ''))) return '用户名需要 3~20 位，只能用字母、数字和下划线';
-  if (IMPERSONATE.test(u)) return '用户名里不能有 admin、official、system 这类词';
+  if (IMPERSONATE.test(u as string)) return '用户名里不能有 admin、official、system 这类词';
   return null;
 }

@@ -41,8 +41,16 @@ export interface ConvoRecord {
   [k: string]: unknown;
 }
 
+/** 每晚的编年（日报 / 公告 / 歌谣……） */
 export interface Newspaper {
   day: number;
+  headline?: string;
+  subhead?: string;
+  lead?: string;
+  articles?: Array<{ title: string; body: string }>;
+  gossip?: string;
+  quote?: { who: string; text: string };
+  forecast?: string;
   [k: string]: unknown;
 }
 

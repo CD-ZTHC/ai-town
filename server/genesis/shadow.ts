@@ -4,16 +4,16 @@
 import path from 'node:path';
 
 const [packDir, workDir] = process.argv.slice(2);
-const out = (x) => { process.stdout.write(`${JSON.stringify(x)}\n`); process.exit(0); };
+const out = (x: object): never => { process.stdout.write(`${JSON.stringify(x)}\n`); process.exit(0); };
 try {
   const { loadPack } = await import('../worlds/pack.ts');
   const { Town } = await import('../sim.ts');
   const pack = loadPack(packDir);
   const town = new Town({ dataDir: workDir, worldId: 'shadow', pack, instantTalk: true, pacing: false, evolution: { dir: path.join(workDir, 'evolution'), pluginsDir: path.join(workDir, 'plugins') } });
   const residents = town.agents.filter((a) => a.kind !== 'creature');
-  const walking = {};
-  const stuck = new Set();
-  const visited = new Set();
+  const walking: Record<string, number> = {};
+  const stuck = new Set<string>();
+  const visited = new Set<string>();
   town.speed = 30;
   const end = town.t + 1440;
   let errors = 0;
@@ -31,5 +31,5 @@ try {
   town.stop();
   out({ ok: true, residents: residents.length, stuck: [...stuck], stuckRate: residents.length ? stuck.size / residents.length : 0, visited: visited.size, places: Object.keys(town.spec.locations).length, errors });
 } catch (e) {
-  out({ ok: false, error: String(e.message || e).slice(0, 300) });
+  out({ ok: false, error: String((e as Error).message || e).slice(0, 300) });
 }

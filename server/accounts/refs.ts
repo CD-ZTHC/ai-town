@@ -4,27 +4,28 @@
 const REF = /\{@(u_[a-z0-9_]{1,40})\}/g;
 export const GONE = '一位离开的旅人';
 
-let resolve = () => null; // id → { nickname, disabled } | null
+type Resolver = (id: string) => { nickname: string; disabled?: boolean } | null;
+let resolve: Resolver = () => null; // id → { nickname, disabled } | null
 
 /** 由账号模块设置：按 id 查当前昵称 */
-export function setResolver(fn) { resolve = fn || (() => null); }
+export function setResolver(fn: Resolver | null): void { resolve = fn || (() => null); }
 
-export const ref = (id) => `{@${id}}`;
+export const ref = (id: string): string => `{@${id}}`;
 
 /** 把文本里的引用换成当前昵称 */
-export function renderRefs(text) {
+export function renderRefs<T>(text: T): T {
   if (typeof text !== 'string' || !text.includes('{@')) return text;
-  return text.replace(REF, (_, id) => {
+  return text.replace(REF, (_, id: string) => {
     const u = resolve(id);
     return u && !u.disabled ? u.nickname : GONE;
-  });
+  }) as T;
 }
 
 /**
  * 把文本里出现的旅人昵称换成引用。people：[{ id, name }]（这位居民认识的旅人）。
  * 「昵称」形式的一律替换；不带书名号的只替换两个字以上的昵称，避免把单字昵称误换进普通词里。
  */
-export function encodeRefs(text, people) {
+export function encodeRefs(text: string, people: Array<{ id: string; name: string }> | null | undefined): string {
   if (typeof text !== 'string' || !people?.length) return text;
   // 长的名字先换，避免「小明」把「小明明」换掉一半
   for (const { id, name } of [...people].filter((p) => p.name).sort((a, b) => b.name.length - a.name.length)) {
@@ -36,6 +37,6 @@ export function encodeRefs(text, people) {
 }
 
 // 替换 name，但不动已经是引用的部分
-function splitOutsideRefs(text, name, r) {
+function splitOutsideRefs(text: string, name: string, r: string): string {
   return text.split(/(\{@u_[a-z0-9_]+\})/).map((part) => (part.startsWith('{@') ? part : part.split(name).join(r))).join('');
 }

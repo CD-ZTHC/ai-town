@@ -12,12 +12,17 @@ import { normalizeSource, screenSource, sampleParagraphs } from '../genesis/sour
 import { GenesisJobs } from '../genesis/jobs.ts';
 import { HttpError } from './util.ts';
 import { STORYTELLERS } from '../kernel/spec.ts';
+import type { AppEnv, Ctx } from '../types/http.ts';
+import type { Accounts } from '../accounts/index.ts';
+import type { WorldRegistry } from '../worlds/registry.ts';
+import type { Grant } from '../types/account.ts';
+import type { AiConfig, createWorldLlm } from '../world-llm.ts';
 
 const RATINGS_DEFAULT = ['cozy', 'adventure'];
 export const DEATH_NAMED_DEFAULT = 2;
 
 /** 创世授予的配额：授予里写了的用授予的，没写的用设置里的默认值 */
-export function genesisQuota(grant) {
+export function genesisQuota(grant: Pick<Grant, 'quota'> | null | undefined): { maxWorlds: number; maxSourceChars: number; genesisTokens: number; dailyWorldTokens: number; diskMB: number; ratings: string[]; deathNamed: number } {
   const q = grant?.quota || {};
   return {
     maxWorlds: q.maxWorlds ?? setting('GENESIS_MAX_WORLDS'),
@@ -31,21 +36,16 @@ export function genesisQuota(grant) {
   };
 }
 
-/**
- * @param {object} deps
- * @param {import('../accounts/index.ts').Accounts} deps.accounts
- * @param {import('../worlds/registry.ts').WorldRegistry} deps.registry
- * @param {GenesisJobs} deps.jobs
- * @param {(userId) => number} deps.used 创世已用 token（P3，按创世者累计）
- * @param {() => number} [deps.userDiskTotal]
- * @param {ReturnType<import('../world-llm.ts').createWorldLlm>} [deps.worldLlm] 创世时可以选用自己的模型服务
- */
-export function genesisApi(deps) {
-  const api = new Hono();
+/** used：创世已用 token（P3，按创世者累计）；worldLlm：创世时可以选用自己的模型服务 */
+export function genesisApi(deps: {
+  accounts: Accounts | null; registry: WorldRegistry; jobs: GenesisJobs; used: (userId: string) => number;
+  userDiskTotal?: (() => number) | null; worldLlm?: ReturnType<typeof createWorldLlm> | null;
+}): Hono<AppEnv> {
+  const api = new Hono<AppEnv>();
   const { accounts, registry, jobs } = deps;
 
   /** 当前用户与他的创世授予（管理员不需要授予，按默认配额） */
-  const creator = (c) => {
+  const creator = (c: Ctx) => {
     const who = c.get('who');
     const user = c.get('user');
     if (!user) throw new HttpError(401, '请先登录', { login: true });
@@ -119,7 +119,7 @@ export function genesisApi(deps) {
     const mine = registry.list({ ownerId: user.id }).filter((w) => !['archived', 'failed'].includes(w.status));
     if (mine.length >= quota.maxWorlds) throw new HttpError(403, `最多可以创建 ${quota.maxWorlds} 个世界（已有 ${mine.length} 个）`);
     // 用自己的模型服务创世（按世界配置模型服务设计 §5.6）：先按世界的规则校验，不扣站点的创世额度
-    const ai = b.ai && b.ai.source === 'own' && deps.worldLlm ? deps.worldLlm.validate(b.ai, { id, ownerId: user.id, official: false, settings: {} }) : null;
+    const ai = b.ai && b.ai.source === 'own' && deps.worldLlm ? deps.worldLlm.validate(b.ai, { id, ownerId: user.id, official: false, settings: {} }) as Extract<AiConfig, { source: 'own' }> : null;
     if (!ai && deps.used(user.id) >= quota.genesisTokens) throw new HttpError(403, '你的创世额度已经用完了，可以改用自己的模型服务');
     if (deps.userDiskTotal && GenesisJobs.diskFull(deps.userDiskTotal())) throw new HttpError(503, '服务器的世界存储空间满了，暂时不接受新的创世，请联系管理员');
     const sourceId = b.sourceId ? String(b.sourceId) : null;
@@ -134,7 +134,7 @@ export function genesisApi(deps) {
       // 参考模式：只借用题材要素、生成原创世界；avoid 是不能出现的原作名词；threats 是否生成按规律行事的威胁（黑暗叙事设计 §4.12）
       mode: o.mode === 'inspire' ? 'inspire' : 'adapt',
       inspiration: String(o.inspiration || '').slice(0, 200),
-      avoid: (Array.isArray(o.avoid) ? o.avoid : String(o.avoid || '').split(/[，,、\s|]+/)).map((x) => String(x).trim().slice(0, 16)).filter(Boolean).slice(0, 40),
+      avoid: (Array.isArray(o.avoid) ? o.avoid : String(o.avoid || '').split(/[，,、\s|]+/)).map((x: unknown) => String(x).trim().slice(0, 16)).filter(Boolean).slice(0, 40),
       threats: o.threats === undefined ? ['dark', 'tragic'].includes(rating) : Boolean(o.threats),
     };
     registry.create({ id, ownerId: user.id, title: String(b.title || id).slice(0, 40), status: 'drafting', rating, evolution: options.evolution, settings: ai ? { ai } : {} });
