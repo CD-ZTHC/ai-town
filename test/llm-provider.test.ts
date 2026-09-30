@@ -182,3 +182,15 @@ test('结构化输出（P8）：zod 定义转成 json_schema 发给网关；解�
   assert.deepEqual(await llm.chatJSON([{ role: 'user', content: 'x' }], { label: '日记测试', schema: spec }), { text: '字段名写错了' }, '不拒绝，交给调用方兜底');
   assert.equal(llm.stats.byLabel['日记测试']!.schemaMiss - before, 1);
 });
+
+test('结构化输出：模型把结果多包一层时自动解开（计入 repairs）；解开后仍不符合的原样返回', async (t) => {
+  const { SCHEMAS } = await import('../server/llm-schemas.ts');
+  const replies = ['{"answer":{"target":"library","mode":"hide","reason":"避开灯光"}}', '{"answer":{"target":"library"},"extra":1}'];
+  llm.setMock(async () => replies.shift()!);
+  t.after(() => llm.setMock(null));
+  const r0 = llm.stats.byLabel['群体测试']?.repairs || 0;
+  assert.deepEqual(await llm.chatJSON([{ role: 'user', content: 'x' }], { label: '群体测试', schema: SCHEMAS.swarm }), { target: 'library', mode: 'hide', reason: '避开灯光' });
+  assert.equal(llm.stats.byLabel['群体测试']!.repairs - r0, 1);
+  assert.deepEqual(await llm.chatJSON([{ role: 'user', content: 'x' }], { label: '群体测试', schema: SCHEMAS.swarm }), { answer: { target: 'library' }, extra: 1 });
+  assert.equal(llm.stats.byLabel['群体测试']!.schemaMiss, 1);
+});

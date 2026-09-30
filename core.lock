@@ -47,7 +47,7 @@
   "server/llm-aisdk.ts": "b4b12e89646d5ab517cae77a71b370b6017212a89ba414e7c3717d8ae7160385",
   "server/llm-providers.ts": "7140cd3b4285dd9a74c54ae444d3f4b07daa758c9652fcfea04a2ab747f2357d",
   "server/llm-schemas.ts": "d30fb59602c0f26daf837e6581d7a82de05bd08636c3fa0c83f3ee659046df15",
-  "server/llm.ts": "7e38d92f776c05e0d1f80ef01c97c0498712ecb6f68772de6465c5a9f5bee2ff",
+  "server/llm.ts": "961ced423a8aead4cc49fd05863f6d867483c0d938b7e6fb6427efd4c4b499f1",
   "server/main.ts": "d706d8d56c1ed62837195a4248c633f18beb6a57209a2f46fad26e3e37b321cc",
   "server/memory.ts": "cc4de531328863c45297306b5a7aaf514fe9a18b878d1a839442b0de094d2465",
   "server/memstat.ts": "bf8ef94b68d271c17f72aac6cbd1d24131f24040c0137c59b5c13f8c04ee1f70",

@@ -627,7 +627,16 @@ export async function chatJSON(messages: ChatMessage[], opts: ChatOptions = {}):
   const s = labelStats(opts.label || 'llm');
   s.json++;
   // 解析出来的 JSON 与模块声明的结构（llm-schemas.ts）不符：只计数（AI 大脑的指标），交给调用方的手工校验兜底
-  const checked = (v: ModelJSON): ModelJSON => { if (opts.schema?.zod && !opts.schema.zod.safeParse(v).success) s.schemaMiss = (s.schemaMiss || 0) + 1; return v; };
+  // 模型偶尔把结果多包一层（{"answer":{…}}、{"result":{…}}）：外层不符合、唯一的字段符合时解开（计入 repairs）
+  const checked = (v: ModelJSON): ModelJSON => {
+    const zod = opts.schema?.zod;
+    if (!zod || zod.safeParse(v).success) return v;
+    const keys = v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v) : [];
+    const inner = keys.length === 1 ? v[keys[0]!] : null;
+    if (inner && typeof inner === 'object' && !Array.isArray(inner) && zod.safeParse(inner).success) { s.repairs++; return inner; }
+    s.schemaMiss = (s.schemaMiss || 0) + 1;
+    return v;
+  };
   try {
     return checked(extractJSON(content));
   } catch (e) {
