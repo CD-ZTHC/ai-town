@@ -268,3 +268,52 @@ test('独立运行的进化引擎能联网（要调用模型）；经 IPC 调用
     assert.match(await run(sandboxArgs(dir)), /^ERR/, '沙箱进程不能联网');
   }
 });
+
+// ---------- 按需运行（重构方案 P9）----------
+const COUNTER = `export default function (api) {
+  api.route('inc', () => { const n = (api.store.get('n') || 0) + 1; api.store.set('n', n); return n; });
+  api.route('slow', () => { const end = Date.now() + 400; while (Date.now() < end) {} return 'ok'; });
+}`;
+
+test('沙箱空闲后结束进程，下次调用时自动重启；插件存储每次启动都重新读取，重启不丢数据', async () => {
+  const { dir } = pluginDir('lantern-glow@1.0.0', { 'server.js': COUNTER });
+  let saved: Record<string, unknown> = {};
+  const c = new SandboxClient(dir, { readyMs: 5000, idleMs: 150, store: () => saved });
+  const inc = async () => { const { result, side } = await c.call('route', 'inc', {}, 3000); if (side.store) saved = side.store; return result; };
+  assert.equal(await inc(), 1);
+  assert.equal(await inc(), 2);
+  assert.ok(await until(() => !c.child, 2000), '空闲后进程结束');
+  assert.equal(c.stats.recycled, 1);
+  assert.equal(c.stats.crashes, 0, '回收不算崩溃');
+  assert.equal(await inc(), 3, '重启后拿到的是最新的存储');
+  assert.equal(c.stats.starts, 2);
+  // 超时被杀掉后重启，同样拿到最新的存储
+  await assert.rejects(c.call('route', 'slow', {}, 100), /超时/);
+  assert.equal(await inc(), 4);
+  c.close();
+});
+
+test('全站同时运行的沙箱不超过上限：结束最久没用的；正在调用的不会被结束', async (t) => {
+  const settings = await import('../server/settings/index.ts');
+  const { liveSandboxes } = await import('../plugin-host/sandbox/client.ts');
+  process.env.SANDBOX_MAX = '2';
+  t.after(() => { delete process.env.SANDBOX_MAX; });
+  assert.equal(settings.get('SANDBOX_MAX'), 2);
+  const mk = () => new SandboxClient(pluginDir('lantern-glow@1.0.0', { 'server.js': COUNTER }).dir, { readyMs: 5000 });
+  const [a, b, c] = [mk(), mk(), mk()];
+  t.after(() => { a.close(); b.close(); c.close(); });
+  const base = liveSandboxes();
+  await a.call('route', 'inc', {}, 3000);
+  await sleep(5);
+  await b.call('route', 'inc', {}, 3000);
+  assert.equal(liveSandboxes() - base, 2);
+  // a 正在调用（slow）时启动 c：不能结束 a，只能结束 b（虽然 b 更近用过）
+  const slow = a.call('route', 'slow', {}, 3000);
+  await sleep(50);
+  await c.call('route', 'inc', {}, 3000);
+  assert.equal((await slow).result, 'ok', '调用中的沙箱没有被结束');
+  assert.ok(a.child && c.child && !b.child, `a=${!!a.child} b=${!!b.child} c=${!!c.child}`);
+  assert.equal(b.stats.recycled, 1);
+  // b 再被调用时自动重启，结果照常
+  assert.equal((await b.call('route', 'inc', {}, 3000)).result, 1);
+});

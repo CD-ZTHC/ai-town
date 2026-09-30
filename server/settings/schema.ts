@@ -62,6 +62,8 @@ export const SETTINGS = {
   MAX_CLIENTS_PER_IP: { group: 'site', ...int(1, 1000), default: 6, apply: 'live', label: '每个 IP 同时打开的页面上限' },
   TICK_HZ: { group: 'site', ...num(1, 20), default: 4, apply: 'live', label: '画面推送频率（次/秒）', help: '每秒向每位观众推送几次世界快照。页面会在两次推送之间插值，调低省带宽与内存' },
   SSE_MAX_BUFFER_KB: { group: 'site', ...int(32, 65536), default: 256, apply: 'live', label: '单个观众的积压上限（KB）', help: '观众网络卡住时，推送不出去的消息最多积压这么多；超过就断开这个连接，页面会自动重连并重新加载' },
+  SANDBOX_MAX: { group: 'site', ...int(1, 50), default: 3, apply: 'live', label: '同时运行的插件沙箱上限', help: '全站所有世界合计；超出时结束最久没用的沙箱，下次调用时再启动（重构方案 P9）' },
+  SANDBOX_IDLE_MIN: { group: 'site', ...int(1, 1440), default: 10, apply: 'live', label: '插件沙箱空闲回收（分钟）', help: '沙箱空闲这么久后结束进程，下次调用时再启动' },
   CHILD_HEAP_MB: { group: 'site', ...int(64, 4096), default: 192, apply: 'live', label: '子进程堆上限（MB）', help: '进化引擎、影子试运行、创世试跑各自的 V8 堆上限（--max-old-space-size）；插件沙箱固定 64MB' },
   MEM_ALERT_MB: { group: 'site', ...int(0, 65536), default: 900, apply: 'live', label: '内存告警阈值（MB）', help: '服务进程的常驻内存超过它时写一条审计，管理面板「概览」里提示；0 = 不告警' },
   HEAP_SNAPSHOT: { group: 'site', ...bool(), default: true, apply: 'restart', label: '接近堆上限时留下堆快照', help: '服务进程快要内存不足时在 <数据目录>/diag/ 写一份堆快照（最多保留 2 份），用来排查泄漏。写快照本身要占用与堆相当的内存' },

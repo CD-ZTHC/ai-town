@@ -215,7 +215,7 @@ export class EvolvedManager {
     const storeFile = path.join(this.dir, 'plugins', `${id}.json`);
     const perms = r.manifest.permissions || [];
     const client = new SandboxClient(r.dir, {
-      store: readJSON<object>(storeFile, {}),
+      store: () => readJSON<object>(storeFile, {}), // 每次启动沙箱都读最新的（空闲回收、崩溃重启后不丢数据）
       callMs: perms.includes('llm') ? 30_000 : 500,
       onLlm: perms.includes('llm') ? (prompt) => this.pluginLlm(id, r.manifest, prompt) : null,
     });
