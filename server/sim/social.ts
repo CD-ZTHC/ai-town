@@ -13,6 +13,7 @@ import type { Cell } from '../types/map.ts';
 import type { Pos } from '../kernel/effects.ts';
 import type { ModelJSON } from '../llm.ts';
 import type { RetrieveOptions } from '../memory.ts';
+import { SCHEMAS } from '../llm-schemas.ts';
 
 export class Social {
   checkConversations(this: Town) {
@@ -64,7 +65,7 @@ export class Social {
       res = await this.think(a, '组织语言', async () => llm.chatJSON([
         this.sys(`你现在是对话编剧，负责两位居民之间的一段对话。${GUARD}`),
         { role: 'user', content: await this.convoPrompt(a, b, where) },
-      ], { label: '对话', agent: `${a.name}×${b.name}`, maxTokens: 4000, temperature: 0.95, timeoutMs: 80_000, attempts: 2 }));
+      ], { label: '对话', schema: SCHEMAS.convo, agent: `${a.name}×${b.name}`, maxTokens: 4000, temperature: 0.95, timeoutMs: 80_000, attempts: 2 }));
       if (!Array.isArray(res.lines) || !res.lines.length) throw new Error('无台词');
     } catch (err) {
       console.warn('[convo] 失败：', (err as Error).message);
@@ -242,7 +243,7 @@ ${whisper
 输出 JSON：{"reply":"${whisper ? '自言自语说出口的一句话（≤40字）' : '回应（口语，≤80字）'}","emoji":"一个emoji","thought":"此刻的内心想法（≤40字）","memory":"${a.name}对此的第一人称记忆（≤60字）","importance":1~10,"newPlan":null 或 {"time":"HH:MM","location":"地点id","activity":"≤14字","emoji":"一个emoji"}}
 若${a.name}因此决定今天稍后去做某件事，newPlan 写明（时间须晚于${fmtTime(this.t)}），否则为 null。`,
       },
-    ], { label: whisper ? '心声' : '与旅人交谈', agent: a.name, maxTokens: 3000, timeoutMs: 90_000, attempts: 2 }));
+    ], { label: whisper ? '心声' : '与旅人交谈', schema: SCHEMAS.visitorReply, agent: a.name, maxTokens: 3000, timeoutMs: 90_000, attempts: 2 }));
     } finally {
       a.chatBusy = false;
     }

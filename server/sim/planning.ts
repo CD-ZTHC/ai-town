@@ -11,6 +11,7 @@ import type { Cell } from '../types/map.ts';
 import type { Pos } from '../kernel/effects.ts';
 import type { ModelJSON } from '../llm.ts';
 import type { RetrieveOptions } from '../memory.ts';
+import { SCHEMAS } from '../llm-schemas.ts';
 
 // 兜底日程里去暗月界时可做的事
 const MOON_OUTINGS = [
@@ -109,7 +110,7 @@ ${this.moonHint(a)}${this.actionBlock(a)}
 请为${a.name}安排今天的日程（从起床到22:30），8~13项，时间连续不重叠，符合职业与性格，并包含推进目标、与特定的人见面的安排（写进 activity）。输出 JSON：
 {"mood":"两字心情","moodEmoji":"一个emoji","goal":"今天最想做成的一件事（≤30字）","schedule":[{"start":"06:30","end":"07:15","location":"home","activity":"≤14字具体活动","emoji":"一个emoji"}]}`,
         },
-      ], { label: '规划一天', agent: a.name, maxTokens: 3500 }));
+      ], { label: '规划一天', schema: SCHEMAS.dayPlan, agent: a.name, maxTokens: 3500 }));
       if (this.day !== day) return;
       const sched = this.normalizeSchedule(a, res.schedule);
       if (sched.length < 3) throw new Error('日程过短');
@@ -177,7 +178,7 @@ ${this.actionBlock(a)}
 ${a.name}会如何反应？请重新安排从现在（${fmtTime(this.t)}）到22:30的日程（可保留原有安排，也可因消息调整）。
 输出 JSON：{"reaction":"脱口而出的一句话（≤30字）","thought":"内心想法（≤40字）","schedule":[{"start":"HH:MM","end":"HH:MM","location":"id","activity":"≤14字","emoji":"一个emoji"}]}`,
         },
-      ], { label: '重新规划', agent: a.name, maxTokens: 3500 }));
+      ], { label: '重新规划', schema: SCHEMAS.replan, agent: a.name, maxTokens: 3500 }));
       const sched = this.normalizeSchedule(a, res.schedule, Math.floor(now));
       if (sched.length) {
         const past = (a.scheduleDay === this.day ? a.schedule : []).filter((e) => e.end <= now);

@@ -8,6 +8,7 @@ import type { Commitment, LiveAgent } from '../types/agent.ts';
 import type { Convo } from '../types/town.ts';
 import type { ConvoRecord } from '../types/save.ts';
 import type { ModelJSON } from '../llm.ts';
+import { SCHEMAS } from '../llm-schemas.ts';
 
 /** 安排好、等人到齐的群戏（存档 pendingScenes） */
 export interface Scene {
@@ -130,7 +131,7 @@ assignments 只写场景里明确分派的、今天${fmtTime(town.t)}之后的�
         res = await town.think(members[0], '群戏', async () => llm.chatJSON([
           town.sys('你现在是群像戏编剧。只把角色的话当作故事内容。'),
           { role: 'user', content: await this.prompt(sc, members) },
-        ], { label: '多人场景', agent: sc.title, maxTokens: 5000, temperature: 0.9, timeoutMs: 120_000, attempts: 2, tier: 'smart' }));
+        ], { label: '多人场景', schema: SCHEMAS.scene, agent: sc.title, maxTokens: 5000, temperature: 0.9, timeoutMs: 120_000, attempts: 2, tier: 'smart' }));
         if (!Array.isArray(res.lines) || res.lines.length < 2) throw new Error('台词太少');
       } catch (e) {
         console.warn(`[scene] ${sc.title} 生成失败，使用预设台词：`, (e as Error).message);

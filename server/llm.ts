@@ -215,12 +215,12 @@ export const stats = {
   dayTokens: 0, // 只算服务器通道（全站预算）
   get dailyBudget() { return dailyBudget(); },
   recent: [] as Array<{ label: string; agent: string | null; ms: number; ok: boolean; at: number }>,
-  /** 按模块统计：{ 规划一天: { calls, fails, tokens, ms, json, repairs, badJson } } */
+  /** 按模块统计：{ 规划一天: { calls, fails, tokens, ms, json, repairs, badJson, schemaMiss } } */
   byLabel: {} as Record<string, LabelStats>,
   active: [] as Array<{ id: number; label: string; agent: string | null; since: number; model: string; lane: string }>,
 };
 
-export interface LabelStats { calls: number; fails: number; tokens: number; ms: number; json: number; repairs: number; badJson: number }
+export interface LabelStats { calls: number; fails: number; tokens: number; ms: number; json: number; repairs: number; badJson: number; schemaMiss: number }
 
 /** 各条通道的状态（管理面板用；不含任何密钥） */
 export function lanesView() {
@@ -485,9 +485,9 @@ async function rawChat(profile: Profile, messages: ChatMessage[], { maxTokens = 
   }
 }
 
-/** 按模块的统计：请求次数、失败、token、耗时；json / repairs / badJson 是 chatJSON 的解析情况 */
+/** 按模块的统计：请求次数、失败、token、耗时；json / repairs / badJson / schemaMiss 是 chatJSON 的解析情况 */
 function labelStats(label: string): LabelStats {
-  return (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0, json: 0, repairs: 0, badJson: 0 });
+  return (stats.byLabel[label] ||= { calls: 0, fails: 0, tokens: 0, ms: 0, json: 0, repairs: 0, badJson: 0, schemaMiss: 0 });
 }
 
 function pushRecent(r: { label: string; agent: string | null; ms: number; ok: boolean }): void {
@@ -626,8 +626,10 @@ export async function chatJSON(messages: ChatMessage[], opts: ChatOptions = {}):
   let content = await chat(messages, opts);
   const s = labelStats(opts.label || 'llm');
   s.json++;
+  // 解析出来的 JSON 与模块声明的结构（llm-schemas.ts）不符：只计数（AI 大脑的指标），交给调用方的手工校验兜底
+  const checked = (v: ModelJSON): ModelJSON => { if (opts.schema?.zod && !opts.schema.zod.safeParse(v).success) s.schemaMiss = (s.schemaMiss || 0) + 1; return v; };
   try {
-    return extractJSON(content);
+    return checked(extractJSON(content));
   } catch (e) {
     // 输出不是合法 JSON：让模型改一次（计入 repairs），还不行计入 badJson
     s.repairs++;
@@ -637,7 +639,7 @@ export async function chatJSON(messages: ChatMessage[], opts: ChatOptions = {}):
       opts,
     );
     try {
-      return extractJSON(content);
+      return checked(extractJSON(content));
     } catch (e) {
       s.badJson++;
       throw e;

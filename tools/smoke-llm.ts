@@ -21,6 +21,7 @@ process.env.STORY_RATING ||= 'adventure';
 
 const { Town } = await import('../server/sim.ts');
 const llm = await import('../server/llm.ts');
+const { get: setting } = await import('../server/settings/index.ts');
 const { useAbility } = await import('../server/kernel/abilities.ts');
 type Scene = import('../server/story/scene.ts').Scene;
 type ArchitectItem = import('../plugins/builtin/architect/architect.ts').ArchitectItem;
@@ -117,5 +118,8 @@ for (const [name, fn] of Object.entries(STEPS)) {
   console.log(`${row.ok ? '✅' : '❌'} ${name.padEnd(10)} ${String(row.ms).padStart(6)}ms ${String(row.tokens).padStart(7)} tokens${row.errors ? ` · 失败调用 ${row.errors}` : ''}\n   ${row.out}`);
 }
 console.log(`\n合计：${rows.filter((r) => r.ok).length}/${rows.length} 通过 · ${tokens()} tokens · 调用 ${llm.stats.calls} 次（失败 ${llm.stats.errors}）${llm.stats.lastError ? ` · 最后错误：${llm.stats.lastError}` : ''}`);
+// JSON 的解析情况（对比结构化输出开关前后用，见重构方案 P8）
+const js = Object.values(llm.stats.byLabel).reduce((o, x) => ({ json: o.json + x.json, repairs: o.repairs + x.repairs, badJson: o.badJson + x.badJson, schemaMiss: o.schemaMiss + (x.schemaMiss || 0) }), { json: 0, repairs: 0, badJson: 0, schemaMiss: 0 });
+console.log(`JSON：${js.json} 次 · 重写 ${js.repairs} · 失败 ${js.badJson} · 不符合结构 ${js.schemaMiss}${setting('LLM_JSON_SCHEMA') ? '（结构化输出：开）' : '（结构化输出：关）'}`);
 town.stop();
 process.exit(rows.every((r) => r.ok) ? 0 : 1);

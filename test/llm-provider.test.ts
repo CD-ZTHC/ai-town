@@ -48,7 +48,7 @@ test('请求走 provider，并统计按模块的用量', async () => {
   assert.equal(p.reqs[0].temperature, 0.3);
   assert.ok(p.reqs[0].signal instanceof AbortSignal);
   assert.equal(llm.stats.dayTokens - before, 42);
-  assert.deepEqual({ ...llm.stats.byLabel['测试模块'], ms: 0 }, { calls: 1, fails: 0, tokens: 42, ms: 0, json: 1, repairs: 0, badJson: 0 });
+  assert.deepEqual({ ...llm.stats.byLabel['测试模块'], ms: 0 }, { calls: 1, fails: 0, tokens: 42, ms: 0, json: 1, repairs: 0, badJson: 0, schemaMiss: 0 });
 });
 
 test('网关不支持 JSON 模式：自动关闭后重试，之后的请求也不再带', async () => {
@@ -158,4 +158,27 @@ test('JSON 解析统计：一次修好计入 repairs，修不好计入 badJson',
   await assert.rejects(llm.chatJSON([{ role: 'user', content: 'x' }], { label: '解析' }));
   const s = llm.stats.byLabel['解析'];
   assert.deepEqual([s.json, s.repairs, s.badJson], [2, 2, 1]);
+});
+
+test('结构化输出（P8）：zod 定义转成 json_schema 发给网关；解析后不符合结构的计入 schemaMiss，结果照常返回', async (t) => {
+  const { SCHEMAS } = await import('../server/llm-schemas.ts');
+  const spec = SCHEMAS.diary;
+  assert.equal(spec.name, 'diary');
+  assert.equal(spec.schema.type, 'object');
+  assert.deepEqual((spec.schema as { required: string[] }).required, ['diary']);
+  assert.equal('$schema' in spec.schema, false);
+  // 所有名字都符合 OpenAI 的要求
+  for (const s of Object.values(SCHEMAS)) assert.match(s.name, /^[a-zA-Z0-9_-]{1,64}$/);
+  const { responseFormat } = await import('../server/llm-providers.ts');
+  const rf = responseFormat(spec) as { type: string; json_schema: Record<string, unknown> };
+  assert.equal(rf.type, 'json_schema');
+  assert.deepEqual(Object.keys(rf.json_schema).sort(), ['name', 'schema', 'strict'], 'zod 本身不会发给网关');
+
+  const replies = ['{"diary":"今天很好"}', '{"text":"字段名写错了"}'];
+  llm.setMock(async () => replies.shift()!);
+  t.after(() => llm.setMock(null));
+  const before = llm.stats.byLabel['日记测试']?.schemaMiss || 0;
+  assert.deepEqual(await llm.chatJSON([{ role: 'user', content: 'x' }], { label: '日记测试', schema: spec }), { diary: '今天很好' });
+  assert.deepEqual(await llm.chatJSON([{ role: 'user', content: 'x' }], { label: '日记测试', schema: spec }), { text: '字段名写错了' }, '不拒绝，交给调用方兜底');
+  assert.equal(llm.stats.byLabel['日记测试']!.schemaMiss - before, 1);
 });

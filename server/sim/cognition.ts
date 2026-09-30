@@ -14,6 +14,7 @@ import type { Cell } from '../types/map.ts';
 import type { Pos } from '../kernel/effects.ts';
 import type { ModelJSON } from '../llm.ts';
 import type { RetrieveOptions } from '../memory.ts';
+import { SCHEMAS } from '../llm-schemas.ts';
 
 const CONDENSE_AT = 300; // 记忆超过这么多条时，每晚整理一天的琐事
 const CONDENSE_MIN = 8; // 一天至少这么多条琐碎记忆才整理
@@ -64,7 +65,7 @@ export class Cognition {
         const res = await this.think(a, '整理记忆', () => llm.chatJSON([
           this.sys(),
           { role: 'user', content: `${this.personaBlock(a)}\n${a.name}第${c.day}天经历的这些小事：\n${list}\n\n请以${a.name}的第一人称，把它们浓缩成一两句记忆（≤80字），保留人名、地点、约定和让人在意的细节，省略重复与琐碎的部分。输出 JSON：{"summary":"..."}` },
-        ], { label: '记忆整理', agent: a.name, maxTokens: 800, tier: 'fast', attempts: 1, timeoutMs: 60_000 }));
+        ], { label: '记忆整理', schema: SCHEMAS.memorySummary, agent: a.name, maxTokens: 800, tier: 'fast', attempts: 1, timeoutMs: 60_000 }));
         text = clampStr(res.summary, 120);
       } catch (err) {
         console.warn(`[memory] ${a.name} 整理失败，改用规则摘要：`, (err as Error).message);
@@ -109,7 +110,7 @@ ${await this.recall(a, `${a.action.text} ${this.locName(a.locId)} ${a.goal}`, 8)
 ${this.abilityList(a)}
 请生成${a.name}此刻的状态。输出 JSON：{"thought":"内心独白（≤40字，真实细腻，可涉及目标、他人、回忆）","action":"此刻具体在做的事（≤14字）","emoji":"一个表示动作的emoji","mood":"两字心情","moodEmoji":"一个emoji"${a.abilities.length ? ',"use":null 或 {"ability":"能力id","target":"身边某人的姓名，不需要对象时为null"}（只有此刻真的合适才使用能力）' : ''}}`,
         },
-      ], { label: '内心独白', agent: a.name, maxTokens: 2500, timeoutMs: 60_000, attempts: 1, tier: 'fast' }));
+      ], { label: '内心独白', schema: SCHEMAS.innerThought, agent: a.name, maxTokens: 2500, timeoutMs: 60_000, attempts: 1, tier: 'fast' }));
       a.thought = clampStr(res.thought, 80);
       a.mood = { text: clampStr(res.mood, 6) || a.mood.text, emoji: clampStr(res.moodEmoji, 4) || a.mood.emoji };
       if (a.curKey === key && a.status === 'acting' && res.action) {
@@ -156,7 +157,7 @@ ${recent}
 请以${a.name}的视角进行反思：从这些经历中得出 2~3 条更高层次的洞察（关于他人、自己、关系或小镇正在发生的事），并更新心情与目标。
 输出 JSON：{"insights":["≤45字"],"mood":"两字","moodEmoji":"一个emoji","goal":"更新后的长期目标（≤50字，可保持不变）"}`,
         },
-      ], { label: '反思', agent: a.name, maxTokens: 3000 }));
+      ], { label: '反思', schema: SCHEMAS.reflect, agent: a.name, maxTokens: 3000 }));
       const ins = (res.insights || []).slice(0, 3).map((s: unknown) => clampStr(s, 90)).filter(Boolean);
       for (const s of ins) addMemory(a, { t: this.t, type: 'reflect', text: s, importance: 7 });
       a.importanceAcc = 0;
@@ -178,7 +179,7 @@ ${recent}
       const res = await this.think(a, '写日记', () => llm.chatJSON([
         this.sys(),
         { role: 'user', content: `${this.timeBlock()}\n${this.personaBlock(a)}\n${a.name}今天的经历：\n${today || '- 平平淡淡的一天'}\n\n请以${a.name}的口吻写今天的日记（第一人称，100~160字，有情绪、有细节、带出对明天的期待或担忧）。输出 JSON：{"diary":"..."}` },
-      ], { label: '写日记', agent: a.name, maxTokens: 3000 }));
+      ], { label: '写日记', schema: SCHEMAS.diary, agent: a.name, maxTokens: 3000 }));
       const text = clampStr(res.diary, 400);
       if (!text) return;
       a.diary.push({ day: this.day, text });
@@ -210,7 +211,7 @@ ${other.slice(-30).join('\n') || '（无）'}
 {"headline":"头条标题（≤20字）","subhead":"副标题（≤30字）","lead":"头条正文（120~200字）","articles":[{"title":"≤16字","body":"60~110字"}],"gossip":"街头巷尾的小道消息（≤60字）","quote":{"who":"居民姓名","text":"今日语录"},"forecast":"明日预告（≤40字）"}
 articles 写 3 篇。`,
         },
-      ], { label: '撰写日报', agent: ch.name, maxTokens: 5000, timeoutMs: 240_000, attempts: 2, tier: 'smart' });
+      ], { label: '撰写日报', schema: SCHEMAS.newspaper, agent: ch.name, maxTokens: 5000, timeoutMs: 240_000, attempts: 2, tier: 'smart' });
       const paper = { day: this.day, weekday: this.weekday, weather: this.weather, ...res, at: this.t };
       this.newspapers.push(paper);
       if (this.newspapers.length > 20) this.newspapers.shift();

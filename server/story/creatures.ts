@@ -10,6 +10,7 @@ import type { ModelJSON } from '../llm.ts';
 import type { LiveAgent } from '../types/agent.ts';
 import type { CreatureType } from '../types/spec.ts';
 import type { Cell } from '../types/map.ts';
+import { SCHEMAS } from '../llm-schemas.ts';
 
 /** 一只异界生物（存档 creatureList） */
 export interface Creature {
@@ -342,7 +343,7 @@ export class CreatureSystem {
 户外的人：${outside.join('、') || '没有'}；亮着的灯阵：${lights.join('、') || '没有'}
 可以去的地点：${town.publicLocs().join(', ')}
 选一个今晚要去的地点（避开灯光）。输出：{"target":"地点id","mode":"steal 或 scout 或 hide","reason":"≤20字"}` },
-    ], { label: '群体心智', agent: def.name, maxTokens: 800, tier: 'fast', attempts: 1, timeoutMs: 45_000 }).then((res: ModelJSON) => {
+    ], { label: '群体心智', schema: SCHEMAS.swarm, agent: def.name, maxTokens: 800, tier: 'fast', attempts: 1, timeoutMs: 45_000 }).then((res: ModelJSON) => {
       const target = town.publicLocs().includes(res.target) ? res.target : null;
       town.swarmGoal = res.mode === 'hide' ? null : target;
       if (target && res.mode !== 'hide') for (const c of this.list) if (!c.friendly) c.goal = target;

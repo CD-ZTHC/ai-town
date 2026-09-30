@@ -9,6 +9,8 @@ export interface ChatMessage {
 export interface JsonSchemaSpec {
   name: string;
   schema: Record<string, unknown>;
+  /** 同一个结构的 zod 定义（见 llm-schemas.ts）：解析后比对，不符合的计入 schemaMiss；不会发给网关 */
+  zod?: { safeParse(v: unknown): { success: boolean } };
 }
 
 export interface CompleteArgs {

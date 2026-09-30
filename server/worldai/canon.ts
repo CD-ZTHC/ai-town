@@ -5,6 +5,7 @@ import { similarity } from '../memory.ts';
 import type { Town } from '../sim.ts';
 import type { WorldSpec } from '../types/spec.ts';
 import type { CanonReview, Proposal, ProposalOp } from '../types/story.ts';
+import { SCHEMAS } from '../llm-schemas.ts';
 
 const str = (v: unknown, max: number) => String(v ?? '').trim().slice(0, max);
 // 与「支柱设定」直接冲突的关键词来自世界包（world.json 的 lore.breakers，多世界设计 §10.3）
@@ -74,7 +75,7 @@ ${canon.map((c) => `- ${c.text}`).join('\n') || '- （无）'}
 判断它是否与支柱设定或既有设定矛盾、是否破坏世界的基调、是否与世界风格格格不入。
 输出：{"severity":"none 或 minor 或 major","issues":["≤25字的问题，最多3条"]}
 none=没有问题；minor=小瑕疵但可以接受；major=明显矛盾，应当驳回。` },
-    ], { label: '设定考据', agent: '考据官', maxTokens: 1200, temperature: 0, tier: 'smart', attempts: 1, timeoutMs: 60_000 });
+    ], { label: '设定考据', schema: SCHEMAS.canon, agent: '考据官', maxTokens: 1200, temperature: 0, tier: 'smart', attempts: 1, timeoutMs: 60_000 });
     const severity: CanonReview['severity'] = ['none', 'minor', 'major'].includes(res.severity) ? res.severity : 'none';
     return { ok: severity !== 'major', severity, issues: (Array.isArray(res.issues) ? res.issues : []).slice(0, 3).map((x: unknown) => str(x, 40)), by: 'llm' };
   } catch {

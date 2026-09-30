@@ -87,12 +87,12 @@ export class Metrics {
     const resolved = threads.filter((t: { status: string }) => t.status === 'resolved').length;
     const touched = threads.filter((t: { status: string }) => t.status !== 'open').length;
 
-    const byLabel: Record<string, { calls: number; repaired: number; failed: number }> = {};
-    let jsonCalls = 0, repaired = 0, failed = 0;
+    const byLabel: Record<string, { calls: number; repaired: number; failed: number; schemaMiss: number }> = {};
+    let jsonCalls = 0, repaired = 0, failed = 0, schemaMiss = 0;
     for (const [label, s] of Object.entries(llm.stats.byLabel)) {
       if (!s.json) continue;
-      jsonCalls += s.json; repaired += s.repairs || 0; failed += s.badJson || 0;
-      byLabel[label] = { calls: s.json, repaired: s.repairs || 0, failed: s.badJson || 0 };
+      jsonCalls += s.json; repaired += s.repairs || 0; failed += s.badJson || 0; schemaMiss += s.schemaMiss || 0;
+      byLabel[label] = { calls: s.json, repaired: s.repairs || 0, failed: s.badJson || 0, schemaMiss: s.schemaMiss || 0 };
     }
 
     return {
@@ -101,7 +101,7 @@ export class Metrics {
       convos: { total: sum('convos'), fallback: sum('convoFallback'), fallbackRate: ratio(sum('convoFallback'), sum('convos')), compared, repeats, repeatRate: ratio(repeats, compared) },
       plans: { total: sum('plans'), fallback: sum('planFallback'), fallbackRate: ratio(sum('planFallback'), sum('plans')) },
       threads: { total: threads.length, advanced: touched - resolved, resolved, resolvedRate: ratio(resolved, threads.length), touchedRate: ratio(touched, threads.length) },
-      json: { calls: jsonCalls, repaired, failed, repairRate: ratio(repaired, jsonCalls), failRate: ratio(failed, jsonCalls), byLabel },
+      json: { calls: jsonCalls, repaired, failed, schemaMiss, repairRate: ratio(repaired, jsonCalls), failRate: ratio(failed, jsonCalls), schemaMissRate: ratio(schemaMiss, jsonCalls), byLabel },
     };
   }
 }

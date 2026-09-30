@@ -13,6 +13,7 @@ import type { CouncilState, CouncilVote, Proposal } from '../types/story.ts';
 import type { Scene } from '../story/scene.ts';
 import type { LiveAgent } from '../types/agent.ts';
 import type { ModelJSON } from '../llm.ts';
+import { SCHEMAS } from '../llm-schemas.ts';
 
 const str = (v: unknown, max: number) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 export const VETO_DAYS = 10;
@@ -149,7 +150,7 @@ ${c.voters.map(line).join('\n')}
     const res = await llm.chatJSON([
       town.sys('你现在要代表镇上的每一位居民表态，而不是扮演某一个人。'),
       { role: 'user', content: this.prompt(p) },
-    ], { label: '居民议事', agent: '议事会', maxTokens: 2500, temperature: 0.8, tier: 'smart', timeoutMs: 120_000, attempts: 2 });
+    ], { label: '居民议事', schema: SCHEMAS.council, agent: '议事会', maxTokens: 2500, temperature: 0.8, tier: 'smart', timeoutMs: 120_000, attempts: 2 });
     if (p.status !== 'council') return; // 等待期间被撤销了
     const byName = (name: unknown) => town.agents.find((a) => a.name === str(name, 16) || a.id === str(name, 32));
     const pick = (obj: unknown, ids: string[]): Record<string, CouncilVote> => {
