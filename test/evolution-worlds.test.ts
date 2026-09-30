@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { EvoJob } from '../evolution/common.ts';
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
@@ -20,14 +21,14 @@ const { migrateEvolution } = await import('../server/worlds/migrate.ts');
 
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'evolved');
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-evo-worlds-'));
-const fixture = (key) => Object.fromEntries(['plugin.json', 'server.js', 'test.js', 'content.json'].filter((f) => fs.existsSync(path.join(FIX, key, f))).map((f) => [f, fs.readFileSync(path.join(FIX, key, f), 'utf8')]));
+const fixture = (key: string) => Object.fromEntries(['plugin.json', 'server.js', 'test.js', 'content.json'].filter((f) => fs.existsSync(path.join(FIX, key, f))).map((f) => [f, fs.readFileSync(path.join(FIX, key, f), 'utf8')]));
 
 test('世界轮转：从上次的下一个开始，跳过已经有任务在进行的世界', () => {
   const worlds = [{ id: 'yunxi' }, { id: 'little-red' }, { id: 'three-pigs' }];
   assert.deepEqual(rotation(worlds, [], null).map((w) => w.id), ['yunxi', 'little-red', 'three-pigs']);
   assert.deepEqual(rotation(worlds, [], 'yunxi').map((w) => w.id), ['little-red', 'three-pigs', 'yunxi']);
-  assert.deepEqual(rotation(worlds, [{ status: 'running', worldId: 'three-pigs' }], 'yunxi').map((w) => w.id), ['little-red', 'yunxi']);
-  assert.deepEqual(rotation(worlds, [{ status: 'running' }], null).map((w) => w.id), ['little-red', 'three-pigs'], '旧任务没有 worldId 时算官方世界');
+  assert.deepEqual(rotation(worlds, [{ status: 'running', worldId: 'three-pigs' } as EvoJob], 'yunxi').map((w) => w.id), ['little-red', 'yunxi']);
+  assert.deepEqual(rotation(worlds, [{ status: 'running' } as EvoJob], null).map((w) => w.id), ['little-red', 'three-pigs'], '旧任务没有 worldId 时算官方世界');
 });
 
 test('目录与预算按世界：任务、账本全站共用；一个世界的预算用完不影响别的世界', () => {
@@ -42,12 +43,12 @@ test('目录与预算按世界：任务、账本全站共用；一个世界的�
   assert.equal(new Budget(A, 1000).left(), 0);
   assert.equal(new Budget(B, 1000).left(), 1000);
   // 一个世界有任务在进行时，只有它自己不发现新需求
-  saveJobs(A, [{ id: 'j1', worldId: 'little-red', status: 'running', need: {} }]);
+  saveJobs(A, [{ id: 'j1', worldId: 'little-red', status: 'running', need: {} } as EvoJob]);
   assert.equal(discover(A, { ideas: true }), null);
   assert.ok(discover(B, { ideas: true }), '别的世界照常');
 });
 
-function mockAgents(script) {
+function mockAgents(script: Record<string, unknown>) {
   llm.setMock((messages) => {
     const role = Object.keys(script).find((r) => messages[0].content.includes(`你的角色：${r}`)) || '?';
     const v = script[role];
@@ -71,10 +72,10 @@ test('用户世界的流水线：用它自己的世界包；插件装在它自�
     安全审查员: { verdict: 'pass', findings: [] },
   });
   const job = await runJob({ P: A, llm: makeLLM(new Budget(A, 0), { worldId: 'little-red' }) }, { source: 'gap', text: '外婆想喝新茶', count: 3, gapKey: '新茶' });
-  assert.equal(job.status, 'submitted', job.reason);
+  assert.equal(job.status, 'submitted', job.reason!);
   assert.equal(job.worldId, 'little-red');
   assert.ok(fs.existsSync(path.join(A.plugins, 'tea-leaf@1.0.0')), '装在 A 世界自己的插件目录');
-  assert.ok(readJSON(A.verified, {})['tea-leaf@1.0.0']?.passed);
+  assert.ok(readJSON<Record<string, { passed?: boolean }>>(A.verified, {})['tea-leaf@1.0.0']?.passed);
   assert.ok(fs.readFileSync(A.ledger, 'utf8').includes('"world":"little-red"'), '账本记下是哪个世界');
   llm.setMock(null);
 
@@ -99,11 +100,11 @@ test('迁移：官方世界的插件与登记从旧目录移到 data/worlds/yunx
   fs.mkdirSync(path.join(repo, 'plugins', 'evolved', 'x@1.0.0'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'plugins', 'evolved', 'x@1.0.0', 'plugin.json'), '{}');
   const r = migrateEvolution(data, repo);
-  assert.ok(r.moved.includes('registry.json') && r.moved.includes('plugins/evolved'));
+  assert.ok(r!.moved.includes('registry.json') && r!.moved.includes('plugins/evolved'));
   assert.ok(fs.existsSync(path.join(data, 'worlds', 'yunxi', 'evolution', 'registry.json')));
   assert.ok(fs.existsSync(path.join(data, 'worlds', 'yunxi', 'plugins', 'x@1.0.0', 'plugin.json')));
   assert.ok(fs.existsSync(path.join(data, 'evolution', 'jobs.json')), '任务留在全站目录');
   assert.deepEqual(fs.readdirSync(path.join(repo, 'plugins', 'evolved')), [], '旧目录清空（目录本身保留，可能是挂载点）');
-  assert.ok(fs.existsSync(path.join(r.backup, 'plugins-evolved', 'x@1.0.0')), '先备份');
+  assert.ok(fs.existsSync(path.join(r!.backup, 'plugins-evolved', 'x@1.0.0')), '先备份');
   assert.equal(migrateEvolution(data, repo), null, '只迁移一次');
 });

@@ -19,7 +19,7 @@ const STEP = 0.1; // 真实秒；30 倍速下每步 3 个游戏分钟
 const tick = () => new Promise((r) => setImmediate(r));
 
 /** mulberry32：小而够用的可复现随机数 */
-function seeded(seed) {
+function seeded(seed: number) {
   let s = seed >>> 0;
   return () => {
     s = (s + 0x6d2b79f5) >>> 0;
@@ -40,11 +40,11 @@ test(`回放 ${DAYS} 个游戏日：没有居民卡住、上限生效、世界�
   t.after(() => { town.stop(); llm.setMock(null); Math.random = random; });
 
   const residents = town.agents.map((a) => a.id);
-  const since = {}; // 每个角色进入当前状态的游戏时间
+  const since: Record<string, { status: string; t: number }> = {}; // 每个角色进入当前状态的游戏时间
   const types = new Set();
   town.on('log', (l) => types.add(l.type));
-  const problems = [];
-  const check = (cond, msg) => { if (!cond && problems.length < 20) problems.push(`第${town.day}天 ${Math.floor(town.minute / 60)}时：${msg}`); };
+  const problems: string[] = [];
+  const check = (cond: unknown, msg: string) => { if (!cond && problems.length < 20) problems.push(`第${town.day}天 ${Math.floor(town.minute / 60)}时：${msg}`); };
   let checkedDay = 0;
 
   town.speed = 30;

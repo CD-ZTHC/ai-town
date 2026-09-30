@@ -5,6 +5,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Town as TownT } from '../server/sim.ts';
+import type { AddressInfo } from 'node:net';
+import type { Pos } from '../server/kernel/effects.ts';
+import type { WorldSpec } from '../server/types/spec.ts';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER', 'EVOLVE', 'PUBLIC_MODE']) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
@@ -17,11 +21,11 @@ const { validateManifest, checkArgs } = await import('../plugin-host/schema.ts')
 
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'evolved');
 const tmp = (p = 'town-e3-') => fs.mkdtempSync(path.join(os.tmpdir(), p));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const until = async (fn, ms = 4000) => { const end = Date.now() + ms; while (Date.now() < end) { if (fn()) return true; await sleep(20); } return false; };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const until = async (fn: () => unknown, ms = 4000) => { const end = Date.now() + ms; while (Date.now() < end) { if (fn()) return true; await sleep(20); } return false; };
 
 /** 在临时目录里放一个插件（可以覆盖其中的文件） */
-function pluginDir(name, files = {}) {
+function pluginDir(name: string, files: Record<string, string> = {}) {
   const root = tmp('plugins-');
   const src = path.join(FIX, name);
   const dir = path.join(root, name);
@@ -29,7 +33,7 @@ function pluginDir(name, files = {}) {
   for (const [f, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), text);
   return { root, dir };
 }
-function lock(evoDir, root, key, extra = {}) {
+function lock(evoDir: string, root: string, key: string, extra = {}) {
   const m = JSON.parse(fs.readFileSync(path.join(root, key, 'plugin.json'), 'utf8'));
   const file = path.join(evoDir, 'verified.json');
   const v = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
@@ -37,14 +41,14 @@ function lock(evoDir, root, key, extra = {}) {
   fs.mkdirSync(evoDir, { recursive: true });
   fs.writeFileSync(file, JSON.stringify(v));
 }
-function newTown({ root, evoDir, config = {} }) {
+function newTown({ root, evoDir, config = {} }: { root: string; evoDir: string; config?: object }) {
   llm.setMock(null);
   const town = new Town({ dataDir: tmp(), instantTalk: true, evolution: { dir: evoDir, pluginsDir: root, config: { mode: 'auto', canaryDataMin: 60, canaryCodeMin: 60, canaryCodeRealMs: 0, ...config } } });
   town.applyWorldOp({ op: 'setMeta', args: { storyteller: 'gentle' } }, { by: 'test' });
   town.t = 18 * 60;
   return town;
 }
-const scan = (town) => { town.evolved.lastScan = 0; town.evolved.tick(); };
+const scan = (town: TownT) => { town.evolved.lastScan = 0; town.evolved.tick(); };
 
 test('静态检查：危险写法、混淆、动态导入、写给审查员的指令都会被拦下', () => {
   const bad = {
@@ -76,10 +80,10 @@ test('清单与参数 schema：数值必须有上下限，T0 不能声明代码�
   assert.match(validateManifest({ ...m, tier: 'T0' }).join(), /需要 T2/);
   assert.match(validateManifest({ ...m, provides: { effects: [{ name: 'x2', doc: 'd', args: { n: { type: 'int' } } }] } }).join(), /min \/ max/);
   assert.match(validateManifest({ ...m, hooks: ['tick'] }).join(), /hooks/);
-  const spec = { locations: {}, items: {}, personas: [] };
+  const spec = { locations: {}, items: {}, personas: [] } as unknown as WorldSpec;
   assert.equal(checkArgs({ warmth: { type: 'int', min: 1, max: 3, required: true } }, { warmth: 2 }, spec), null);
-  assert.match(checkArgs({ warmth: { type: 'int', min: 1, max: 3 } }, { warmth: 9 }, spec), /1~3/);
-  assert.match(checkArgs({}, { evil: 1 }, spec), /未知参数/);
+  assert.match(checkArgs({ warmth: { type: 'int', min: 1, max: 3 } }, { warmth: 9 }, spec)!, /1~3/);
+  assert.match(checkArgs({}, { evil: 1 }, spec)!, /未知参数/);
 });
 
 test('沙箱：写文件、读插件目录以外的文件、导入内置模块、网络、eval 全部被拒绝；死循环会被超时杀掉', async () => {
@@ -108,7 +112,7 @@ export default function setup(api) {
   assert.equal(c.stats.timeouts, 1);
   // 超时后进程被杀掉，下一次调用会重新启动
   const again = await c.call('route', 'probe', {}, 3000);
-  assert.equal(again.result.fs, 'denied');
+  assert.equal((again.result as { fs: string }).fs, 'denied');
   c.close();
 });
 
@@ -134,20 +138,20 @@ test('AI 插件：没有评审锁定或内容被改动就拒绝加载；锁定�
   const d = town.decisions.find('plugin', 'lantern-glow@1.0.0');
   assert.ok(d, '登记为待裁决');
   assert.equal(d.risk, 'high', '代码插件是高风险');
-  assert.match(town.decisions.handlers.plugin.gates(d), /哈希不一致/);
+  assert.match(town.decisions.handlers.plugin!.gates!(d)!, /哈希不一致/);
   // 恢复原样后通过闸门
   fs.cpSync(path.join(FIX, 'lantern-glow@1.0.0'), dir, { recursive: true });
-  assert.equal(town.decisions.handlers.plugin.gates(d), null);
+  assert.equal(town.decisions.handlers.plugin!.gates!(d), null);
   assert.equal(town.evolved.vote('lantern-glow@1.0.0', 'ip1', true), null);
-  assert.match(town.evolved.vote('lantern-glow@1.0.0', 'ip1', true), /投过/);
+  assert.match(town.evolved.vote('lantern-glow@1.0.0', 'ip1', true)!, /投过/);
   assert.equal(town.decisions.decide(d.id, { adopt: true }), null);
-  assert.equal(town.evolved.entry('lantern-glow@1.0.0').status, 'canary');
+  assert.equal(town.evolved.entry('lantern-glow@1.0.0')!.status, 'canary');
   assert.ok(EFFECTS.glowUp, '新效果已注册');
   await until(() => town.evolved.clients.get('lantern-glow@1.0.0')?.registered);
 
   // 新效果：由沙箱返回「意图」，宿主校验后执行
   const wang = town.byId.wang;
-  runEffects(town, { self: wang, at: { x: wang.x, y: wang.y } }, [{ op: 'glowUp', warmth: 2 }]);
+  runEffects(town, { self: wang, at: { x: wang.x, y: wang.y } as Pos }, [{ op: 'glowUp', warmth: 2 }]);
   assert.ok(await until(() => wang.mood.text === '温暖'), '效果被执行');
   // 钩子：傍晚到码头
   town.hooks.emit('agent.arrive', { agent: wang, locId: 'pier' });
@@ -160,7 +164,7 @@ test('AI 插件：没有评审锁定或内容被改动就拒绝加载；锁定�
   // 灰度期满（测试里 60 游戏分钟）→ 转正
   town.t += 61;
   scan(town);
-  assert.equal(town.evolved.entry('lantern-glow@1.0.0').status, 'active');
+  assert.equal(town.evolved.entry('lantern-glow@1.0.0')!.status, 'active');
   assert.ok(town.logs.some((l) => l.text.includes('正式上线')));
   town.stop();
   assert.ok(!EFFECTS.glowUp, '小镇停止后注销');
@@ -181,18 +185,18 @@ test('AI 插件熔断：连续出错自动回滚，并计入裁决官的回滚�
   scan(town);
   const d = town.decisions.find('plugin', 'lantern-glow@1.0.0');
   // 模拟 AI 裁决官采纳
-  town.decisions.finish(d, { decision: 'adopt', by: 'ai', reasons: ['测试'], confidence: 0.9 });
+  town.decisions.finish(d!, { decision: 'adopt', by: 'ai', reasons: ['测试'], confidence: 0.9 });
   await until(() => town.evolved.clients.get('lantern-glow@1.0.0')?.registered);
   const wang = town.byId.wang;
   for (let i = 0; i < 3; i++) runEffects(town, { self: wang }, [{ op: 'glowUp', warmth: 1 }]);
-  assert.ok(await until(() => town.evolved.entry('lantern-glow@1.0.0').status === 'rolledBack'), '熔断回滚');
+  assert.ok(await until(() => town.evolved.entry('lantern-glow@1.0.0')!.status === 'rolledBack'), '熔断回滚');
   assert.ok(!EFFECTS.glowUp);
-  assert.equal(d.outcome, 'rolledBack', '计入裁决官的校准');
+  assert.equal(d!.outcome, 'rolledBack', '计入裁决官的校准');
 
   // 数据插件：前一个灰度结束（回滚）后才开始；采纳后内容出现，回滚后撤回
   const t = town.decisions.find('plugin', 'tea-leaf@1.0.0');
-  assert.equal(t.risk, 'medium');
-  town.decisions.decide(t.id, { adopt: true });
+  assert.equal(t!.risk, 'medium');
+  town.decisions.decide(t!.id, { adopt: true });
   assert.ok(town.spec.items.new_tea);
   assert.equal(town.evolved.adminAction('tea-leaf@1.0.0', 'rollback'), null);
   assert.ok(!town.spec.items.new_tea, '回滚后内容撤回');
@@ -225,18 +229,18 @@ test('长期没人用的代码插件：提议退役 → 采纳后停用 → 撤�
   lock(evoDir, root, 'lantern-glow@1.0.0');
   const town = newTown({ root, evoDir, config: { retireDays: 3 } });
   scan(town);
-  town.decisions.decide(town.decisions.find('plugin', 'lantern-glow@1.0.0').id, { adopt: true });
+  town.decisions.decide(town.decisions.find('plugin', 'lantern-glow@1.0.0')!.id, { adopt: true });
   town.t += 61; scan(town);
-  assert.equal(town.evolved.entry('lantern-glow@1.0.0').status, 'active');
+  assert.equal(town.evolved.entry('lantern-glow@1.0.0')!.status, 'active');
   town.t += 4 * 1440; town.evolved.checkRetire();
   const d = town.decisions.find('retire', 'lantern-glow@1.0.0');
   assert.ok(d, '提议退役');
   assert.equal(d.risk, 'low');
   town.decisions.decide(d.id, { adopt: true });
-  assert.equal(town.evolved.entry('lantern-glow@1.0.0').status, 'retired');
+  assert.equal(town.evolved.entry('lantern-glow@1.0.0')!.status, 'retired');
   assert.ok(!EFFECTS.glowUp);
   assert.equal(town.decisions.undo(d.id), null);
-  assert.equal(town.evolved.entry('lantern-glow@1.0.0').status, 'active');
+  assert.equal(town.evolved.entry('lantern-glow@1.0.0')!.status, 'active');
   assert.ok(EFFECTS.glowUp);
   town.stop();
 });
@@ -246,13 +250,13 @@ test('独立运行的进化引擎能联网（要调用模型）；经 IPC 调用
   const { sandboxArgs } = await import('../plugin-host/sandbox/client.ts');
   const http = await import('node:http');
   const server = http.createServer((req, res) => res.end('ok'));
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   t.after(() => server.close());
-  const url = `http://127.0.0.1:${server.address().port}/`;
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
   const probe = `fetch(${JSON.stringify(url)}).then((r) => r.text()).then((x) => console.log(x), (e) => console.log('ERR', e.cause?.code || e.message))`;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-net-'));
   const { spawn } = await import('node:child_process');
-  const run = (args) => new Promise((resolve) => {
+  const run = (args: string[]) => new Promise<string>((resolve) => {
     const c = spawn(process.execPath, [...args, '--no-warnings', '-e', probe]);
     let out = '';
     c.stdout.on('data', (d) => { out += d; });

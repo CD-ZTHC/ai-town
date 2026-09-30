@@ -14,7 +14,7 @@ const { Town } = await import('../server/sim.ts');
 const { WorldHost } = await import('../server/worlds/host.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-mem-'));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 test('试运行锁：同时只有一个；失效的锁（持有进程已不在）会被接管', async () => {
   const dir = tmp();
@@ -29,7 +29,7 @@ test('试运行锁：同时只有一个；失效的锁（持有进程已不在�
   assert.equal(await withTrialSlot(dir, async () => 'taken', { pollMs: 5, waitMs: 1000 }), 'taken');
   // 仍然有效的锁：排队超时
   fs.writeFileSync(path.join(dir, 'trial.lock'), JSON.stringify({ pid: process.pid, at: Date.now() }));
-  await assert.rejects(withTrialSlot(dir, async () => 1, { pollMs: 5, waitMs: 30 }), (e) => e.code === 'TRIAL_BUSY');
+  await assert.rejects(withTrialSlot(dir, async () => 1, { pollMs: 5, waitMs: 30 }), (e: NodeJS.ErrnoException) => e.code === 'TRIAL_BUSY');
   // 出错也释放
   fs.rmSync(path.join(dir, 'trial.lock'));
   await assert.rejects(withTrialSlot(dir, async () => { throw new Error('boom'); }));
@@ -38,13 +38,13 @@ test('试运行锁：同时只有一个；失效的锁（持有进程已不在�
 
 test('embedding：进程内缓存有上限（LRU），持久层仍然能读回', async () => {
   const dir = tmp();
-  const embed = async (texts) => ({ vectors: texts.map((t) => [t.length, 1, 2]) });
+  const embed = async (texts: string[]) => ({ vectors: texts.map((t) => [t.length, 1, 2]) });
   const e = createEmbedder({ dir, embed, env: { EMBED_TIMEOUT_MS: '10000' } });
   const texts = Array.from({ length: 2600 }, (_, i) => `记忆 ${i}`);
   for (let i = 0; i < texts.length; i += 128) assert.equal(await e.ensure(texts.slice(i, i + 128)), true);
   assert.ok(e.persistent);
   // 早先的文本已经被挤出内存，但还能从 SQLite 读回
-  assert.deepEqual([...e.vec(texts[0])], [texts[0].length, 1, 2]);
+  assert.deepEqual([...e.vec(texts[0])!], [texts[0].length, 1, 2]);
   e.close();
 });
 
@@ -61,7 +61,7 @@ test('Town 替换：连续重置 20 次，计时器与活动句柄不增长', as
   for (let i = 0; i < 20; i++) host.reload({ save: false });
   assert.ok(count() <= before, `计时器 ${before} → ${count()}`);
   assert.equal(town0.stopped, true);
-  assert.equal(town0.sleepers.size, 0, '旧 Town 的对话计时器已释放');
+  assert.equal(town0.sleepers!.size, 0, '旧 Town 的对话计时器已释放');
   host.close({ save: false });
 });
 

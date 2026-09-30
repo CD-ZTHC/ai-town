@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { TestContext } from 'node:test';
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
@@ -30,7 +31,7 @@ test('注册与登录：用户名、密码规则；会话令牌只存哈希；�
   await assert.rejects(acc.register({ username: 'XIAOMAN', nickname: '另一个', password: PW }), /已经被注册/);
   await assert.rejects(acc.login({ username: 'xiaoman', password: 'wrong-password' }), /不对/);
   const { token } = await acc.login({ username: 'xiaoman', password: PW, ip: '1.1.1.1' });
-  assert.equal(acc.session(token).user.id, u.id);
+  assert.equal(acc.session(token)!.user.id, u.id);
   const raw = JSON.stringify(acc.db.prepare('SELECT * FROM sessions').all());
   assert.ok(!raw.includes(token), '数据库里不存明文令牌');
   const t2 = (await acc.login({ username: 'xiaoman', password: PW })).token;
@@ -46,7 +47,7 @@ test('会话：30 天滑动过期', async () => {
   const u = await acc.register({ username: 'slide_user', nickname: '滑动', password: PW });
   const tok = acc.createSession(u.id);
   now.t += 20 * DAY;
-  assert.equal(acc.session(tok).touched, true, '使用时续期');
+  assert.equal(acc.session(tok)!.touched, true, '使用时续期');
   now.t += 20 * DAY;
   assert.ok(acc.session(tok), '续期后 40 天仍然有效');
   now.t += 31 * DAY;
@@ -75,7 +76,7 @@ test('停用账号：会话立即失效，不能登录；改名：30 天一次�
 
   const a = await acc.register({ username: 'renamer', nickname: '阿甲', password: PW });
   acc.rename(a.id, '阿乙');
-  assert.equal(acc.get(a.id).nickname, '阿乙');
+  assert.equal(acc.get(a.id)!.nickname, '阿乙');
   assert.throws(() => acc.rename(a.id, '阿丙'), /30 天/);
   await assert.rejects(acc.register({ username: 'copycat', nickname: '阿甲', password: PW }), /刚被人改掉/);
   now.t += 91 * DAY;
@@ -96,7 +97,7 @@ test('授予、重置链接、管理员认领、审计', async () => {
   const { acc, now } = make();
   const u = await acc.register({ username: 'maker', nickname: '造物', password: PW });
   acc.setGrant(u.id, { cap: 'genesis', quota: { maxWorlds: 2 }, expiresAt: now.t + DAY, note: '试点' }, 'admin');
-  assert.equal(acc.grant(u.id, 'genesis').quota.maxWorlds, 2);
+  assert.equal(acc.grant(u.id, 'genesis')!.quota.maxWorlds, 2);
   now.t += 2 * DAY;
   assert.equal(acc.grant(u.id, 'genesis'), null, '过期的授予不生效');
   acc.setGrant(u.id, { cap: 'genesis' }, 'admin');
@@ -110,7 +111,7 @@ test('授予、重置链接、管理员认领、审计', async () => {
 
   assert.equal(acc.hasSuper(), false);
   acc.claimSuper(u.id);
-  assert.equal(acc.get(u.id).role, 'super');
+  assert.equal(acc.get(u.id)!.role, 'super');
   const v = await acc.register({ username: 'second', nickname: '第二', password: PW });
   assert.throws(() => acc.claimSuper(v.id), /已经有/);
   assert.throws(() => acc.setRole(u.id, 'user', 'x'), /至少要保留/);
@@ -141,7 +142,7 @@ test('本地模式的内置账号：昵称跟随设置', () => {
   const { acc } = make();
   assert.equal(acc.localUser('旅人').nickname, '旅人');
   assert.equal(acc.localUser('阿福').nickname, '阿福');
-  assert.equal(acc.get(LOCAL_ID).role, 'super');
+  assert.equal(acc.get(LOCAL_ID)!.role, 'super');
   assert.equal(acc.count(), 0, '内置账号不计入用户数');
 });
 
@@ -152,7 +153,7 @@ const { createApp } = await import('../server/http/app.ts');
 const { config } = await import('../server/guard.ts');
 const llm = await import('../server/llm.ts');
 
-function setupPublic(t) {
+function setupPublic(t: TestContext) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-acc-'));
   const acc = new Accounts({ file: ':memory:', reservedNames: () => [] });
   installRefs(acc);
@@ -162,14 +163,14 @@ function setupPublic(t) {
   Object.assign(config, { publicMode: true, adminToken: 'root-token-123' });
   _resetQuota();
   t.after(() => { host.close({ save: false }); Object.assign(config, { publicMode: undefined, adminToken: undefined }); memoryHooks.encode = null; llm.setMock(null); });
-  const req = (p, { body, cookie, headers = {}, method } = {}) => app.request(p, {
+  const req = (p: string, { body, cookie, headers = {}, method }: { body?: unknown; cookie?: string; headers?: Record<string, string>; method?: string } = {}) => app.request(p, {
     method: method || (body === undefined ? 'GET' : 'POST'),
     headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(cookie ? { Cookie: cookie } : {}), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { app, host, acc, req };
 }
-const cookieOf = (res) => (res.headers.get('set-cookie') || '').split(';')[0];
+const cookieOf = (res: Response) => (res.headers.get('set-cookie') || '').split(';')[0];
 
 test('公网模式：游客只能看；注册后以昵称互动；停用立即失效；跨站请求被拒；令牌仍然可用', async (t) => {
   const { host, acc, req } = setupPublic(t);
@@ -186,8 +187,8 @@ test('公网模式：游客只能看；注册后以昵称互动；停用立即�
   const r = await req('/api/auth/register', { body: { username: 'player1', nickname: '小满', password: PW } });
   assert.equal(r.status, 200, await r.clone().text());
   const set = r.headers.get('set-cookie');
-  assert.match(set, /HttpOnly/i);
-  assert.match(set, /SameSite=Lax/i);
+  assert.match(set!, /HttpOnly/i);
+  assert.match(set!, /SameSite=Lax/i);
   const cookie = cookieOf(r);
   const me = await (await req('/api/me', { cookie })).json();
   assert.equal(me.user.nickname, '小满');
@@ -206,12 +207,12 @@ test('公网模式：游客只能看；注册后以昵称互动；停用立即�
   assert.equal(chat.status, 200, await chat.clone().text());
   const zhou = host.town.byId.zhou;
   const uid = me.user.id;
-  assert.ok(zhou.travellers[uid]);
+  assert.ok(zhou.travellers![uid]);
   assert.ok(zhou.memories.some((m) => m.text.includes(`{@${uid}}`)));
   acc.rename(uid, '满满');
   const detail = await (await req('/api/agent/zhou', { cookie })).json();
-  assert.ok(detail.memories.some((m) => m.text.includes('满满')), '改名后居民仍然认得这个人');
-  assert.ok(detail.relations.some((x) => x.traveller && x.name === '满满'));
+  assert.ok(detail.memories.some((m: { text: string }) => m.text.includes('满满')), '改名后居民仍然认得这个人');
+  assert.ok(detail.relations.some((x: { traveller?: boolean; name: string }) => x.traveller && x.name === '满满'));
   assert.equal(detail.chat.length, 2, '聊天记录跟着账号走');
 
   // 跨站写请求：Origin 不是本站
@@ -250,9 +251,9 @@ test('公网模式：注册按 IP 限流、重复昵称被拒、互动额度按�
 
 test('公网模式：昵称走昵称审核（不是事件审核），普通人名和英文名可以注册', async (t) => {
   const { req } = setupPublic(t);
-  const seen = [];
+  const seen: Array<{ label?: string; prompt: string }> = [];
   llm.setMock((messages, opts) => {
-    if (/审核/.test(opts.label)) seen.push({ label: opts.label, prompt: messages[1].content });
+    if (/审核/.test(opts.label!)) seen.push({ label: opts.label, prompt: messages[1].content });
     return JSON.stringify(/坏名字/.test(messages[1].content) ? { allow: false, reason: '换个友善的名字吧' } : { allow: true, reason: '' });
   });
   assert.equal((await req('/api/auth/register', { body: { username: 'ye_yu', nickname: '叶宇', password: PW } })).status, 200);
@@ -284,5 +285,5 @@ test('管理员认领与用户管理接口', async (t) => {
   const link = await (await req(`/api/admin/users/${id}/reset-link`, { body: {}, cookie })).json();
   assert.ok(link.token);
   const audit = await (await req('/api/admin/audit', { cookie })).json();
-  assert.ok(audit.some((x) => x.action === 'admin.claim'));
+  assert.ok(audit.some((x: { action: string }) => x.action === 'admin.claim'));
 });

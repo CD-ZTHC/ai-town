@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { Town as TownT } from '../server/sim.ts';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER', 'MODS']) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
@@ -20,12 +21,12 @@ function newTown(hour = 20) {
   return town;
 }
 /** 把居民放到某个地点（暗月界的地点会自动切到那边的地图） */
-function put(town, ids, loc) {
+function put(town: TownT, ids: string[], loc: string) {
   const region = town.locRegion(loc);
   const p = town.worldOf(region).locations[loc].spots[0];
   ids.forEach((id, i) => Object.assign(town.byId[id], { region, x: p.x + i, y: p.y, inside: null, locId: loc, status: 'acting', path: [], convoId: null }));
 }
-const enter = (town, id, loc) => { put(town, [id], loc); town.rules.onEnter(town.byId[id], loc); };
+const enter = (town: TownT, id: string, loc: string) => { put(town, [id], loc); town.rules.onEnter(town.byId[id], loc); };
 
 test('暗月界的物品、能力、法则都通过校验', () => {
   const spec = defaultSpec({});
@@ -57,14 +58,14 @@ test('采月露只能在月光花园，月露可以递给朋友', () => {
   const lin = town.byId.lin, su = town.byId.su;
   enter(town, 'lin', 'moon_garden');
   put(town, ['lin'], 'cafe');
-  assert.match(useAbility(town, lin, 'gather_dew').reason, /不适合/);
+  assert.match(useAbility(town, lin, 'gather_dew').reason!, /不适合/);
   put(town, ['lin', 'su'], 'moon_garden');
   assert.equal(useAbility(town, lin, 'gather_dew').ok, true);
   assert.equal(lin.inventory.moon_dew, 1);
   su.body.stamina = 40;
   su.body.conditions = ['疲惫'];
   const r = useAbility(town, lin, 'share_dew', 'su');
-  assert.equal(r.ok, true, r.reason);
+  assert.equal(r.ok, true, r.reason!);
   assert.equal(lin.inventory.moon_dew, undefined);
   assert.equal(su.body.stamina, 55);
   assert.ok(!su.body.conditions.includes('疲惫'));
@@ -90,7 +91,7 @@ test('拾月石 → 扎双月灯 → 双月节在码头放灯，灯会照亮镇�
   put(town, ['he', 'zhao'], 'pier');
   const before = zhao.body.courage;
   const r = useAbility(town, he, 'release_moon_lantern');
-  assert.equal(r.ok, true, r.reason);
+  assert.equal(r.ok, true, r.reason!);
   assert.equal(he.inventory.moon_lantern, undefined);
   const lamp = town.entities.find((e) => e.type === 'moon_float');
   assert.ok(lamp && (lamp.region || 'town') === 'town', '灯放在镇上的码头');
@@ -103,11 +104,11 @@ test('星坠许愿要等到傍晚，一天一次', () => {
   const town = newTown(15);
   const su = town.byId.su;
   enter(town, 'su', 'moon_lookout');
-  assert.match(useAbility(town, su, 'star_wish').reason, /不适合/);
+  assert.match(useAbility(town, su, 'star_wish').reason!, /不适合/);
   town.t = 20 * 60;
   assert.equal(useAbility(town, su, 'star_wish').ok, true);
   assert.ok(su.memories.some((m) => m.text.includes('许了一个愿')));
-  assert.match(useAbility(town, su, 'star_wish').reason, /冷却/);
+  assert.match(useAbility(town, su, 'star_wish').reason!, /冷却/);
   town.stop();
 });
 
@@ -119,17 +120,17 @@ test('月光花园让人安神；深夜在暗月界没有灯会发怵，有灯�
   put(town, ['chen'], 'cafe');
   const lin = town.byId.lin, chen = town.byId.chen;
   lin.body.stamina = 50;
-  town.rules.fire(garden);
+  town.rules.fire(garden!);
   assert.equal(lin.body.stamina, 52);
 
   lin.body.courage = 50; chen.body.courage = 50;
-  town.rules.fire(chill);
+  town.rules.fire(chill!);
   assert.equal(lin.body.courage, 47, '暗月界的深夜有点冷');
   assert.equal(chen.body.courage, 50, '镇上的人不受影响');
 
   lin.body.courage = 50;
   town.spawnStructure('moon_float', { x: lin.x, y: lin.y, inside: null, region: 'moonrealm' }, 60);
-  town.rules.fire(chill);
+  town.rules.fire(chill!);
   assert.equal(lin.body.courage, 50, '身边有灯就不怕');
   town.stop();
 });

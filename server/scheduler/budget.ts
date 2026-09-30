@@ -26,6 +26,7 @@ const emptyUsage = (): Usage => ({ total: 0, P0: 0, P1: 0, P2: 0, P3: 0, P4: 0 }
 export interface BudgetWorld {
   id: string;
   official?: boolean;
+  ownerId?: string | null;
   status?: string;
   quota?: { dailyWorldTokens?: number };
   settings?: { aiPaused?: boolean };

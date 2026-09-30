@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import { parse, evaluate, ExprError } from '../server/kernel/expr.ts';
 
 const FNS = new Set(['has', 'max']);
-const run = (src, vars = {}, fns = {}) => evaluate(parse(src, FNS), vars, fns);
+/** 表达式里可以调用的函数 */
+type Fns = Record<string, (...a: any[]) => unknown>; // eslint-disable-line @typescript-eslint/no-explicit-any
+const run = (src: string, vars: Record<string, unknown> = {}, fns: Fns = {}) => evaluate(parse(src, FNS), vars, fns);
 
 test('基本运算与优先级', () => {
   assert.equal(run('1 + 2 * 3'), 7);

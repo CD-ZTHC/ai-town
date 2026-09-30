@@ -77,7 +77,7 @@ export function prepare(town: TownLike, a: AgentLike, abilityId: string, targetR
 }
 
 /** 使用能力：检查 → 支付消耗 → 执行效果 → 冷却、记忆、日志。返回 { ok, reason } */
-export function useAbility(town: TownLike, a: AgentLike, abilityId: string, targetRef: unknown = null, why = ''): { ok: false; reason: string; retry: boolean } | { ok: true; ability: Ability; target: AgentLike | null } {
+export function useAbility(town: TownLike, a: AgentLike, abilityId: string, targetRef: unknown = null, why = ''): { ok: false; reason: string; retry: boolean; ability?: undefined; target?: undefined } | { ok: true; ability: Ability; target: AgentLike | null; reason?: undefined; retry?: undefined } {
   const p = prepare(town, a, abilityId, targetRef);
   if (p.error != null) return { ok: false, reason: p.error, retry: Boolean(p.retry) };
   const { ab, target } = p;

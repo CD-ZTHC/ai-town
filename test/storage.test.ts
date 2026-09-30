@@ -20,7 +20,7 @@ test('每小时快照用 gzip 压缩，内容与存档一致，体积明显更�
   assert.match(snap.name, /^d001-06\.json\.gz$/);
   const raw = fs.readFileSync(path.join(dir, 'save.json'));
   const gz = fs.readFileSync(path.join(dir, 'snapshots', snap.name));
-  assert.deepEqual(JSON.parse(zlib.gunzipSync(gz)), JSON.parse(raw));
+  assert.deepEqual(JSON.parse(zlib.gunzipSync(gz) as unknown as string), JSON.parse(raw as unknown as string));
   assert.ok(gz.length < raw.length / 2, `压缩后 ${gz.length}，原始 ${raw.length}`); // 新小镇的存档很小；跑满一季的存档压缩到约 13%
   assert.ok(!fs.readdirSync(path.join(dir, 'snapshots')).some((f) => f.endsWith('.tmp')));
   town.stop();
@@ -80,7 +80,7 @@ test('指标：过去的日子只保留计数', () => {
   const town = new Town({ dataDir: tmp() });
   town.noteCommitMade(town.byId.lin, { start: 1200, end: 1260, location: 'tavern', activity: '喝一杯' });
   const d1 = town.metricsState.days[1];
-  assert.equal(d1.pending.length, 1);
+  assert.equal(d1.pending!.length, 1);
   town.t += 1440;
   town.noteRun('plan', false);
   assert.equal(d1.pending, undefined);

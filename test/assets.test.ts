@@ -16,7 +16,7 @@ const settings = await import('../server/settings/index.ts');
 
 function site() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-assets-'));
-  const w = (rel, s) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), s); };
+  const w = (rel: string, s: string) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), s); };
   w('index.html', '<!doctype html><html><head><meta charset="utf-8"><script src="js/boot.js"></script><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="https://fonts.example/x.css"></head><body><script type="module" src="js/main.js"></script></body></html>');
   w('admin/index.html', '<html><head><link rel="stylesheet" href="../style.css"></head><body><script type="module" src="../js/admin/main.js"></script></body></html>');
   w('style.css', 'body{}');
@@ -27,7 +27,7 @@ function site() {
   w('.hidden', 'x');
   return { dir, w };
 }
-const h10 = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 10);
+const h10 = (s: string) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 10);
 
 test('资源清单：内容哈希；文件改动后重新计算，构建号随之改变', () => {
   const { dir, w } = site();
@@ -47,25 +47,25 @@ test('HTML 改写：入口带 ?v=，外链不动；注入构建号与 import map
   const { dir } = site();
   const a = new Assets(dir);
   const p = a.page('index.html', '/');
-  const html = p.body.toString();
+  const html = p!.body.toString();
   assert.match(html, new RegExp(`src="js/main.js\\?v=${a.hash('js/main.js')}"`));
   assert.match(html, new RegExp(`src="js/boot.js\\?v=${a.hash('js/boot.js')}"`));
   assert.match(html, new RegExp(`href="style.css\\?v=${a.hash('style.css')}"`));
   assert.match(html, /href="https:\/\/fonts.example\/x.css"/);
   assert.match(html, new RegExp(`<meta name="build" content="${a.build}" data-root="./">`));
-  const map = JSON.parse(/<script type="importmap">(.*?)<\/script>/.exec(html)[1]);
+  const map = JSON.parse(/<script type="importmap">(.*?)<\/script>/.exec(html)![1]);
   assert.equal(map.imports['./js/ui.js'], `./js/ui.js?v=${a.hash('js/ui.js')}`);
   assert.equal(map.imports['./js/admin/main.js'], `./js/admin/main.js?v=${a.hash('js/admin/main.js')}`);
-  assert.equal(p.csp, cspHash(/<script type="importmap">(.*?)<\/script>/.exec(html)[1]), 'CSP 哈希与注入的内容一致');
+  assert.equal(p!.csp, cspHash(/<script type="importmap">(.*?)<\/script>/.exec(html)![1]), 'CSP 哈希与注入的内容一致');
   // 注入在 </head> 之前（模块脚本之前）
   assert.ok(html.indexOf('importmap') < html.indexOf('</head>'));
 
-  const adm = a.page('admin/index.html', '/admin/').body.toString();
+  const adm = a.page('admin/index.html', '/admin/')!.body.toString();
   assert.match(adm, new RegExp(`href="../style.css\\?v=${a.hash('style.css')}"`));
   assert.match(adm, /"\.\.\/js\/ui\.js":"\.\.\/js\/ui\.js\?v=/);
   assert.match(adm, /data-root="\.\.\/"/);
   // 世界页面：同一份 index.html，页面到站点根目录是 ../../
-  assert.match(a.page('index.html', '/w/yunxi/').body.toString(), /data-root="\.\.\/\.\.\/"/);
+  assert.match(a.page('index.html', '/w/yunxi/')!.body.toString(), /data-root="\.\.\/\.\.\/"/);
 });
 
 test('rewriteHtml / rootPrefix / etagMatches 的边界', () => {
@@ -100,22 +100,22 @@ test('缓存头：HTML no-cache + 强 ETag；v 匹配 immutable，不匹配或�
   const r = await app.request('/');
   assert.equal(r.headers.get('cache-control'), 'no-cache');
   const etag = r.headers.get('etag');
-  assert.match(etag, /^"[0-9a-f]{16}"$/);
+  assert.match(etag!, /^"[0-9a-f]{16}"$/);
   const html = await r.text();
-  const inline = /<script type="importmap">(.*?)<\/script>/.exec(html)[1];
-  assert.ok(r.headers.get('content-security-policy').includes(`script-src 'self' ${cspHash(inline)}`));
-  const build = /<meta name="build" content="([0-9a-f]+)"/.exec(html)[1];
+  const inline = /<script type="importmap">(.*?)<\/script>/.exec(html)![1];
+  assert.ok(r.headers.get('content-security-policy')!.includes(`script-src 'self' ${cspHash(inline)}`));
+  const build = /<meta name="build" content="([0-9a-f]+)"/.exec(html)![1];
   assert.equal(r.headers.get('x-build'), build);
-  assert.equal((await app.request('/', { headers: { 'If-None-Match': `W/${etag.slice(0, -1)}-zstd"` } })).status, 304);
+  assert.equal((await app.request('/', { headers: { 'If-None-Match': `W/${etag!.slice(0, -1)}-zstd"` } })).status, 304);
 
-  const v = /src="js\/main\.js\?v=([0-9a-f]+)"/.exec(html)[1];
+  const v = /src="js\/main\.js\?v=([0-9a-f]+)"/.exec(html)![1];
   const ok = await app.request(`/js/main.js?v=${v}`);
   assert.equal(ok.headers.get('cache-control'), 'public, max-age=31536000, immutable');
   assert.equal(ok.headers.get('etag'), `"${v}"`);
   assert.equal((await app.request('/js/main.js?v=0000000000')).headers.get('cache-control'), 'no-cache');
   const plain = await app.request('/js/main.js');
   assert.equal(plain.headers.get('cache-control'), 'no-cache');
-  assert.equal((await app.request('/js/main.js', { headers: { 'If-None-Match': plain.headers.get('etag') } })).status, 304);
+  assert.equal((await app.request('/js/main.js', { headers: { 'If-None-Match': plain.headers.get('etag')! } })).status, 304);
   // 世界页面与构建号接口
   const w = await (await app.request('/w/yunxi/')).text();
   assert.match(w, /data-root="\.\.\/\.\.\/"/);
@@ -125,7 +125,7 @@ test('缓存头：HTML no-cache + 强 ETag；v 匹配 immutable，不匹配或�
   assert.equal((await app.request('/api/me')).headers.get('x-build'), build);
   // 页面里引用的每个模块都在 import map 里
   const map = JSON.parse(inline).imports;
-  for (const f of fs.readdirSync('public/js', { recursive: true })) if (f.endsWith('.js')) assert.ok(map[`./js/${f.split(path.sep).join('/')}`], f);
+  for (const f of fs.readdirSync('public/js', { recursive: true }) as string[]) if (f.endsWith('.js')) assert.ok(map[`./js/${f.split(path.sep).join('/')}`], f);
 });
 
 test('ASSET_VERSIONING 关闭：不改写 HTML，全部 no-cache', async (t) => {
@@ -143,18 +143,18 @@ test('人机验证的 CSP 放行保留页面自己的 import map 哈希', async 
   settings._setForTest({ CAPTCHA_SITEKEY: 'site-key' });
   t.after(() => { settings._setForTest({}); host.close({ save: false }); });
   const csp = (await app.request('/')).headers.get('content-security-policy');
-  assert.match(csp, /script-src 'self' https:\/\/challenges\.cloudflare\.com 'sha256-/);
+  assert.match(csp!, /script-src 'self' https:\/\/challenges\.cloudflare\.com 'sha256-/);
 });
 
 test('SSE 的 init 带构建号', async (t) => {
   const { app, host } = setup();
   t.after(() => host.close({ save: false }));
   const res = await app.request('/api/stream');
-  const reader = res.body.getReader();
+  const reader = res.body!.getReader();
   let text = '';
   while (!text.includes('event: init')) text += new TextDecoder().decode((await reader.read()).value);
   while (!/event: init\ndata: .*\n\n/.test(text)) text += new TextDecoder().decode((await reader.read()).value);
-  const init = JSON.parse(/event: init\ndata: (.*)\n\n/.exec(text)[1]);
+  const init = JSON.parse(/event: init\ndata: (.*)\n\n/.exec(text)![1]);
   assert.match(init.build, /^[0-9a-f]{10}$/);
   await reader.cancel();
 });

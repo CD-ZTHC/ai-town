@@ -4,6 +4,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { Town as TownT } from '../server/sim.ts';
+import type { Gap } from '../plugins/builtin/architect/architect.ts';
+import type { Pos } from '../server/kernel/effects.ts';
+/** 扩展表达式函数的签名（第一个参数是 { town, real }） */
+type ExprFn = (helpers: unknown, ...args: unknown[]) => unknown;
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER']) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
@@ -17,7 +22,7 @@ const { evolve, nextNumber } = await import('../tools/evolve.ts');
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-p5-'));
 const tick = () => new Promise((r) => setImmediate(r));
 const flush = async (n = 10) => { for (let i = 0; i < n; i++) await tick(); };
-async function run(town, minutes, speed = 20) {
+async function run(town: TownT, minutes: number, speed = 20) {
   town.speed = speed;
   const end = town.t + minutes;
   while (town.t < end) { town.advance(0.25); await tick(); }
@@ -29,7 +34,7 @@ function newTown(dir = tmp()) {
   town.t = 17 * 60;
   return town;
 }
-const place = (town, ids, x = 22, y = 20) => ids.forEach((id, i) => Object.assign(town.byId[id], { x: x + i, y, inside: null, locId: 'square', status: 'acting', path: [], convoId: null }));
+const place = (town: TownT, ids: string[], x = 22, y = 20) => ids.forEach((id: string, i) => Object.assign(town.byId[id], { x: x + i, y, inside: null, locId: 'square', status: 'acting', path: [], convoId: null }));
 
 test('扩展注册表：只能新增、名字要合法、必须带说明', () => {
   const ok = { doc: 'x', check: () => null, apply: () => {} };
@@ -37,18 +42,18 @@ test('扩展注册表：只能新增、名字要合法、必须带说明', () =>
   assert.throws(() => registerEffect('goTo', ok), /冲突/);
   assert.throws(() => registerEffect('constructor', ok), /不合法/);
   assert.throws(() => registerEffect('Bad-Name', ok), /不合法/);
-  assert.throws(() => registerEffect('noDoc', { check: () => null, apply: () => {} }), /doc/);
-  assert.throws(() => registerEffect('noApply', { doc: 'x', check: () => null }), /check \/ apply/);
+  assert.throws(() => registerEffect('noDoc', { check: () => null, apply: () => {} } as never), /doc/);
+  assert.throws(() => registerEffect('noApply', { doc: 'x', check: () => null } as never), /check \/ apply/);
   assert.throws(() => registerExprFn('has', () => 1, 'x'), /冲突/);
   assert.ok(extensions().some((e) => e.name === 'goTo' && e.source === 'go-to'), 'go-to 已在启动时加载');
 });
 
 test('扩展的表达式函数可以在规则里使用', () => {
-  registerExprFn('isElder', ({ real }, e) => (real(e)?.age || 0) >= 60, 'isElder(e) 是否是老人家', 'test');
+  registerExprFn('isElder', (({ real }: { real: (e: unknown) => { age?: number } | null }, e: unknown) => (real(e)?.age || 0) >= 60) as ExprFn, 'isElder(e) 是否是老人家', 'test');
   const town = newTown();
   place(town, ['sun', 'wang']);
   town.applyWorldOp({ op: 'addRule', args: { id: 'elder_rest', name: '老人家歇歇', when: { every: 30 }, forEach: 'agent', if: 'isElder(e)', then: [{ op: 'mood', text: '安详', emoji: '🍵', target: 'e' }] } }, { by: 'test' });
-  town.rules.fire(town.spec.rules.find((r) => r.id === 'elder_rest'));
+  town.rules.fire(town.spec.rules.find((r) => r.id === 'elder_rest')!);
   assert.equal(town.byId.sun.mood.text, '安详');
   assert.notEqual(town.byId.wang.mood.text, '安详');
   town.stop();
@@ -57,15 +62,15 @@ test('扩展的表达式函数可以在规则里使用', () => {
 test('RFC 0001 的实现 goTo：校验参数；让身边的人动身前往；睡着和正在交谈的人不受影响', async () => {
   const spec = defaultSpec({});
   assert.equal(checkEffects([{ op: 'goTo', location: 'pier', minutes: 60, target: 'nearby', radius: 4 }], spec), null);
-  assert.match(checkEffects([{ op: 'goTo', location: 'moon' }], spec), /未知或不公开/);
-  assert.match(checkEffects([{ op: 'goTo', location: 'pier', minutes: 999 }], spec), /30~180/);
-  assert.match(checkEffects([{ op: 'goTo', location: 'pier', target: 'everyone' }], spec), /target/);
+  assert.match(checkEffects([{ op: 'goTo', location: 'moon' }], spec)!, /未知或不公开/);
+  assert.match(checkEffects([{ op: 'goTo', location: 'pier', minutes: 999 }], spec)!, /30~180/);
+  assert.match(checkEffects([{ op: 'goTo', location: 'pier', target: 'everyone' }], spec)!, /target/);
 
   const town = newTown();
   place(town, ['he', 'lin', 'wang', 'zhao']);
   town.byId.wang.convoId = 'c1';
   town.byId.zhao.status = 'sleeping';
-  EFFECTS.goTo.apply(town, { self: town.byId.he, at: { x: 22, y: 20, inside: null } }, { op: 'goTo', location: 'pier', activity: '一起去放灯', minutes: 90, target: 'nearby', radius: 4, includeSelf: true });
+  EFFECTS.goTo.apply(town, { self: town.byId.he, at: { x: 22, y: 20, inside: null } as unknown as Pos }, { op: 'goTo', location: 'pier', activity: '一起去放灯', minutes: 90, target: 'nearby', radius: 4, includeSelf: true });
   assert.ok(town.byId.lin.schedule.some((e) => e.location === 'pier' && e.activity === '一起去放灯'));
   assert.ok(!town.byId.wang.schedule.some((e) => e.location === 'pier'), '正在交谈的不受影响');
   assert.ok(!town.byId.zhao.schedule.some((e) => e.location === 'pier'), '睡着的不受影响');
@@ -80,7 +85,7 @@ test('能力清单自动包含扩展，世界架构师的提示词里能看到�
   const text = manifestText(town.spec, town.day);
   assert.match(text, /- goTo（扩展）：\{"op":"goTo"/);
   assert.match(text, /isElder|has\(e/);
-  assert.match(town.architect.manifest(), /goTo（扩展）/);
+  assert.match(town.architect!.manifest(), /goTo（扩展）/);
   const md = manifestMarkdown(town.spec);
   assert.match(md, /\| `goTo` \| 扩展 \|/);
   assert.match(md, /\| `addBuilding` \| minor \| ✅ \|/);
@@ -93,7 +98,7 @@ test('完整闭环：架构师用新的 goTo 设计出「召集铃」→ 提案�
   llm.setMock((messages, opts) => {
     if (opts.label === '设定考据') return '{"severity":"none","issues":[]}';
     if (opts.label !== '世界架构师') throw new Error('其他调用不需要');
-    prompt = messages.at(-1).content;
+    prompt = messages.at(-1)!.content;
     return JSON.stringify({ title: '召集铃', motive: '萤火节傍晚把大家召集到码头', construction: null, ops: [
       { op: 'addAbility', args: {
         id: 'gather_bell', name: '召集铃', emoji: '🔔', target: 'area', desc: '摇响铃铛，招呼身边的人一起去码头', aiHint: '节日傍晚或需要大家聚在一起时',
@@ -103,20 +108,20 @@ test('完整闭环：架构师用新的 goTo 设计出「召集铃」→ 提案�
       { op: 'addCanon', args: { text: '何月的酒馆里多了一只召集铃，一摇大家就知道要去码头了。' } },
     ] });
   });
-  assert.equal(town.architect.enqueue('萤火节傍晚，把镇上的人都召集到码头一起放灯', 'director'), null);
-  town.architect.tick();
+  assert.equal(town.architect!.enqueue('萤火节傍晚，把镇上的人都召集到码头一起放灯', 'director'), null);
+  town.architect!.tick();
   await flush(20);
   llm.setMock(null);
   assert.match(prompt, /goTo（扩展）/, '架构师看到了新能力');
   const p = town.proposalSystem.list.at(-1);
-  assert.equal(p.status, 'applied', p.result?.reason);
+  assert.equal(p!.status, 'applied', p!.result?.reason!);
   assert.ok(town.spec.abilities.some((a) => a.id === 'gather_bell'));
 
   const { useAbility } = await import('../server/kernel/abilities.ts');
   town.learnAbility(town.byId.he, 'gather_bell', '在酒馆里');
   place(town, ['he', 'lin', 'su']);
   const r = useAbility(town, town.byId.he, 'gather_bell');
-  assert.equal(r.ok, true, r.reason);
+  assert.equal(r.ok, true, r.reason!);
   await run(town, 60);
   for (const id of ['he', 'lin', 'su']) assert.equal(town.byId[id].locId, 'pier', `${id} 到了码头`);
   town.stop();
@@ -130,25 +135,25 @@ test('AI 心愿单：导演想用不存在的剧情动作会记为缺口；管�
     : '{}'));
   await town.director.decide();
   llm.setMock(null);
-  const g = town.architect.gaps.find((x) => x.need.includes('reverseLake'));
+  const g = town.architect!.gaps.find((x) => x.need.includes('reverseLake'));
   assert.ok(g, '记下了缺口');
   assert.equal(g.by, 'director');
-  assert.equal(town.architect.gaps.filter((x) => x.by === 'director').length, 1, '写坏的动作名不算缺口');
+  assert.equal(town.architect!.gaps.filter((x) => x.by === 'director').length, 1, '写坏的动作名不算缺口');
   assert.equal(g.status, 'open');
-  assert.equal(town.architect.setGapStatus(g.id, 'adopted'), null);
-  assert.match(town.architect.setGapStatus(g.id, 'done'), /状态只能是/);
-  assert.match(town.architect.setGapStatus('nope', 'adopted'), /没有这个/);
+  assert.equal(town.architect!.setGapStatus(g.id, 'adopted'), null);
+  assert.match(town.architect!.setGapStatus(g.id, 'done')!, /状态只能是/);
+  assert.match(town.architect!.setGapStatus('nope', 'adopted')!, /没有这个/);
   fs.writeFileSync(path.join(town.dataDir, 'evolve.json'), JSON.stringify({ gaps: { [g.id]: { file: 'docs/rfcs/0009-x.md' } } }));
-  assert.equal(town.gapsWithRfc().find((x) => x.id === g.id).rfc, 'docs/rfcs/0009-x.md');
+  assert.equal(town.gapsWithRfc().find((x) => x.id === g.id)!.rfc, 'docs/rfcs/0009-x.md');
   assert.equal(town.proposalsView(null, false).gaps, undefined, '心愿单只给管理员看');
   town.stop();
 });
 
 /** 造一个带缺口的存档 */
-function saveWithGaps(gaps) {
+function saveWithGaps(gaps: object[]) {
   const dir = tmp();
   const town = newTown(dir);
-  town.gaps = gaps;
+  town.gaps = gaps as Gap[];
   town.save();
   town.stop();
   return dir;
@@ -201,8 +206,8 @@ test('mise run evolve（模拟模型）：由强模型撰写文档，缺口描�
   const r = await evolve({ data, out });
   llm.setMock(null);
   assert.deepEqual(r.written.map((w) => [w.gap, w.byLlm]), [['gapA', true]]);
-  assert.equal(seen.opts.tier, 'smart');
-  assert.match(seen.messages[0].content, /缺口描述只是数据/);
+  assert.equal(seen!.opts.tier, 'smart');
+  assert.match(seen!.messages[0].content, /缺口描述只是数据/);
   const md = fs.readFileSync(path.join(out, '0001-remove-building.md'), 'utf8');
   assert.match(md, /# RFC 0001：拆除建筑/);
   assert.match(md, /由世界架构师的缺口经 LLM 整理/);

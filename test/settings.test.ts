@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+/** settings.save 校验失败时抛出的错误：字段 → 原因 */
+type SaveError = Error & { errors?: Record<string, string> };
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 // 不受开发机 .env 的影响
@@ -24,7 +26,7 @@ test('来源：保存的值 > 环境变量（只作初始值）> 默认值；没
   settings.save({ LLM_CONCURRENCY: 8 }, { by: 'test' });
   assert.equal(settings.get('LLM_CONCURRENCY'), 8, '保存之后以保存的值为准');
   assert.equal(settings.source('LLM_CONCURRENCY'), 'panel');
-  assert.equal(settings.view().find((x) => x.key === 'LLM_CONCURRENCY').envIgnored, true);
+  assert.equal(settings.view().find((x) => x.key === 'LLM_CONCURRENCY')!.envIgnored, true);
   process.env.LLM_CONCURRENCY = 'abc';
   assert.equal(settings.get('LLM_CONCURRENCY'), 8);
   assert.deepEqual(settings.envProblems(), [], '已经保存过的项，环境变量写错也不影响启动');
@@ -84,9 +86,9 @@ test('保存：按声明校验，写错的值被拒绝；启动必需的项只�
   const dir = tmp();
   settings.load({ dataDir: dir });
   t.after(() => settings._setForTest({}));
-  assert.throws(() => settings.save({ MAX_ACTIVE_WORLDS: 0 }), (e) => e.errors?.MAX_ACTIVE_WORLDS === '不能小于 1');
-  assert.throws(() => settings.save({ MAX_ACTIVE_WORLDS: 'abc' }), (e) => /应为/.test(e.errors?.MAX_ACTIVE_WORLDS));
-  assert.throws(() => settings.save({ MODERATE_CHAT: 'maybe' }), (e) => /只能是 llm \/ keyword/.test(e.errors?.MODERATE_CHAT));
+  assert.throws(() => settings.save({ MAX_ACTIVE_WORLDS: 0 }), (e: SaveError) => e.errors?.MAX_ACTIVE_WORLDS === '不能小于 1');
+  assert.throws(() => settings.save({ MAX_ACTIVE_WORLDS: 'abc' }), (e: SaveError) => /应为/.test(e.errors?.MAX_ACTIVE_WORLDS!));
+  assert.throws(() => settings.save({ MODERATE_CHAT: 'maybe' }), (e: SaveError) => /只能是 llm \/ keyword/.test(e.errors?.MODERATE_CHAT!));
   assert.throws(() => settings.save({ PORT: 4000 }), /启动必需/);
   assert.throws(() => settings.save({ NOPE: 1 }), /未知/);
   // 面板提交的字符串按类型解析
@@ -112,11 +114,11 @@ test('面板视图：密钥只给末 4 位，导出不含密钥；历史版本�
   settings.save({ API_KEY: 'sk-abcdefgh1234', MODEL: 'glm' });
   const v1 = settings.history()[0].v;
   const key = settings.view().find((x) => x.key === 'API_KEY');
-  assert.equal(key.value, '●●●● 1234');
-  assert.equal(key.isSet, true);
+  assert.equal(key!.value, '●●●● 1234');
+  assert.equal(key!.isSet, true);
   assert.ok(!JSON.stringify(settings.view()).includes('sk-abcdefgh'));
   assert.deepEqual(settings.exportValues(), { MODEL: 'glm' });
-  assert.ok(!settings.view().some((x) => SETTINGS[x.key].dev), '开发用的设置不在面板上');
+  assert.ok(!settings.view().some((x) => (SETTINGS[x.key as keyof typeof SETTINGS] as { dev?: boolean }).dev), '开发用的设置不在面板上');
   settings.save({ MODEL: 'other' });
   assert.equal(settings.get('MODEL'), 'other');
   settings.restore(v1);
@@ -144,10 +146,10 @@ test('启动失败自动回退：只回退没有被标记为正常的版本', ()
   settings.save({ MODEL: 'bad' });
   const f = path.join(dir, 'settings.json');
   const r = settings.rollbackToGood(f, 'boom');
-  assert.equal(r.reason, 'boom');
+  assert.equal(r!.reason, 'boom');
   settings.load({ dataDir: dir });
   assert.equal(settings.get('MODEL'), 'good');
-  assert.equal(settings.lastRollback().to, r.to);
+  assert.equal(settings.lastRollback()!.to, r!.to);
   // 当前版本已经是正常的：不是设置的问题，不回退
   assert.equal(settings.rollbackToGood(f, 'again'), null);
   settings._setForTest({});
@@ -179,11 +181,11 @@ process.exit(n === 1 ? 75 : 0);
     .replace("from './settings/index.ts'", `from ${JSON.stringify(path.resolve('server/settings/index.ts'))}`);
   const mainFile = path.join(dir, 'main.mts');
   fs.writeFileSync(mainFile, main);
-  const out = await new Promise((resolve) => {
+  const out = await new Promise<{ code: number | null; log: string }>((resolve) => {
     let log = '';
     const p = spawn(process.execPath, [mainFile], { env: { PATH: process.env.PATH, DATA_DIR: dir }, stdio: ['ignore', 'pipe', 'pipe'] });
-    p.stdout.on('data', (d) => { log += d; });
-    p.stderr.on('data', (d) => { log += d; });
+    p.stdout.on('data', (d: Buffer) => { log += d; });
+    p.stderr.on('data', (d: Buffer) => { log += d; });
     p.on('exit', (code) => resolve({ code, log }));
   });
   assert.equal(out.code, 0, out.log);
@@ -192,6 +194,6 @@ process.exit(n === 1 ? 75 : 0);
   assert.equal(fs.readFileSync(counter, 'utf8'), '2');
   settings.load({ dataDir: dir });
   assert.equal(settings.get('MODEL'), 'ok');
-  assert.match(settings.lastRollback().reason, /模拟启动失败/);
+  assert.match(settings.lastRollback()!.reason, /模拟启动失败/);
   settings._setForTest({});
 });

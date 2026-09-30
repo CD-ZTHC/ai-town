@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { TestContext } from 'node:test';
+import type { Town as TownT } from '../server/sim.ts';
+import type { ShadowResult } from '../server/genesis/pipeline.ts';
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
@@ -28,15 +31,15 @@ const { memoryHooks } = await import('../server/memory.ts');
 const PW = 'correct-horse-9';
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-gov-'));
 let userSeq = 0;
-const cookieOf = (res) => (res.headers.get('set-cookie') || '').split(';')[0];
+const cookieOf = (res: Response) => (res.headers.get('set-cookie') || '').split(';')[0];
 
-function env(t) {
+function env(t: TestContext) {
   const data = tmp();
   const db = openDb(':memory:');
   const acc = new Accounts({ file: ':memory:', db });
   installRefs(acc);
   const reg = new WorldRegistry(db);
-  let manager = null;
+  let manager: InstanceType<typeof WorldManager> | null = null;
   reg.onChange = (id) => manager?.onStatus(id);
   manager = new WorldManager({
     data, registry: reg,
@@ -49,7 +52,7 @@ function env(t) {
     routes: [['worlds', worldsApi({ registry: reg, manager, accounts: acc })]],
     worlds: {
       defaultId: () => 'x',
-      resolve: (c, id) => { const w = reg.get(id); const ok = authorize(c.get('who'), 'world.view', w); if (ok !== true) throw Object.assign(new Error(ok), { status: w?.status === 'suspended' ? 403 : 404 }); return manager.open(id); },
+      resolve: (c, id) => { const w = reg.get(id); const ok = authorize(c.get('who'), 'world.view', w); if (ok !== true) throw Object.assign(new Error(ok), { status: w?.status === 'suspended' ? 403 : 404 }); return manager.open(id!); },
       page: () => ({ ok: true }), health: () => ({}),
     },
   });
@@ -57,20 +60,20 @@ function env(t) {
   config.adminToken = 'root-token-123';
   settings._setForTest({ REPORT_UNLIST_THRESHOLD: 3 });
   _resetQuota();
-  t.after(() => { manager.closeAll(); config.publicMode = undefined; config.adminToken = undefined; settings._setForTest({}); memoryHooks.encode = null; llm.setMock(null); });
-  const req = (p, { body, cookie, method, admin } = {}) => app.request(p, {
+  t.after(() => { manager!.closeAll(); config.publicMode = undefined as never; config.adminToken = undefined as never; settings._setForTest({}); memoryHooks.encode = null; llm.setMock(null); });
+  const req = (p: string, { body, cookie, method, admin }: { body?: unknown; cookie?: string; method?: string; admin?: boolean } = {}) => app.request(p, {
     method: method || (body === undefined ? 'GET' : 'POST'),
     headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(cookie ? { Cookie: cookie } : {}), ...(admin ? { 'X-Admin-Token': 'root-token-123' } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const user = async (name) => {
+  const user = async (name: string) => {
     const r = await req('/api/auth/register', { body: { username: `player_${++userSeq}`, nickname: name, password: PW } });
     _resetQuota(); // 注册按 IP 限流：测试里同一个 IP 注册很多人
     const j = await r.json();
     return { cookie: cookieOf(r), id: j.user.id };
   };
   /** 用小红帽的世界包做一个用户世界（预览中） */
-  const makeWorld = (id, ownerId, patch = {}) => {
+  const makeWorld = (id: string, ownerId: string | null, patch = {}) => {
     const p = loadPack('worlds/little-red');
     const world = { ...p.world, id, meta: { ...p.world.meta, ...patch } };
     writePack(path.join(data, 'worlds', id, 'pack'), { world, map: p.map, arcs: p.arcs, bible: p.bible });
@@ -90,21 +93,21 @@ test('发布：自动审核通过即公开；分级超出授予范围时退回�
   const bad = await e.req('/api/worlds/red-riding/publish', { body: {}, cookie: owner.cookie });
   assert.equal(bad.status, 422);
   assert.match((await bad.json()).error, /分级/);
-  assert.equal(e.reg.get('red-riding').status, 'preview');
-  assert.match(e.reg.get('red-riding').statusReason, /自动审核没有通过/);
+  assert.equal(e.reg.get('red-riding')!.status, 'preview');
+  assert.match(e.reg.get('red-riding')!.statusReason!, /自动审核没有通过/);
 
   e.acc.setGrant(owner.id, { cap: 'genesis', quota: { ratings: ['cozy', 'adventure'] } }, 'admin');
   const ok = await e.req('/api/worlds/red-riding/publish', { body: {}, cookie: owner.cookie });
   assert.equal(ok.status, 200, await ok.clone().text());
-  assert.equal(e.reg.get('red-riding').status, 'public');
-  assert.ok((await (await e.req('/api/worlds')).json()).list.some((w) => w.id === 'red-riding'), '出现在大厅');
+  assert.equal(e.reg.get('red-riding')!.status, 'public');
+  assert.ok((await (await e.req('/api/worlds')).json()).list.some((w: { id: string }) => w.id === 'red-riding'), '出现在大厅');
   assert.equal((await e.req('/api/w/red-riding/me')).status, 200, '游客可以看');
   assert.equal((await e.req('/api/worlds/red-riding/draft', { method: 'PATCH', body: { title: '改名' }, cookie: owner.cookie })).status, 409, '发布后不能改世界包');
 
   assert.equal((await e.req('/api/worlds/red-riding/pause', { body: {}, cookie: owner.cookie })).status, 200);
   assert.equal(e.manager.open('red-riding').town.paused, true, '暂停的世界不推进时间');
   assert.equal((await e.req('/api/worlds/red-riding/resume', { body: {}, cookie: owner.cookie })).status, 200);
-  assert.equal(e.manager.get('red-riding').town.paused, false);
+  assert.equal(e.manager.get('red-riding')!.town.paused, false);
   assert.equal((await e.req('/api/worlds/red-riding/archive', { body: {}, cookie: owner.cookie })).status, 200);
   assert.equal(e.manager.get('red-riding'), null);
   assert.equal((await e.req('/api/w/red-riding/me')).status, 404);
@@ -119,7 +122,7 @@ test('自动审核的其他步骤：文本关键词、试跑', { timeout: 60_000
   assert.match(r.reasons[0], /关键词/);
   const good = tmp();
   writePack(good, { world: p.world, map: p.map, arcs: p.arcs });
-  const g = await publishReview({ packDir: good, allowedRatings: null, shadow: async () => ({ ok: true, stuckRate: 0.8 }) });
+  const g = await publishReview({ packDir: good, allowedRatings: null, shadow: async () => ({ ok: true, stuckRate: 0.8 }) as ShadowResult });
   assert.equal(g.ok, false);
   assert.match(g.reasons[0], /卡住/);
 });
@@ -135,17 +138,17 @@ test('举报：不同的人举报达到阈值自动转为不公开；管理员�
   await e.req('/api/worlds/red-riding/report', { body: { reason: '不合适' }, cookie: reporters[0].cookie });
   await e.req('/api/worlds/red-riding/report', { body: { reason: '重复举报' }, cookie: reporters[0].cookie });
   await e.req('/api/worlds/red-riding/report', { body: { reason: '不合适' }, cookie: reporters[1].cookie });
-  assert.equal(e.reg.get('red-riding').status, 'public', '同一个人重复举报只算一次');
+  assert.equal(e.reg.get('red-riding')!.status, 'public', '同一个人重复举报只算一次');
   await e.req('/api/worlds/red-riding/report', { body: { target: 'persona:wolf', reason: '太吓人' }, cookie: reporters[2].cookie });
-  assert.equal(e.reg.get('red-riding').status, 'unlisted');
-  assert.ok(!(await (await e.req('/api/worlds')).json()).list.some((w) => w.id === 'red-riding'), '不在大厅');
+  assert.equal(e.reg.get('red-riding')!.status, 'unlisted');
+  assert.ok(!(await (await e.req('/api/worlds')).json()).list.some((w: { id: string }) => w.id === 'red-riding'), '不在大厅');
   assert.equal((await e.req('/api/w/red-riding/me')).status, 200, '链接仍然能打开');
   const reports = await (await e.req('/api/admin/reports', { admin: true })).json();
   assert.equal(reports.length, 3, '重复的举报不另存');
 
   // 下架：在线观众收到通知，世界停止运行
   const host = e.manager.open('red-riding');
-  const got = [];
+  const got: string[] = [];
   host.join({ ip: '1', write: (m) => got.push(m) });
   assert.equal((await e.req('/api/admin/worlds/red-riding/suspend', { body: { reason: '冒充官方' }, cookie: owner.cookie })).status, 403);
   assert.equal((await e.req('/api/admin/worlds/red-riding/suspend', { body: { reason: '冒充官方' }, admin: true })).status, 200);
@@ -154,10 +157,10 @@ test('举报：不同的人举报达到阈值自动转为不公开；管理员�
   assert.equal((await e.req('/api/w/red-riding/me')).status, 403);
   const mine = await (await e.req('/api/worlds/mine', { cookie: owner.cookie })).json();
   assert.equal(mine[0].status, 'suspended', 'owner 在「我的世界」里看到状态');
-  assert.match(e.reg.get('red-riding').statusReason, /冒充官方/);
+  assert.match(e.reg.get('red-riding')!.statusReason!, /冒充官方/);
   assert.equal((await e.req('/api/worlds/red-riding/resume', { body: {}, cookie: owner.cookie })).status, 409, 'owner 不能自行恢复');
   assert.equal((await e.req('/api/admin/worlds/red-riding/restore', { body: {}, admin: true })).status, 200);
-  assert.equal(e.reg.get('red-riding').status, 'public');
+  assert.equal(e.reg.get('red-riding')!.status, 'public');
   assert.equal((await (await e.req('/api/admin/reports', { admin: true })).json()).length, 0, '恢复时一并处理了举报');
 });
 
@@ -177,7 +180,7 @@ test('owner 终审：自己世界里的决策由 owner 拍板，别人不行；�
   assert.equal((await e.req('/api/w/red-riding/decisions/decide', { body: { id: d.id, adopt: true }, cookie: other.cookie })).status, 403);
   const r = await e.req('/api/w/red-riding/decisions/decide', { body: { id: d.id, adopt: true }, cookie: owner.cookie });
   assert.equal(r.status, 200, await r.clone().text());
-  assert.equal(town.decisions.get(d.id).result.by, 'owner');
+  assert.equal(town.decisions.get(d.id)!.result!.by, 'owner');
   // 撤销只有全站管理员
   assert.equal((await e.req('/api/w/red-riding/decisions/undo', { body: { id: d.id }, cookie: owner.cookie })).status, 403);
   // 用户世界的投票与提案需要人终审（owner）
@@ -185,7 +188,7 @@ test('owner 终审：自己世界里的决策由 owner 拍板，别人不行；�
 });
 
 test('运行时抽样审核：命中的编年被隐藏；通过的不动', async () => {
-  const town = { spec: { meta: { rating: 'cozy', name: 'x' } }, newspapers: [{ day: 1, headline: '村里来了色情表演' }, { day: 2, headline: '今天天气真好' }], logs: [], emit() {} };
+  const town = { spec: { meta: { rating: 'cozy', name: 'x' } }, newspapers: [{ day: 1, headline: '村里来了色情表演' }, { day: 2, headline: '今天天气真好' }], logs: [], emit() {} } as unknown as TownT;
   let r = await sampleWorld(town, { random: () => 0 });
   assert.equal(r.hit, true);
   assert.deepEqual(town.newspapers.map((p) => p.day), [2]);

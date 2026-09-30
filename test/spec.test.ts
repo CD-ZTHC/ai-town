@@ -5,9 +5,10 @@ import crypto from 'node:crypto';
 import { defaultSpec, validateSpec, calendarHint, pickWeather, activeEvents, weekdayOf } from '../server/kernel/spec.ts';
 import { buildWorld, buildMoonRealm } from '../server/world.ts';
 import { officialPack, loadPack, packErrors, hashPack } from '../server/worlds/pack.ts';
+import type { GenWorld } from '../server/types/map.ts';
 
 // 迁移前（地图常量还在 world.js 里时）生成的地图指纹：云溪镇与暗月界必须逐格不变
-const fingerprint = (x) => crypto.createHash('sha256').update(JSON.stringify({ t: x.tiles, w: [...x.walk], o: x.objects, b: x.buildings, l: x.locations, g: x.gate })).digest('hex').slice(0, 16);
+const fingerprint = (x: GenWorld) => crypto.createHash('sha256').update(JSON.stringify({ t: x.tiles, w: [...x.walk], o: x.objects, b: x.buildings, l: x.locations, g: x.gate })).digest('hex').slice(0, 16);
 
 test('默认规格通过校验', () => {
   assert.deepEqual(validateSpec(defaultSpec({})), []);
@@ -28,7 +29,7 @@ test('由世界包生成的地图与迁移前逐格一致', () => {
 test('官方世界包：结构合法，哈希稳定，带叙述口吻、作息与支柱', () => {
   const p = officialPack('yunxi');
   assert.deepEqual(packErrors(p), []);
-  assert.equal(hashPack(loadPack(p.dir)), p.hash);
+  assert.equal(hashPack(loadPack(p.dir!)), p.hash);
   assert.equal(p.world.voice.chronicle.name, '云溪日报');
   assert.deepEqual(p.world.rhythm, { plan: '05:30', diary: '22:15', chronicle: '22:45' });
   assert.ok(p.world.lore.pillars.length >= 2);
@@ -62,7 +63,7 @@ test('节日只在当天 18:00 之后进行', () => {
 test('自动天气的概率分布与重构前的阈值一致', () => {
   const s = defaultSpec({});
   // 旧逻辑：r<0.5 晴，<0.75 多云，<0.88 雨，<0.93 雷阵雨，否则雾（白天雾改为多云）
-  const legacy = (r, m) => {
+  const legacy = (r: number, m: number) => {
     let w = r < 0.5 ? 'sunny' : r < 0.75 ? 'cloudy' : r < 0.88 ? 'rain' : r < 0.93 ? 'storm' : 'fog';
     if (w === 'fog' && m > 600 && m < 1140) w = 'cloudy';
     return w;
@@ -79,7 +80,7 @@ test('校验器能发现坏数据', () => {
   const s = defaultSpec({});
   s.personas[0].home = 'nowhere';
   s.params.walkSpeed = 99;
-  s.weather.fog.avoid.fallback = 'lava';
+  s.weather.fog.avoid!.fallback = 'lava';
   const errs = validateSpec(s);
   assert.ok(errs.some((e) => e.includes('home')));
   assert.ok(errs.some((e) => e.includes('walkSpeed')));

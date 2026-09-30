@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { AddressInfo } from 'node:net';
+import type { SseClient } from '../server/worlds/host.ts';
+type SseClientImpl = ReturnType<typeof import('../server/http/app.ts').sseClient>;
 
 // 不受开发机 .env 的影响
 const { SETTINGS } = await import('../server/settings/schema.ts');
@@ -21,7 +24,7 @@ function setup() {
   const app = createApp({ hostFor: () => host, publicDir: 'public' });
   return { app, host, dir };
 }
-const post = (app, p, body, headers = {}) => app.request(p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+const post = (app: { request: (p: string, init: RequestInit) => Response | Promise<Response> }, p: string, body: unknown, headers: Record<string, string> = {}) => app.request(p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
 
 test('接口：身份、世界数据、错误码与安全响应头', async (t) => {
   const { app, host } = setup();
@@ -69,8 +72,8 @@ test('SSE：先推送 init，断开后观众计数归零', async (t) => {
   const ctrl = new AbortController();
   const res = await app.request('/api/stream', { signal: ctrl.signal });
   assert.equal(res.status, 200);
-  assert.match(res.headers.get('content-type'), /text\/event-stream/);
-  const reader = res.body.getReader();
+  assert.match(res.headers.get('content-type')!, /text\/event-stream/);
+  const reader = res.body!.getReader();
   let text = '';
   while (!text.includes('event: init')) text += new TextDecoder().decode((await reader.read()).value);
   assert.equal(host.clients.size, 1);
@@ -82,20 +85,20 @@ test('SSE 背压：不读数据的观众只留最新一帧 tick，其他事件�
   const { app, host } = setup();
   t.after(() => host.close({ save: false }));
   const res = await app.request('/api/stream');
-  const reader = res.body.getReader();
+  const reader = res.body!.getReader();
   let text = '';
   while (!text.includes('event: init')) text += new TextDecoder().decode((await reader.read()).value);
   const [client] = host.clients;
   // 观众不读：推 1000 帧 tick，积压的只有最后一帧
   const frame = { pad: 'x'.repeat(2000) };
   for (let i = 0; i < 1000; i++) host.broadcast('tick', { i, ...frame });
-  assert.ok(client.backlog < 3000, `积压 ${client.backlog} 字节`);
+  assert.ok(client.backlog! < 3000, `积压 ${client.backlog} 字节`);
   const chunk = new TextDecoder().decode((await reader.read()).value);
   assert.match(chunk, /"i":999/);
   assert.doesNotMatch(chunk, /"i":998/);
   // 其他事件：积压超过 SSE_MAX_BUFFER_KB（默认 256KB）就断开，并离开观众列表
-  for (let i = 0; i < 200 && !client.closed; i++) host.broadcast('log', { i, ...frame });
-  assert.ok(client.overflowed);
+  for (let i = 0; i < 200 && !(client as SseClientImpl).closed; i++) host.broadcast('log', { i, ...frame });
+  assert.ok((client as SseClientImpl).overflowed);
   assert.equal(host.clients.size, 0);
   const rest = await reader.read();
   assert.equal(rest.done, true, '积压的消息直接丢弃，连接结束');
@@ -124,13 +127,13 @@ test('快照频率：没有观众时不生成，按 TICK_HZ 推送', async (t) =
   const { host } = setup();
   t.after(() => host.close({ save: false }));
   const town = host.town;
-  clearInterval(town.timer);
+  clearInterval(town.timer!);
   let n = 0;
   const orig = town.snapshot.bind(town);
   town.snapshot = () => { n++; return orig(); };
   for (let i = 0; i < 20; i++) town.advance(0.05);
   assert.equal(n, 0, '没有观众');
-  host.clients.add({ write() {} });
+  host.clients.add({ write() {} } as unknown as SseClient);
   for (let i = 0; i < 20; i++) town.advance(0.05); // 1 秒
   assert.ok(n >= 3 && n <= 5, `默认每秒 4 次，实际 ${n}`);
 });
@@ -140,7 +143,7 @@ test('静态资源：首页、ETag、禁止路径穿越与点开头的文件', a
   t.after(() => host.close({ save: false }));
   const r = await app.request('/');
   assert.equal(r.status, 200);
-  assert.match(r.headers.get('content-type'), /text\/html/);
+  assert.match(r.headers.get('content-type')!, /text\/html/);
   const etag = r.headers.get('etag');
   assert.ok(etag);
   assert.equal((await app.request('/', { headers: { 'If-None-Match': etag } })).status, 304);
@@ -155,9 +158,9 @@ test('管理员接口 · 设置：查看、校验、试算、保存、历史与�
   const { app, host, dir } = setup();
   settings.load({ dataDir: dir });
   t.after(() => { host.close({ save: false }); settings._setForTest({}); });
-  const put = (body) => app.request('/api/admin/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const put = (body: unknown) => app.request('/api/admin/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const g = await (await app.request('/api/admin/settings')).json();
-  assert.ok(g.items.some((x) => x.key === 'MAX_ACTIVE_WORLDS'));
+  assert.ok(g.items.some((x: { key: string }) => x.key === 'MAX_ACTIVE_WORLDS'));
   const bad = await put({ changes: { MAX_ACTIVE_WORLDS: 99 } });
   assert.equal(bad.status, 422);
   assert.equal((await bad.json()).errors.MAX_ACTIVE_WORLDS, '不能大于 32');
@@ -180,7 +183,7 @@ test('管理员接口 · 设置：查看、校验、试算、保存、历史与�
   const { config } = await import('../server/guard.ts');
   config.publicMode = true;
   config.adminToken = 'tok';
-  t.after(() => { config.publicMode = undefined; config.adminToken = undefined; });
+  t.after(() => { config.publicMode = undefined as unknown as boolean; config.adminToken = undefined as unknown as string; });
   assert.equal((await app.request('/api/admin/settings')).status, 403);
 });
 
@@ -195,8 +198,8 @@ test('管理员接口 · 测试连接：用填写的值真实调用一次模型'
       res.end(JSON.stringify(auth === 'Bearer good' ? { choices: [{ message: { content: '你好' } }], usage: { prompt_tokens: 5, completion_tokens: 2 } } : { error: { message: 'invalid api key' } }));
     });
   });
-  await new Promise((r) => gw.listen(0, '127.0.0.1', r));
-  const base = `http://127.0.0.1:${gw.address().port}/v1`;
+  await new Promise<void>((r) => gw.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${(gw.address() as AddressInfo).port}/v1`;
   const { app, host } = setup();
   t.after(() => { host.close({ save: false }); gw.close(); });
   const good = await (await post(app, '/api/admin/settings/test-llm', { BASE_URL: base, API_KEY: 'good', MODEL: 'm' })).json();
@@ -215,7 +218,7 @@ test('响应头不串：一次 404 之后，JSON 接口的 Content-Length 仍然
   const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });
   await new Promise((r) => server.once('listening', r));
   t.after(() => server.close());
-  const base = `http://127.0.0.1:${server.address().port}`;
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   await fetch(`${base}/nope.ico`);
   const res = await fetch(`${base}/api/me`);
   const text = await res.text();

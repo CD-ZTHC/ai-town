@@ -17,7 +17,7 @@ import type { Persona } from '../types/spec.ts';
 
 type Raw = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- 模型输出与请求参数，逐项裁剪后才使用
 type Change = 'arrive' | 'leave' | 'return';
-type Result = { change: string; id?: string; name?: string; reason?: string; error?: undefined } | { error: string; change?: undefined };
+type Result = { change: string; id?: string; name?: string; reason?: string; error?: undefined } | { error: string; change?: undefined; id?: undefined; name?: undefined; reason?: undefined };
 
 /** 人员流动的状态（存档 migrationState） */
 export interface MigrationState {

@@ -4,6 +4,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { Town as TownT } from '../server/sim.ts';
+import type { LabelStats } from '../server/llm.ts';
+import type { OpRecord } from '../server/types/ops.ts';
+import type { CurEntry } from '../server/types/agent.ts';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'STORYTELLER', 'MODS']) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
@@ -53,7 +57,7 @@ test('每个游戏日记录 token 用量，重启跨日不记负数', () => {
   town.t = 1440 + 6 * 60; // 第 2 天
   town.recordUsage(); // 设置起点
   llm.stats.promptTokens += 1000;
-  llm.stats.byLabel.测试 = { calls: 3, fails: 0, tokens: 1000, ms: 10 };
+  llm.stats.byLabel.测试 = { calls: 3, fails: 0, tokens: 1000, ms: 10 } as LabelStats;
   town.t = 2 * 1440 + 6 * 60;
   town.recordUsage();
   const v = town.usageView();
@@ -72,11 +76,12 @@ test('每个游戏日记录 token 用量，重启跨日不记负数', () => {
 });
 
 test('Mod：只导出内容类操作，可以加载到新小镇；坏数据被跳过', () => {
+  // 第 3 项是坏数据（setParam 的参数名写成了 key），用来检查导出时会被跳过
   const specOps = [
     { seq: 1, op: 'addCanon', args: { text: '湖边有块会唱歌的石头', tags: ['镜湖'] }, cause: { by: 'arc' } },
     { seq: 2, op: 'addItem', args: { id: 'song_stone', name: '歌石', emoji: '🪨', desc: '会唱歌的石头' }, cause: { by: 'proposal' } },
     { seq: 3, op: 'setParam', args: { key: 'walkSpeed', value: 4 }, cause: { by: 'admin' } },
-  ];
+  ] as unknown as OpRecord[];
   const all = exportMod(specOps, { id: 'song-stone', name: '歌石' });
   assert.deepEqual(all.ops.map((o) => o.op), ['addCanon', 'addItem']);
   const only = exportMod(specOps, { id: 'song-stone', proposalsOnly: true });
@@ -115,7 +120,7 @@ test('时间线：从存档或快照分叉、切换、登记表防越界', () =>
   town.stop();
   const e = forkTimeline(root, { fromId: 'main', name: '如果那天下了雨' });
   assert.equal(e.id, 'tl-1');
-  assert.equal(e.from.day, 3);
+  assert.equal(e.from!.day, 3);
   assert.equal(e.name, '如果那天下了雨');
   setActive(root, 'tl-1');
   assert.equal(activeDir(root), path.join(root, 'timelines', 'tl-1'));
@@ -140,7 +145,7 @@ test('暗月界：地图可以走通，所有地点都在可走区域', () => {
   assert.ok(w.tiles.includes(T.MOON));
 });
 
-function stepUntil(town, cond, maxSteps = 4000) {
+function stepUntil(town: { advance(dt: number): void }, cond: () => unknown, maxSteps = 4000) {
   for (let i = 0; i < maxSteps && !cond(); i++) town.advance(0.2);
   return cond();
 }
@@ -157,18 +162,18 @@ test('区域：关闭时不能去；打开后居民经渡口走到异界地点�
   assert.equal(town.creatures.list.filter((c) => c.region === 'moonrealm').length, 3);
 
   town.t = 10 * 60;
-  const e = { start: town.t, end: town.t + 600, location: 'moon_garden', activity: '赏花', emoji: '🌸' };
+  const e = { start: town.t, end: town.t + 600, location: 'moon_garden', activity: '赏花', emoji: '🌸' } as unknown as CurEntry;
   Object.assign(a, { status: 'acting', inside: null, x: 22, y: 20, schedule: [e], curKey: null, convoId: null });
   a.curEntry = e;
   town.navigate(a, 'moon_garden', e);
   assert.ok(a.hop, '先去渡口');
-  const walk = { advance: (dt) => { town.t += dt * 5; if (a.status === 'walking') town.step(a, dt * 5); } };
+  const walk = { advance: (dt: number) => { town.t += dt * 5; if (a.status === 'walking') town.step(a, dt * 5); } };
   const ok = stepUntil(walk, () => a.locId === 'moon_garden');
   assert.ok(ok, '走到了月光花园');
   assert.equal(a.region, 'moonrealm');
   assert.ok(a.memories.some((m) => m.text.includes('月之渡口')), '记得第一次穿越');
-  assert.ok(town.logs.some((l) => l.type === 'region' && l.agents?.includes('lin')));
-  assert.equal(town.snapshot().agents.find((x) => x.id === 'lin').region, 'moonrealm');
+  assert.ok(town.logs.some((l) => l.type === 'region' && (l.agents as string[] | undefined)?.includes('lin')));
+  assert.equal(town.snapshot().agents.find((x) => x.id === 'lin')!.region, 'moonrealm');
 
   // 同区域才算附近
   const b = town.byId.su;
@@ -176,7 +181,7 @@ test('区域：关闭时不能去；打开后居民经渡口走到异界地点�
   assert.ok(!town.nearbyText(a).includes(b.name), '不同区域的人不算在身边');
 
   // 回家：经渡口回到小镇
-  const home = { start: town.t, end: town.t + 600, location: a.home, activity: '回家', emoji: '🏠' };
+  const home = { start: town.t, end: town.t + 600, location: a.home, activity: '回家', emoji: '🏠' } as unknown as CurEntry;
   a.curEntry = home;
   town.navigate(a, a.home, home);
   assert.ok(stepUntil(walk, () => a.locId === a.home));
@@ -212,7 +217,7 @@ test('暗月界开放后，没有模型的两天里也有居民去那边逛，�
   town.pacing = false;
   town.speed = 10;
   town.openRegion('moonrealm', true);
-  const seen = {};
+  const seen: Record<number, Set<string>> = {};
   while (town.t < 1440 + 23 * 60) {
     town.advance(0.5);
     await new Promise((r) => setImmediate(r)); // 让规划失败后的兜底日程生效
@@ -274,14 +279,14 @@ test('访客化身：现身、限制、走动、被居民看见、聊天时记�
   const free = [...W.walk.keys()].find((i) => W.walk[i] && Math.hypot(i % W.W - me.x, Math.floor(i / W.W) - me.y) > 5);
   now += 1000;
   assert.throws(() => av.goto('v1', -1, 0), /走不过去/);
-  assert.throws(() => av.goto('v1', 'x', 3), /走不过去/);
+  assert.throws(() => av.goto('v1', 'x' as unknown as number, 3), /走不过去/);
   const wall = [...W.walk.keys()].find((i) => !W.walk[i]);
-  assert.throws(() => av.goto('v1', wall % W.W, Math.floor(wall / W.W)), /走不过去/);
-  av.goto('v1', free % W.W, Math.floor(free / W.W));
-  assert.throws(() => av.goto('v1', free % W.W, Math.floor(free / W.W)), /慢一点/);
+  assert.throws(() => av.goto('v1', wall! % W.W, Math.floor(wall! / W.W)), /走不过去/);
+  av.goto('v1', free! % W.W, Math.floor(free! / W.W));
+  assert.throws(() => av.goto('v1', free! % W.W, Math.floor(free! / W.W)), /慢一点/);
   assert.ok(av.view()[0].to, '行走中下发终点');
   for (let i = 0; i < 400 && me.path.length; i++) av.tick(0.5);
-  assert.deepEqual([me.x, me.y], [free % W.W, Math.floor(free / W.W)]);
+  assert.deepEqual([me.x, me.y], [free! % W.W, Math.floor(free! / W.W)]);
   assert.equal(av.view()[0].to, undefined);
   now += 4000;
   av.move('v1', 'pier');
@@ -294,7 +299,7 @@ test('访客化身：现身、限制、走动、被居民看见、聊天时记�
 
   // 聊天：提示词里带名字，记忆里也有名字
   let prompt = '';
-  llm.setMock((messages) => { prompt = messages.at(-1).content; return JSON.stringify({ reply: '你好', emoji: '🙂', thought: '', memory: '有人来问路', importance: 4, newPlan: null }); });
+  llm.setMock((messages) => { prompt = messages.at(-1)!.content; return JSON.stringify({ reply: '你好', emoji: '🙂', thought: '', memory: '有人来问路', importance: 4, newPlan: null }); });
   try {
     await town.visitorChat('zhou', '请问诊所在哪？', 'visitor', 'v1');
   } finally { llm.setMock(null); }

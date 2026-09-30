@@ -6,6 +6,9 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { AddressInfo } from 'node:net';
+/** assert.throws / rejects 校验函数收到的错误 */
+type TestErr = Error & { code?: string; status?: number; errors?: Record<string, string> };
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
@@ -27,7 +30,7 @@ test('加解密：往返；附加数据绑定行，挪到别的行解不开；�
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'secrets-'));
   const a = loadMasterKey({ dataDir: dir });
   assert.equal(a.source, 'generated');
-  assert.equal(fs.statSync(a.file).mode & 0o777, 0o600);
+  assert.equal(fs.statSync(a.file!).mode & 0o777, 0o600);
   const b = loadMasterKey({ dataDir: dir });
   assert.equal(b.source, 'file');
   assert.ok(a.key.equals(b.key));
@@ -49,7 +52,7 @@ test('凭据：只写不读，视图里没有密文；密钥末 4 位；改地�
   assert.equal(c.status, 'unchecked');
   const shown = JSON.stringify([c, creds.list('u_a'), creds.get(c.id)]);
   assert.ok(!shown.includes('sk-live'), '视图里没有密钥');
-  assert.ok(!shown.includes(db.prepare('SELECT key_enc FROM llm_credentials').get().key_enc), '视图里没有密文');
+  assert.ok(!shown.includes(db.prepare('SELECT key_enc FROM llm_credentials').get()!.key_enc as string), '视图里没有密文');
   assert.ok(!JSON.stringify(db.prepare('SELECT * FROM llm_credentials').all()).includes('sk-live'), '数据库里不存明文');
   assert.equal(creds.secret(c.id), 'sk-live-ABCDEFGH1234');
   // 把 A 的密文复制给 B：解不开
@@ -58,14 +61,14 @@ test('凭据：只写不读，视图里没有密文；密钥末 4 位；改地�
   assert.throws(() => creds.secret(d.id));
 
   const failed = creds.mark(c.id, { status: 'failing', failCode: 'auth', error: 'HTTP 401: Incorrect API key provided: sk-live-ABCDEFGH1234' });
-  assert.equal(failed.failCode, 'auth');
-  assert.ok(!failed.lastError.includes('ABCDEFGH'), failed.lastError);
+  assert.equal(failed!.failCode, 'auth');
+  assert.ok(!failed!.lastError.includes('ABCDEFGH'), failed!.lastError);
   assert.equal(creds.update(c.id, { name: '改个名' }).status, 'failing', '只改名不影响状态');
   const upd = creds.update(c.id, { apiKey: 'sk-new-99998888' });
   assert.equal(upd.status, 'unchecked');
   assert.equal(upd.keyLast4, '8888');
   assert.equal(creds.secret(c.id), 'sk-new-99998888');
-  assert.equal(creds.mark(c.id, { status: 'ok', models: ['m1', 'm2'] }).models.length, 2);
+  assert.equal(creds.mark(c.id, { status: 'ok', models: ['m1', 'm2'] })!.models.length, 2);
 
   const k2 = parseMasterKey(generateMasterKey());
   assert.throws(() => creds.rotate(k2), '有解不开的行时整体回滚');
@@ -107,31 +110,31 @@ test('SSRF：地址表', () => {
   }
   for (const ip of ['1.1.1.1', '8.8.8.8', '2606:4700:4700::1111', '::ffff:8.8.8.8']) assert.equal(isBlockedAddress(ip), false, ip);
   assert.equal(urlProblem('https://api.example.com/v1'), null);
-  assert.match(urlProblem('http://api.example.com/v1'), /https/);
-  assert.match(urlProblem('https://localhost:8080/v1'), /内网/);
-  assert.match(urlProblem('https://[::1]/v1'), /内网/);
-  assert.match(urlProblem('https://169.254.169.254/latest'), /内网/);
-  assert.match(urlProblem('https://user:pw@example.com/v1'), /用户名/);
+  assert.match(urlProblem('http://api.example.com/v1')!, /https/);
+  assert.match(urlProblem('https://localhost:8080/v1')!, /内网/);
+  assert.match(urlProblem('https://[::1]/v1')!, /内网/);
+  assert.match(urlProblem('https://169.254.169.254/latest')!, /内网/);
+  assert.match(urlProblem('https://user:pw@example.com/v1')!, /用户名/);
   assert.equal(urlProblem('http://localhost:11434/v1', { allowPrivate: true }), null);
-  assert.match(urlProblem('ftp://x/y', { allowPrivate: true }), /http/);
+  assert.match(urlProblem('ftp://x/y', { allowPrivate: true })!, /http/);
 });
 
 test('SSRF：连接时拦截（包括解析到内网的域名）；允许内网时正常转发，响应是标准的 Response', async (t) => {
-  const seen = [];
+  const seen: Array<{ method?: string; body: string; auth?: string }> = [];
   const srv = http.createServer((req, res) => {
     let b = '';
     req.on('data', (c) => (b += c));
     req.on('end', () => { seen.push({ method: req.method, body: b, auth: req.headers.authorization }); res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":1}'); });
   });
-  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
   t.after(() => srv.close());
-  const port = srv.address().port;
+  const port = (srv.address() as AddressInfo).port;
   const strict = makeSafeFetch({ allowPrivate: false });
-  await assert.rejects(strict(`http://127.0.0.1:${port}/`), (e) => e.code === 'ADDRESS');
+  await assert.rejects(strict(`http://127.0.0.1:${port}/`), (e: TestErr) => e.code === 'ADDRESS');
   // 走 DNS 解析的路径：localhost 在地址检查里就被拒；用一个会被解析到 127.0.0.1 的名字检查连接时的 lookup
   const { lookup } = await import('node:dns/promises');
   const hostsName = (await lookup('localhost').catch(() => null)) ? 'localhost' : null;
-  if (hostsName) await assert.rejects(strict(`https://${hostsName}:${port}/`), (e) => e.code === 'ADDRESS');
+  if (hostsName) await assert.rejects(strict(`https://${hostsName}:${port}/`), (e: TestErr) => e.code === 'ADDRESS');
   assert.equal(seen.length, 0, '一个请求都没有发出去');
 
   const loose = makeSafeFetch({ allowPrivate: () => true });
@@ -149,9 +152,9 @@ test('SSRF：连接时的 lookup 拒绝解析到内网的地址（防 DNS 重绑
   const dns = await import('node:dns');
   const orig = dns.default.lookup;
   // 模拟一个公网域名在连接时被解析到内网
-  dns.default.lookup = (host, opts, cb) => (host === 'rebind.example' ? cb(null, [{ address: '10.0.0.5', family: 4 }]) : orig(host, opts, cb));
+  dns.default.lookup = ((host: string, opts: object, cb: (err: Error | null, addrs: Array<{ address: string; family: number }>) => void) => (host === 'rebind.example' ? cb(null, [{ address: '10.0.0.5', family: 4 }]) : (orig as (...a: unknown[]) => void)(host, opts, cb))) as typeof orig;
   try {
     const f = makeSafeFetch();
-    await assert.rejects(f('https://rebind.example/v1/models'), (e) => e.code === 'ADDRESS' && /10\.0\.0\.5/.test(e.message));
+    await assert.rejects(f('https://rebind.example/v1/models'), (e: TestErr) => e.code === 'ADDRESS' && /10\.0\.0\.5/.test(e.message));
   } finally { dns.default.lookup = orig; }
 });

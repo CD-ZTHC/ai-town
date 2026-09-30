@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { addMemory, retrieve, similarity } from '../server/memory.ts';
 
-const agent = () => ({ id: 'x', memories: [] });
+const agent = () => ({ id: 'x', memories: [] as Memory[] });
 
 test('相关的记忆排在前面，结果按时间顺序返回', () => {
   const a = agent();
@@ -37,6 +37,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { MEMORY_CAP, condenseCandidate, ruleSummary, replaceWithSummary, cosine } from '../server/memory.ts';
 import { createEmbedder } from '../server/embeddings.ts';
+import type { Memory } from '../server/types/agent.ts';
 
 test('记忆满了：最早一天的琐事压缩成一条摘要，而不是直接删掉；重要记忆与反思不动', () => {
   const a = agent();
@@ -50,10 +51,10 @@ test('记忆满了：最早一天的琐事压缩成一条摘要，而不是直�
   assert.ok(s, '有一条摘要');
   assert.equal(s.day, 1);
   assert.match(s.text, /^第1天的零碎记忆：/);
-  assert.ok(s.count >= 5);
+  assert.ok(s.count! >= 5);
   assert.ok(a.memories.some((m) => m.text === '第一次见到镜湖的紫光'));
   assert.ok(a.memories.some((m) => m.type === 'reflect'));
-  assert.equal(a.memories.at(-1).text, '新的一件事', '刚写入的记忆不会被压缩掉');
+  assert.equal(a.memories.at(-1)!.text, '新的一件事', '刚写入的记忆不会被压缩掉');
   for (let i = 1; i < a.memories.length; i++) assert.ok(a.memories[i - 1].t <= a.memories[i].t, '仍按时间排序');
 });
 
@@ -62,15 +63,15 @@ test('候选与规则摘要：只挑够数的最早一天；摘要不再被压�
   for (let i = 0; i < 3; i++) addMemory(a, { t: i, text: `第一天小事${i}`, importance: 2 });
   for (let i = 0; i < 6; i++) addMemory(a, { t: 1440 + i, text: `第二天小事${i}`, importance: 2 + (i % 3) });
   const c = condenseCandidate(a, { minItems: 5 });
-  assert.equal(c.day, 2);
-  assert.equal(c.items.length, 6);
+  assert.equal(c!.day, 2);
+  assert.equal(c!.items.length, 6);
   assert.equal(condenseCandidate(a, { minItems: 5, beforeDay: 2 }), null);
-  const text = ruleSummary(c.day, c.items);
+  const text = ruleSummary(c!.day, c!.items);
   assert.match(text, /^第2天的零碎记忆：.*（共6件小事）$/);
-  const s = replaceWithSummary(a, c.items, { text, day: c.day });
+  const s = replaceWithSummary(a, c!.items, { text, day: c!.day });
   assert.equal(a.memories.length, 4);
-  assert.equal(s.count, 6);
-  assert.equal(condenseCandidate(a, { minItems: 1, beforeDay: 3 }).day, 1, '摘要本身不算琐碎记忆');
+  assert.equal(s!.count, 6);
+  assert.equal(condenseCandidate(a, { minItems: 1, beforeDay: 3 })!.day, 1, '摘要本身不算琐碎记忆');
 });
 
 test('每晚整理：有模型时用模型的第一人称概括，失败时用规则摘要；没超过阈值不整理', async (t) => {
@@ -85,14 +86,14 @@ test('每晚整理：有模型时用模型的第一人称概括，失败时用�
   for (const [d, n] of [[0, 60], [1, 60], [2, 250]]) for (let i = 0; i < n; i++) addMemory(a, { t: d * 1440 + 400 + i, text: `第${d + 1}天第${i}件小事`, importance: 2 });
   town.t = 3 * 1440 + 22 * 60; // 第 4 天晚上：可以整理第 1、2 天
   let prompt = '';
-  llm.setMock((messages, opts) => { prompt = messages.at(-1).content; assert.equal(opts.label, '记忆整理'); return '{"summary":"那天忙忙碌碌，跑了好多趟腿。"}'; });
+  llm.setMock((messages, opts) => { prompt = messages.at(-1)!.content; assert.equal(opts.label, '记忆整理'); return '{"summary":"那天忙忙碌碌，跑了好多趟腿。"}'; });
   const s1 = await town.condenseMemories(a);
-  assert.equal(s1.text, '第1天：那天忙忙碌碌，跑了好多趟腿。');
-  assert.equal(s1.importance, 5);
+  assert.equal(s1!.text, '第1天：那天忙忙碌碌，跑了好多趟腿。');
+  assert.equal(s1!.importance, 5);
   assert.match(prompt, /林晓雨第1天经历的这些小事/);
   llm.setMock(() => { throw new Error('模型挂了'); });
   const s2 = await town.condenseMemories(a);
-  assert.match(s2.text, /^第2天的零碎记忆：/, '失败时用规则摘要');
+  assert.match(s2!.text, /^第2天的零碎记忆：/, '失败时用规则摘要');
   assert.equal(a.memories.length, 370 - 60 - 60 + 2);
   assert.equal(await town.condenseMemories(a), null, '剩下的不到 300 条，不再整理');
 });
@@ -100,9 +101,9 @@ test('每晚整理：有模型时用模型的第一人称概括，失败时用�
 test('embedding：向量按文本缓存（node:sqlite），重启后不用重算；语义相近的记忆排到前面', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-embed-'));
   // 假 embedding：同一个「主题」的文本得到相近的向量
-  const topic = (s) => (/湖|水|紫光/.test(s) ? [1, 0.1, 0] : /咖啡|拿铁/.test(s) ? [0, 1, 0.1] : [0.1, 0, 1]);
+  const topic = (s: string) => (/湖|水|紫光/.test(s) ? [1, 0.1, 0] : /咖啡|拿铁/.test(s) ? [0, 1, 0.1] : [0.1, 0, 1]);
   let calls = 0;
-  const embed = async (texts) => { calls++; return { vectors: texts.map(topic), tokens: texts.length }; };
+  const embed = async (texts: string[]) => { calls++; return { vectors: texts.map(topic), tokens: texts.length }; };
   const e1 = createEmbedder({ dir, embed });
   const a = agent();
   addMemory(a, { t: 0, text: '清晨去码头看紫光', importance: 3 });
@@ -116,7 +117,7 @@ test('embedding：向量按文本缓存（node:sqlite），重启后不用重算
     t.after(() => e2.close());
     assert.equal(await e2.ensure(a.memories.map((m) => m.text)), true);
     assert.equal(calls, 1, '重启后直接读 sqlite 缓存');
-    assert.deepEqual([...e2.vec('清晨去码头看紫光')].map((x) => Math.round(x * 10) / 10), [1, 0.1, 0]);
+    assert.deepEqual([...e2.vec('清晨去码头看紫光')!].map((x) => Math.round(x * 10) / 10), [1, 0.1, 0]);
   } else {
     t.diagnostic('当前 Node 不支持 node:sqlite，只验证了内存缓存');
     t.after(() => e1.close());
@@ -143,7 +144,7 @@ test('embedding：超时或出错时不抛错，这次退回双字组；没配�
 test('接进小镇：配置了 embedding 时，语义相关的记忆会出现在提示词里', async (t) => {
   const { Town } = await import('../server/sim.ts');
   const llm = await import('../server/llm.ts');
-  const topic = (s) => (/湖|水|紫光|涟漪/.test(s) ? [1, 0, 0] : [0, 1, 0]);
+  const topic = (s: string) => (/湖|水|紫光|涟漪/.test(s) ? [1, 0, 0] : [0, 1, 0]);
   const embedder = createEmbedder({ embed: async (texts) => ({ vectors: texts.map(topic) }) });
   const town = new Town({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'town-recall-')), embedder });
   t.after(() => { town.stop(); llm.setMock(null); });
@@ -157,7 +158,7 @@ test('接进小镇：配置了 embedding 时，语义相关的记忆会出现在
   assert.match(withEmbed, /紫色涟漪/);
   // 真实的提示词链路：重新规划
   let prompt = '';
-  llm.setMock((messages) => { prompt = messages.at(-1).content; return '{"reaction":"好","thought":"嗯","schedule":[]}'; });
+  llm.setMock((messages) => { prompt = messages.at(-1)!.content; return '{"reaction":"好","thought":"嗯","schedule":[]}'; });
   await town.replan(a, '有人说水边出现了怪事');
   assert.match(prompt, /紫色涟漪/);
 });

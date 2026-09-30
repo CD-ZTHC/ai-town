@@ -2,6 +2,14 @@
 // 调用归属（AsyncLocalStorage）、分层预算与降级、压测（一个世界刷聊天时另一个世界的心跳不被饿死）
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import type { AllowFn, Job, LlmClass } from '../server/types/scheduler.ts';
+import type { UsageEvent } from '../server/llm.ts';
+import type { BudgetWorld } from '../server/scheduler/budget.ts';
+import type { HostCallRequest } from '../evolution/llm.ts';
+/** 子进程发回的结果（JSON） */
+type ChildReply = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+/** 测试里给任务起的名字 */
+type Named = Job & { name: string };
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
@@ -26,13 +34,13 @@ test('label → 级别：调度策略只有这一张表', () => {
   assert.equal(classOf('没见过的'), 'P2');
 });
 
-function harness({ limit = 4, allow = () => true, now = { t: 0 } } = {}) {
+function harness({ limit = 4, allow = () => true, now = { t: 0 } }: { limit?: number; allow?: AllowFn; now?: { t: number } } = {}) {
   const s = new Scheduler({ limit: () => limit, allow, now: () => now.t, agingMs: () => 1000 });
-  const order = [];
-  const add = (cls, worldId, name) => s.push({ cls, worldId, run: async () => {}, reject: (e) => order.push(`rejected:${name}:${e.message}`), name });
+  const order: string[] = [];
+  const add = (cls: LlmClass, worldId: string, name: string) => s.push({ cls, worldId, run: async () => {}, reject: (e: Error) => order.push(`rejected:${name}:${e.message}`), name } as Named);
   const drain = (n = Infinity) => {
-    const out = [];
-    while (out.length < n) { const j = s.next(); if (!j) break; s.started(j); out.push(j); }
+    const out: Named[] = [];
+    while (out.length < n) { const j = s.next() as Named | null; if (!j) break; s.started(j); out.push(j); }
     return out;
   };
   return { s, add, drain, order, now };
@@ -70,9 +78,9 @@ test('P3 / P4：合计最多 1 个并发，而且只在 P1 为空时；等太久
 });
 
 test('公平补偿：连续让路多的世界下次连续出队两次；额度用完的世界任务被拒绝，不阻塞别的世界', () => {
-  const rejected = [];
+  const rejected: string[] = [];
   const { s, add, drain } = harness({ limit: 100, allow: (j) => (j.worldId === 'broke' ? '额度用完' : true) });
-  s.push({ cls: 'P2', worldId: 'broke', run: async () => {}, reject: (e) => rejected.push(e.message), name: 'x' });
+  s.push({ cls: 'P2', worldId: 'broke', run: async () => {}, reject: (e: Error) => rejected.push(e.message), name: 'x' } as Named);
   for (let i = 0; i < 3; i++) s.noteYield('shy');
   add('P2', 'loud', 'l1'); add('P2', 'loud', 'l2'); add('P2', 'shy', 's1'); add('P2', 'shy', 's2'); add('P2', 'shy', 's3');
   const got = drain().map((j) => j.name);
@@ -81,7 +89,7 @@ test('公平补偿：连续让路多的世界下次连续出队两次；额度�
 });
 
 test('调用归属：llm.chat 从 AsyncLocalStorage 读世界与用户，账本按世界记账', async (t) => {
-  const events = [];
+  const events: UsageEvent[] = [];
   const off = llm.onUsage((e) => events.push(e));
   llm.setProvider({ name: 'fake', enabled: true, complete: async () => ({ content: 'ok', usage: { prompt: 10, completion: 5 } }) });
   t.after(() => { off(); llm.setProvider(null); });
@@ -94,14 +102,14 @@ test('调用归属：llm.chat 从 AsyncLocalStorage 读世界与用户，账本�
 test('分层预算：单个世界按授予的日额度降级（80% 停叙事、100% 退回规则、P0 多给 20%）；预览只有 20%；常驻不受限；暂停 AI', () => {
   settings._setForTest({ LLM_DAILY_TOKENS: 1_000_000, GENESIS_DAILY_WORLD_TOKENS: 1000, PINNED_WORLDS: ['yunxi'] });
   const ledger = new Ledger(openDb(':memory:'));
-  const worlds = {
+  const worlds: Record<string, BudgetWorld> = {
     yunxi: { id: 'yunxi', official: true, status: 'public', settings: {} },
     red: { id: 'red', ownerId: 'u', status: 'public', settings: {}, quota: {} },
     draft: { id: 'draft', ownerId: 'u', status: 'preview', settings: {}, quota: {} },
     frozen: { id: 'frozen', ownerId: 'u', status: 'public', settings: { aiPaused: true }, quota: {} },
   };
   const b = budgetPolicy({ ledger, world: (id) => worlds[id] || null, ownerGrant: () => null, globalUsed: () => 0 });
-  const allow = (worldId, cls) => b.allow({ worldId, cls });
+  const allow = (worldId: string, cls: LlmClass) => b.allow({ worldId, cls } as Job) as string;
   assert.equal(allow('red', 'P2'), true);
   ledger.add({ worldId: 'red', cls: 'P1', tokens: 850 });
   assert.equal(b.level('red'), 'quiet');
@@ -150,7 +158,7 @@ test('进化引擎经 IPC 调用模型：进入主进程的统一队列（P4）�
   const os = await import('node:os');
   const path = await import('node:path');
   const { hostCall } = await import('../evolution/llm.ts');
-  const events = [];
+  const events: UsageEvent[] = [];
   const off = llm.onUsage((e) => events.push(e));
   llm.setProvider({ name: 'fake', enabled: true, complete: async () => ({ content: '{"verdict":"ok"}', usage: { prompt: 20, completion: 10 } }) });
   t.after(() => { off(); llm.setProvider(null); });
@@ -164,8 +172,8 @@ const r = await llm.call('评审', [{ role: 'user', content: 'x' }], { review: t
 process.send({ type: 'done', r, used, enabled: llm.enabled() });
 `);
   const child = fork(script, { env: { PATH: process.env.PATH, EVOLVE_IPC: '1', EVOLVE_LLM: '1' } });
-  const done = await new Promise((resolve, reject) => {
-    child.on('message', async (m) => {
+  const done = await new Promise<ChildReply>((resolve, reject) => {
+    child.on('message', async (m: HostCallRequest & { type: string; id: number; [k: string]: unknown }) => {
       if (m.type === 'llm') {
         const r = await withContext({ worldId: m.worldId }, () => hostCall(m));
         child.send({ type: 'llm-result', id: m.id, ok: true, json: r.json, tokens: r.tokens });

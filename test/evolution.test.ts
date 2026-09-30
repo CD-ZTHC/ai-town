@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { VerifiedInfo as Verified } from '../plugin-host/evolved.ts';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'EVOLVE', 'EVOLVE_REVIEW_MODEL', 'EVOLVE_REVIEW_BASE_URL']) delete process.env[k];
 process.env.EVOLVE_SHADOW_HOURS = '2';
@@ -17,8 +18,8 @@ const { hashDir } = await import('../plugin-host/hash.ts');
 const { Town } = await import('../server/sim.ts');
 
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'evolved');
-const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
-const fixture = (key) => Object.fromEntries(['plugin.json', 'server.js', 'test.js', 'content.json'].filter((f) => fs.existsSync(path.join(FIX, key, f))).map((f) => [f, fs.readFileSync(path.join(FIX, key, f), 'utf8')]));
+const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
+const fixture = (key: string) => Object.fromEntries(['plugin.json', 'server.js', 'test.js', 'content.json'].filter((f) => fs.existsSync(path.join(FIX, key, f))).map((f) => [f, fs.readFileSync(path.join(FIX, key, f), 'utf8')]));
 
 function env() {
   const data = tmp('evo-data-');
@@ -27,13 +28,13 @@ function env() {
 }
 
 /** 按 Agent 角色回复的假模型；script[角色] 可以是对象或 (第几次调用) => 对象 */
-function mockAgents(script) {
-  const calls = [];
+function mockAgents(script: Record<string, unknown>) {
+  const calls: Array<{ role: string; label?: string; user: string }> = [];
   llm.setMock((messages, opts) => {
     const role = Object.keys(script).find((r) => messages[0].content.includes(`你的角色：${r}`)) || '?';
     const n = calls.filter((c) => c.role === role).length;
     calls.push({ role, label: opts.label, user: messages[1].content });
-    const v = typeof script[role] === 'function' ? script[role](n, messages) : script[role];
+    const v = typeof script[role] === 'function' ? (script[role] as (n: number, m: unknown) => unknown)(n, messages) : script[role];
     if (v === undefined) throw new Error(`没有为「${role}」准备回复`);
     return JSON.stringify(v);
   });
@@ -52,14 +53,14 @@ test('T0 数据插件：需求文档 → 需求评审 → 实施 → 闸门 → 
     安全审查员: PASS,
   });
   const job = await runJob({ P, llm: L }, { source: 'gap', text: '居民想要一种春天的新茶', count: 3, gapKey: '新茶' });
-  assert.equal(job.status, 'submitted', job.reason);
+  assert.equal(job.status, 'submitted', job.reason!);
   assert.deepEqual([...new Set(calls.map((c) => c.role))], ['技术策划', '需求评审 Agent', '实施 Agent', '世界观审查员', '安全审查员']);
   assert.ok(!calls.some((c) => c.role === '实施 Agent' && c.user.includes('居民想要一种春天的新茶')), '实施 Agent 只拿到需求文档，不直接拿到原始需求文字');
   const dir = path.join(P.plugins, 'tea-leaf@1.0.0');
-  const v = readJSON(P.verified, {})['tea-leaf@1.0.0'];
+  const v = readJSON<Record<string, Verified>>(P.verified, {})['tea-leaf@1.0.0'];
   assert.ok(v.passed);
   assert.equal(v.hash, hashDir(dir), '安装后的内容与锁定的哈希一致');
-  assert.ok(v.shadow.passed, JSON.stringify(v.shadow));
+  assert.ok(v.shadow!.passed, JSON.stringify(v.shadow));
   assert.ok(fs.existsSync(path.join(dir, 'RFC.md')) && fs.existsSync(path.join(dir, 'REVIEW.md')));
   assert.ok(!fs.existsSync(path.join(P.candidates, 'tea-leaf@1.0.0')), '候选目录清理掉了');
 
@@ -82,21 +83,21 @@ test('T2 代码插件：安全审查员提出阻断问题 → 实施 Agent 修�
     技术策划: { id: 'lantern-glow', title: '码头灯语', tier: 'T2', summary: '傍晚到码头的居民会看灯', rfc: '## 验收标准\n- 傍晚到码头会说话' },
     '需求评审 Agent': { verdict: 'approve', issues: [] },
     '实施 Agent': { files: { ...lantern, 'plugin.json': JSON.parse(lantern['plugin.json']) } },
-    安全审查员: (n) => (n === 0 ? { verdict: 'fail', findings: [{ severity: 'blocker', file: 'server.js', issue: '存储没有上限', fix: '限制计数' }] } : PASS),
+    安全审查员: (n: number) => (n === 0 ? { verdict: 'fail', findings: [{ severity: 'blocker', file: 'server.js', issue: '存储没有上限', fix: '限制计数' }] } : PASS),
     正确性审查员: PASS,
     世界观审查员: PASS,
     安全终审员: PASS,
   });
   const job = await runJob({ P, llm: L }, { source: 'gap', text: '傍晚码头应该亮灯', count: 2, gapKey: '码头灯' });
-  assert.equal(job.status, 'submitted', job.reason);
-  const count = (r) => calls.filter((c) => c.role === r).length;
+  assert.equal(job.status, 'submitted', job.reason!);
+  const count = (r: string) => calls.filter((c) => c.role === r).length;
   assert.equal(count('安全审查员'), 2, '提出问题的安全审查员复审');
   assert.equal(count('正确性审查员'), 1, '已通过的审查员不重复审');
   assert.equal(count('实施 Agent'), 2);
   assert.match(calls.filter((c) => c.role === '实施 Agent')[1].user, /存储没有上限/, '修复时带上审查意见');
   const finals = calls.filter((c) => c.role === '安全终审员');
   assert.equal(finals.length, 2);
-  assert.ok(finals.some((c) => c.user.includes('攻击者')) || finals.some((c) => c.label.includes('attacker')));
+  assert.ok(finals.some((c) => c.user.includes('攻击者')) || finals.some((c) => c.label!.includes('attacker')));
   assert.ok(!finals[0].user.includes('码头灯语：傍晚到码头的居民会停下来看灯\nexport'), '终审看到的是去掉注释的代码');
   assert.ok(!finals[0].user.includes('// 码头灯语'), '终审看到的是去掉注释的代码');
   const review = fs.readFileSync(path.join(P.plugins, 'lantern-glow@1.0.0', 'REVIEW.md'), 'utf8');
@@ -115,7 +116,7 @@ test('带「写给审查员的指令」的代码过不了自动闸门，也到�
   });
   const job = await runJob({ P, llm: L }, { source: 'gap', text: '码头亮灯', count: 1, gapKey: 'x' });
   assert.equal(job.status, 'dropped');
-  assert.match(job.reason, /自动闸门/);
+  assert.match(job.reason!, /自动闸门/);
   assert.ok(!calls.some((c) => /审查员|终审/.test(c.role)), '审查员没有看到被注入的代码');
   assert.equal(calls.filter((c) => c.role === '实施 Agent').length, 4, '修复 3 次后放弃');
   assert.ok(!fs.existsSync(path.join(P.plugins, 'lantern-glow@1.0.0')));
@@ -129,12 +130,12 @@ test('需求评审：可以降级、否决；需要改内核的需求只写成�
   });
   const job = await runJob({ P, llm: L }, { source: 'gap', text: '影灵能穿墙', count: 5, gapKey: '穿墙' });
   assert.equal(job.status, 't3');
-  assert.ok(fs.readFileSync(path.join(P.rfcs, job.rfc), 'utf8').includes('需要修改内核的寻路'));
+  assert.ok(fs.readFileSync(path.join(P.rfcs, job.rfc!), 'utf8').includes('需要修改内核的寻路'));
 
   mockAgents({ 技术策划: { id: 'x-y', title: 'x', tier: 'T1', summary: 's', rfc: 'r' }, '需求评审 Agent': { verdict: 'reject', issues: ['不符合世界观'] } });
   const j2 = await runJob({ P, llm: L }, { source: 'idea', text: '点子' });
   assert.equal(j2.status, 'dropped');
-  assert.match(j2.reason, /不符合世界观/);
+  assert.match(j2.reason!, /不符合世界观/);
   llm.setMock(null);
 });
 
@@ -155,15 +156,15 @@ test('预算：用完后任务暂停，不再调用模型', async () => {
 test('需求发现：先修复被回滚的插件，再做心愿单（采纳的优先），最后才自己想点子；失败的需求不会马上重试', () => {
   const { P } = env();
   fs.mkdirSync(P.evo, { recursive: true });
-  const write = (f, v) => fs.writeFileSync(f, JSON.stringify(v));
+  const write = (f: string, v: unknown) => fs.writeFileSync(f, JSON.stringify(v));
   write(P.signals, { gaps: [{ need: '钓鱼', why: '想钓鱼', count: 4, adopted: true }, { need: '放风筝', count: 9 }], logMix: [['convo', 20]] });
   write(P.registry, { plugins: { 'lantern-glow@1.0.0': { status: 'rolledBack', reason: '熔断：坏了', title: '码头灯语' }, 'x@1.0.0': { status: 'rolledBack', reason: '管理员回滚', title: 'x' } } });
-  assert.equal(discover(P).source, 'bugfix');
-  assert.equal(discover(P).fixOf, 'lantern-glow@1.0.0');
+  assert.equal(discover(P)!.source, 'bugfix');
+  assert.equal(discover(P)!.fixOf, 'lantern-glow@1.0.0');
   write(P.registry, { plugins: {} });
-  assert.equal(discover(P).text, '钓鱼', '管理员采纳的心愿优先（signals 已按采纳排序）');
+  assert.equal(discover(P)!.text, '钓鱼', '管理员采纳的心愿优先（signals 已按采纳排序）');
   write(P.jobs, [{ status: 'dropped', need: { gapKey: '钓鱼', count: 4 } }, { status: 'submitted', need: { gapKey: '放风筝', count: 9 } }]);
-  assert.equal(discover(P).source, 'idea', '失败过的需求要等出现次数再增加 3 次');
+  assert.equal(discover(P)!.source, 'idea', '失败过的需求要等出现次数再增加 3 次');
   assert.equal(discover(P, { ideas: false }), null);
   write(P.jobs, [{ status: 'running', need: {} }]);
   assert.equal(discover(P), null, '同一时间只做一个需求');

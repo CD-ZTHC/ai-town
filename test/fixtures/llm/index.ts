@@ -3,10 +3,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { ChatOptions, MockFn } from '../../../server/llm.ts';
+import type { ChatMessage } from '../../../server/types/llm.ts';
 
 export const FIXTURE_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'responses.json');
 
-export function loadFixtures(file = FIXTURE_FILE) {
+/** 录制的回复：模块（label）→ 回复列表（字符串或 JSON） */
+export type Fixtures = Record<string, unknown[]>;
+
+export function loadFixtures(file = FIXTURE_FILE): Fixtures {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
@@ -14,9 +19,9 @@ export function loadFixtures(file = FIXTURE_FILE) {
  * 生成一个可以交给 llm.setMock() 的假模型。
  * 没有录制的模块会抛错，调用方照常走兜底逻辑；calls 记录每个模块被调用的次数。
  */
-export function fixtureMock(fixtures = loadFixtures()) {
-  const calls = {};
-  const mock = (messages, opts = {}) => {
+export function fixtureMock(fixtures: Fixtures = loadFixtures()): MockFn & { calls: Record<string, number> } {
+  const calls: Record<string, number> = {};
+  const mock = (messages: ChatMessage[], opts: ChatOptions = {}): string => {
     const label = opts.label || 'llm';
     const list = fixtures[label];
     const n = (calls[label] = (calls[label] || 0) + 1);

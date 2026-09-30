@@ -4,13 +4,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { Town as TownT } from '../server/sim.ts';
+import type { ConvoRecord } from '../server/types/save.ts';
 
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING', 'LLM_PROVIDER']) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-metrics-'));
 const tick = () => new Promise((r) => setImmediate(r));
-async function runTo(town, minute) {
+async function runTo(town: TownT, minute: number) {
   town.speed = 10;
   while (town.minute < minute) { town.advance(0.1); await tick(); }
 }
@@ -34,7 +36,7 @@ test('两个人约了同一件事：各算一次，都到场就是 100%；同一
 
 test('对话重复率：同一对人两天内摘要相近算重复；兜底台词不参与比较', () => {
   const town = new Town({ dataDir: tmp() });
-  const c = (t, a, b, summary, fallback) => ({ t, a, b, summary, lines: [], ...(fallback ? { fallback } : {}) });
+  const c = (t: number, a: string, b: string, summary: string, fallback?: boolean) => ({ t, a, b, summary, lines: [], ...(fallback ? { fallback } : {}) }) as unknown as ConvoRecord;
   town.convoLog = [
     c(100, 'lin', 'su', '两人聊起湖边的紫光，约好晚上去酒馆'),
     c(200, 'su', 'lin', '两人又聊起湖边的紫光，约好晚上去酒馆'), // 重复

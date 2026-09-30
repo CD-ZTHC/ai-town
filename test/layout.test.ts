@@ -13,13 +13,14 @@ const { validateSpec } = await import('../server/kernel/spec.ts');
 const { solveLayout, buildLayoutRegion, layoutProblems } = await import('../server/worldgen/layout.ts');
 const { findPlacement } = await import('../server/kernel/placement.ts');
 const { findPath } = await import('../server/world.ts');
+type Region = import('../server/types/spec.ts').Region;
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-layout-'));
 const pack = loadPack('worlds/little-red');
 const tick = () => new Promise((r) => setImmediate(r));
 
 test('布局求解：确定性；建筑不重叠、至少隔一格；每个地点都连通', () => {
-  const region = pack.map.regions[0];
+  const region = pack.map.regions[0] as Region;
   const a = solveLayout(region), b = solveLayout(region);
   assert.deepEqual(a.buildings, b.buildings);
   assert.deepEqual(a.problems, []);
@@ -32,9 +33,9 @@ test('布局求解：确定性；建筑不重叠、至少隔一格；每个地�
   assert.deepEqual(layoutProblems(region, spec), []);
   const w1 = buildLayoutRegion(region, spec), w2 = buildLayoutRegion(region, spec);
   assert.deepEqual(w1.tiles, w2.tiles, '同一个种子逐格一致');
-  assert.ok(w1.biomes.some((x) => x.id === 'dark_forest'), '按区域的地貌调色');
+  assert.ok(w1.biomes!.some((x) => x.id === 'dark_forest'), '按区域的地貌调色');
   // 任意两个地点之间都能走到
-  const pts = Object.values(w1.locations).map((l) => (l.indoor ? w1.buildings.find((b) => b.id === l.indoor).entrance : l.spots[0]));
+  const pts = Object.values(w1.locations).map((l) => (l.indoor ? w1.buildings.find((b) => b.id === l.indoor)!.entrance : l.spots[0]));
   for (const p of pts.slice(1)) assert.ok(findPath(w1, pts[0].x, pts[0].y, p.x, p.y), '连通');
 });
 
@@ -70,7 +71,7 @@ test('运行中的世界：新增建筑在语义布局的地图上找得到位�
   const dir = tmp();
   const town = new Town({ dataDir: dir, worldId: 'little-red', pack, instantTalk: true, pacing: false, evolution: { dir: path.join(dir, 'evolution'), pluginsDir: path.join(dir, 'plugins') } });
   const spot = findPlacement(town.spec, { id: 'tea_stall', name: '茶摊', w: 4, h: 3, near: 'village_square', within: 14 });
-  assert.ok(!spot.error, spot.error);
+  assert.ok(!spot.error, spot.error!);
   town.applyWorldOp({ op: 'addBuilding', args: { id: 'tea_stall', name: '茶摊', kind: 'shop', x: spot.x, y: spot.y, w: 4, h: 3, roof: '#2e8b57' } }, { by: 'admin' });
   assert.ok(town.world.buildings.some((b) => b.id === 'tea_stall'));
 

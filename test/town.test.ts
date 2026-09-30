@@ -13,7 +13,7 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-test-'));
 const tick = () => new Promise((r) => setImmediate(r));
 
 /** 以 speed 倍速推进 minutes 个游戏分钟，每步之间让出事件循环，让异步认知流程（全部失败走兜底）跑完 */
-async function run(town, minutes, speed = 30) {
+async function run(town: InstanceType<typeof Town>, minutes: number, speed = 30) {
   town.speed = speed;
   const end = town.t + minutes;
   while (town.t < end) {
@@ -91,7 +91,7 @@ test('v1 存档自动迁移到 v2，并备份旧文件', () => {
 test('世界操作：生效、写日志、存档后重放仍在；非法操作不影响世界', () => {
   const dir = tmp();
   const a = new Town({ dataDir: dir });
-  const events = [];
+  const events: Array<{ desc: string }> = [];
   a.on('world', (w) => events.push(w));
   a.applyWorldOp({ op: 'addWeather', args: { id: 'aurora', name: '极光', emoji: '🌌', render: { base: 'sunny', tint: '#3fd6a0' } } }, { by: 'admin' });
   a.applyWorldOp({ op: 'setParam', args: { name: 'walkSpeed', value: 4 } }, { by: 'admin' });

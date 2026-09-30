@@ -144,7 +144,7 @@ setInterval(() => manager!.tick(), 5000).unref();
 const ledger = new Ledger(accounts.db);
 llm.onUsage((e) => ledger.add(e));
 const budget = budgetPolicy({
-  ledger, world: (id) => registry.get(id), ownerGrant: (w) => ((w as World).ownerId ? accounts.grant((w as World).ownerId!, 'genesis') : null), globalUsed: () => llm.stats.dayTokens,
+  ledger, world: (id) => registry.get(id), ownerGrant: (w) => (w.ownerId ? accounts.grant(w.ownerId, 'genesis') : null), globalUsed: () => llm.stats.dayTokens,
   // 世界用自己的模型服务：只受自己设的每日上限约束
   ownLimit: (id) => (worldLlm.isOwn(id) ? (normalizeAi(registry.get(id)?.settings?.ai) as AnyAi).dailyTokens! : null),
 });

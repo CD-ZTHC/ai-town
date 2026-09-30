@@ -24,7 +24,7 @@ test('未知操作、原型链上的键都被拒绝', () => {
 
 test('addCalendarEvent 新增节日，并出现在提示词里', () => {
   const next = applyOp(base(), { op: 'addCalendarEvent', args: { id: 'double_moon', name: '双月节', emoji: '🌗', day: 8, from: '19:00', hint: '两轮月亮同时升起', countdown: true } });
-  assert.equal(next.calendar.events.at(-1).name, '双月节');
+  assert.equal(next.calendar.events.at(-1)!.name, '双月节');
   assert.match(calendarHint(next, 6), /双月节还有2天/);
   assert.throws(() => applyOp(next, { op: 'addCalendarEvent', args: { id: 'double_moon', name: 'x', day: 9, from: '10:00' } }), /已存在/);
   assert.throws(() => applyOp(base(), { op: 'addCalendarEvent', args: { id: 'x1', name: 'x', day: 2, from: '10:00', location: 'moon' } }), /地点不存在/);

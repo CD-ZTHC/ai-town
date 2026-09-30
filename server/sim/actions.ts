@@ -75,7 +75,7 @@ export class Actions {
     if (!a.pendingAct) addMemory(a, { t: this.t, type: 'obs', text: `本想${e.activity}，可惜没成：${r.reason}`, importance: 2 });
   }
 
-  runDarkAct(this: Town, a: LiveAgent, act: Act, e: CurEntry) {
+  runDarkAct(this: Town, a: LiveAgent, act: Act, e?: CurEntry | null) {
     switch (act.type) {
       case 'taboo': {
         const until = act.until ? parseHM(act.until)! + (this.day - 1) * 1440 : this.t + (e ? e.end! - this.minute : 120);

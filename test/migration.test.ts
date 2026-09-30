@@ -16,7 +16,7 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-migration-'));
 const pack = loadPack(path.resolve('worlds/little-red'));
 const redTown = (dir = tmp(), opts = {}) => new Town({ dataDir: dir, worldId: 'little-red', pack, instantTalk: true, ...opts });
 /** 模拟模型：只回答「人员流动」，其余调用给一个空对象 */
-const answer = (res) => llm.setMock((messages, opts) => JSON.stringify(opts?.label === '人员流动' ? res : {}));
+const answer = (res: unknown) => llm.setMock((messages, opts) => JSON.stringify(opts?.label === '人员流动' ? res : {}));
 const NEWCOMER = {
   change: 'arrive', reason: '外婆生日快到了，需要人手',
   arrive: {
@@ -50,14 +50,14 @@ test('新人到来：人物卡裁剪后以外来者身份登场，住进住处�
   const r = await town.migration.decide();
   assert.equal(r.change, 'arrive', JSON.stringify(r));
   const p = town.spec.personas.find((x) => x.id === r.id);
-  assert.equal(p.kind, 'traveller');
-  assert.equal(p.tier, 'support');
-  assert.equal(p.traveller.origin, '山那边的蜂场');
-  assert.equal(p.home, 'red_house');
-  assert.match(p.look.shirt, /^#[0-9a-f]{6}$/, '不合法的颜色换成默认值');
-  assert.deepEqual(p.look.acc, ['strawhat'], '不认识的部件被丢掉');
+  assert.equal(p!.kind, 'traveller');
+  assert.equal(p!.tier, 'support');
+  assert.equal(p!.traveller!.origin, '山那边的蜂场');
+  assert.equal(p!.home, 'red_house');
+  assert.match(p!.look.shirt, /^#[0-9a-f]{6}$/, '不合法的颜色换成默认值');
+  assert.deepEqual(p!.look.acc, ['strawhat'], '不认识的部件被丢掉');
   assert.equal(town.agents.length, before + 1);
-  const a = town.byId[r.id];
+  const a = town.byId[r.id!];
   assert.equal(a.locId, 'village_square');
   assert.equal(a.relations.mom.affinity, 20);
   assert.ok(town.logs.some((l) => l.type === 'arrival' && l.text.includes('阿禾') && l.text.includes('森林村')), '编年用世界自己的地名');
@@ -67,8 +67,8 @@ test('新人到来：人物卡裁剪后以外来者身份登场，住进住处�
   town.stop();
   const again = redTown(dir);
   t.after(() => again.stop());
-  assert.ok(again.byId[r.id] && again.agents.includes(again.byId[r.id]), '读档后新人还在');
-  assert.equal(again.migrationState.arrived[r.id].from, '山那边的蜂场');
+  assert.ok(again.byId[r.id!] && again.agents.includes(again.byId[r.id!]), '读档后新人还在');
+  assert.equal(again.migrationState!.arrived[r.id!].from, '山那边的蜂场');
 });
 
 test('人物卡没有通过审核（与支柱设定冲突）时不会登场', async (t) => {
@@ -88,7 +88,7 @@ test('出门：从在场的人里消失，亲近的人记得；到了约好的�
   answer({ change: 'leave', reason: '猎人要去镇上换火药', leave: { who: '猎人', where: '山下的镇子', why: '去换过冬的火药', days: 3, farewell: '看好小红帽' } });
   const r = await town.migration.decide('leave');
   assert.equal(r.change, 'leave', JSON.stringify(r));
-  assert.equal(town.spec.personas.find((p) => p.id === 'hunter').status, 'departed');
+  assert.equal(town.spec.personas.find((p) => p.id === 'hunter')!.status, 'departed');
   assert.ok(!town.agents.includes(town.byId.hunter));
   assert.ok(town.logs.some((l) => l.type === 'depart' && l.text.includes('山下的镇子')));
   assert.ok(town.byId.red.memories.some((m) => m.text.includes('看好小红帽')), '亲近的人记住了临别的话');
@@ -96,10 +96,10 @@ test('出门：从在场的人里消失，亲近的人记得；到了约好的�
   // 还没到日子
   town.t = (town.day - 1) * 1440 + 10 * 60;
   town.migration.tick();
-  assert.equal(town.spec.personas.find((p) => p.id === 'hunter').status, 'departed');
+  assert.equal(town.spec.personas.find((p) => p.id === 'hunter')!.status, 'departed');
   town.t += 3 * 1440;
   town.migration.tick();
-  assert.equal(town.spec.personas.find((p) => p.id === 'hunter').status, 'active', '到了约好的日子回来了');
+  assert.equal(town.spec.personas.find((p) => p.id === 'hunter')!.status, 'active', '到了约好的日子回来了');
   assert.ok(town.agents.includes(town.byId.hunter));
   assert.ok(town.logs.some((l) => l.type === 'arrival' && l.text.includes('回来了')));
 });
@@ -109,17 +109,17 @@ test('定居：住满 5 天、有两位居民处得不错的外来者成为常�
   const town = redTown();
   t.after(() => town.stop());
   answer(NEWCOMER);
-  const { id } = await town.migration.decide('arrive');
+  const { id } = await town.migration.decide('arrive') as { id: string };
   town.t += 5 * 1440;
   town.migration.settleCheck();
-  assert.equal(town.spec.personas.find((p) => p.id === id).kind, 'traveller', '还没有朋友');
+  assert.equal(town.spec.personas.find((p) => p.id === id)!.kind, 'traveller', '还没有朋友');
   town.byId.red.relations[id] = { affinity: 30, note: '' };
   town.byId.grandma.relations[id] = { affinity: 25, note: '' };
   town.migration.settleCheck();
   const p = town.spec.personas.find((x) => x.id === id);
-  assert.equal(p.kind, 'resident');
-  assert.equal(p.origin, '山那边的蜂场');
-  assert.equal(p.traveller, undefined, '不再按刚来的外来者写提示词');
+  assert.equal(p!.kind, 'resident');
+  assert.equal(p!.origin, '山那边的蜂场');
+  assert.equal(p!.traveller, undefined, '不再按刚来的外来者写提示词');
   assert.equal(town.byId[id].kind, 'resident');
   assert.ok(town.specOps.some((o) => o.op === 'settlePersona'), '可重放');
 });
@@ -147,7 +147,7 @@ test('剧情弧里的角色不参与人员流动（云溪镇的穿越者与守�
   const town = new Town({ dataDir: tmp(), instantTalk: true });
   t.after(() => town.stop());
   const prot = town.migration.protectedIds();
-  const cast = Object.keys(town.spec.arcs[0].cast);
+  const cast = Object.keys(town.spec.arcs![0].cast!);
   assert.ok(cast.length && cast.every((id) => prot.has(id)));
   assert.ok(!town.migration.leaveCandidates().some((a) => prot.has(a.id)));
   assert.ok(!town.migration.view().people.some((p) => prot.has(p.id)));
@@ -161,7 +161,7 @@ test('owner 请走的人：导演不会把他叫回来，owner 可以召回', as
   assert.equal(town.migration.options().includes('return'), false);
   assert.ok(town.migration.recall('wolf', 'director').error);
   assert.equal(town.migration.recall('wolf', 'owner').change, 'return');
-  assert.equal(town.spec.personas.find((p) => p.id === 'wolf').status, 'active');
+  assert.equal(town.spec.personas.find((p) => p.id === 'wolf')!.status, 'active');
   assert.ok(town.migration.view().history.some((h) => h.by === 'owner'));
 });
 

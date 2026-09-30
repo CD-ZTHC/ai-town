@@ -25,24 +25,24 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-worlds-'));
 
 test('世界登记：短名规则、保留字、占用；状态机只允许合法的转换', () => {
   const reg = new WorldRegistry(openDb(':memory:'));
-  assert.match(reg.idProblem('Ab'), /3~32/);
-  assert.match(reg.idProblem('admin'), /保留字/);
+  assert.match(reg.idProblem('Ab')!, /3~32/);
+  assert.match(reg.idProblem('admin')!, /保留字/);
   assert.equal(reg.idProblem('little-red'), null);
   reg.create({ id: 'little-red', ownerId: 'u_1', title: '小红帽' });
-  assert.match(reg.idProblem('little-red'), /占用/);
+  assert.match(reg.idProblem('little-red')!, /占用/);
   assert.throws(() => reg.create({ id: 'little-red', title: 'x' }), /占用/);
-  assert.equal(reg.get('little-red').status, 'drafting');
+  assert.equal(reg.get('little-red')!.status, 'drafting');
   assert.throws(() => reg.setStatus('little-red', 'public'), /不能变成/);
   reg.setStatus('little-red', 'preview');
   reg.setStatus('little-red', 'public');
-  assert.ok(reg.get('little-red').publishedAt);
+  assert.ok(reg.get('little-red')!.publishedAt);
   reg.setStatus('little-red', 'suspended', '冒充官方');
-  assert.equal(reg.get('little-red').statusReason, '冒充官方');
+  assert.equal(reg.get('little-red')!.statusReason, '冒充官方');
   assert.throws(() => reg.setStatus('little-red', 'archived'), /不能变成/, '下架的世界 owner 不能自己归档绕开');
 });
 
 /** 两个世界：官方云溪镇 + 一个由云溪镇世界包改名得到的用户世界 */
-function twoWorlds(t, { max = 4 } = {}) {
+function twoWorlds(t: import('node:test').TestContext, { max = 4 } = {}) {
   settings._setForTest({ MAX_ACTIVE_WORLDS: max, PINNED_WORLDS: [], IDLE_PAUSE_SEC: 60, WORLD_UNLOAD_SEC: 60 });
   const data = tmp();
   const reg = new WorldRegistry(openDb(':memory:'));
@@ -63,7 +63,7 @@ function twoWorlds(t, { max = 4 } = {}) {
     makeTown: (w, root) => new Town({ dataDir: activeDir(root), worldId: w.id, pack: w.official ? officialPack(w.id) : loadPack(path.join(root, 'pack')), evolution: { dir: path.join(root, 'evolution'), pluginsDir: path.join(root, 'plugins') }, instantTalk: true, pacing: false }),
   });
   t.after(() => { manager.closeAll(); settings._setForTest({}); });
-  return { data, reg, manager, advance: (ms) => { now += ms; }, ids: made };
+  return { data, reg, manager, advance: (ms: number) => { now += ms; }, ids: made };
 }
 
 test('两个世界同时运行互不影响：各自的时间、天气、存档目录', (t) => {
@@ -81,7 +81,7 @@ test('两个世界同时运行互不影响：各自的时间、天气、存档�
   assert.ok(fs.existsSync(path.join(data, 'worlds', 'yunxi', 'save.json')));
   assert.equal(JSON.parse(fs.readFileSync(path.join(data, 'worlds', 'moon-town', 'save.json'), 'utf8')).worldId, 'moon-town');
   // SSE 按世界推送
-  const got = { a: [], b: [] };
+  const got: { a: string[]; b: string[] } = { a: [], b: [] };
   const la = a.join({ ip: '1', write: (m) => got.a.push(m) });
   const lb = b.join({ ip: '1', write: (m) => got.b.push(m) });
   a.town.log('event', '只在云溪镇');
@@ -103,7 +103,7 @@ test('上限：打开新世界时卸载无人观看、空闲最久的；都有�
   assert.ok(a.town.stopped, '被卸载的世界已存盘停止');
   // 两个都有人在看：满员
   const s = manager.get('star-town');
-  const leaveS = s.join({ ip: '2', write() {} });
+  const leaveS = s!.join({ ip: '2', write() {} });
   assert.throws(() => manager.open('sun-town'), WorldFullError);
   assert.equal(manager.canOpen('sun-town').ok, false);
   leaveS(); leaveB();
@@ -167,10 +167,10 @@ test('磁盘上限：超过后先回收旧快照（每条时间线留最近 1 �
   assert.equal(h.town.diskFull, true);
   h.town.save();
   assert.ok(fs.existsSync(path.join(root, 'save.json')), '存档照常写入');
-  assert.equal(reg.get('moon-town').diskBytes > 2 * 1024 * 1024, true);
+  assert.equal(reg.get('moon-town')!.diskBytes > 2 * 1024 * 1024, true);
   // 官方世界不受限制
   reg.update('yunxi', { quota: { diskMB: 1 } });
-  assert.equal(manager.checkDisk('yunxi', { force: true }).full, false);
+  assert.equal(manager.checkDisk('yunxi', { force: true })!.full, false);
 });
 
 test('数据迁移：旧的 data/ 存档移到 data/worlds/yunxi/，先备份；迁移后读出的世界与迁移前一致', () => {
@@ -188,8 +188,8 @@ test('数据迁移：旧的 data/ 存档移到 data/worlds/yunxi/，先备份；
 
   assert.equal(needsMigration(data), true);
   const r = migrateLegacy(data);
-  assert.ok(r.moved.includes('save.json') && r.moved.includes('ops.jsonl'));
-  assert.ok(fs.existsSync(path.join(r.backup, 'save.json')), '完整备份');
+  assert.ok(r!.moved.includes('save.json') && r!.moved.includes('ops.jsonl'));
+  assert.ok(fs.existsSync(path.join(r!.backup, 'save.json')), '完整备份');
   assert.ok(!fs.existsSync(path.join(data, 'save.json')));
   assert.ok(fs.existsSync(path.join(data, 'accounts.db')));
   assert.equal(needsMigration(data), false, '只迁移一次');
@@ -207,14 +207,14 @@ test('路由：/api/w/:world/*、/w/:world/api/*、旧路径 /api/* 映射到默
     publicDir: 'public', accounts: acc,
     worlds: {
       lobby: true, defaultId: () => 'yunxi',
-      resolve: (c, id) => { const ok = authorize(c.get('who'), 'world.view', reg.get(id)); if (ok !== true) throw Object.assign(new Error(ok), { status: 404 }); return manager.open(id); },
+      resolve: (c, id) => { const ok = authorize(c.get('who'), 'world.view', reg.get(id)!); if (ok !== true) throw Object.assign(new Error(ok), { status: 404 }); return manager.open(id!); },
       page: (c, id) => worldPage({ c, id, registry: reg, manager }),
       health: () => ({}),
     },
   });
   const { config } = await import('../server/guard.ts');
   config.publicMode = true;
-  t.after(() => { config.publicMode = undefined; });
+  t.after(() => { config.publicMode = undefined as unknown as boolean; });
   assert.equal((await (await app.request('/api/w/moon-town/me')).json()).world, 'moon-town');
   assert.equal((await (await app.request('/w/star-town/api/me')).json()).world, 'star-town');
   assert.equal((await (await app.request('/api/me')).json()).world, 'yunxi');

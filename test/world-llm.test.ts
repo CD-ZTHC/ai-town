@@ -3,6 +3,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
+import type { CompleteArgs, CompleteResult, Provider } from '../server/types/llm.ts';
+import type { AuditEntry, User } from '../server/types/account.ts';
+import type { Accounts } from '../server/accounts/index.ts';
+import type { WorldManager } from '../server/worlds/manager.ts';
+import type { Town as TownT } from '../server/sim.ts';
+import type { AppEnv } from '../server/types/http.ts';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { SseClient } from '../server/worlds/host.ts';
+/** assert.throws / rejects 校验函数收到的错误 */
+type TestErr = Error & { code?: string; status?: number; errors?: Record<string, string> };
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
@@ -26,14 +36,16 @@ settings._setForTest({ USER_LLM_PRIVATE_NET: true });
 const USER_KEY = 'sk-USER-SECRET-a1b2c3d4';
 
 /** 假 provider：mode 决定回复或错误；记录请求 */
-function fake(name) {
-  const f = {
+/** 假 provider：mode 是固定的回复模式，或按请求决定模式的函数 */
+type FakeProvider = { name: string; enabled: boolean; reqs: CompleteArgs[]; mode: string | ((req: CompleteArgs) => string); listModels(): Promise<string[]>; complete(req: CompleteArgs): Promise<CompleteResult> };
+function fake(name: string) {
+  const f: FakeProvider = {
     name, enabled: true, reqs: [], mode: 'ok',
     async listModels() {
-      if (['401', '402'].includes(f.mode)) throw Object.assign(new Error('Invalid API key'), { upstreamStatus: Number(f.mode) });
+      if (['401', '402'].includes(f.mode as string)) throw Object.assign(new Error('Invalid API key'), { upstreamStatus: Number(f.mode) });
       return ['m-default', 'm-fast', 'm-smart'];
     },
-    async complete(req) {
+    async complete(req: CompleteArgs) {
       f.reqs.push(req);
       const m = typeof f.mode === 'function' ? f.mode(req) : f.mode;
       if (m === '401') throw Object.assign(new Error(`Incorrect API key provided: ${USER_KEY}`), { upstreamStatus: 401 });
@@ -54,36 +66,36 @@ llm.setProvider(server);
 const db = openDb(':memory:');
 const registry = new WorldRegistry(db);
 const credentials = new LlmCredentials(db, { key: parseMasterKey(generateMasterKey()) });
-const fakes = new Map();
-const halts = [];
-const resumes = [];
-const audits = [];
+const fakes = new Map<string, FakeProvider>();
+const halts: Array<[string, string]> = [];
+const resumes: string[] = [];
+const audits: AuditEntry[] = [];
 let clock = 0; // 世界 LLM 的时钟偏移（判断「持续连不上」用）
 const worldLlm = createWorldLlm({
   registry, credentials, audit: (e) => audits.push(e), now: () => Date.now() + clock,
   onHalt: (id, h) => halts.push([id, h.code]), onResume: (id) => resumes.push(id),
-  makeProvider: (cred) => fakes.get(cred.id),
+  makeProvider: (cred) => fakes.get(cred.id) as Provider,
 });
 llm.setProfileResolver(worldLlm.resolve);
 llm.onFailure(worldLlm.onFailure);
 const ledger = new Ledger(db);
 llm.onUsage((e) => ledger.add(e));
-const budget = budgetPolicy({ ledger, world: (id) => registry.get(id), ownerGrant: () => null, globalUsed: () => llm.stats.dayTokens, ownLimit: (id) => (worldLlm.isOwn(id) ? normalizeAi(registry.get(id).settings.ai).dailyTokens : null) });
+const budget = budgetPolicy({ ledger, world: (id) => registry.get(id), ownerGrant: () => null, globalUsed: () => llm.stats.dayTokens, ownLimit: (id) => (worldLlm.isOwn(id) ? (normalizeAi(registry.get(id)!.settings.ai) as { dailyTokens: number }).dailyTokens : null) });
 llm.setBudgetPolicy(budget.allow);
 
-function cred(owner, name = 'c') {
+function cred(owner: string, name = 'c') {
   const c = credentials.create({ owner, name, provider: 'openai', baseUrl: 'http://127.0.0.1:9/v1', apiKey: USER_KEY });
   fakes.set(c.id, fake(c.id));
-  return { ...c, f: fakes.get(c.id) };
+  return { ...c, f: fakes.get(c.id)! };
 }
-function world(id, { owner = 'u1', ai = null, official = false } = {}) {
+function world(id: string, { owner = 'u1', ai = null, official = false }: { owner?: string; ai?: object | null; official?: boolean } = {}) {
   registry.create({ id, ownerId: official ? null : owner, title: id, status: 'drafting', official, settings: ai ? { ai } : {} });
   if (!official) { registry.setStatus(id, 'preview'); registry.setStatus(id, 'public'); }
   worldLlm.invalidate(id);
   return id;
 }
-const own = (credential, extra = {}) => ({ source: 'own', credential, models: { default: 'm-default', smart: 'm-smart' }, concurrency: 2, ...extra });
-const ask = (worldId, opts = {}) => withContext({ worldId, userId: 'u9' }, () => llm.chatJSON([{ role: 'user', content: 'x' }], { label: '对话', attempts: 1, ...opts }));
+const own = (credential: string, extra = {}) => ({ source: 'own', credential, models: { default: 'm-default', smart: 'm-smart' }, concurrency: 2, ...extra });
+const ask = (worldId: string, opts = {}) => withContext({ worldId, userId: 'u9' }, () => llm.chatJSON([{ role: 'user', content: 'x' }], { label: '对话', attempts: 1, ...opts }));
 
 test('解析：世界选了自己的模型服务，世界里的调用都用它；审核永远用服务器；没有世界上下文的用服务器', async () => {
   const a = cred('u1');
@@ -94,7 +106,7 @@ test('解析：世界选了自己的模型服务，世界里的调用都用它�
   assert.equal(a.f.reqs.length, 1);
   assert.equal(a.f.reqs[0].model, 'm-default');
   await ask('own-a', { tier: 'smart', label: '叙事导演' });
-  assert.equal(a.f.reqs.at(-1).model, 'm-smart');
+  assert.equal(a.f.reqs.at(-1)!.model, 'm-smart');
   await ask('own-a', { label: '与旅人交谈' });
   assert.equal(a.f.reqs.length, 3, '注册用户的对话也用世界的模型');
   assert.equal(server.reqs.length, s0, '服务器一次都没被调用');
@@ -123,10 +135,10 @@ test('计费：自带的用量记在 own 名下，不占全站预算；审核在
 test('引用规则：用户世界只能引用主人的凭据，否则世界暂停', async () => {
   const a = cred('u1');
   world('stolen', { owner: 'u2', ai: own(a.id) });
-  await assert.rejects(ask('stolen'), (e) => e.code === 'HALTED');
-  assert.equal(registry.get('stolen').settings.ai.halt.code, 'credential');
+  await assert.rejects(ask('stolen'), (e: TestErr) => e.code === 'HALTED');
+  assert.equal(registry.get('stolen')!.settings.ai.halt.code, 'credential');
   assert.equal(a.f.reqs.length, 0, '别人的钥匙一次都没用');
-  assert.throws(() => worldLlm.validate(own(a.id), registry.get('stolen')), /自己的模型服务/);
+  assert.throws(() => worldLlm.validate(own(a.id), registry.get('stolen')!), /自己的模型服务/);
 });
 
 test('通道隔离：自带网关不支持 JSON 模式只关自己的；限流只让自己的通道退避', async () => {
@@ -135,8 +147,8 @@ test('通道隔离：自带网关不支持 JSON 模式只关自己的；限流�
   a.f.mode = 'nojson';
   await ask('iso');
   const lane = llm.lanesView().find((l) => l.key === `cred:${a.id}`);
-  assert.equal(lane.jsonMode, false);
-  assert.equal(llm.lanesView().find((l) => l.key === 'server').jsonMode, true, '服务器的 JSON 模式不受影响');
+  assert.equal(lane!.jsonMode, false);
+  assert.equal(llm.lanesView().find((l) => l.key === 'server')!.jsonMode, true, '服务器的 JSON 模式不受影响');
   a.f.mode = 'ok';
 
   let n = 0;
@@ -146,8 +158,8 @@ test('通道隔离：自带网关不支持 JSON 模式只关自己的；限流�
   const t0 = Date.now();
   await ask('plain');
   assert.ok(Date.now() - t0 < 1000, '服务器通道没有被拖慢');
-  assert.ok(llm.lanesView().find((l) => l.key === `cred:${a.id}`).cooling > 0);
-  assert.equal(llm.lanesView().find((l) => l.key === 'server').cooling, 0);
+  assert.ok(llm.lanesView().find((l) => l.key === `cred:${a.id}`)!.cooling > 0);
+  assert.equal(llm.lanesView().find((l) => l.key === 'server')!.cooling, 0);
   assert.deepEqual(await slow, { ok: true });
   assert.equal(halts.filter(([id]) => id === 'iso').length, 0, '限流不暂停世界');
 });
@@ -159,26 +171,26 @@ test('致命错误：密钥失效暂停用这把钥匙的所有世界，排队�
   a.f.mode = '401';
   await assert.rejects(ask('fa1'), /Incorrect API key/);
   assert.equal(a.f.reqs.length, 1, '鉴权失败不重试');
-  for (const id of ['fa1', 'fa2']) assert.equal(registry.get(id).settings.ai.halt.code, 'auth');
+  for (const id of ['fa1', 'fa2']) assert.equal(registry.get(id)!.settings.ai.halt.code, 'auth');
   assert.deepEqual(halts.filter(([id]) => id.startsWith('fa')).sort(), [['fa1', 'auth'], ['fa2', 'auth']]);
   const c = credentials.get(a.id);
-  assert.equal(c.status, 'failing');
-  assert.equal(c.failCode, 'auth');
-  assert.ok(!c.lastError.includes(USER_KEY), '失败原因里没有密钥原文');
+  assert.equal(c!.status, 'failing');
+  assert.equal(c!.failCode, 'auth');
+  assert.ok(!c!.lastError.includes(USER_KEY), '失败原因里没有密钥原文');
   assert.ok(!JSON.stringify(registry.get('fa1')).includes(USER_KEY));
-  await assert.rejects(ask('fa2'), (e) => e.code === 'HALTED');
+  await assert.rejects(ask('fa2'), (e: TestErr) => e.code === 'HALTED');
   assert.equal(a.f.reqs.length, 1, '暂停后不再打上游');
   assert.equal(withContext({ worldId: 'fa1' }, () => llm.enabled()), false);
-  assert.match(withContext({ worldId: 'fa1' }, () => llm.blocked()), /密钥无效/);
+  assert.match(withContext({ worldId: 'fa1' }, () => llm.blocked())!, /密钥无效/);
   assert.ok(audits.some((e) => e.action === 'world.ai-halt' && e.target === 'fa2'));
 
   a.f.mode = 'ok';
   const r = await worldLlm.checkCredential(a.id);
   assert.equal(r.ok, true);
   assert.deepEqual(r.models, ['m-default', 'm-fast', 'm-smart']);
-  assert.ok(!registry.get('fa1').settings.ai.halt && !registry.get('fa2').settings.ai.halt);
+  assert.ok(!registry.get('fa1')!.settings.ai.halt && !registry.get('fa2')!.settings.ai.halt);
   assert.ok(resumes.includes('fa1') && resumes.includes('fa2'));
-  assert.equal(credentials.get(a.id).status, 'ok');
+  assert.equal(credentials.get(a.id)!.status, 'ok');
   assert.deepEqual(await ask('fa2'), { ok: true });
 });
 
@@ -187,29 +199,29 @@ test('余额不足同样暂停；模型不存在只暂停这个世界', async ()
   world('bal', { ai: own(a.id) });
   a.f.mode = '402';
   await assert.rejects(ask('bal'));
-  assert.equal(registry.get('bal').settings.ai.halt.code, 'balance');
+  assert.equal(registry.get('bal')!.settings.ai.halt.code, 'balance');
 
   const b = cred('u1');
   world('mod1', { ai: own(b.id, { models: { default: 'no-such-model' } }) });
   world('mod2', { ai: own(b.id) });
-  b.f.mode = (req) => (req.model === 'no-such-model' ? '404' : 'ok');
+  b.f.mode = (req: CompleteArgs) => (req.model === 'no-such-model' ? '404' : 'ok');
   b.f.listModels = async () => []; // 网关不提供模型列表：没法自动纠正模型名
   const out = []; // 能列出模型时，写错的模型名会被自动纠正成最接近的，不会暂停（见下面的 mod3）
   await assert.rejects(ask('mod1'));
-  assert.equal(registry.get('mod1').settings.ai.halt.code, 'model');
-  assert.ok(!registry.get('mod2').settings.ai.halt, '同一把钥匙的其他世界不受影响');
-  assert.notEqual(credentials.get(b.id).status, 'failing');
+  assert.equal(registry.get('mod1')!.settings.ai.halt.code, 'model');
+  assert.ok(!registry.get('mod2')!.settings.ai.halt, '同一把钥匙的其他世界不受影响');
+  assert.notEqual(credentials.get(b.id)!.status, 'failing');
   assert.deepEqual(await ask('mod2'), { ok: true });
   // 改好模型名后重试：恢复
-  registry.update('mod1', { settings: { ai: { ...registry.get('mod1').settings.ai, models: { default: 'm-default' } } } });
+  registry.update('mod1', { settings: { ai: { ...registry.get('mod1')!.settings.ai, models: { default: 'm-default' } } } });
   worldLlm.invalidate('mod1');
   assert.equal((await worldLlm.retryWorld('mod1')).ok, true);
-  assert.ok(!registry.get('mod1').settings.ai.halt);
+  assert.ok(!registry.get('mod1')!.settings.ai.halt);
   const c = cred('u1');
   world('mod3', { ai: own(c.id, { models: { default: 'm-defualt' } }) });
-  c.f.mode = (req) => (req.model === 'm-defualt' ? '404' : 'ok');
+  c.f.mode = (req: CompleteArgs) => (req.model === 'm-defualt' ? '404' : 'ok');
   assert.deepEqual(await ask('mod3'), { ok: true });
-  assert.equal(c.f.reqs.at(-1).model, 'm-default', '模型名写错时自动纠正');
+  assert.equal(c.f.reqs.at(-1)!.model, 'm-default', '模型名写错时自动纠正');
   assert.equal(out.length, 0);
 });
 
@@ -219,16 +231,16 @@ test('网络错误：偶发的不暂停；连续多次并持续 3 分钟以上�
   world('net', { ai: own(a.id) });
   a.f.mode = 'net';
   await assert.rejects(ask('net'));
-  assert.ok(!registry.get('net').settings.ai.halt, '一次网络错误不暂停');
+  assert.ok(!registry.get('net')!.settings.ai.halt, '一次网络错误不暂停');
   await assert.rejects(ask('net'));
-  assert.ok(!registry.get('net').settings.ai.halt, '次数够了，但持续时间还不到 3 分钟');
+  assert.ok(!registry.get('net')!.settings.ai.halt, '次数够了，但持续时间还不到 3 分钟');
   clock = 4 * 60_000;
   await assert.rejects(ask('net'));
-  assert.equal(registry.get('net').settings.ai.halt.code, 'net');
+  assert.equal(registry.get('net')!.settings.ai.halt.code, 'net');
   clock = 0;
   a.f.mode = 'ok';
   await worldLlm.probe();
-  assert.ok(!registry.get('net').settings.ai.halt, '探测到连通后自动恢复');
+  assert.ok(!registry.get('net')!.settings.ai.halt, '探测到连通后自动恢复');
   settings._setForTest({ USER_LLM_PRIVATE_NET: true });
 });
 
@@ -242,7 +254,7 @@ test('自己设的每日上限：超过后只保留交互，再超 20% 全停；
   assert.deepEqual(await ask('cap', { label: '与旅人交谈' }), { ok: true });
   await assert.rejects(ask('cap', { label: '与旅人交谈' }), /上限/);
   assert.equal(budget.level('cap'), 'exhausted');
-  assert.ok(!registry.get('cap').settings.ai.halt, '到上限不是故障，不暂停');
+  assert.ok(!registry.get('cap')!.settings.ai.halt, '到上限不是故障，不暂停');
 });
 
 test('站点关闭自带模型：用户世界改用服务器；官方世界（站点凭据）不受影响', async () => {
@@ -257,11 +269,11 @@ test('站点关闭自带模型：用户世界改用服务器；官方世界（�
   assert.equal(server.reqs.length, s0 + 1);
   await ask('off-official');
   assert.equal(site.f.reqs.length, 1);
-  assert.throws(() => worldLlm.validate(own(a.id), registry.get('off-user')), /没有开放/);
+  assert.throws(() => worldLlm.validate(own(a.id), registry.get('off-user')!), /没有开放/);
   settings._setForTest({ USER_LLM_PRIVATE_NET: true });
   worldLlm.invalidate();
   // 官方世界只能引用站点凭据
-  assert.throws(() => worldLlm.validate(own(a.id), registry.get('off-official')), /自己的模型服务/);
+  assert.throws(() => worldLlm.validate(own(a.id), registry.get('off-official')!), /自己的模型服务/);
 });
 
 test('语义检索与进化评审：自带时用世界配置的，不借用服务器的', async () => {
@@ -283,9 +295,9 @@ test('语义检索与进化评审：自带时用世界配置的，不借用服�
 
     const res = await withContext({ worldId: 'emb2' }, () => hostCall({ role: '评审', messages: [{ role: 'user', content: 'x' }], review: true }));
     assert.deepEqual(res.json, { ok: true });
-    assert.equal(r.f.reqs.at(-1).model, 'r-model', '评审用世界配置的评审模型和凭据');
+    assert.equal(r.f.reqs.at(-1)!.model, 'r-model', '评审用世界配置的评审模型和凭据');
     await withContext({ worldId: 'emb' }, () => hostCall({ role: '评审', messages: [{ role: 'user', content: 'x' }], review: true }));
-    assert.equal(a.f.reqs.at(-1).model, 'm-smart', '没配评审模型：用世界的强模型');
+    assert.equal(a.f.reqs.at(-1)!.model, 'm-smart', '没配评审模型：用世界的强模型');
   } finally {
     for (const k of ['EMBED_MODEL', 'BASE_URL', 'API_KEY']) delete process.env[k];
     setEmbedResolver(null);
@@ -294,10 +306,10 @@ test('语义检索与进化评审：自带时用世界配置的，不借用服�
 });
 
 test('世界托管：暂停后不推进、有观众也不唤醒；恢复后继续', () => {
-  const sent = [];
-  const town = { t: 0, idle: false, halted: null, save() {}, stop() {}, start() {}, on() {}, initPayload: () => ({}) };
+  const sent: string[] = [];
+  const town = { t: 0, idle: false, halted: null, save() {}, stop() {}, start() {}, on() {}, initPayload: () => ({}) } as unknown as TownT;
   const host = new WorldHost({ id: 'h1', makeTown: () => town });
-  host.clients.add({ write: (m) => sent.push(m) });
+  host.clients.add({ write: (m: string) => sent.push(m) } as unknown as SseClient);
   host.halt({ code: 'auth', text: '暂停了' });
   assert.deepEqual(town.halted, { code: 'auth', text: '暂停了' });
   host.wake();
@@ -309,23 +321,24 @@ test('世界托管：暂停后不推进、有观众也不唤醒；恢复后继�
 
 // ---------- 接口 ----------
 function app() {
-  const users = { u1: { id: 'u1', role: 'user' }, u2: { id: 'u2', role: 'user' }, nogrant: { id: 'nogrant', role: 'user' }, admin: { id: 'admin', role: 'admin' } };
-  const accounts = { grant: (uid) => (['u1', 'u2'].includes(uid) ? { quota: {} } : null), audit: (e) => audits.push(e), get: () => null };
-  const manager = { get: () => null, close: () => {}, loaded: new Map() };
-  const a = new Hono();
+  const users: Record<string, { id: string; role: string }> = { u1: { id: 'u1', role: 'user' }, u2: { id: 'u2', role: 'user' }, nogrant: { id: 'nogrant', role: 'user' }, admin: { id: 'admin', role: 'admin' } };
+  // 只实现接口里用到的几个方法的假账号与世界管理器
+  const accounts = { grant: (uid: string) => (['u1', 'u2'].includes(uid) ? { quota: {} } : null), audit: (e: AuditEntry) => audits.push(e), get: () => null } as unknown as Accounts;
+  const manager = { get: () => null, close: () => {}, loaded: new Map() } as unknown as WorldManager;
+  const a = new Hono<AppEnv>();
   a.use('*', async (c, next) => {
-    const u = users[c.req.header('x-user')] || null;
-    c.set('user', u);
+    const u = users[c.req.header('x-user')!] || null;
+    c.set('user', u as User | null);
     c.set('admin', u?.role === 'admin');
-    c.set('who', { user: u, admin: u?.role === 'admin', ip: `ip-${u?.id}` });
+    c.set('who', { user: u as User | null, admin: u?.role === 'admin', ip: `ip-${u?.id}` });
     c.set('body', ['POST', 'PUT', 'PATCH'].includes(c.req.method) ? await c.req.json().catch(() => ({})) : {});
     await next();
   });
   a.route('/api/me/llm-credentials', credentialsApi({ credentials, worldLlm, accounts, scope: 'user' }));
   a.route('/api/admin/llm-credentials', credentialsApi({ credentials, worldLlm, accounts, scope: 'site' }));
-  a.route('/api/worlds', worldsApi({ registry, manager, accounts, worldLlm, credentialsFor: (w) => credentials.list(w.official ? SITE : w.ownerId), usage: (id) => ({ server: ledger.world(id), own: ledger.own(id) }) }));
-  a.onError((e, c) => c.json({ error: e.message }, e.status || 500));
-  const call = async (user, method, url, body) => {
+  a.route('/api/worlds', worldsApi({ registry, manager, accounts, worldLlm, credentialsFor: (w) => credentials.list(w.official ? SITE : w.ownerId!), usage: (id) => ({ server: ledger.world(id), own: ledger.own(id) }) }));
+  a.onError((e, c) => c.json({ error: e.message }, ((e as { status?: number }).status || 500) as ContentfulStatusCode));
+  const call = async (user: string, method: string, url: string, body?: unknown) => {
     const res = await a.request(url, { method, headers: { 'x-user': user, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const text = await res.text();
     return { status: res.status, text, json: JSON.parse(text) };
@@ -338,7 +351,7 @@ test('接口：凭据的增删改查与测试；只能操作自己的；密钥�
   db.prepare("DELETE FROM llm_credentials WHERE owner = 'u1'").run(); // 前面的用例建了不少，腾出数量上限
   const call = app();
   const texts = [];
-  const rec = (r) => { texts.push(r.text); return r; };
+  const rec = <R extends { text: string }>(r: R) => { texts.push(r.text); return r; };
   assert.equal((await call('nogrant', 'GET', '/api/me/llm-credentials')).status, 403, '需要创世授予');
   settings._setForTest({ USER_LLM_PRIVATE_NET: false });
   assert.match((rec(await call('u1', 'POST', '/api/me/llm-credentials', { name: 'x', provider: 'openai', baseUrl: 'https://169.254.169.254/v1', apiKey: 'k' }))).json.error, /内网/);
@@ -352,8 +365,8 @@ test('接口：凭据的增删改查与测试；只能操作自己的；密钥�
   fakes.set(id, fake(id));
   settings._setForTest({ USER_LLM_PRIVATE_NET: true });
   const list = rec(await call('u1', 'GET', '/api/me/llm-credentials'));
-  assert.ok(list.json.list.some((c) => c.id === id));
-  assert.ok(!rec(await call('u2', 'GET', '/api/me/llm-credentials')).json.list.some((c) => c.id === id), '看不到别人的');
+  assert.ok(list.json.list.some((c: { id: string }) => c.id === id));
+  assert.ok(!rec(await call('u2', 'GET', '/api/me/llm-credentials')).json.list.some((c: { id: string }) => c.id === id), '看不到别人的');
   assert.equal(rec(await call('u2', 'POST', `/api/me/llm-credentials/${id}/test`)).status, 404, '不能测试别人的');
   const t = rec(await call('u1', 'POST', `/api/me/llm-credentials/${id}/test`));
   assert.equal(t.json.ok, true);
@@ -367,25 +380,25 @@ test('接口：凭据的增删改查与测试；只能操作自己的；密钥�
   assert.equal(put.json.ai.concurrency, settings.get('USER_LLM_MAX_CONCURRENCY'), '并发不超过站点上限');
   const got = rec(await call('u1', 'GET', '/api/worlds/api-w/ai'));
   assert.equal(got.json.credential.id, id);
-  assert.ok(got.json.credentials.some((c) => c.id === id));
+  assert.ok(got.json.credentials.some((c: { id: string }) => c.id === id));
   assert.deepEqual(await ask('api-w'), { ok: true });
 
   // 让它失效 → 世界暂停；换密钥（PATCH）后自动测试并恢复
-  fakes.get(id).mode = '401';
+  fakes.get(id)!.mode = '401';
   await assert.rejects(ask('api-w'));
-  assert.ok(registry.get('api-w').settings.ai.halt);
+  assert.ok(registry.get('api-w')!.settings.ai.halt);
   assert.equal(rec(await call('u1', 'GET', '/api/worlds/api-w/ai')).json.halted, true);
-  fakes.get(id).mode = 'ok';
+  fakes.get(id)!.mode = 'ok';
   const patched = rec(await call('u1', 'PATCH', `/api/me/llm-credentials/${id}`, { apiKey: 'sk-NEW-KEY-99990000' }));
   assert.equal(patched.json.test.ok, true);
-  assert.ok(!registry.get('api-w').settings.ai.halt, '换了密钥，测试通过，世界恢复');
+  assert.ok(!registry.get('api-w')!.settings.ai.halt, '换了密钥，测试通过，世界恢复');
   texts.push(JSON.stringify(credentials.list('u1')), JSON.stringify(registry.get('api-w')));
 
   // 删除被引用的凭据：需要确认；确认后世界暂停
   assert.equal(rec(await call('u1', 'DELETE', `/api/me/llm-credentials/${id}`)).status, 409);
   const del = rec(await call('u1', 'DELETE', `/api/me/llm-credentials/${id}?confirm=1`));
   assert.deepEqual(del.json.halted, ['api-w']);
-  assert.equal(registry.get('api-w').settings.ai.halt.code, 'credential');
+  assert.equal(registry.get('api-w')!.settings.ai.halt.code, 'credential');
 
   // 站点凭据只有管理员能管
   assert.equal((await call('u1', 'GET', '/api/admin/llm-credentials')).status, 403);
@@ -416,12 +429,12 @@ test('官方世界：管理员改的标题不被世界包覆盖；恢复后又�
   assert.equal((await call('u1', 'PATCH', '/api/worlds/off-pack/settings', { title: '想改' })).status, 403);
   const r = await call('admin', 'PATCH', '/api/worlds/off-pack/settings', { title: '管理员改的标题' });
   assert.equal(r.status, 200, r.text);
-  assert.deepEqual(registry.get('off-pack').settings.overrides, { title: true });
+  assert.deepEqual(registry.get('off-pack')!.settings.overrides, { title: true });
   registry.ensureOfficial('off-pack', { title: '世界包标题', summary: '世界包新简介', packHash: 'h2', settings: {} }); // 模拟重启
-  assert.equal(registry.get('off-pack').title, '管理员改的标题');
-  assert.equal(registry.get('off-pack').summary, '世界包新简介', '没改过的字段照常跟随世界包');
+  assert.equal(registry.get('off-pack')!.title, '管理员改的标题');
+  assert.equal(registry.get('off-pack')!.summary, '世界包新简介', '没改过的字段照常跟随世界包');
   await call('admin', 'PATCH', '/api/worlds/off-pack/settings', { resetOverrides: ['title'] });
   registry.ensureOfficial('off-pack', { title: '世界包标题', summary: 'x', packHash: 'h3', settings: {} });
-  assert.equal(registry.get('off-pack').title, '世界包标题');
+  assert.equal(registry.get('off-pack')!.title, '世界包标题');
   assert.equal((await call('admin', 'PATCH', '/api/worlds/off-pack/settings', { rating: 'nope' })).status, 400);
 });

@@ -6,6 +6,11 @@ import http from 'node:http';
 import { aisdkProvider, parseModelName, toPrompt } from '../server/llm-aisdk.ts';
 import { createProvider, credentialProvider } from '../server/llm-providers.ts';
 import { SETTINGS, parseString } from '../server/settings/schema.ts';
+import type { AddressInfo } from 'node:net';
+import type { TestContext } from 'node:test';
+import type { UpstreamError } from '../server/types/llm.ts';
+/** assert.throws / rejects 校验函数收到的错误 */
+type TestErr = Error & { code?: string; status?: number; errors?: Record<string, string> };
 
 let installed = true;
 try { await import('ai'); } catch { installed = false; }
@@ -35,28 +40,32 @@ test('是否可用；LLM_PROVIDER=pi 的旧配置按 aisdk 处理', () => {
 });
 
 /** 假服务：/v1/chat/completions（OpenAI 兼容）与 /v1/messages（Anthropic），按 mode 返回回复或错误 */
-async function fakeServer(t) {
-  const s = { mode: 'ok', reply: '{"ok":true}', reqs: [] };
+/** 假服务收到的一次请求 */
+type FakeReq = { url: string; headers: http.IncomingHttpHeaders; body: any }; // eslint-disable-line @typescript-eslint/no-explicit-any -- 请求体（JSON）
+/** 假服务的状态：返回模式、回复、收到的请求；base / chats 在启动后补上 */
+type FakeState = { mode: string; reply: string; reqs: FakeReq[]; base: string; chats: () => FakeReq[] };
+async function fakeServer(t: TestContext) {
+  const s = { mode: 'ok', reply: '{"ok":true}', reqs: [] } as unknown as FakeState;
   const srv = http.createServer((req, res) => {
     let b = '';
     req.on('data', (c) => (b += c));
     req.on('end', () => {
       const body = b ? JSON.parse(b) : null;
-      s.reqs.push({ url: req.url, headers: req.headers, body });
-      const send = (status, o) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
-      if (req.url.endsWith('/models') || req.url.includes('/models?')) return send(200, { data: [{ id: 'glm-test' }, { id: 'claude-test' }] });
+      s.reqs.push({ url: req.url!, headers: req.headers, body });
+      const send = (status: number, o: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (req.url!.endsWith('/models') || req.url!.includes('/models?')) return send(200, { data: [{ id: 'glm-test' }, { id: 'claude-test' }] });
       if (s.mode === '429') return send(429, { error: { message: '请求频率过高，请稍后再试' } });
       if (s.mode === '401') return send(401, { error: { message: 'Invalid API key' } });
       if (s.mode === 'no-json' && body.response_format) return send(400, { error: { message: 'response_format is not supported' } });
-      if (req.url.endsWith('/messages')) {
+      if (req.url!.endsWith('/messages')) {
         return send(200, { id: 'm1', type: 'message', role: 'assistant', model: body.model, content: [{ type: 'text', text: s.reply }], stop_reason: 'end_turn', usage: { input_tokens: 7, output_tokens: 3 } });
       }
       send(200, { id: 'c1', choices: [{ index: 0, message: { role: 'assistant', content: s.reply }, finish_reason: 'stop' }], usage: { prompt_tokens: 11, completion_tokens: 4 } });
     });
   });
-  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
   t.after(() => srv.close());
-  s.base = `http://127.0.0.1:${srv.address().port}/v1`;
+  s.base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/v1`;
   s.chats = () => s.reqs.filter((x) => x.url.endsWith('/chat/completions'));
   return s;
 }
@@ -67,18 +76,18 @@ test('aisdk 的自定义网关：请求体、鉴权、用量、JSON 模式与模
   const r = await p.complete({ model: 'glm-test', messages: [{ role: 'system', content: '只输出 JSON' }, { role: 'user', content: '你好' }], temperature: 0.2, maxTokens: 50, json: true });
   assert.deepEqual(r, { content: '{"ok":true}', usage: { prompt: 11, completion: 4 }, finishReason: 'stop' });
   const call = s.chats().at(-1);
-  assert.equal(call.headers.authorization, 'Bearer sk-test');
-  assert.deepEqual(call.body.messages, [{ role: 'system', content: '只输出 JSON' }, { role: 'user', content: '你好' }]);
-  assert.equal(call.body.model, 'glm-test');
-  assert.equal(call.body.max_tokens, 50);
-  assert.equal(call.body.temperature, 0.2);
-  assert.equal(call.body.reasoning_effort, 'low');
-  assert.deepEqual(call.body.response_format, { type: 'json_object' });
+  assert.equal(call!.headers.authorization, 'Bearer sk-test');
+  assert.deepEqual(call!.body.messages, [{ role: 'system', content: '只输出 JSON' }, { role: 'user', content: '你好' }]);
+  assert.equal(call!.body.model, 'glm-test');
+  assert.equal(call!.body.max_tokens, 50);
+  assert.equal(call!.body.temperature, 0.2);
+  assert.equal(call!.body.reasoning_effort, 'low');
+  assert.deepEqual(call!.body.response_format, { type: 'json_object' });
   await p.complete({ model: 'glm-test', messages: [{ role: 'user', content: 'x' }], json: false });
-  assert.equal(s.chats().at(-1).body.response_format, undefined, '不要 JSON 时不带 response_format');
+  assert.equal(s.chats().at(-1)!.body.response_format, undefined, '不要 JSON 时不带 response_format');
   await p.complete({ model: 'glm-test', messages: [{ role: 'user', content: 'x' }], json: true, schema: { name: 's', schema: { type: 'object' } } });
-  assert.deepEqual(s.chats().at(-1).body.response_format, { type: 'json_schema', json_schema: { name: 's', schema: { type: 'object' }, strict: false } });
-  assert.deepEqual(await p.listModels(), ['glm-test', 'claude-test', 'anthropic/claude-x']);
+  assert.deepEqual(s.chats().at(-1)!.body.response_format, { type: 'json_schema', json_schema: { name: 's', schema: { type: 'object' }, strict: false } });
+  assert.deepEqual(await p.listModels!(), ['glm-test', 'claude-test', 'anthropic/claude-x']);
 });
 
 test('模型输出不是合法 JSON 时把原文交回（由 llm.js 修复），而不是抛错', { skip }, async (t) => {
@@ -95,9 +104,9 @@ test('错误信息保留上游状态码与原文；AI SDK 自己不重试', { sk
   const p = aisdkProvider({ kind: 'aisdk', baseUrl: s.base, apiKey: 'k', models: ['glm-test'] });
   const call = () => p.complete({ model: 'glm-test', messages: [{ role: 'user', content: 'x' }], json: true, maxTokens: 10 });
   s.mode = '429';
-  await assert.rejects(call, (e) => /429.*请求频率过高/.test(e.message) && e.upstreamStatus === 429);
+  await assert.rejects(call, (e: TestErr) => /429.*请求频率过高/.test(e.message) && (e as UpstreamError).upstreamStatus === 429);
   s.mode = '401';
-  await assert.rejects(call, (e) => /401.*Invalid API key/.test(e.message) && e.upstreamStatus === 401);
+  await assert.rejects(call, (e: TestErr) => /401.*Invalid API key/.test(e.message) && (e as UpstreamError).upstreamStatus === 401);
   s.mode = 'no-json';
   await assert.rejects(call, /response_format/);
   assert.equal(s.chats().length, 3);
@@ -110,10 +119,10 @@ test('anthropic 类型：官方协议、凭据的密钥与地址、用量', { sk
   assert.deepEqual(r.usage, { prompt: 7, completion: 3 });
   assert.equal(r.content, '{"ok":true}');
   const call = s.reqs.at(-1);
-  assert.equal(call.url, '/v1/messages');
-  assert.equal(call.headers['x-api-key'], 'sk-ant-1');
-  assert.equal(call.body.system?.[0]?.text ?? call.body.system, 'S');
-  assert.deepEqual(await p.listModels(), ['glm-test', 'claude-test']);
+  assert.equal(call!.url, '/v1/messages');
+  assert.equal(call!.headers['x-api-key'], 'sk-ant-1');
+  assert.equal(call!.body.system?.[0]?.text ?? call!.body.system, 'S');
+  assert.deepEqual(await p.listModels!(), ['glm-test', 'claude-test']);
 });
 
 test('凭据绝不借用服务器环境变量里的密钥；请求经过注入的 fetch', { skip }, async (t) => {
@@ -122,10 +131,10 @@ test('凭据绝不借用服务器环境变量里的密钥；请求经过注入�
   process.env.ANTHROPIC_API_KEY = 'sk-SERVER';
   t.after(() => { if (saved === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = saved; });
   const seen = [];
-  const f = (url, init) => { seen.push(String(url)); return fetch(url, init); };
+  const f = ((url: string, init?: RequestInit) => { seen.push(String(url)); return fetch(url, init); }) as typeof fetch;
   const p = credentialProvider({ provider: 'anthropic', baseUrl: s.base, apiKey: 'sk-USER', fetch: f });
   await p.complete({ model: 'claude-test', messages: [{ role: 'user', content: 'x' }], maxTokens: 10 });
-  assert.equal(s.reqs.at(-1).headers['x-api-key'], 'sk-USER');
+  assert.equal(s.reqs.at(-1)!.headers['x-api-key'], 'sk-USER');
   assert.equal(seen.length, 1, '请求经过注入的 fetch');
   // 即便有人把密钥清空（绕过构造时的检查），发请求前也会被拦下，而不是退回服务器的密钥
   const bad = aisdkProvider({ kind: 'anthropic', baseUrl: s.base, apiKey: '', strictKey: true });

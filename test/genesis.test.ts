@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { TestContext } from 'node:test';
 
 const { SETTINGS } = await import('../server/settings/schema.ts');
 for (const k of Object.keys(SETTINGS)) delete process.env[k];
@@ -28,7 +29,7 @@ const { authorize } = await import('../server/accounts/authz.ts');
 const { config } = await import('../server/guard.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-genesis-'));
-const until = async (fn, ms = 60_000) => { const end = Date.now() + ms; while (!fn()) { if (Date.now() > end) throw new Error('等待超时'); await new Promise((r) => setTimeout(r, 20)); } };
+const until = async (fn: () => unknown, ms = 60_000) => { const end = Date.now() + ms; while (!fn()) { if (Date.now() > end) throw new Error('等待超时'); await new Promise((r) => setTimeout(r, 20)); } };
 
 const STORY = `从前有三只小猪，它们长大了，要离开妈妈自己盖房子。
 老大用稻草盖了一间房子，老二用木头盖了一间房子，老三用砖头盖了一间结实的房子。
@@ -39,7 +40,7 @@ const STORY = `从前有三只小猪，它们长大了，要离开妈妈自己�
 /** 假模型：按创世的每一步回答（字段故意写得不太规整，考验组装的容错） */
 function fakeModel({ badFirstMap = false } = {}) {
   let mapCalls = 0;
-  return (label) => {
+  return (label: string) => {
     switch (label) {
       case '创世：阅读': return { summary: '小猪们盖房子，大灰狼来吹', characters: ['老大', '老二', '老三', '大灰狼'], places: ['稻草房', '砖房'], events: ['大灰狼吹倒了稻草房'] };
       case '创世：全书': return { title: '三只小猪', summary: '三只小猪各自盖房子，砖房挡住了大灰狼。', genre: '童话', tone: '轻快' };
@@ -99,15 +100,15 @@ function fakeModel({ badFirstMap = false } = {}) {
 }
 
 /** 假 provider：走真实的统一队列（P3），每次调用算 100 个 token */
-function useFake(t, model) {
-  const labels = [];
+function useFake(t: TestContext, model: (label: string) => unknown) {
+  const labels: Array<string | undefined> = [];
   llm.setProvider({ name: 'fake', enabled: true, complete: async ({ messages }) => {
     const label = currentLabel.shift();
     labels.push(label);
-    return { content: JSON.stringify(model(label)), usage: { prompt: 60, completion: 40 } };
+    return { content: JSON.stringify(model(label!)), usage: { prompt: 60, completion: 40 } };
   } });
   // provider 看不到 label：包一层 chatJSON，把 label 按调用顺序记下来
-  const currentLabel = [];
+  const currentLabel: Array<string | undefined> = [];
   const off = llm.onUsage(() => {});
   const orig = llm.sched.push.bind(llm.sched);
   llm.sched.push = (job) => { const run = job.run; job.run = () => { currentLabel.push(job.label); return run(); }; return orig(job); };
@@ -128,22 +129,22 @@ test('组装：模型写得不规整也能拼出合法的世界包（非法 id�
   const m = fakeModel();
   const map = assembleMap(m('创世：地图'), { worldName: '三只小猪', homesNeeded: 4 });
   assert.equal(map.regions[0].areas[0].id, 'meadow_village');
-  assert.equal(map.regions[0].areas[1].places.find((p) => p.name === '狼窝').kind, 'cottage', '未知类型当作小屋');
+  assert.equal(map.regions[0].areas[1].places.find((p) => p.name === '狼窝')!.kind, 'cottage', '未知类型当作小屋');
   const personas = assemblePersonas(m('创世：居民'), map);
-  assert.equal(personas.find((p) => p.name === '老二').home, 'wood_house', '用地名也能对上');
+  assert.equal(personas.find((p) => p.name === '老二')!.home, 'wood_house', '用地名也能对上');
   assert.ok(personas.every((p) => map.regions[0].areas.flatMap((a) => a.places).some((x) => x.id === p.home)));
-  assert.deepEqual(personas.find((p) => p.name === '大灰狼').look.acc, ['beard']);
+  assert.deepEqual(personas.find((p) => p.name === '大灰狼')!.look.acc, ['beard']);
   const raw = m('创世：剧情线');
   const extras = assembleExtras(raw, personas);
-  assert.equal(extras.abilities.find((a) => a.id === 'hack').effects[0].op, 'memory', '未知模板退回讲述');
-  assert.ok(personas.find((p) => p.name === '老三').start.abilities.includes('build'));
+  assert.equal((extras.abilities.find((a) => a.id === 'hack')!.effects as Array<{ op: string }>)[0].op, 'memory', '未知模板退回讲述');
+  assert.ok(personas.find((p) => p.name === '老三')!.start.abilities.includes('build'));
   const world = assembleWorld({ id: 'three-pigs', title: '三只小猪', adapt: m('创世：改编'), personas, extras, threads: raw.threads, options: { rating: 'adventure', fidelity: 'faithful' } });
   assert.deepEqual(checkPack(world, map), []);
   assert.equal(world.adaptation.fateNodes.length, 2);
-  assert.equal(world.personas.find((p) => p.name === '大灰狼').tier, 'support');
+  assert.equal(world.personas.find((p) => p.name === '大灰狼')!.tier, 'support');
 });
 
-function genesisEnv(t) {
+function genesisEnv(t: TestContext) {
   const data = tmp();
   const db = openDb(':memory:');
   const acc = new Accounts({ file: ':memory:', db });
@@ -155,16 +156,16 @@ function genesisEnv(t) {
     data, registry: reg,
     makeTown: (w, root) => new Town({ dataDir: activeDir(root), worldId: w.id, pack: loadPack(path.join(root, 'pack')), instantTalk: true, pacing: false, evolution: { dir: path.join(root, 'evolution'), pluginsDir: path.join(root, 'plugins') } }),
   });
-  const used = (uid) => ledger.userTotal(uid, 'P3');
+  const used = (uid: string) => ledger.userTotal(uid, 'P3');
   const jobs = new GenesisJobs({ data, registry: reg, budgetLeft: (uid) => genesisQuota(acc.grant(uid, 'genesis')).genesisTokens - used(uid), audit: (e) => acc.audit(e), onWorldReady: (id) => manager.close(id) });
   const app = createApp({
     publicDir: 'public', accounts: acc,
     routes: [['worlds', worldsApi({ registry: reg, manager, accounts: acc, jobs })], ['genesis', genesisApi({ accounts: acc, registry: reg, jobs, used })]],
-    worlds: { defaultId: () => 'x', resolve: (c, id) => { const ok = authorize(c.get('who'), 'world.view', reg.get(id)); if (ok !== true) throw Object.assign(new Error(ok), { status: 404 }); return manager.open(id); }, page: () => ({ ok: true }), health: () => ({}) },
+    worlds: { defaultId: () => 'x', resolve: (c, id) => { const ok = authorize(c.get('who'), 'world.view', reg.get(id)); if (ok !== true) throw Object.assign(new Error(ok), { status: 404 }); return manager.open(id!); }, page: () => ({ ok: true }), health: () => ({}) },
   });
   config.publicMode = true;
-  t.after(() => { manager.closeAll(); config.publicMode = undefined; offUsage(); memoryHooksReset(); });
-  const req = (p, { body, cookie, method, type } = {}) => app.request(p, {
+  t.after(() => { manager.closeAll(); config.publicMode = undefined as never; offUsage(); memoryHooksReset(); });
+  const req = (p: string, { body, cookie, method, type }: { body?: unknown; cookie?: string; method?: string; type?: string } = {}) => app.request(p, {
     method: method || (body === undefined ? 'GET' : 'POST'),
     headers: { ...(body === undefined ? {} : { 'Content-Type': type || 'application/json' }), ...(cookie ? { Cookie: cookie } : {}) },
     body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
@@ -172,7 +173,7 @@ function genesisEnv(t) {
   return { data, acc, reg, ledger, manager, jobs, req };
 }
 const memoryHooksReset = async () => { (await import('../server/memory.ts')).memoryHooks.encode = null; };
-const cookieOf = (res) => (res.headers.get('set-cookie') || '').split(';')[0];
+const cookieOf = (res: Response) => (res.headers.get('set-cookie') || '').split(';')[0];
 
 test('创世完整流程（接口）：无授予 403；上传原文；提交后排队运行 G1~G5（P3，记在创世者名下）；进入预览；只有 owner 能看；世界可以运行', { timeout: 180_000 }, async (t) => {
   const env = genesisEnv(t);
@@ -200,18 +201,18 @@ test('创世完整流程（接口）：无授予 403；上传原文；提交后�
   const sub = await env.req('/api/genesis', { body: { ...base, declaration: true }, cookie });
   assert.equal(sub.status, 200, await sub.clone().text());
   const { jobId } = await sub.json();
-  assert.equal(env.reg.get('three-pigs').status, 'drafting', '短名已占用');
+  assert.equal(env.reg.get('three-pigs')!.status, 'drafting', '短名已占用');
   assert.equal((await env.req('/api/genesis', { body: { ...base, declaration: true, id: 'four-pigs' }, cookie })).status, 403, '超过可创建的世界数');
 
-  await until(() => ['done', 'failed'].includes(env.jobs.get(jobId).status));
+  await until(() => ['done', 'failed'].includes(env.jobs.get(jobId)!.status));
   const job = await (await env.req(`/api/genesis/${jobId}`, { cookie })).json();
   assert.equal(job.status, 'done', JSON.stringify(job.log));
-  assert.ok(job.log.some((l) => /让模型修改/.test(l.note)), '第一次的地图不合法时带着错误重做');
+  assert.ok(job.log.some((l: { note: string }) => /让模型修改/.test(l.note)), '第一次的地图不合法时带着错误重做');
   assert.ok(job.report.shadow.ok, `无头试跑：${JSON.stringify(job.report.shadow)}`);
   assert.ok(labels.includes('创世：考据'));
   assert.ok(env.ledger.userTotal(uid, 'P3') >= 100 * 8, '用量记在创世者名下（P3）');
-  assert.equal(env.reg.get('three-pigs').status, 'preview');
-  assert.equal(env.reg.get('three-pigs').title, '三只小猪');
+  assert.equal(env.reg.get('three-pigs')!.status, 'preview');
+  assert.equal(env.reg.get('three-pigs')!.title, '三只小猪');
   assert.ok(fs.existsSync(path.join(env.data, 'worlds', 'three-pigs', 'pack', 'source', 'chunks.json')), '原文分块只留在世界包里');
   assert.equal(fs.readdirSync(path.join(env.data, 'genesis', 'sources')).length, 0, '上传的原文已清理');
 
@@ -220,9 +221,9 @@ test('创世完整流程（接口）：无授予 403；上传原文；提交后�
   const me = await (await env.req('/api/w/three-pigs/me', { cookie })).json();
   assert.equal(me.world, 'three-pigs');
   const host = env.manager.get('three-pigs');
-  assert.equal(host.town.spec.voice.chronicle.name, '森林小报');
-  host.town.speed = 30;
-  for (let i = 0; i < 60; i++) host.town.advance(0.5);
+  assert.equal(host!.town.spec.voice.chronicle.name, '森林小报');
+  host!.town.speed = 30;
+  for (let i = 0; i < 60; i++) host!.town.advance(0.5);
 
   // 预览编辑：改人物、改地点；不合适的内容被拒
   const draft = await (await env.req('/api/worlds/three-pigs/draft', { cookie })).json();
@@ -236,8 +237,8 @@ test('创世完整流程（接口）：无授予 403；上传原文；提交后�
 
   // 重新生成这一项
   const rg = await (await env.req('/api/worlds/three-pigs/draft/regenerate', { body: { part: 'voice' }, cookie })).json();
-  await until(() => ['done', 'failed'].includes(env.jobs.get(rg.jobId).status));
-  assert.equal(env.jobs.get(rg.jobId).status, 'done', env.jobs.get(rg.jobId).error);
+  await until(() => ['done', 'failed'].includes(env.jobs.get(rg.jobId)!.status));
+  assert.equal(env.jobs.get(rg.jobId)!.status, 'done', env.jobs.get(rg.jobId)!.error!);
   assert.equal(loadPack(path.join(env.data, 'worlds', 'three-pigs', 'pack')).world.voice.chronicle.name, '狼嚎日报');
 });
 
@@ -248,9 +249,9 @@ test('创世失败（额度用完）：任务失败，释放短名，清理半�
   env.acc.setGrant(u.id, { cap: 'genesis', quota: { genesisTokens: 250 } }, 'admin');
   env.reg.create({ id: 'tiny-world', ownerId: u.id, title: 'x' });
   const job = env.jobs.create({ ownerId: u.id, worldId: 'tiny-world', options: { description: '一个很小的世界，只有一只猫和一棵树，猫每天爬树。', rating: 'cozy' } });
-  await until(() => ['done', 'failed'].includes(env.jobs.get(job.id).status));
-  assert.equal(env.jobs.get(job.id).status, 'failed');
-  assert.match(env.jobs.get(job.id).error, /额度/);
+  await until(() => ['done', 'failed'].includes(env.jobs.get(job.id)!.status));
+  assert.equal(env.jobs.get(job.id)!.status, 'failed');
+  assert.match(env.jobs.get(job.id)!.error!, /额度/);
   assert.equal(env.reg.get('tiny-world'), null, '短名释放');
   assert.ok(!fs.existsSync(path.join(env.data, 'worlds', 'tiny-world')));
 });
