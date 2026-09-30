@@ -12,10 +12,8 @@ for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'D
 const { Town } = await import(`${root}/server/sim.ts`);
 const llm = await import(`${root}/server/llm.ts`);
 const { fixtureMock } = await import(`${root}/test/fixtures/llm/index.ts`);
-let s = 20260926 >>> 0;
-Math.random = () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32; };
 llm.setMock(fixtureMock());
-const town = new Town({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rm-')), instantTalk: true, pacing: false });
+const town = new Town({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rm-')), instantTalk: true, pacing: false, seed: 20260926 });
 town.speed = 30;
 const end = town.t + 7 * 1440;
 while (town.t < end) { town.advance(0.1); await new Promise((r) => setImmediate(r)); }

@@ -115,7 +115,7 @@ export class ArcEngine {
     return Math.min(0.85, p);
   }
 
-  ending(run: ArcRun, choice: string, { roll = Math.random() }: { roll?: number } = {}): void {
+  ending(run: ArcRun, choice: string, { roll = this.town.rng() }: { roll?: number } = {}): void {
     const tpl = this.template(run.template)!;
     const town = this.town;
     let key = choice;

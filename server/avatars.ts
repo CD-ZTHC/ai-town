@@ -67,7 +67,7 @@ export class AvatarSystem {
     // 旅人出现的地方：世界包的 voice.spawn，其次是广场，再其次是主地图上第一个有站位的公共地点
     const spawn = [town.spec.voice?.spawn, 'square', ...town.publicLocs()].find((id) => id && town.locRegion(id) === 'town' && town.findLocation(id)?.spots?.length) || 'square';
     const spots = town.findLocation(spawn)?.spots || [];
-    const s = spots.length ? spots[Math.floor(Math.random() * spots.length)] : town.locCenter(spawn) || town.world.gate;
+    const s = spots.length ? spots[Math.floor(this.town.rng() * spots.length)] : town.locCenter(spawn) || town.world.gate;
     const v: Avatar = {
       id: `v${++this.seq}`, uid, ip, name, color: COLORS.includes(color!) ? color! : COLORS[this.seq % COLORS.length]!,
       x: s.x, y: s.y, dir: 'down', moving: false, region: 'town', locId: spawn, path: [], hop: null,
@@ -120,7 +120,7 @@ export class AvatarSystem {
       return;
     }
     const loc = town.findLocation(locId)!;
-    const s = (loc.spots?.length ? loc.spots[Math.floor(Math.random() * loc.spots.length)] : town.locCenter(locId))!;
+    const s = (loc.spots?.length ? loc.spots[Math.floor(this.town.rng() * loc.spots.length)] : town.locCenter(locId))!;
     v.path = findPath(here, Math.round(v.x), Math.round(v.y), s.x, s.y) || [{ x: s.x, y: s.y }];
     v.target = locId;
   }
@@ -175,7 +175,7 @@ export class AvatarSystem {
     for (const a of town.agents) {
       if (a.kind === 'creature' || a.status !== 'acting' || a.convoId || a.bubble || !this.near(a, 4).includes(v)) continue;
       const known = Boolean(a.travellers?.[v.uid]) || (a.visitorChats?.[v.uid] || []).length > 0;
-      if (!known && Math.random() > 0.3) continue;
+      if (!known && this.town.rng() > 0.3) continue;
       town.say(a, known ? `又见面了，${v.name}！` : `你好呀，${v.name}，第一次来吗？`, 4000, 'say');
       break;
     }

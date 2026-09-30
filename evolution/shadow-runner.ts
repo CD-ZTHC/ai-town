@@ -12,7 +12,7 @@ const { loadPack } = await import('../server/worlds/pack.ts');
 
 fs.mkdirSync(job.workDir, { recursive: true });
 const town = new Town({
-  dataDir: job.workDir, instantTalk: true, pacing: false,
+  dataDir: job.workDir, instantTalk: true, pacing: false, seed: job.seed,
   // 用户世界：用它自己的世界包（官方世界不传，默认就是云溪镇）
   ...(job.packDir ? { pack: loadPack(job.packDir) } : {}),
   evolution: { dir: path.join(job.workDir, 'evolution'), pluginsDir: path.join(job.workDir, 'no-plugins'), force: job.candidate ? [job.candidate] : [], config: { mode: 'off' } },

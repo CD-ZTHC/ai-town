@@ -31,8 +31,8 @@ export class Social {
         pairs.push({ a, b, p: this.params.convoBaseProb + Math.max(-0.15, aff / 300) });
       }
     }
-    for (const { a, b, p } of pairs.sort(() => Math.random() - 0.5)) {
-      if (Math.random() < p) { this.startConvo(a, b); return; }
+    for (const { a, b, p } of pairs.sort(() => this.rng() - 0.5)) {
+      if (this.rng() < p) { this.startConvo(a, b); return; }
     }
   }
 
@@ -70,8 +70,8 @@ export class Social {
       console.warn('[convo] 失败：', (err as Error).message);
       res = {
         lines: [
-          { speaker: a.name, text: rand(['哟，这么巧！', '早啊～', '你也在这儿呀？']) },
-          { speaker: b.name, text: rand(['是啊，出来透透气。', '刚好路过。', '忙里偷闲嘛。']) },
+          { speaker: a.name, text: rand(this.rng, ['哟，这么巧！', '早啊～', '你也在这儿呀？']) },
+          { speaker: b.name, text: rand(this.rng, ['是啊，出来透透气。', '刚好路过。', '忙里偷闲嘛。']) },
           { speaker: a.name, text: `${this.weatherText()}的天，心情也跟着变了。` },
           { speaker: b.name, text: '回头再聊，我还有点事～' },
         ],

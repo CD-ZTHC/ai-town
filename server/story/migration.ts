@@ -45,7 +45,7 @@ export class MigrationSystem {
   declare town: Town;
   declare random: () => number;
   declare busy: boolean;
-  constructor(town: Town, { random = Math.random }: { random?: () => number } = {}) {
+  constructor(town: Town, { random = town.rng }: { random?: () => number } = {}) {
     this.town = town;
     this.random = random;
     this.busy = false;

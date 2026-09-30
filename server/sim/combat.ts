@@ -79,8 +79,8 @@ export class Combat {
     if (!a || !b || !this.agents.includes(a) || !this.agents.includes(b) || !this.near(a, b, 4)) return end(a && b ? `${a.name}和${b.name}分开了` : '');
     f.round++;
     const sa = this.combatStats(a), sb = this.combatStats(b);
-    const hitB = Math.max(1, Math.round(sa.atk * (0.8 + Math.random() * 0.4) - sb.def * 0.5));
-    const hitA = Math.max(1, Math.round(sb.atk * (0.8 + Math.random() * 0.4) - sa.def * 0.5));
+    const hitB = Math.max(1, Math.round(sa.atk * (0.8 + this.rng() * 0.4) - sb.def * 0.5));
+    const hitA = Math.max(1, Math.round(sb.atk * (0.8 + this.rng() * 0.4) - sa.def * 0.5));
     b.body.hp = Math.max(0, b.body.hp - hitB);
     a.body.hp = Math.max(0, a.body.hp - hitA);
     // 撑不住、又不够勇敢的一方逃跑
@@ -125,7 +125,7 @@ export class Combat {
       x.captive = null;
       x.body.conditions = x.body.conditions.filter((k) => k !== '被俘');
       const by = this.byId[c.by];
-      if (lethal(this.spec.meta.rating) && by && this.agents.includes(by) && Math.random() < 0.5) {
+      if (lethal(this.spec.meta.rating) && by && this.agents.includes(by) && this.rng() < 0.5) {
         this.killAgent(x, { cause: `captive:${c.by}`, text: `没有人来救，${x.name}再也没能回来` });
         continue;
       }
@@ -142,7 +142,7 @@ export class Combat {
     // 看守在场就得先打一架
     if (by && this.agents.includes(by) && this.near(by, a, 4)) {
       const s1 = this.combatStats(a), s2 = this.combatStats(by);
-      if (s1.atk + Math.random() * 6 < s2.atk + Math.random() * 6) {
+      if (s1.atk + this.rng() * 6 < s2.atk + this.rng() * 6) {
         this.woundAgent(a, 30, { cause: `guard:${by.id}` });
         this.log('combat', `⚔️ ${a.name}想救出${x.name}，被${by.name}打了回去`, { agents: [a.id, x.id, by.id] });
         return { ok: true };
@@ -164,7 +164,7 @@ export class Combat {
     const no = this.mayHarm(a, b);
     if (no) return { ok: false, reason: no };
     if ((b.inventory[item] || 0) < 1) return { ok: false, reason: `${b.name}身上没有${this.spec.items[item]?.name || item}` };
-    const caught = Math.random() < 0.4 + (b.body.courage - a.body.courage) / 200;
+    const caught = this.rng() < 0.4 + (b.body.courage - a.body.courage) / 200;
     if (caught) {
       const r = (b.relations[a.id] ||= { affinity: 0, note: '' });
       r.affinity = clamp(r.affinity - 25, -100, 100);
@@ -206,7 +206,7 @@ export class Combat {
     const dmg = ts.hit(inst, s.atk, s.tags, a);
     const def = ts.def(inst);
     // 会死的威胁会还手
-    if (def?.mortal && inst.hp! > 0 && def.atk) this.woundAgent(a, Math.max(1, Math.round(def.atk * (0.8 + Math.random() * 0.4) - s.def * 0.5)), { cause: `threat:${inst.type}` });
+    if (def?.mortal && inst.hp! > 0 && def.atk) this.woundAgent(a, Math.max(1, Math.round(def.atk * (0.8 + this.rng() * 0.4) - s.def * 0.5)), { cause: `threat:${inst.type}` });
     addMemory(a, { t: this.t, type: 'event', text: dmg ? `和${inst.name}交了手` : `对${inst.name}出手，却好像什么用也没有`, importance: 7 });
     return { ok: true };
   }

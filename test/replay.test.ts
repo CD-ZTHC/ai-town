@@ -1,5 +1,5 @@
 // 无头回放（设计文档 11.5）：用录制好的 LLM 回复，以 30 倍速跑 7 个游戏日，检查不变量。
-// 随机数固定种子，失败时可以用 REPLAY_SEED=… mise run test 复现。
+// 随机数固定种子（town.rng，见 server/kernel/rng.ts），失败时可以用 REPLAY_SEED=… mise run test 复现。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -18,26 +18,13 @@ const DAYS = 7;
 const STEP = 0.1; // 真实秒；30 倍速下每步 3 个游戏分钟
 const tick = () => new Promise((r) => setImmediate(r));
 
-/** mulberry32：小而够用的可复现随机数 */
-function seeded(seed: number) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32;
-  };
-}
 
 test(`回放 ${DAYS} 个游戏日：没有居民卡住、上限生效、世界操作可重放、存档可恢复（种子 ${SEED}）`, async (t) => {
-  const random = Math.random;
-  Math.random = seeded(SEED);
   const mock = fixtureMock();
   llm.setMock(mock);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-replay-'));
-  const town = new Town({ dataDir: dir, instantTalk: true, pacing: false });
-  t.after(() => { town.stop(); llm.setMock(null); Math.random = random; });
+  const town = new Town({ dataDir: dir, instantTalk: true, pacing: false, seed: SEED });
+  t.after(() => { town.stop(); llm.setMock(null); });
 
   const residents = town.agents.map((a) => a.id);
   const since: Record<string, { status: string; t: number }> = {}; // 每个角色进入当前状态的游戏时间
@@ -98,6 +85,8 @@ test(`回放 ${DAYS} 个游戏日：没有居民卡住、上限生效、世界�
   const again = new Town({ dataDir: dir });
   t.after(() => again.stop());
   assert.equal(again.t, town.t);
+  assert.equal(again.rng.seed, SEED, '种子写进了存档');
+  assert.equal(again.rng.state, town.rng.state, '读档后随机数从断点继续');
   assert.deepEqual(again.spec, town.spec);
   assert.deepEqual(again.agents.map((a) => a.id).sort(), town.agents.map((a) => a.id).sort());
   for (const a of again.agents) assert.equal(a.memories.length, town.byId[a.id].memories.length, `${a.name} 的记忆没有完整恢复`);
@@ -111,4 +100,30 @@ test(`回放 ${DAYS} 个游戏日：没有居民卡住、上限生效、世界�
   assert.equal(m.json.failed, 0, '录制回复都是合法 JSON');
   assert.deepEqual(again.metricsView().commitments, m.commitments, '指标随存档恢复');
   t.diagnostic(`调用：${Object.entries(mock.calls).map(([k, n]) => `${k}×${n}`).join('，')}；世界操作 ${town.specOps.length} 条`);
+});
+
+/** 跑 days 天，返回最终状态的摘要 */
+async function runDays(seed: number, days: number): Promise<string> {
+  llm.setMock(fixtureMock());
+  const town = new Town({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'town-det-')), instantTalk: true, pacing: false, seed });
+  try {
+    town.speed = 30;
+    const end = town.t + days * 1440;
+    while (town.t < end) { town.advance(STEP); await tick(); }
+    for (let i = 0; i < 20; i++) await tick();
+    return JSON.stringify({ t: Math.round(town.t), agents: town.agents.map((a) => [a.id, Math.round(a.x * 100), Math.round(a.y * 100), a.status, a.memories.map((m) => m.text)]), logs: town.logs.map((l) => [l.type, l.text]), rng: town.rng.state });
+  } finally { town.stop(); llm.setMock(null); }
+}
+
+test('确定性（重构方案 P7）：同一个种子跑两次，结果完全相同；换个种子就不同；不依赖 Math.random', async () => {
+  const random = Math.random;
+  Math.random = () => { throw new Error('模拟里不应该调用 Math.random'); };
+  let a: string, b: string, c: string;
+  try {
+    a = await runDays(SEED, 1);
+    b = await runDays(SEED, 1);
+    c = await runDays(SEED + 1, 1);
+  } finally { Math.random = random; }
+  assert.equal(a, b);
+  assert.notEqual(a, c);
 });

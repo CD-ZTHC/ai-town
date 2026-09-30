@@ -88,7 +88,7 @@ export class Persistence {
       threadState: this.threadState, crisis: this.crisis, discovered: this.discovered, story: this.story, migrationState: this.migrationState, mapState: this.mapState, arcRuns: this.arcRuns, voteState: this.voteState,
       pendingScenes: this.pendingScenes, creatureList: this.creatureList, dark: this.dark, fights: this.fights, portalState: this.portalState, swarmGoal: this.swarmGoal || null,
       proposals: this.proposals, decisionState: this.decisionState, architectQueue: this.architectQueue, gaps: this.gaps, architectUsage: this.architectUsage,
-      usage: this.usage ? { days: this.usage.days } : undefined, metricsState: this.metricsState, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens } };
+      usage: this.usage ? { days: this.usage.days } : undefined, metricsState: this.metricsState, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens }, rng: { seed: this.rng.seed, state: this.rng.state } };
     return data;
   }
 
@@ -133,6 +133,8 @@ export class Persistence {
         metricsState: d.metricsState || { days: {} },
       });
       if (this.story) this.story.lastHour = -1;
+      // 随机数回到存档时的状态（构造小镇时补默认值也会取随机数）；指定了种子（回放、测试）时以种子为准
+      if (this.opts?.seed == null && Number.isInteger(d.rng?.state) && d.rng.seed === this.rng.seed) this.rng.restore(d.rng.state);
       // 恢复当日令牌用量，避免重启后预算被重置
       if (d.llmDay?.key === llm.localDayKey()) { llm.stats.dayKey = d.llmDay.key; llm.stats.dayTokens = Math.max(llm.stats.dayTokens, d.llmDay.tokens || 0); }
       const personas = Object.fromEntries(this.spec.personas.map((p) => [p.id, p]));

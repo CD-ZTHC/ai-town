@@ -63,5 +63,16 @@ for (const f of files('public/js', '.js')) {
   }
 }
 if (problems.length) { console.error(`✖ 前端资源引用有问题：\n  ${problems.join('\n  ')}`); process.exit(1); }
+// 确定性（重构方案 P7）：模拟逻辑里的随机数都从 town.rng 取、真实时间从 town.now() 取，
+// 同一个种子才能跑出同一个世界。真正需要真实时间的地方（主循环、日志限频）在同一行写「确定性白名单」说明原因
+const SIM_DIRS = ['server/sim', 'server/story', 'server/kernel', 'server/worldai'];
+const nondet: string[] = [];
+for (const f of ['server/sim.ts', ...SIM_DIRS.flatMap((d) => (fs.existsSync(d) ? [...walk(d)] : []))]) {
+  fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+    const code = line.replace(/\/\/.*$/, '');
+    if (/\bMath\.random\b|\bDate\.now\b/.test(code) && !line.includes('确定性白名单')) nondet.push(`${f}:${i + 1}：${line.trim().slice(0, 100)}`);
+  });
+}
+if (nondet.length) { console.error(`✖ 模拟逻辑里用了 Math.random / Date.now（改用 town.rng() / town.now()，或在同一行注明「确定性白名单」及原因）：\n  ${nondet.join('\n  ')}`); process.exit(1); }
 // 冻结区（server/ public/ plugin-host/ evolution/ plugins/builtin/）的哈希锁：人工改动后要 mise run core:lock
 process.exit(spawnSync(process.execPath, ['tools/core-guard.ts'], { stdio: 'inherit' }).status ?? 1);

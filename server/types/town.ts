@@ -40,7 +40,10 @@ export interface TownOptions {
   /** AI 插件（自主演化）的目录等 */
   evolution?: Record<string, unknown>;
   now?: () => number;
+  /** 只给威胁与迁徙系统用的随机数（测试用来固定它们的掷骰） */
   random?: () => number;
+  /** 模拟随机数的种子（回放与测试用；不传时读档恢复，新世界随机生成） */
+  seed?: number;
   /** 不加载的内置插件 id（测试或排查用） */
   disablePlugins?: string[];
 }

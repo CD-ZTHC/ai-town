@@ -39,11 +39,11 @@ export class Planning {
     const w = a.work === a.home ? this.placesOr(['park'])[0] : a.work;
     // 暗月界开放时，傍晚的散步有机会改成去渡口那头逛逛
     const moon = this.moonOuting(a);
-    const walk = moon ? [moon.location, moon.activity, moon.emoji] : [rand(this.placesOr(['square', 'park', 'pier'])), '散步透气', '🚶'];
+    const walk = moon ? [moon.location, moon.activity, moon.emoji] : [rand(this.rng, this.placesOr(['square', 'park', 'pier'])), '散步透气', '🚶'];
     const raw = [
       ['06:30', '07:30', 'home', '起床吃早饭', '🍳'], ['07:30', '11:30', w, '忙自己的事', '💼'],
       ['11:30', '12:30', this.placesOr(['cafe'])[0], '吃午饭', '🍱'], ['12:30', '17:00', w, '继续忙', '💼'],
-      ['17:00', '18:30', ...walk], ['18:30', '20:30', rand(this.placesOr(['tavern', 'home'])), '吃晚饭', '🍲'],
+      ['17:00', '18:30', ...walk], ['18:30', '20:30', rand(this.rng, this.placesOr(['tavern', 'home'])), '吃晚饭', '🍲'],
       ['20:30', '22:30', 'home', '看书休息', '📖'],
     ];
     return raw.map(([s, e, l, act, em]) => ({ start: parseHM(s) as number, end: parseHM(e) as number, location: l as string, activity: act as string, emoji: em as string, src: 'plan' }));

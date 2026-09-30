@@ -1,6 +1,7 @@
 // sim/ 各模块共用的小工具
 export const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
-export const rand = <T>(a: readonly T[]): T => a[Math.floor(Math.random() * a.length)]!;
+/** 从数组里随机取一个；rng 是 town.rng（模拟里的随机都从它取，见 kernel/rng.ts） */
+export const rand = <T>(rng: () => number, a: readonly T[]): T => a[Math.floor(rng() * a.length)]!;
 export const clampStr = (s: unknown, n: number): string => String(s ?? '').trim().slice(0, n);
 export const pairKey = (a: string, b: string): string => [a, b].sort().join('|');
 // 涉及玩家输入的提示词都附带这段防护

@@ -238,9 +238,9 @@ for (const [choice, check] of [
     const town = await seasonToClimax(tmp());
     const vote = town.votes.list.find((v) => v.status === 'open');
     town.votes.cast(vote!.id, 'visitor-1', choice);
-    const rnd = Math.random;
-    Math.random = () => 0; // 智取的成功检定：让它成功
-    try { assert.equal(town.votes.decide(vote!.id, choice), null); } finally { Math.random = rnd; }
+    const rng = town.rng;
+    town.rng = (() => 0) as unknown as typeof rng; // 智取的成功检定：让它成功
+    try { assert.equal(town.votes.decide(vote!.id, choice), null); } finally { town.rng = rng; }
     const run = town.arcs.runs[0];
     assert.equal(run.outcome!.ending, choice);
     assert.ok(town.away.some((a) => a.id === 'moon_warden'), '守门人离开了');

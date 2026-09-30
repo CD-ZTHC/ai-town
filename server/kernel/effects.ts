@@ -306,7 +306,7 @@ export const EFFECTS: Record<string, EffectDef> = {
   casualties: {
     doc: '{"op":"casualties","min":0~50,"max":0~50,"text":"≤30字"} 当地的群众伤亡（只记数字）',
     check(a) { return !(inRange(a.min, 0, 50) && inRange(a.max, a.min, 50)) ? 'min / max 应在 0~50' : a.text != null && !str(a.text, 30) ? 'text 过长' : null; },
-    apply(town, ctx, a) { town.casualties?.(ctx.at, a.min + Math.floor(Math.random() * (a.max - a.min + 1)), { cause: ctx.source || '', text: str(a.text, 30) }); },
+    apply(town, ctx, a) { town.casualties?.(ctx.at, a.min + Math.floor(town.rng() * (a.max - a.min + 1)), { cause: ctx.source || '', text: str(a.text, 30) }); },
   },
   clue: {
     doc: '{"op":"clue","kind":"rule/next_victim/origin","threat":"威胁id(可选)","target":…} 得到一条关于威胁的线索（规律 / 下一个受害者 / 来历）',

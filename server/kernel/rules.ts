@@ -55,7 +55,7 @@ export function exprEnv(town: TownLike, { self = null, target = null, e = null, 
       return Boolean(p) && town.entities.some((s) => s.tags!.includes(tag) && (s.region || 'town') === p!.region && Math.hypot(s.x - p!.x, s.y - p!.y) <= r);
     },
     nearAgents: (v: Arg, r = 3) => { const a = real(v); return a ? agentsNear(town, posOf(town, a), r, a).length : 0; },
-    min: Math.min, max: Math.max, abs: Math.abs, rand: Math.random,
+    min: Math.min, max: Math.max, abs: Math.abs, rand: () => town.rng(),
     // ---- 黑暗叙事的行为原语（threat 是正在判定规律的威胁实例，不在威胁里时为 null）----
     seen: (v: Arg) => { const a = real(v); return Boolean(threat && a) && !a!.inside && a!.status !== 'sleeping' && !hasPosture(town, a, 'eyesClosed') && distTo(a, threat) <= 6; },
     near: (v: Arg, r = 3) => Boolean(threat) && distTo(real(v), threat) <= r,

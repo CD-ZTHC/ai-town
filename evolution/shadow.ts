@@ -8,10 +8,11 @@ import { activeDir } from '../server/timelines.ts';
 import { get as setting } from '../server/settings/index.ts';
 import { withTrialSlot } from '../server/trial-lock.ts';
 import { copyWorldSave } from '../server/storage/save-io.ts';
+import { freshSeed } from '../server/kernel/rng.ts';
 import type { Paths } from './common.ts';
 
 /** 交给试运行进程的任务（shadow-runner.ts） */
-interface ShadowJob { workDir: string; saveDir: string | null; candidate: { key: string; dir: string } | null; hours: number; packDir: string | null }
+interface ShadowJob { workDir: string; saveDir: string | null; candidate: { key: string; dir: string } | null; hours: number; packDir: string | null; seed: number }
 /** 一组试运行的指标（shadow-runner.ts 输出），或运行失败 */
 export type ShadowMetrics =
   | { failed?: undefined; error?: undefined; hours: number; startT: number; steps: number; tickMs: number; errors: number; lastError: string | null; pluginCalls: number; pluginLogs: number; logs: number; warnings: number; sleeping: number }
@@ -55,11 +56,13 @@ export async function runShadow(P: Paths, candidate: { key: string; dir: string 
   fs.rmSync(root, { recursive: true, force: true });
   let saveDir = null;
   try { saveDir = activeDir(P.data); } catch { /* 没有存档就从第一天开始 */ }
+  // 两组用同一个随机数种子（重构方案 P7）：差别只来自插件本身
+  const seed = freshSeed();
   // 对照组与插件组同时运行：两者在同样的负载下测 tick 耗时，比较才公平（依次运行时负载波动会被误判为「模拟变慢」）。
   // 与创世试跑共用全站的试运行锁（重构方案 §6.4），同一时刻最多一个试运行任务
   const [base, trial] = await withTrialSlot(P.global, () => Promise.all([
-    runOne(P, { workDir: path.join(root, 'base'), saveDir, candidate: null, hours, packDir: P.world?.packDir || null }, timeoutMs),
-    runOne(P, { workDir: path.join(root, 'trial'), saveDir, candidate, hours, packDir: P.world?.packDir || null }, timeoutMs),
+    runOne(P, { workDir: path.join(root, 'base'), saveDir, candidate: null, hours, packDir: P.world?.packDir || null, seed }, timeoutMs),
+    runOne(P, { workDir: path.join(root, 'trial'), saveDir, candidate, hours, packDir: P.world?.packDir || null, seed }, timeoutMs),
   ]), { what: `evolve ${P.world?.id || ''} ${candidate.key}` });
   fs.rmSync(root, { recursive: true, force: true });
   const metrics = { base, trial };

@@ -205,7 +205,7 @@ export function calendarHint(spec: WorldSpec, day: number): string {
 }
 
 /** 按权重抽取自动天气 */
-export function pickWeather(spec: WorldSpec, minute: number, rnd: () => number = Math.random): string {
+export function pickWeather(spec: WorldSpec, minute: number, rnd: () => number): string {
   const list = Object.entries(spec.weather).filter(([, w]) => w.weight > 0);
   const total = list.reduce((s, [, w]) => s + w.weight, 0);
   let r = rnd() * total;

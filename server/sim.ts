@@ -39,6 +39,8 @@ import { Social } from './sim/social.ts';
 import { Views } from './sim/views.ts';
 import { Persistence } from './sim/persistence.ts';
 import type { WorldStore } from './storage/world-store.ts';
+import { rngFromSave } from './kernel/rng.ts';
+import type { Rng } from './kernel/rng.ts';
 import { Metrics } from './sim/metrics.ts';
 import { Dark } from './sim/dark.ts';
 import { Combat } from './sim/combat.ts';
@@ -196,6 +198,8 @@ export class Town extends EventEmitter {
   declare crisisHour?: number;
   declare fightMinute?: number;
   declare lastSnapHour?: number;
+  /** 模拟用的随机数（见 kernel/rng.ts） */
+  declare rng: Rng;
   /** 存档数据库（第一次存盘或读档时打开，stop() 时关闭） */
   declare store?: WorldStore | null;
   /** 读的是升级前的 save.json：第一次存盘后改名备份 */
@@ -215,6 +219,8 @@ export class Town extends EventEmitter {
     this.opts = opts;
     this.embedder = opts.embedder || createEmbedder({ dir: this.dataDir, worldId: opts.worldId || 'yunxi' });
     const saved = this.readSave();
+    // 模拟里的随机数（重构方案 P7）：种子与当前状态写在存档里，读档后从断点继续；opts.seed 用于回放与测试
+    this.rng = rngFromSave(saved?.rng, opts.seed);
     // 世界规格 = 默认规格 + 存档中的操作历史重放
     this.specOps = Array.isArray(saved?.specOps) ? saved.specOps : [];
     // 世界包（多世界设计 §3）：opts.pack 不传时是官方世界云溪镇；worldSettings 是世界级设置（分级、叙事者、Mod）
@@ -276,7 +282,7 @@ export class Town extends EventEmitter {
     this.discovered = [];
     this.encounterCd = {};
     // 自主演化 E1：统一决策队列（管理员终审窗口超时后由 AI 裁决官决定）
-    this.decisions = new DecisionQueue(this, { now: opts.now });
+    this.decisions = new DecisionQueue(this, { now: () => this.now() });
     this.director = new Director(this);
     this.arcs = new ArcEngine(this);
     this.scenes = new SceneManager(this);
@@ -285,8 +291,8 @@ export class Town extends EventEmitter {
     // 黑暗叙事：规律型威胁、事件、人口、死亡（世界包没有 threats 时不运行）
     this.dark = freshDark();
     this.fights = [];
-    this.threats = new ThreatSystem(this, { random: opts.random });
-    this.migration = new MigrationSystem(this, { random: opts.random });
+    this.threats = new ThreatSystem(this, { random: opts.random || this.rng });
+    this.migration = new MigrationSystem(this, { random: opts.random || this.rng });
     this.avatars = new AvatarSystem(this);
     // P4：建设提案（世界架构师、施工等功能由 plugins/builtin/ 下的插件提供）
     this.proposalSystem = new ProposalSystem(this);
@@ -353,7 +359,7 @@ export class Town extends EventEmitter {
     };
     for (const [id, [aff, note]] of Object.entries(p.relations)) a.relations[id] = { affinity: aff, note };
     this.initDarkAgent(a, p);
-    for (const text of p.memories) addMemory(a, { t: Math.max(0, this.t - 60 * (1 + Math.random() * 5)), type: 'obs', text, importance: 6 });
+    for (const text of p.memories) addMemory(a, { t: Math.max(0, this.t - 60 * (1 + this.rng() * 5)), type: 'obs', text, importance: 6 });
     a.importanceAcc = 0;
     return a;
   }
@@ -367,7 +373,7 @@ export class Town extends EventEmitter {
   }
 
   say(a: LiveAgent, text: string, ms = 5000, kind = 'say'): void {
-    a.bubble = { id: ++this.seq, text, kind, until: Date.now() + ms };
+    a.bubble = { id: ++this.seq, text, kind, until: this.now() + ms };
   }
 
   async think<T>(a: LiveAgent, label: string, fn: () => Promise<T>): Promise<T> {
@@ -383,10 +389,13 @@ export class Town extends EventEmitter {
     }
   }
 
+  /** 真实时间（毫秒）：模拟里需要真实时间的地方（气泡显示多久、决策的真实时限）都从这里取，测试可以注入 opts.now */
+  now(): number { return this.opts?.now ? this.opts.now() : Date.now(); } // 确定性白名单：唯一的真实时间入口
+
   start(): void {
-    let last = Date.now();
+    let last = Date.now(); // 确定性白名单：主循环按真实时间推进
     this.timer = setInterval(() => {
-      const now = Date.now();
+      const now = Date.now(); // 确定性白名单：主循环按真实时间推进
       const dtReal = Math.min(0.5, (now - last) / 1000);
       last = now;
       // 一个世界的模拟出错不能让整个进程崩溃（所有世界一起停、守护进程反复重启）：记下来，下一个 tick 继续
@@ -398,7 +407,7 @@ export class Town extends EventEmitter {
   fault(where: string, err: unknown): void {
     const e = err as Error | null | undefined;
     const key = `${where}|${e?.message}`;
-    const now = Date.now();
+    const now = Date.now(); // 确定性白名单：错误日志限频
     this.faults ||= new Map();
     if (now - (this.faults.get(key) || 0) < 60_000) return;
     this.faults.set(key, now);
@@ -515,8 +524,8 @@ export class Town extends EventEmitter {
 
   autoWeather() {
     if (this.weatherLock || this.t < this.nextWeatherT) return;
-    this.nextWeatherT = this.t + 120 + Math.random() * 240;
-    const w = pickWeather(this.spec, this.minute);
+    this.nextWeatherT = this.t + 120 + this.rng() * 240;
+    const w = pickWeather(this.spec, this.minute, this.rng);
     if (w !== this.weather) {
       this.weather = w;
       const info = this.spec.weather[w];
@@ -596,7 +605,7 @@ export class Town extends EventEmitter {
     this.syncAgents();
     const a = this.byId[cast.id]!;
     const loc = this.findLocation(at);
-    const s = (loc?.spots?.length ? rand(loc.spots) : this.locCenter(at))!;
+    const s = (loc?.spots?.length ? rand(this.rng, loc.spots) : this.locCenter(at))!;
     Object.assign(a, { x: s.x, y: s.y, inside: null, locId: at, region: this.locRegion(at), status: 'acting', path: [], dest: null, curKey: null, action: { text: '四处张望', emoji: '👀' } });
     this.emit('vfx', { preset: 'burst', x: s.x, y: s.y, color: '#b58cff', radius: 2, region: a.region });
     this.log('arrival', a.kind === 'creature' ? `🌑 ${a.name}从裂隙中现身了` : `🌀 ${a.name}从裂隙中跌了出来——${a.role}`, { agents: [a.id] });

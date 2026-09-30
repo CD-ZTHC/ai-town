@@ -20,7 +20,7 @@ import type { StoryState } from '../story/director.ts';
 
 export class Views {
   snapshot(this: Town) {
-    const now = Date.now();
+    const now = this.now();
     return {
       t: this.t, speed: this.speed, paced: this.paced < 1 ? +this.paced.toFixed(2) : null, paused: this.paused, idle: !!this.idle, halted: this.halted || null, weather: this.weather, nightSkip: !!this.nightSkip,
       agents: this.agents.map((a) => ({
@@ -153,6 +153,6 @@ export function llmPublic() {
   return {
     enabled: s.enabled, model: s.model, calls: s.calls, ok: s.ok, errors: s.errors, inflight: s.inflight, queued: s.queued,
     tokens: s.promptTokens + s.completionTokens, dayTokens: s.dayTokens, dailyBudget: s.dailyBudget, avgMs: Math.round(s.avgMs), lastError: s.lastError,
-    active: s.active.map((x) => ({ label: x.label, agent: x.agent, ms: Date.now() - x.since })), recent: s.recent,
+    active: s.active.map((x) => ({ label: x.label, agent: x.agent, ms: Date.now() - x.since /* 确定性白名单：模型调用计时 */ })), recent: s.recent,
   };
 }

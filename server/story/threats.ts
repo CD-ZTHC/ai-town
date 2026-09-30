@@ -27,7 +27,7 @@ export function freshDark(): DarkState {
 export class ThreatSystem {
   declare town: Town;
   declare random: () => number;
-  constructor(town: Town, { random = Math.random } = {}) { this.town = town; this.random = random; }
+  constructor(town: Town, { random = town.rng }: { random?: () => number } = {}) { this.town = town; this.random = random; }
 
   get st(): DarkState { return (this.town.dark ||= freshDark()); }
   get enabled(): boolean { return Object.keys(this.town.spec.threats || {}).length > 0; }

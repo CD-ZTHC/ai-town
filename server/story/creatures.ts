@@ -48,7 +48,7 @@ export interface Portal {
 }
 
 const MAX_CREATURES = 24;
-const rand = <T>(a: readonly T[]): T => a[Math.floor(Math.random() * a.length)];
+const rand = <T>(rng: () => number, a: readonly T[]): T => a[Math.floor(rng() * a.length)];
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 const PORTAL_TEXT: Record<string, string> = {
   crack: '镜湖湖心出现了一道细细的紫色裂纹',
@@ -86,7 +86,7 @@ export class CreatureSystem {
     const p = this.portal;
     if (p) return { x: p.spawn.x, y: p.spawn.y };
     const spots = this.town.world.locations.pier?.spots || [];
-    return spots.length ? { ...rand(spots) } : { x: 50, y: 34 };
+    return spots.length ? { ...rand(this.town.rng, spots) } : { x: 50, y: 34 };
   }
 
   spawn(type: string, count = 1, goal: string | null = null): number {
@@ -98,7 +98,7 @@ export class CreatureSystem {
     for (let i = 0; i < count && this.list.length < MAX_CREATURES; i++) {
       const at = this.spawnPoint();
       this.list.push({
-        id: `m${++town.seq}`, type, name: def.name, x: at.x + (Math.random() - 0.5), y: at.y, dir: 'down', moving: false,
+        id: `m${++town.seq}`, type, name: def.name, x: at.x + (this.town.rng() - 0.5), y: at.y, dir: 'down', moving: false,
         hp: def.stats.hp, goal, path: [], friendly: false, hidden: false, dwellUntil: 0, fleeUntil: 0, lastMischief: -999, nextSeek: 0,
       });
       n++;
@@ -194,9 +194,9 @@ export class CreatureSystem {
     if (c.friendly || beh.archetype === 'wander') {
       const p = town.locCenter(c.goal as string) || { x: c.x, y: c.y };
       const spots = town.findLocation?.(c.goal as string)?.spots || [];
-      const s = spots.length ? rand(spots) : { x: Math.round(p.x + (Math.random() - 0.5) * 6), y: Math.round(p.y + (Math.random() - 0.5) * 4) };
+      const s = spots.length ? rand(this.town.rng, spots) : { x: Math.round(p.x + (this.town.rng() - 0.5) * 6), y: Math.round(p.y + (this.town.rng() - 0.5) * 4) };
       this.goTo(c, s.x, s.y);
-      c.dwellUntil = town.t + 20 + Math.random() * 40;
+      c.dwellUntil = town.t + 20 + this.town.rng() * 40;
       return;
     }
     if (beh.archetype === 'guard') return;
@@ -208,13 +208,13 @@ export class CreatureSystem {
     }
     // 偷窃 / 游荡：去目标地点的某个站位
     const targets = (c.goal ? [c.goal] : []).concat(town.swarmGoal ? [town.swarmGoal] : [], beh.targets || []);
-    const locId = c.goal && Math.random() < 0.6 ? c.goal : rand(targets);
+    const locId = c.goal && this.town.rng() < 0.6 ? c.goal : rand(this.town.rng, targets);
     const loc = town.world.locations[locId];
-    const s = loc?.spots?.length ? rand(loc.spots) : town.locCenter(locId);
+    const s = loc?.spots?.length ? rand(this.town.rng, loc.spots) : town.locCenter(locId);
     if (!s) return;
     this.goTo(c, s.x, s.y);
     c.target = locId;
-    c.dwellUntil = town.t + 20 + Math.random() * 30;
+    c.dwellUntil = town.t + 20 + this.town.rng() * 30;
   }
 
   move(c: Creature, def: CreatureType, dt: number): void {
@@ -260,7 +260,7 @@ export class CreatureSystem {
     }
   }
 
-  resolve(c: Creature, a: LiveAgent, rnd = Math.random): string {
+  resolve(c: Creature, a: LiveAgent, rnd: () => number = this.town.rng): string {
     const town = this.town;
     const def = this.def(c);
     const rating = town.spec.meta.rating;
@@ -286,7 +286,7 @@ export class CreatureSystem {
       a.body.courage = clamp(a.body.courage + 5, 0, 100);
       town.crisis.morale = clamp(town.crisis.morale + 3, 0, 100);
       if (c.hp <= 0) {
-        if (Math.random() < 0.4) a.inventory.moonstone = (a.inventory.moonstone || 0) + 1;
+        if (this.town.rng() < 0.4) a.inventory.moonstone = (a.inventory.moonstone || 0) + 1;
         addMemory(a, { t: town.t, type: 'obs', text: `我驱散了一只${def.name}，它化成一缕紫烟回到了湖里`, importance: 5 });
         town.log('encounter', `✨ ${a.name}驱散了一只${def.name}，它化成一缕紫烟回到了湖里`, { agents: [a.id], result: 'dispel' });
         return 'dispel';

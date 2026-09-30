@@ -117,7 +117,7 @@ export class Movement {
     let dest: NonNullable<LiveAgent['dest']>;
     // 停业 / 受损的建筑：只有住在里面的人能进，其他人到门口
     const canEnter = loc.indoor && (!loc.closed || a.home === locId) && !this.hasPosture(a, 'noOpen');
-    const indoorPreferred = canEnter && (!loc.spots.length || e.sleep || ['rain', 'storm', 'snow'].includes(this.weather) || this.minute > 19 * 60 || a.work === locId || Math.random() < 0.5);
+    const indoorPreferred = canEnter && (!loc.spots.length || e.sleep || ['rain', 'storm', 'snow'].includes(this.weather) || this.minute > 19 * 60 || a.work === locId || this.rng() < 0.5);
     if (canEnter && indoorPreferred) {
       const b = here.buildings.find((x) => x.id === loc.indoor)!;
       dest = { locId, x: b.entrance.x, y: b.entrance.y, indoor: b.id };
@@ -125,7 +125,7 @@ export class Movement {
       const taken = new Set(this.agents.filter((o) => o !== a && o.dest).map((o) => `${o.dest!.x},${o.dest!.y}`));
       const free = loc.spots.filter((s) => !taken.has(`${s.x},${s.y}`));
       const b = loc.indoor && here.buildings.find((x) => x.id === loc.indoor);
-      const s = (rand(free.length ? free : loc.spots) || (b ? b.entrance : this.locCenter(locId)))!;
+      const s = (rand(this.rng, free.length ? free : loc.spots) || (b ? b.entrance : this.locCenter(locId)))!;
       dest = { locId, x: s.x, y: s.y, indoor: null };
     }
     a.dest = dest;
@@ -193,8 +193,8 @@ export class Movement {
     if (a.kind !== 'creature') this.mapPressure?.visit(a.locId!);
     if (!e.sleep) {
       if (dest.indoor) a.dir = 'up';
-      else a.dir = rand(['down', 'left', 'right', 'down']);
-      if (this.t - a.lastThoughtT > 80 && Math.random() < 0.45) this.innerThought(a);
+      else a.dir = rand(this.rng, ['down', 'left', 'right', 'down']);
+      if (this.t - a.lastThoughtT > 80 && this.rng() < 0.45) this.innerThought(a);
     }
   }
 }

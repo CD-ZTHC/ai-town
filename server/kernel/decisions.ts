@@ -96,7 +96,7 @@ export class DecisionQueue {
   now: () => number;
   handlers: Record<string, DecisionHandler> = {};
   busy = false;
-  constructor(town: TownLike, { now = () => Date.now() }: { now?: () => number } = {}) {
+  constructor(town: TownLike, { now = () => town.now() }: { now?: () => number } = {}) {
     this.town = town;
     this.now = now;
   }
