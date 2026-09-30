@@ -38,6 +38,7 @@ import { Cognition } from './sim/cognition.ts';
 import { Social } from './sim/social.ts';
 import { Views } from './sim/views.ts';
 import { Persistence } from './sim/persistence.ts';
+import type { WorldStore } from './storage/world-store.ts';
 import { Metrics } from './sim/metrics.ts';
 import { Dark } from './sim/dark.ts';
 import { Combat } from './sim/combat.ts';
@@ -195,6 +196,12 @@ export class Town extends EventEmitter {
   declare crisisHour?: number;
   declare fightMinute?: number;
   declare lastSnapHour?: number;
+  /** 存档数据库（第一次存盘或读档时打开，stop() 时关闭） */
+  declare store?: WorldStore | null;
+  /** 读的是升级前的 save.json：第一次存盘后改名备份 */
+  declare legacySave?: boolean;
+  /** 正在写的整点快照 */
+  declare snapWriting?: Promise<void> | null;
 
   constructor(opts: TownOptions = {}) {
     super();
@@ -479,6 +486,8 @@ export class Town extends EventEmitter {
     this.removeAllListeners();
     this.stopped = true;
     if (!this.opts?.embedder) this.embedder?.close();
+    this.store?.close();
+    this.store = null;
   }
 
   /** 世界作息（world.json 的 rhythm）：规划、日记、编年的时刻，单位为分钟 */
@@ -823,5 +832,5 @@ for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Vie
   }
 }
 
-export { listSnapshots, restoreSnapshot } from './sim/persistence.ts';
+export { SNAP_RE, listSnapshots, restoreSnapshot } from './sim/persistence.ts';
 export { llmPublic } from './sim/views.ts';

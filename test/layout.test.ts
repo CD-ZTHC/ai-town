@@ -13,6 +13,7 @@ const { validateSpec } = await import('../server/kernel/spec.ts');
 const { solveLayout, buildLayoutRegion, layoutProblems } = await import('../server/worldgen/layout.ts');
 const { findPlacement } = await import('../server/kernel/placement.ts');
 const { findPath } = await import('../server/world.ts');
+import { readWorldSave } from '../server/storage/save-io.ts';
 type Region = import('../server/types/spec.ts').Region;
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-layout-'));
@@ -63,7 +64,7 @@ test('手写的「小红帽」世界包可以运行：居民按规则兜底过�
   town.stop();
   const again = new Town({ dataDir: dir, worldId: 'little-red', pack, instantTalk: true, pacing: false, evolution: { dir: path.join(dir, 'evolution'), pluginsDir: path.join(dir, 'plugins') } });
   assert.equal(Math.round(again.t), Math.round(town.t));
-  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'save.json'), 'utf8')).packHash, pack.hash);
+  assert.equal(readWorldSave(dir).packHash, pack.hash);
   again.stop();
 });
 

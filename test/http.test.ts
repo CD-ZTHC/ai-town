@@ -14,6 +14,7 @@ for (const k of Object.keys(SETTINGS)) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
 const { WorldHost } = await import('../server/worlds/host.ts');
 const { createApp } = await import('../server/http/app.ts');
+const { activeDir: activeDirOf } = await import('../server/timelines.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-http-'));
 
@@ -224,4 +225,57 @@ test('响应头不串：一次 404 之后，JSON 接口的 Content-Length 仍然
   const text = await res.text();
   assert.equal(Number(res.headers.get('content-length') || Buffer.byteLength(text)), Buffer.byteLength(text));
   assert.doesNotThrow(() => JSON.parse(text));
+});
+
+test('存档接口（P5）：旧 save.json 导入 → 快照列表 → 回溯 → 从快照 / 此刻分叉 → 切换 → 重置，全程走数据库', async (t) => {
+  const { readWorldSave } = await import('../server/storage/save-io.ts');
+  const dir = tmp();
+  // 升级前的存档：第 2 天 10:00
+  const seed = new Town({ dataDir: dir });
+  seed.t = 1440 + 600;
+  seed.byId.lin.goal = '旧存档里的目标';
+  const legacy = JSON.parse(JSON.stringify(seed.saveData()));
+  seed.stop();
+  fs.writeFileSync(path.join(dir, 'save.json'), JSON.stringify(legacy));
+  const host = new WorldHost({ id: 'yunxi', makeTown: () => new Town({ dataDir: activeDirOf(dir) }) });
+  host.dataRoot = dir;
+  const app = createApp({ hostFor: () => host, publicDir: 'public' });
+  t.after(() => host.close({ save: false }));
+  assert.equal(host.town.byId.lin.goal, '旧存档里的目标');
+  host.town.save();
+  await host.town.snapWriting;
+  assert.ok(!fs.existsSync(path.join(dir, 'save.json')) && fs.existsSync(path.join(dir, 'world.db')), '导入后只写数据库');
+
+  const snaps = await (await app.request('/api/snapshots')).json();
+  assert.deepEqual(snaps.map((s: { name: string }) => s.name), ['d002-10.db.gz']);
+  host.town.t += 180;
+  host.town.byId.lin.goal = '之后的目标';
+  const rb = await (await post(app, '/api/rollback', { confirm: 'ROLLBACK', name: 'd002-10.db.gz' })).json();
+  assert.equal(rb.ok, true);
+  assert.match(rb.backup, /^world-before-rollback-.*\.bak\.db$/);
+  assert.equal(host.town.t, 1440 + 600, '回到快照的时刻');
+  assert.equal(host.town.byId.lin.goal, '旧存档里的目标');
+  assert.equal(readWorldSave(dir).t, 1440 + 600);
+  assert.equal((await post(app, '/api/rollback', { confirm: 'ROLLBACK', name: 'd009-01.db.gz' })).status, 404);
+
+  // 从快照分叉并切换过去
+  const f1 = await (await post(app, '/api/timelines/fork', { snapshot: 'd002-10.db.gz', name: '支线' })).json();
+  assert.equal(f1.timeline.id, 'tl-1');
+  assert.equal(host.town.dataDir, path.join(dir, 'timelines', 'tl-1'));
+  assert.equal(host.town.t, 1440 + 600);
+  host.town.t += 60;
+  // 从此刻（运行中的分支）再分一条：拿到最新进度
+  const f2 = await (await post(app, '/api/timelines/fork', { switch: false })).json();
+  assert.equal(f2.timeline.from.timeline, 'tl-1');
+  assert.equal(readWorldSave(path.join(dir, 'timelines', 'tl-2')).t, 1440 + 660);
+  // 切回主时间线：分支的变化不影响主线
+  assert.equal((await post(app, '/api/timelines/switch', { id: 'main' })).status, 200);
+  assert.equal(host.town.t, 1440 + 600);
+
+  // 重置：数据库备份后移走，新小镇从第一天开始，不会把旧存档读回来
+  assert.equal((await post(app, '/api/reset', { confirm: 'RESET' })).status, 200);
+  assert.ok(host.town.t < 1440);
+  assert.ok(fs.readdirSync(dir).some((f) => /^world-reset-.*\.bak\.db$/.test(f)));
+  host.town.save();
+  assert.ok(readWorldSave(dir).t < 1440);
 });

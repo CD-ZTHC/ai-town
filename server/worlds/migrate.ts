@@ -5,14 +5,14 @@ import path from 'node:path';
 
 // 属于世界的东西（其余的 accounts.db、settings.json、evolution/ 是全站的，留在原处）
 const WORLD_ITEMS = (name: string): boolean => ['save.json', 'save.json.tmp', 'ops.jsonl', 'snapshots', 'timelines', 'timelines.json'].includes(name)
-  || /^embeddings\.db(-wal|-shm)?$/.test(name) || /^save-.*\.bak\.json$/.test(name);
+  || /^(embeddings|world)\.db(-wal|-shm)?$/.test(name) || /^save-.*\.bak\.json$/.test(name) || /^world-.*\.bak\.db$/.test(name);
 
 export function worldRoot(data: string, id: string): string { return path.join(data, 'worlds', id); }
 
 /** 需要迁移吗：旧位置有存档，新位置还没有 */
 export function needsMigration(data: string, id = 'yunxi'): boolean {
   const target = worldRoot(data, id);
-  if (fs.existsSync(path.join(target, 'save.json')) || fs.existsSync(path.join(target, 'ops.jsonl'))) return false;
+  if (['save.json', 'world.db', 'ops.jsonl'].some((f) => fs.existsSync(path.join(target, f)))) return false;
   return fs.existsSync(data) && fs.readdirSync(data).some(WORLD_ITEMS);
 }
 

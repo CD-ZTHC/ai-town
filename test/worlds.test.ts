@@ -20,6 +20,7 @@ const { activeDir } = await import('../server/timelines.ts');
 const { createApp } = await import('../server/http/app.ts');
 const { worldPage } = await import('../server/http/pages.ts');
 const { authorize } = await import('../server/accounts/authz.ts');
+import { readWorldSave } from '../server/storage/save-io.ts';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-worlds-'));
 
@@ -78,8 +79,8 @@ test('两个世界同时运行互不影响：各自的时间、天气、存档�
   a.town.setWeather('rain');
   assert.equal(b.town.weather, 'sunny');
   a.town.save(); b.town.save();
-  assert.ok(fs.existsSync(path.join(data, 'worlds', 'yunxi', 'save.json')));
-  assert.equal(JSON.parse(fs.readFileSync(path.join(data, 'worlds', 'moon-town', 'save.json'), 'utf8')).worldId, 'moon-town');
+  assert.ok(fs.existsSync(path.join(data, 'worlds', 'yunxi', 'world.db')));
+  assert.equal(readWorldSave(path.join(data, 'worlds', 'moon-town')).worldId, 'moon-town');
   // SSE 按世界推送
   const got: { a: string[]; b: string[] } = { a: [], b: [] };
   const la = a.join({ ip: '1', write: (m) => got.a.push(m) });
@@ -166,7 +167,7 @@ test('磁盘上限：超过后先回收旧快照（每条时间线留最近 1 �
   assert.equal(h.diskFull, true);
   assert.equal(h.town.diskFull, true);
   h.town.save();
-  assert.ok(fs.existsSync(path.join(root, 'save.json')), '存档照常写入');
+  assert.ok(fs.existsSync(path.join(root, 'world.db')), '存档照常写入');
   assert.equal(reg.get('moon-town')!.diskBytes > 2 * 1024 * 1024, true);
   // 官方世界不受限制
   reg.update('yunxi', { quota: { diskMB: 1 } });
@@ -188,9 +189,9 @@ test('数据迁移：旧的 data/ 存档移到 data/worlds/yunxi/，先备份；
 
   assert.equal(needsMigration(data), true);
   const r = migrateLegacy(data);
-  assert.ok(r!.moved.includes('save.json') && r!.moved.includes('ops.jsonl'));
-  assert.ok(fs.existsSync(path.join(r!.backup, 'save.json')), '完整备份');
-  assert.ok(!fs.existsSync(path.join(data, 'save.json')));
+  assert.ok(r!.moved.includes('world.db') && r!.moved.includes('ops.jsonl'));
+  assert.ok(fs.existsSync(path.join(r!.backup, 'world.db')), '完整备份');
+  assert.ok(!fs.existsSync(path.join(data, 'world.db')));
   assert.ok(fs.existsSync(path.join(data, 'accounts.db')));
   assert.equal(needsMigration(data), false, '只迁移一次');
   const after = new Town({ dataDir: path.join(data, 'worlds', 'yunxi'), instantTalk: true, pacing: false });

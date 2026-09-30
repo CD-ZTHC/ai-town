@@ -36,7 +36,7 @@ await sleep(300);
 const id = job.candidate?.key.split('@')[0];
 const usage: { errors?: number; lastError?: string; total?: number } = id ? town.evolved.usage[id] || {} : {};
 const metrics = {
-  hours: job.hours, steps, tickMs: +(ms / steps).toFixed(3),
+  hours: job.hours, startT: start, steps, tickMs: +(ms / steps).toFixed(3),
   errors: (usage.errors || 0) + Object.values(town.hooks.errors).reduce((s, x) => s + x, 0),
   lastError: usage.lastError || null,
   pluginCalls: usage.total || 0,

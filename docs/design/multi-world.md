@@ -289,7 +289,7 @@ WorldManager
  └─ tick        每个世界各自计算「无人观看」时长
 ```
 
-- 目录：`data/worlds/<worldId>/`，包含 `pack/`、`save.json`、`ops.jsonl`、`timelines/`、`plugins/`（该世界的 AI 插件）。
+- 目录：`data/worlds/<worldId>/`，包含 `pack/`、`world.db`（存档，P5 之前是 `save.json`）、`ops.jsonl`、`timelines/`、`plugins/`（该世界的 AI 插件）。
 - **上限** `MAX_ACTIVE_WORLDS`（默认 4）指同时在内存里运行的世界数。有人打开第 5 个世界时，卸载一个当前无人观看、空闲最久的世界；如果 4 个都有人在看，就返回「世界满员」提示页，并显示预计等待时间，而不是强行挤掉有人在看的世界。
 - `PINNED_WORLDS`（可选，例如 `yunxi`）：常驻世界不会被卸载，但计入上限。
 - **休眠**：沿用现有的「无人观看即暂停」（`IDLE_PAUSE_SEC`），按世界判断；暂停超过 `WORLD_UNLOAD_SEC`（默认 10 分钟）后存盘卸载。**无人观看的世界不消耗 token**，这是多世界成本可控的前提。
@@ -351,7 +351,7 @@ stateDiagram-v2
 - 世界管理器每次存盘后、以及每小时一次，统计目录大小，写入 `worlds.disk_bytes`。
 - **超过 80%**：在 owner 的「我的世界」和世界管理页里提示。
 - **超过 100%**：先自动回收可以重建的东西——按时间从旧到新删除快照（每条时间线至少保留最近 1 个）、清空向量缓存（会按需重算）。回收后仍然超限，则拒绝「新建时间线」「开启新快照」「进化引擎生成新插件」这类会增长的操作，并提示 owner 删除时间线或联系管理员。
-- **世界本身照常运行**：存档（`save.json`）和操作日志始终可以写入，不会因为磁盘配额让世界停摆或丢失进度。操作日志与居民记忆本身已有上限（每人最多 400 条记忆），正常运行下不会无限增长。
+- **世界本身照常运行**：存档（`world.db`）和操作日志始终可以写入，不会因为磁盘配额让世界停摆或丢失进度。操作日志与居民记忆本身已有上限（每人最多 400 条记忆），正常运行下不会无限增长。
 - 管理后台的世界列表按磁盘占用排序，并显示各部分的占比（快照、时间线、原文、插件）。
 
 ---
@@ -560,7 +560,7 @@ worlds/yunxi/                   官方世界包（进 git）
 data/
   accounts.db
   worlds/<id>/
-    pack/  save.json  ops.jsonl  timelines/  snapshots/  plugins/
+    pack/  world.db  ops.jsonl  timelines/  snapshots/  plugins/
   genesis/<jobId>/              创世中间产物（完成后清理，只保留日志）
   evolution/                    全局引擎：jobs、ledger（每条记录带 worldId）
 ```

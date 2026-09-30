@@ -309,6 +309,6 @@ test/          node:test 测试（AI SDK 相关的在没装时跳过）；replay
 .github/       CI：Node 22.18（不装可选依赖）/ Node 26（装上 AI SDK）跑语法检查、测试与 smoke --mock；Node 26 另跑类型检查与无头 Chrome 冒烟检查
 docs/design/   设计方案；docs/settings.md 全部设置项（自动生成）
 data/          accounts.db 账号 / 世界登记 / 举报 / 用量账本 / 审计 / 模型服务凭据（加密）；secret.key 凭据加密主密钥（没有用 SECRETS_KEY 时）；settings.json 面板保存的设置（版本）；evolution/ 进化引擎的任务与账本；
-               genesis/ 创世任务；worlds/<id>/ 每个世界：save.json 存档（每 20 秒）、ops.jsonl 世界变更日志、snapshots/ 每小时快照、
+               genesis/ 创世任务；worlds/<id>/ 每个世界：world.db 存档（SQLite，每 20 秒只写变化的部分；`mise run export-save` 可导出成 save.json）、ops.jsonl 世界变更日志、snapshots/ 每小时快照、
                timelines/ 分支时间线、plugins/ 与 evolution/ 这个世界的 AI 插件、pack/ 用户世界的世界包
 ```

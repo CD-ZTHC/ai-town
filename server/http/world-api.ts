@@ -1,9 +1,8 @@
 // 世界内的接口（挂在 /api 与 /api/w/:world 下）：c.get('host') 是当前世界的托管对象。
 // 身份（admin / vid / ip）由上层中间件解析，这里只关心业务。
-import fs from 'node:fs';
-import path from 'node:path';
 import { Hono } from 'hono';
-import { llmPublic, listSnapshots, restoreSnapshot } from '../sim.ts';
+import { SNAP_RE, llmPublic, listSnapshots, restoreSnapshot } from '../sim.ts';
+import { backupSave, removeSave } from '../storage/save-io.ts';
 import { ADMIN_OPS } from '../worldai/proposals.ts';
 import { registry, forkTimeline, setActive } from '../timelines.ts';
 import * as llm from '../llm.ts';
@@ -298,7 +297,7 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
     if (b.confirm !== 'ROLLBACK') throw new HttpError(400, '需要确认');
     const name = String(b.name || '');
     // 先校验快照（不合法时小镇照常运行），再存盘（备份里包含最新进度），最后才停止旧小镇
-    if (!/^d\d{3}-\d{2}\.json(?:\.gz)?$/.test(name)) throw new HttpError(400, '快照名称不合法');
+    if (!SNAP_RE.test(name)) throw new HttpError(400, '快照名称不合法');
     if (!listSnapshots(host.town.dataDir).some((x) => x.name === name)) throw new HttpError(404, '快照不存在');
     host.town.save();
     host.town.stop();
@@ -422,13 +421,10 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
     const host = c.get('host');
     if (c.get('body').confirm !== 'RESET') throw new HttpError(400, '需要确认');
     host.town.stop();
-    // 不直接删除：旧存档改名备份，可手动恢复
-    const save = path.join(host.town.dataDir, 'save.json');
-    if (fs.existsSync(save)) {
-      const bak = path.join(host.town.dataDir, `save-${new Date().toISOString().replace(/[:.]/g, '-')}.bak.json`);
-      fs.renameSync(save, bak);
-      console.log(`[reset] 旧存档已备份为 ${path.basename(bak)}`);
-    }
+    // 不直接删除：旧存档先备份，可手动恢复（数据库和升级前的 save.json 都要移走，否则新小镇会把它读回来）
+    const bak = backupSave(host.town.dataDir, 'reset');
+    removeSave(host.town.dataDir);
+    if (bak) console.log(`[reset] 旧存档已备份为 ${bak}`);
     host.replace(host.makeTown());
     console.log(`[reset] ${host.id} 已由 ${c.get('ip')} 重置到第一天`);
     return c.json({ ok: true });

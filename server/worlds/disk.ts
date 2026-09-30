@@ -12,7 +12,7 @@ export interface DiskUsage { total: number; snapshots: number; timelines: number
 type DiskCat = Exclude<keyof DiskUsage, 'total'>;
 
 const MB = 1024 * 1024;
-const SNAP = /^d(\d{3})-(\d{2})\.json(?:\.gz)?$/;
+const SNAP = /^d(\d{3})-(\d{2})\.(?:db\.gz|json(?:\.gz)?)$/;
 
 /** 目录大小，按类别细分：snapshots / timelines / source / plugins / embeddings / other */
 export function diskUsage(root: string): DiskUsage {

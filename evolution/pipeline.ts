@@ -22,6 +22,7 @@ import type { Files, Finding, Rfc } from './agents.ts';
 import type { GateResult } from './gate.ts';
 import type { ShadowResult } from './shadow.ts';
 import type { WorldSpec } from '../server/types/spec.ts';
+import { readWorldSave } from '../server/storage/save-io.ts';
 
 /** runJob 的上下文：目录、模型调用、阶段回调 */
 export interface JobContext { P: Paths; llm: EvoLLM; onStage?: (stage: string, job: EvoJob) => void }
@@ -35,7 +36,7 @@ const TIER_RANK: Record<string, number> = { T0: 0, T1: 1, T2: 2, T3: 3 };
 /** 当前世界规格：这个世界的世界包（官方世界是仓库里的包）+ 当前时间线存档里的操作历史 */
 export function currentSpec(P: Paths): WorldSpec {
   let specOps: Parameters<typeof replay>[1] = [];
-  try { specOps = readJSON<{ specOps?: Parameters<typeof replay>[1] }>(path.join(activeDir(P.data), 'save.json'), {})?.specOps || []; } catch { /* 没有存档 */ }
+  try { specOps = (readWorldSave(activeDir(P.data))?.specOps as Parameters<typeof replay>[1] | undefined) || []; } catch { /* 没有存档 */ }
   const base = P.world?.packDir ? packSpec(loadPack(P.world.packDir)) : defaultSpec();
   return replay(base, specOps).spec;
 }

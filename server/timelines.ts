@@ -2,7 +2,8 @@
 // 目录：主时间线 = <data>/；分支 = <data>/timelines/<id>/；登记表 = <data>/timelines.json
 import fs from 'node:fs';
 import path from 'node:path';
-import { SNAP_RE, readSnapshot } from './sim/persistence.ts';
+import { SNAP_RE } from './sim/persistence.ts';
+import { copyWorldSave, hasSave, readSnapshotFile, readWorldSave, restoreSnapshotFile } from './storage/save-io.ts';
 
 /** 一条时间线的登记项 */
 export interface Timeline {
@@ -49,19 +50,19 @@ export function forkTimeline(root: string, { fromId, snapshot = null, name = '' 
   if (!r.list.some((t) => t.id === fromId)) throw Object.assign(new Error('来源时间线不存在'), { status: 404 });
   if (r.list.length >= MAX_TIMELINES) throw Object.assign(new Error(`时间线最多 ${MAX_TIMELINES} 条`), { status: 409 });
   const srcDir = timelineDir(root, fromId);
-  let src: string;
+  let src: string | null = null;
   if (snapshot) {
     if (!SNAP_RE.test(String(snapshot))) throw Object.assign(new Error('快照名称不合法'), { status: 400 });
     src = path.join(srcDir, 'snapshots', snapshot);
-  } else src = path.join(srcDir, 'save.json');
-  if (!fs.existsSync(src)) throw Object.assign(new Error('来源存档不存在'), { status: 404 });
-  const save = snapshot ? readSnapshot(src) : JSON.parse(fs.readFileSync(src, 'utf8'));
+    if (!fs.existsSync(src)) throw Object.assign(new Error('来源存档不存在'), { status: 404 });
+  } else if (!hasSave(srcDir)) throw Object.assign(new Error('来源存档不存在'), { status: 404 });
   const n = Math.max(0, ...r.list.map((t) => Number(/^tl-(\d+)$/.exec(t.id)?.[1] || 0))) + 1;
   const id = `tl-${n}`;
   const dir = timelineDir(root, id);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'save.json'), JSON.stringify(save));
-  const t = save.t || 0;
+  // 快照：解压 / 导入成新时间线的数据库；此刻：VACUUM INTO 复制来源的数据库（来源正在运行也没关系）
+  if (src) { readSnapshotFile(src); restoreSnapshotFile(src, dir); } else copyWorldSave(srcDir, dir);
+  const t = Number(readWorldSave(dir)?.t) || 0;
   const entry: Timeline = {
     id, name: String(name || '').trim().slice(0, 20) || `分支 ${n}`,
     from: { timeline: fromId, snapshot, day: Math.floor(t / 1440) + 1, hour: Math.floor((t % 1440) / 60) },

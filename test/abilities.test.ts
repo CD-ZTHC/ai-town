@@ -14,6 +14,7 @@ const llm = await import('../server/llm.ts');
 const { defaultSpec, validateSpec } = await import('../server/kernel/spec.ts');
 const { applyOp } = await import('../server/kernel/ops.ts');
 const { useAbility } = await import('../server/kernel/abilities.ts');
+import { readWorldSave, removeSave } from '../server/storage/save-io.ts';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-p1-'));
 const tick = () => new Promise((r) => setImmediate(r));
@@ -256,11 +257,11 @@ test('存档往返：物品、能力、冷却、构筑物、规则状态都能�
   assert.ok(b.byId.sun.cooldowns.firefly_ward > b.t);
   b.stop();
 
-  // 模拟 P0 存档：没有 kit 标记，物品和能力为空
-  const file = path.join(dir, 'save.json');
-  const d = JSON.parse(fs.readFileSync(file, 'utf8'));
+  // 模拟 P0 存档（升级前的 save.json）：没有 kit 标记，物品和能力为空
+  const d = readWorldSave(dir);
   for (const ag of d.agents) { delete ag.kit; ag.inventory = {}; ag.abilities = []; delete ag.cooldowns; }
-  fs.writeFileSync(file, JSON.stringify(d));
+  removeSave(dir);
+  fs.writeFileSync(path.join(dir, 'save.json'), JSON.stringify(d));
   const c = new Town({ dataDir: dir });
   assert.equal(c.byId.zhao.inventory.wood, 8);
   assert.deepEqual(c.byId.he.abilities, ['moon_song']);

@@ -262,6 +262,7 @@ test('时光回溯：列出快照、恢复前备份当前存档、恢复后回�
   const dir = tmp();
   const town = newTown(dir);
   town.save();
+  await town.snapWriting; // 整点快照在后台压缩
   const [snap] = listSnapshots(dir);
   assert.ok(snap);
   const tBefore = town.t;

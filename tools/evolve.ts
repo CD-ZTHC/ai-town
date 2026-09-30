@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Gap } from '../plugins/builtin/architect/architect.ts';
+import { readWorldSave } from '../server/storage/save-io.ts';
 
 /** 命令行选项 */
 export interface EvolveOptions { data: string; out: string; limit: number; all: boolean; offline: boolean; dryRun: boolean }
@@ -146,9 +147,8 @@ export async function evolve(opts: Partial<EvolveOptions> = {}): Promise<{ writt
   const o = { ...parseArgs([]), ...opts };
   const dataDir = path.resolve(ROOT, o.data);
   const outDir = path.resolve(ROOT, o.out);
-  const saveFile = path.join(dataDir, 'save.json');
-  if (!fs.existsSync(saveFile)) return { written: [], skipped: [`找不到存档：${saveFile}`] };
-  const save = JSON.parse(fs.readFileSync(saveFile, 'utf8'));
+  const save = readWorldSave(dataDir);
+  if (!save) return { written: [], skipped: [`找不到存档：${dataDir}`] };
   const indexFile = path.join(dataDir, 'evolve.json');
   const index = fs.existsSync(indexFile) ? JSON.parse(fs.readFileSync(indexFile, 'utf8')) : { gaps: {} };
 

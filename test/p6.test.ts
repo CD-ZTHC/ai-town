@@ -16,6 +16,7 @@ const { exportMod, applyMods, readMod } = await import('../server/kernel/mods.ts
 const { defaultSpec } = await import('../server/kernel/spec.ts');
 const { registry, forkTimeline, setActive, activeDir, timelineDir } = await import('../server/timelines.ts');
 const { buildMoonRealm, T } = await import('../server/world.ts');
+import { readWorldSave } from '../server/storage/save-io.ts';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-p6-'));
 
@@ -129,7 +130,7 @@ test('时间线：从存档或快照分叉、切换、登记表防越界', () =>
   fork.t += 60;
   fork.save();
   fork.stop();
-  const main = JSON.parse(fs.readFileSync(path.join(root, 'save.json'), 'utf8'));
+  const main = readWorldSave(root);
   assert.equal(Math.floor(main.t), 2 * 1440 + 10 * 60, '分支的变化不影响主时间线');
   assert.throws(() => forkTimeline(root, { fromId: 'main', snapshot: '../save.json' }), /快照名称/);
   assert.throws(() => forkTimeline(root, { fromId: 'nope' }), /来源时间线/);

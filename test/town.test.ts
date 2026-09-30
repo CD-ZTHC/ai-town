@@ -8,6 +8,7 @@ import path from 'node:path';
 // 必须在导入 llm.js 之前清掉 LLM 配置，保证测试不会发出真实请求
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING']) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
+import { readWorldSave, removeSave } from '../server/storage/save-io.ts';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-test-'));
 const tick = () => new Promise((r) => setImmediate(r));
@@ -58,8 +59,9 @@ test('存档往返：时间、居民状态、新组件都能恢复，并生成�
   assert.equal(b.byId.zhao.inventory.wood, 5);
   assert.equal(b.byId.zhao.persona, a.byId.zhao.persona);
   assert.match(b.personaBlock(b.byId.zhao), /成长经历：第1天：决定少喝点酒/);
-  assert.ok(fs.readdirSync(path.join(dir, 'snapshots')).length >= 1);
+  await b.snapWriting;
   b.stop();
+  assert.ok(fs.readdirSync(path.join(dir, 'snapshots')).length >= 1);
 });
 
 test('v1 存档自动迁移到 v2，并备份旧文件', () => {
@@ -69,12 +71,13 @@ test('v1 存档自动迁移到 v2，并备份旧文件', () => {
   legacy.byId.lin.goal = '办好音乐会';
   legacy.save();
   legacy.stop();
-  // 伪造成 v1 格式：没有版本外的新字段与新组件
+  // 伪造成 v1 格式（升级前的 save.json）：没有版本外的新字段与新组件
   const file = path.join(dir, 'save.json');
-  const d = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const d = readWorldSave(dir);
   d.v = 1;
   delete d.specOps;
   for (const ag of d.agents) for (const k of ['kind', 'body', 'inventory', 'abilities', 'beliefs', 'growth']) delete ag[k];
+  removeSave(dir);
   fs.writeFileSync(file, JSON.stringify(d));
 
   const town = new Town({ dataDir: dir });
@@ -84,7 +87,9 @@ test('v1 存档自动迁移到 v2，并备份旧文件', () => {
   assert.deepEqual(town.byId.lin.growth, []);
   assert.ok(fs.readdirSync(dir).some((f) => /^save-v1-.*\.bak\.json$/.test(f)), '应备份 v1 存档');
   town.save();
-  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).v, 2);
+  assert.equal(readWorldSave(dir).v, 2);
+  assert.ok(!fs.existsSync(file), '导入数据库后 save.json 改名备份');
+  assert.ok(fs.readdirSync(dir).some((f) => /^save-imported-.*\.bak\.json$/.test(f)));
   town.stop();
 });
 
