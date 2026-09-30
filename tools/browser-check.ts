@@ -5,11 +5,13 @@
 // 用法：node tools/browser-check.ts [--out 截图目录] [--chrome Chrome 路径]
 // 会在临时目录里启动一个不连模型的小镇服务器；有错误时退出码为 1。
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SETTINGS } from '../server/settings/schema.ts';
 import type { ChildProcess } from 'node:child_process';
+import type { AddressInfo } from 'node:net';
 
 /** DevTools 协议的消息与返回值（结构由 Chrome 决定，只取用到的字段） */
 type Cdp = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -28,6 +30,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const procs: ChildProcess[] = [];
 const cleanup = () => { for (const p of procs) try { p.kill('SIGKILL'); } catch {} };
 process.on('exit', cleanup);
+// 看门狗：某条 DevTools 命令一直没有回应时，整个检查不会无限挂着（正常跑完约 3 分钟）。
+// 注意：macOS 空闲睡眠时进程会被冻结、看起来像卡住——长时间运行请用 caffeinate -i node tools/browser-check.ts
+let stage = '启动';
+setTimeout(() => { console.error(`✖ 检查超时（10 分钟），卡在：${stage}`); process.exit(1); }, 10 * 60_000).unref();
 
 async function waitFor<T>(fn: () => T | Promise<T>, ms: number, what: string): Promise<NonNullable<T>> {
   const end = Date.now() + ms;
@@ -39,7 +45,13 @@ async function waitFor<T>(fn: () => T | Promise<T>, ms: number, what: string): P
 }
 
 // 1. 小镇服务器（临时存档、不连模型）
-const port = 3900 + Math.floor(Math.random() * 90);
+/** 向系统要一个空闲端口（随机挑的端口可能正被本机别的程序占着） */
+const freePort = () => new Promise<number>((resolve, reject) => {
+  const srv = createServer();
+  srv.once('error', reject);
+  srv.listen(0, '127.0.0.1', () => { const { port: p } = srv.address() as AddressInfo; srv.close(() => resolve(p)); });
+});
+const port = await freePort();
 const env: NodeJS.ProcessEnv = { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'town-bc-')) };
 // 不受开发机 .env 的影响：只保留上面的几项
 for (const k of Object.keys(SETTINGS)) if (!['PORT', 'HOST', 'DATA_DIR'].includes(k)) delete env[k];
@@ -51,22 +63,43 @@ server.stderr.on('data', (d) => (serverLog += d));
 const base = `http://127.0.0.1:${port}`;
 await waitFor(() => fetch(`${base}/w/yunxi/`).then((r) => r.ok), 15000, '小镇服务器启动');
 
-// 2. 无头 Chrome
-const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${fs.mkdtempSync(path.join(os.tmpdir(), 'town-chrome-'))}`,
-  '--no-first-run', '--no-default-browser-check', '--window-size=1400,900', '--autoplay-policy=no-user-gesture-required', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
-procs.push(chrome);
-let chromeErr = '';
-chrome.stderr.on('data', (d) => (chromeErr += d));
-const wsUrl = await waitFor(() => /DevTools listening on (ws:\/\/\S+)/.exec(chromeErr)?.[1], 15000, 'Chrome 启动');
-const devtools = new URL(wsUrl);
-const pageWs = await waitFor(async () => {
-  const list = await (await fetch(`http://${devtools.host}/json/list`)).json();
-  return list.find((t: Cdp) => t.type === 'page')?.webSocketDebuggerUrl as string | undefined;
-}, 10000, '页面');
+// 2. 无头 Chrome。连上以后先探一下：10 秒内对 DevTools 命令没有回应就换一个 Chrome 重来（最多 3 次）
+async function openChrome(): Promise<WebSocket> {
+  const chrome = spawn(CHROME!, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${fs.mkdtempSync(path.join(os.tmpdir(), 'town-chrome-'))}`,
+    '--no-first-run', '--no-default-browser-check', '--window-size=1400,900', '--autoplay-policy=no-user-gesture-required', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  procs.push(chrome);
+  let chromeErr = '';
+  chrome.stderr!.on('data', (d) => (chromeErr += d));
+  try {
+    const wsUrl = await waitFor(() => /DevTools listening on (ws:\/\/\S+)/.exec(chromeErr)?.[1], 15000, 'Chrome 启动');
+    const devtools = new URL(wsUrl);
+    const pageWs = await waitFor(async () => {
+      const list = await (await fetch(`http://${devtools.host}/json/list`)).json();
+      return list.find((t: Cdp) => t.type === 'page')?.webSocketDebuggerUrl as string | undefined;
+    }, 10000, '页面');
+    const sock = new WebSocket(pageWs);
+    await new Promise((r, j) => { sock.onopen = r; sock.onerror = j; setTimeout(() => j(new Error('DevTools 连接超时')), 15000); });
+    await new Promise<void>((r, j) => {
+      sock.onmessage = (ev) => { if (JSON.parse(ev.data).id === -1) r(); };
+      setTimeout(() => j(new Error('Chrome 对 DevTools 命令没有回应')), 10000);
+      sock.send(JSON.stringify({ id: -1, method: 'Runtime.evaluate', params: { expression: '1' } }));
+    });
+    return sock;
+  } catch (e) {
+    try { chrome.kill('SIGKILL'); } catch {}
+    throw e;
+  }
+}
 
 // 3. DevTools 协议
-const ws = new WebSocket(pageWs);
-await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+stage = 'DevTools 连接';
+let ws!: WebSocket;
+for (let attempt = 1; ; attempt++) {
+  try { ws = await openChrome(); break; } catch (e) {
+    if (attempt >= 3) throw e;
+    console.error(`  Chrome 没有响应（${(e as Error).message}），重新启动（第 ${attempt + 1} 次）`);
+  }
+}
 let seq = 0;
 const pending = new Map<number, { resolve: (r: Cdp) => void; reject: (e: Error) => void }>();
 const problems: string[] = [];
@@ -97,7 +130,10 @@ ws.onmessage = (ev) => {
 };
 const send = (method: string, params: object = {}) => new Promise<Cdp>((resolve, reject) => {
   const id = ++seq;
-  pending.set(id, { resolve, reject });
+  const timer = setTimeout(() => { pending.delete(id); reject(new Error(`DevTools 命令没有回应：${method}`)); }, 30_000);
+  const t0 = Date.now();
+  const slow = () => { if (process.env.BC_DEBUG && Date.now() - t0 > 2000) process.stderr.write(`    慢：${method} ${Date.now() - t0}ms\n`); };
+  pending.set(id, { resolve: (r) => { clearTimeout(timer); slow(); resolve(r); }, reject: (e) => { clearTimeout(timer); slow(); reject(e); } });
   ws.send(JSON.stringify({ id, method, params }));
 });
 const evaluate = async (expr: string) => {
@@ -119,6 +155,8 @@ await send('Page.enable');
 const steps: Array<{ name: string; errors: string[] }> = [];
 async function step(name: string, fn: () => Promise<unknown>, { wait = 700, screenshot = true }: { wait?: number; screenshot?: boolean } = {}) {
   const before = problems.length;
+  stage = name;
+  const t0 = Date.now();
   try {
     await fn();
     await sleep(wait);
@@ -127,6 +165,8 @@ async function step(name: string, fn: () => Promise<unknown>, { wait = 700, scre
     problems.push(`步骤「${name}」出错：${(e as Error).message}`);
   }
   steps.push({ name, errors: problems.slice(before) });
+  // 边走边报（最后还有汇总）：卡住或超时时能看出前面走到了哪、每步多久
+  process.stderr.write(`  · ${name} ${Date.now() - t0}ms${problems.length > before ? ' ✖' : ''}\n`);
 }
 const click = (sel: string) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) throw new Error('找不到 ${sel}'); el.click(); return true; })()`);
 const modalHas = (min = 20) => evaluate(`(() => { const m = document.querySelector('#modal'); return !m.hidden && document.querySelector('#modal-card').textContent.trim().length >= ${min}; })()`);
@@ -340,7 +380,7 @@ await step('30-update-notice', async () => {
   await waitFor(() => evaluate(`Boolean(document.querySelector('#version-bar'))`), 3000, '更新提示条');
 }, { wait: 300 });
 // 公网模式：游客点互动入口 → 弹出登录框 → 注册 → 自动继续刚才的操作（现身）
-const pubPort = port + 100;
+const pubPort = await freePort();
 const pub = spawn(process.execPath, ['server/index.ts'], { env: { ...env, PORT: String(pubPort), PUBLIC_MODE: '1', DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'town-bc-pub-')) }, stdio: ['ignore', 'pipe', 'pipe'] });
 procs.push(pub);
 pub.stdout.on('data', (d) => (serverLog += d));
