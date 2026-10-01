@@ -1,7 +1,7 @@
 # 架构重构方案：TypeScript 迁移与 2 核 2G 线上环境适配 —— 设计方案
 
-> 状态：实施中（2026-09-28 开始）。已完成 P0 诊断（[记录](../reports/2026-09-28-p0-diagnosis.md)）、P1 的代码部分（systemd 单元、迁移脚本、部署改造；线上迁移待执行）、P2、P2b、P3、P4（B1~B9，服务端与测试全部改为 TypeScript）。
-> 其余（P5~P9）未开始。P0 发现云溪镇存档已有 3MB，建议 P5 提前到 P4 的前几个批次之后。
+> 状态：实施中（2026-09-28 开始）。已完成 P0 诊断（[记录](../reports/2026-09-28-p0-diagnosis.md)）、P1 的代码部分（systemd 单元、迁移脚本、部署改造；线上迁移待执行）、P2、P2b、P3、P4（B1~B9，服务端与测试全部改为 TypeScript）、P5（SQLite 增量存档）、P7（确定性）、P8（结构化输出）、P6 第一步（临时字段移到 town.rt）、P9 第一项（沙箱按需运行与全站上限）。
+> 未做：P6 的第 2、3 步（各子系统持久状态迁到 state + zod schema、mixin 改为独立模块，按子系统分多个 PR）；P9 的效果 DSL 扩展（需要线上能力缺口统计决定优先级）与 QuickJS / isolated-vm 评估（需要单独的方案文档）。P5 的线上导入在首次启动新版本时自动进行（save.json 改名备份，可用 mise run export-save 导出回滚）。
 > 前提：线上服务器 **2 核 2G**，已出现内存（分页）耗尽导致整机卡死。
 > 相关：[multi-world.md](multi-world.md) §7 统一 AI 调度；[autonomous-evolution.md](autonomous-evolution.md) §8 内核冻结；[world-llm.md](world-llm.md)。
 
