@@ -9,6 +9,7 @@ import path from 'node:path';
 for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'DATA_DIR', 'STORY_RATING']) delete process.env[k];
 const { Town } = await import('../server/sim.ts');
 import { readWorldSave, removeSave } from '../server/storage/save-io.ts';
+const { RUNTIME_KEYS } = await import('../server/sim/runtime.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-test-'));
 const tick = () => new Promise((r) => setImmediate(r));
@@ -126,4 +127,29 @@ test('初始化数据包含前端需要的规格信息', () => {
   assert.equal(p.weathers.sunny.name, '晴朗');
   assert.equal(p.agents.length, 8);
   town.stop();
+});
+
+test('状态分离（P6）：居民的临时字段在 town.rt 里，不进存档；读写照常；读档后重置', () => {
+  const dir = tmp();
+  const a = new Town({ dataDir: dir });
+  const lin = a.byId.lin;
+  lin.path = [{ x: 1, y: 2 }];
+  lin.thinking = 2;
+  lin.convoId = 'c1';
+  lin.bubble = { id: 1, text: '你好', kind: 'say', until: 0 };
+  assert.deepEqual(a.rt.agents.lin!.path, [{ x: 1, y: 2 }], '数据在运行时对象里');
+  assert.equal(a.rt.agents.lin!.thinking, 2);
+  for (const k of RUNTIME_KEYS) assert.ok(!Object.keys(lin).includes(k), `${k} 不可枚举`);
+  assert.ok(!('path' in JSON.parse(JSON.stringify(lin))));
+  assert.throws(() => { delete (lin as unknown as Record<string, unknown>).path; }, TypeError, '访问器删不掉（删掉后再赋值会变回普通字段、写进存档）');
+  const saved = a.saveData().agents.find((x) => x.id === 'lin')!;
+  for (const k of RUNTIME_KEYS) assert.ok(!(k in saved), `存档里不应有 ${k}`);
+  a.save();
+  a.stop();
+  const b = new Town({ dataDir: dir });
+  assert.deepEqual(b.byId.lin.path, []);
+  assert.equal(b.byId.lin.thinking, 0);
+  assert.equal(b.byId.lin.convoId, null);
+  assert.equal(b.byId.lin.bubble, null);
+  b.stop();
 });

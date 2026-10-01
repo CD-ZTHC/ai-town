@@ -40,6 +40,8 @@ import { Views } from './sim/views.ts';
 import { Persistence } from './sim/persistence.ts';
 import type { WorldStore } from './storage/world-store.ts';
 import { rngFromSave } from './kernel/rng.ts';
+import { attachRuntime, freshRuntime } from './sim/runtime.ts';
+import type { TownRuntime } from './sim/runtime.ts';
 import type { Rng } from './kernel/rng.ts';
 import { Metrics } from './sim/metrics.ts';
 import { Dark } from './sim/dark.ts';
@@ -198,6 +200,8 @@ export class Town extends EventEmitter {
   declare crisisHour?: number;
   declare fightMinute?: number;
   declare lastSnapHour?: number;
+  /** 运行时状态（见 sim/runtime.ts）：居民的路径、气泡、思考中等，永不序列化 */
+  declare rt: TownRuntime;
   /** 模拟用的随机数（见 kernel/rng.ts） */
   declare rng: Rng;
   /** 存档数据库（第一次存盘或读档时打开，stop() 时关闭） */
@@ -221,6 +225,7 @@ export class Town extends EventEmitter {
     const saved = this.readSave();
     // 模拟里的随机数（重构方案 P7）：种子与当前状态写在存档里，读档后从断点继续；opts.seed 用于回放与测试
     this.rng = rngFromSave(saved?.rng, opts.seed);
+    this.rt = freshRuntime();
     // 世界规格 = 默认规格 + 存档中的操作历史重放
     this.specOps = Array.isArray(saved?.specOps) ? saved.specOps : [];
     // 世界包（多世界设计 §3）：opts.pack 不传时是官方世界云溪镇；worldSettings 是世界级设置（分级、叙事者、Mod）
@@ -358,6 +363,7 @@ export class Town extends EventEmitter {
       cooldowns: {}, kit: 1, // kit：已发放初始物品与能力（旧存档读档时补发）
     };
     for (const [id, [aff, note]] of Object.entries(p.relations)) a.relations[id] = { affinity: aff, note };
+    attachRuntime(this.rt, a);
     this.initDarkAgent(a, p);
     for (const text of p.memories) addMemory(a, { t: Math.max(0, this.t - 60 * (1 + this.rng() * 5)), type: 'obs', text, importance: 6 });
     a.importanceAcc = 0;

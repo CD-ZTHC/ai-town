@@ -80,10 +80,8 @@ export class Persistence {
 
   /** 要存盘的全部内容（结构即 SaveV2；工具 export-save 导出的 save.json 也是它） */
   saveData(this: Town) {
-    const agents = [...this.agents, ...this.away].map((a) => {
-      const { path: _p, dest: _d, curKey: _k, curEntry: _e, bubble: _b, thinking: _t, thinkingLabel: _l, reflecting: _r, convoId: _c, chatBusy: _cb, visitorChat: _vc, pendingAct: _pa, actKey: _ak, hop: _h, ...rest } = a;
-      return rest;
-    });
+    // 临时字段在运行时对象里（sim/runtime.ts），居民对象上只是不可枚举的访问器：展开时自然不包含
+    const agents = [...this.agents, ...this.away].map((a) => ({ ...a }));
     const data = { v: SAVE_VERSION, worldId: this.worldId, packHash: this.packHash, t: this.t, weather: this.weather, weatherLock: this.weatherLock, specOps: this.specOps, agents, entities: this.entities, worldFlags: this.worldFlags, paramMods: this.paramMods, ruleState: this.ruleState,
       threadState: this.threadState, crisis: this.crisis, discovered: this.discovered, story: this.story, migrationState: this.migrationState, mapState: this.mapState, arcRuns: this.arcRuns, voteState: this.voteState,
       pendingScenes: this.pendingScenes, creatureList: this.creatureList, dark: this.dark, fights: this.fights, portalState: this.portalState, swarmGoal: this.swarmGoal || null,
