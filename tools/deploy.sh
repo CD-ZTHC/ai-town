@@ -30,7 +30,7 @@ case "$MODE" in
   nohup) DIR=${DEPLOY_DIR:-/root/ai-town} ;;
   *) echo "✖ DEPLOY_MODE 只能是 systemd / nohup / auto" >&2; exit 1 ;;
 esac
-echo "▶ 部署 ${REV}（${REF}）到 $HOST:$DIR（$MODE）"
+echo "▶ 部署 ${REV}（${REF}）到 ${HOST}:${DIR}（${MODE}）"
 
 # ---------- 本机构建 ----------
 BUILD=$(mktemp -d)
