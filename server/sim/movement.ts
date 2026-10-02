@@ -1,5 +1,6 @@
 // 日程执行与移动：当前该做什么、寻路、行走、到达、体力与勇气
-// 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
+// 规则（此刻该做什么、身体随时间的变化）是下面只依赖显式输入的函数（重构方案 P6 第三步，测试见 test/movement-rules.test.ts）；
+// Town 上的方法（Movement mixin）负责寻路、行走、到达与行动。
 import { findPath } from '../world.ts';
 import { addMemory } from '../memory.ts';
 import { clamp, rand } from './util.ts';
@@ -12,28 +13,57 @@ import type { Pos } from '../kernel/effects.ts';
 import type { ModelJSON } from '../llm.ts';
 import type { RetrieveOptions } from '../memory.ts';
 
+// ---------- 规则（只依赖显式输入） ----------
+/**
+ * 居民此刻该做什么（人类居民）：深夜和清晨睡觉；有今天的日程就照日程，日程之间的空档「随便转转」，
+ * 日程开始前在家吃早饭、结束后在家休息；还没有日程时起床想想今天做什么。key 用来判断「换了一件事」
+ */
+export function scheduleEntryAt({ day, minute: m, planAt, dayEnd, home, schedule, scheduleDay }: {
+  day: number; minute: number; planAt: number; dayEnd: number; home: string; schedule: ScheduleEntry[]; scheduleDay: number;
+}): CurEntry {
+  const sleep: CurEntry = { key: `sleep-${day}-${m < 12 * 60 ? 'am' : 'pm'}`, location: home, activity: '睡觉', emoji: '😴', sleep: true };
+  if (m >= 23 * 60 || m < planAt) return sleep;
+  const s = scheduleDay === day ? schedule : [];
+  if (!s.length) {
+    if (m < 6 * 60 + 30) return sleep;
+    if (m >= dayEnd) return sleep;
+    return { key: `wake-${day}`, location: home, activity: '起床，想想今天要做什么', emoji: '🌅' };
+  }
+  const e = s.find((e) => m >= e.start && m < e.end);
+  if (e) return { ...e, key: `${day}-${e.start}-${e.location}-${e.activity}` };
+  if (m < s[0]!.start) return m < 6 * 60 + 30 ? sleep : { key: `early-${day}`, location: home, activity: '在家吃早饭', emoji: '🍳' };
+  if (m >= s[s.length - 1]!.end) return m >= dayEnd ? sleep : { key: `eve-${day}`, location: home, activity: '在家休息', emoji: '🛋️' };
+  const prev = [...s].reverse().find((e) => e.end <= m)!;
+  return { ...prev, key: `${day}-gap-${prev.end}`, activity: '随便转转', emoji: '🚶', act: undefined };
+}
+
+/** 身体随时间变化（dt 游戏分钟）：体力随活动消耗、睡觉恢复；勇气回归平常；伤势慢慢恢复；疲惫 / 受惊 / 晕倒随之出现或消失。直接修改 body */
+export function bodyTick(b: LiveAgent['body'], status: string, dt: number): void {
+  const rate = status === 'sleeping' ? 0.2 : status === 'walking' ? -0.05 : -0.025;
+  b.stamina = clamp(b.stamina + rate * dt, 0, 100);
+  b.courage = clamp(b.courage + (50 - b.courage) * 0.002 * dt, 0, 100);
+  // 伤势慢慢恢复（睡觉时快一些），恢复到一半就不再是重伤
+  if (b.hp < 100) {
+    b.hp = clamp(b.hp + (status === 'sleeping' ? 0.02 : 0.008) * dt, 0, 100);
+    if (b.hp >= 50 && b.conditions.includes('重伤')) b.conditions = b.conditions.filter((c) => c !== '重伤');
+  }
+  const tired = b.conditions.includes('疲惫');
+  if (!tired && b.stamina < 20) b.conditions = [...b.conditions, '疲惫'];
+  else if (tired && b.stamina > 40) b.conditions = b.conditions.filter((c) => c !== '疲惫');
+  // 受惊、晕倒会随勇气和体力恢复而消失
+  if (b.conditions.includes('受惊') && b.courage >= 45) b.conditions = b.conditions.filter((c) => c !== '受惊');
+  if (b.conditions.includes('晕倒') && b.stamina > 35) b.conditions = b.conditions.filter((c) => c !== '晕倒');
+}
+
+// ---------- Town 上的接口 ----------
 export class Movement {
   desired(this: Town, a: LiveAgent): CurEntry {
-    const m = this.minute;
     // 异界角色不按人类作息：一直守在自己的地点
     if (a.kind === 'creature') {
       const p = this.spec.personas.find((x) => x.id === a.id);
       return { key: `guard-${a.work}`, location: a.work, activity: p?.idle || '静静地守着', emoji: '🌑' };
     }
-    const sleep: CurEntry = { key: `sleep-${this.day}-${m < 12 * 60 ? 'am' : 'pm'}`, location: a.home, activity: '睡觉', emoji: '😴', sleep: true };
-    if (m >= 23 * 60 || m < this.rhythm.plan) return sleep;
-    const s = a.scheduleDay === this.day ? a.schedule : [];
-    if (!s.length) {
-      if (m < 6 * 60 + 30) return sleep;
-      if (m >= this.dayEnd) return sleep;
-      return { key: `wake-${this.day}`, location: a.home, activity: '起床，想想今天要做什么', emoji: '🌅' };
-    }
-    const e = s.find((e) => m >= e.start && m < e.end);
-    if (e) return { ...e, key: `${this.day}-${e.start}-${e.location}-${e.activity}` };
-    if (m < s[0]!.start) return m < 6 * 60 + 30 ? sleep : { key: `early-${this.day}`, location: a.home, activity: '在家吃早饭', emoji: '🍳' };
-    if (m >= s[s.length - 1]!.end) return m >= this.dayEnd ? sleep : { key: `eve-${this.day}`, location: a.home, activity: '在家休息', emoji: '🛋️' };
-    const prev = [...s].reverse().find((e) => e.end <= m)!;
-    return { ...prev, key: `${this.day}-gap-${prev.end}`, activity: '随便转转', emoji: '🚶', act: undefined };
+    return scheduleEntryAt({ day: this.day, minute: this.minute, planAt: this.rhythm.plan, dayEnd: this.dayEnd, home: a.home, schedule: a.schedule, scheduleDay: a.scheduleDay });
   }
 
   updateAgent(this: Town, a: LiveAgent, dt: number): void {
@@ -59,23 +89,7 @@ export class Movement {
   }
 
   /** 体力随活动消耗、睡觉恢复；勇气缓慢回归平常 */
-  updateBody(this: Town, a: LiveAgent, dt: number) {
-    const b = a.body;
-    const rate = a.status === 'sleeping' ? 0.2 : a.status === 'walking' ? -0.05 : -0.025;
-    b.stamina = clamp(b.stamina + rate * dt, 0, 100);
-    b.courage = clamp(b.courage + (50 - b.courage) * 0.002 * dt, 0, 100);
-    // 伤势慢慢恢复（睡觉时快一些），恢复到一半就不再是重伤
-    if (b.hp < 100) {
-      b.hp = clamp(b.hp + (a.status === 'sleeping' ? 0.02 : 0.008) * dt, 0, 100);
-      if (b.hp >= 50 && b.conditions.includes('重伤')) b.conditions = b.conditions.filter((c) => c !== '重伤');
-    }
-    const tired = b.conditions.includes('疲惫');
-    if (!tired && b.stamina < 20) b.conditions = [...b.conditions, '疲惫'];
-    else if (tired && b.stamina > 40) b.conditions = b.conditions.filter((c) => c !== '疲惫');
-    // 受惊、晕倒会随勇气和体力恢复而消失
-    if (b.conditions.includes('受惊') && b.courage >= 45) b.conditions = b.conditions.filter((c) => c !== '受惊');
-    if (b.conditions.includes('晕倒') && b.stamina > 35) b.conditions = b.conditions.filter((c) => c !== '晕倒');
-  }
+  updateBody(this: Town, a: LiveAgent, dt: number) { bodyTick(a.body, a.status, dt); }
 
   settle(this: Town, a: LiveAgent, e: CurEntry) {
     a.moving = false;
