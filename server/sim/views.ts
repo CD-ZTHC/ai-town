@@ -1,5 +1,5 @@
 // 查询：推送给前端的快照与各面板的视图
-// 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
+// 每次推送里居民的一帧（agentFrame）是只依赖显式输入的函数（重构方案 P6 第三步，测试见 test/social-rules.test.ts）；其余视图由 Views mixin 汇总。
 import fs from 'node:fs';
 import path from 'node:path';
 import * as llm from '../llm.ts';
@@ -18,18 +18,23 @@ import type { ModelJSON } from '../llm.ts';
 import type { RetrieveOptions } from '../memory.ts';
 import type { StoryState } from '../story/director.ts';
 
+/** 推送给前端的居民一帧：坐标保留 3 位小数；气泡过了显示时间（now，真实毫秒）就不再下发；满血、没有标记时省略对应字段 */
+export function agentFrame(a: LiveAgent, now: number) {
+  return {
+    id: a.id, x: +a.x.toFixed(3), y: +a.y.toFixed(3), dir: a.dir, moving: a.moving, status: a.status, region: a.region || 'town',
+    inside: a.inside, emoji: a.action.emoji, action: a.action.text, loc: a.locId, mood: a.mood.emoji,
+    thinking: a.thinking > 0 ? a.thinkingLabel : '', convo: a.convoId,
+    ...(a.body.hp < 100 ? { hp: Math.round(a.body.hp) } : {}), ...(a.marks?.length ? { marked: true } : {}), ...(a.hosted?.length ? { hosted: true } : {}),
+    bubble: a.bubble && a.bubble.until > now ? { id: a.bubble.id, text: a.bubble.text, kind: a.bubble.kind } : null,
+  };
+}
+
 export class Views {
   snapshot(this: Town) {
     const now = this.now();
     return {
       t: this.t, speed: this.speed, paced: this.paced < 1 ? +this.paced.toFixed(2) : null, paused: this.paused, idle: !!this.idle, halted: this.halted || null, weather: this.weather, nightSkip: !!this.nightSkip,
-      agents: this.agents.map((a) => ({
-        id: a.id, x: +a.x.toFixed(3), y: +a.y.toFixed(3), dir: a.dir, moving: a.moving, status: a.status, region: a.region || 'town',
-        inside: a.inside, emoji: a.action.emoji, action: a.action.text, loc: a.locId, mood: a.mood.emoji,
-        thinking: a.thinking > 0 ? a.thinkingLabel : '', convo: a.convoId,
-        ...(a.body.hp < 100 ? { hp: Math.round(a.body.hp) } : {}), ...(a.marks?.length ? { marked: true } : {}), ...(a.hosted?.length ? { hosted: true } : {}),
-        bubble: a.bubble && a.bubble.until > now ? { id: a.bubble.id, text: a.bubble.text, kind: a.bubble.kind } : null,
-      })),
+      agents: this.agents.map((a) => agentFrame(a, now)),
       convos: [...this.convos.values()].map((c) => ({ id: c.id, a: c.a, b: c.b, state: c.state })),
       entities: [
         ...this.entities.map((e) => ({ id: e.id, kind: 'structure', type: e.type, emoji: e.emoji, name: e.name, x: +e.x.toFixed(2), y: +e.y.toFixed(2), inside: e.inside, light: e.light || null, region: e.region || 'town' })),

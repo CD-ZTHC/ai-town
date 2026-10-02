@@ -15,23 +15,58 @@ import type { ModelJSON } from '../llm.ts';
 import type { RetrieveOptions } from '../memory.ts';
 import { SCHEMAS } from '../llm-schemas.ts';
 
+// ---------- 规则（只依赖显式输入；测试见 test/social-rules.test.ts） ----------
+type Belief = LiveAgent['beliefs'][number];
+
+/** 写入一条信念：同一话题只保留最新的，确信度截到 [0, 1]、保留两位小数，最多 20 条（挤掉最早的） */
+export function withBelief(beliefs: Belief[], { about, claim, confidence = 0.6, source = '' }: { about: string; claim: string; confidence?: number; source?: string }, t: number): Belief[] {
+  const out = beliefs.filter((b) => b.about !== about);
+  out.push({ about, claim, confidence: Math.round(Math.max(0, Math.min(1, confidence)) * 100) / 100, source, t: Math.floor(t) });
+  if (out.length > 20) out.shift();
+  return out;
+}
+
+/** 交谈中 x 要传给 y 的信念（从新到旧，最多 2 条）：x 自己有五成把握才传，打七折；y 更确信的看法不覆盖 */
+export function beliefsToShare(x: ReadonlyArray<Belief>, y: ReadonlyArray<Belief>): Array<{ about: string; claim: string; confidence: number }> {
+  const out: Array<{ about: string; claim: string; confidence: number }> = [];
+  let ys = [...y]; // 每传一条，y 的列表就变了（可能挤掉最早的一条）：在副本上逐条模拟，与逐条写入的结果一致
+  for (const b of [...x].reverse()) {
+    if (out.length >= 2) break;
+    if (b.confidence < 0.5) continue;
+    const mine = ys.find((z) => z.about === b.about);
+    const c = b.confidence * 0.7;
+    if (mine && mine.confidence >= c) continue;
+    out.push({ about: b.about, claim: b.claim, confidence: c });
+    ys = withBelief(ys, { about: b.about, claim: b.claim, confidence: c }, 0);
+  }
+  return out;
+}
+
+type Chatter = Pick<LiveAgent, 'id' | 'status' | 'region' | 'inside' | 'x' | 'y' | 'relations'>;
+/** 谁和谁可能搭话：不能两人都在走路；在一起（同一栋楼，或都在户外且 2.6 格以内）；这一对 150 分钟内没聊过；概率 = 基础概率 + 好感加成（最低 −0.15） */
+export function chatPairs<T extends Chatter>(free: T[], t: number, pairCd: Record<string, number>, baseProb: number): Array<{ a: T; b: T; p: number }> {
+  const pairs: Array<{ a: T; b: T; p: number }> = [];
+  for (let i = 0; i < free.length; i++) {
+    for (let j = i + 1; j < free.length; j++) {
+      const a = free[i]!, b = free[j]!;
+      if (a.status === 'walking' && b.status === 'walking') continue;
+      const near = (a.region || 'town') === (b.region || 'town') && ((a.inside && a.inside === b.inside) || (!a.inside && !b.inside && Math.hypot(a.x - b.x, a.y - b.y) < 2.6));
+      if (!near) continue;
+      if (t - (pairCd[pairKey(a.id, b.id)] ?? -999) < 150) continue;
+      const aff = ((a.relations[b.id]?.affinity ?? 0) + (b.relations[a.id]?.affinity ?? 0)) / 2;
+      pairs.push({ a, b, p: baseProb + Math.max(-0.15, aff / 300) });
+    }
+  }
+  return pairs;
+}
+
+// ---------- Town 上的接口 ----------
 export class Social {
   checkConversations(this: Town) {
     const m = this.minute;
     if (m < 6 * 60 + 40 || m > this.dayEnd || this.convos.size >= this.params.maxConvos) return;
     const free = this.agents.filter((a) => !a.convoId && (a.status === 'acting' || a.status === 'walking') && this.t - a.lastConvoEnd > 25 && !this.hasPosture(a, 'silent'));
-    const pairs = [];
-    for (let i = 0; i < free.length; i++) {
-      for (let j = i + 1; j < free.length; j++) {
-        const a = free[i], b = free[j];
-        if (a.status === 'walking' && b.status === 'walking') continue;
-        const near = (a.region || 'town') === (b.region || 'town') && ((a.inside && a.inside === b.inside) || (!a.inside && !b.inside && Math.hypot(a.x - b.x, a.y - b.y) < 2.6));
-        if (!near) continue;
-        if (this.t - (this.pairCd[pairKey(a.id, b.id)] ?? -999) < 150) continue;
-        const aff = ((a.relations[b.id]?.affinity ?? 0) + (b.relations[a.id]?.affinity ?? 0)) / 2;
-        pairs.push({ a, b, p: this.params.convoBaseProb + Math.max(-0.15, aff / 300) });
-      }
-    }
+    const pairs = chatPairs(free, this.t, this.pairCd, this.params.convoBaseProb);
     for (const { a, b, p } of pairs.sort(() => this.rng() - 0.5)) {
       if (this.rng() < p) { this.startConvo(a, b); return; }
     }
@@ -186,24 +221,14 @@ commitments 只写对话中明确达成的、今天${fmtTime(this.t)}之后到22
   }
 
   setBelief(this: Town, a: LiveAgent, { about, claim, confidence = 0.6, source = '' }: { about: string; claim: string; confidence?: number; source?: string }) {
-    a.beliefs = a.beliefs.filter((b) => b.about !== about);
-    a.beliefs.push({ about, claim, confidence: Math.round(Math.max(0, Math.min(1, confidence)) * 100) / 100, source, t: Math.floor(this.t) });
-    if (a.beliefs.length > 20) a.beliefs.shift();
+    a.beliefs = withBelief(a.beliefs, { about, claim, confidence, source }, this.t);
   }
 
   /** 信念在交谈中传播：x 较确信的看法会以打折的确信度传给 y（y 更确信的看法不会被覆盖） */
   shareBeliefs(this: Town, x: LiveAgent, y: LiveAgent) {
-    let n = 0;
-    for (const b of [...x.beliefs].reverse()) {
-      if (n >= 2) break;
-      if (b.confidence < 0.5) continue;
-      const mine = y.beliefs.find((z) => z.about === b.about);
-      const c = b.confidence * 0.7;
-      if (mine && mine.confidence >= c) continue;
-      this.setBelief(y, { about: b.about, claim: b.claim, confidence: c, source: x.id });
-      n++;
-    }
-    return n;
+    const share = beliefsToShare(x.beliefs, y.beliefs);
+    for (const b of share) this.setBelief(y, { ...b, source: x.id });
+    return share.length;
   }
 
   /**
