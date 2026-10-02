@@ -1,46 +1,83 @@
 // 战斗与敌对行动（黑暗叙事设计 §4.3 的 slay、§4.9）：居民之间的攻击、偷窃、威胁、俘虏与营救，以及居民与会死的威胁交手。
 // 按规则逐回合结算（每游戏分钟一回合），不调用 LLM。
-// 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
+// 规则（属性、能否动手、伤害、逃跑、偷窃与营救的检定）是下面只依赖显式输入的函数（重构方案 P6 第三步），
+// 可以不建小镇单独测试（test/combat-rules.test.ts）；Town 上的方法（Combat mixin）负责找人、记日志、写记忆等副作用。
 import { addMemory } from '../memory.ts';
 import { posOf } from '../kernel/effects.ts';
 import { lethal } from '../kernel/ratings.ts';
 import { clamp } from './util.ts';
 import type { Town } from '../sim.ts';
-import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
-import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';
-import type { Persona } from '../types/spec.ts';
-import type { Cell } from '../types/map.ts';
-import type { Pos } from '../kernel/effects.ts';
-import type { ModelJSON } from '../llm.ts';
-import type { RetrieveOptions } from '../memory.ts';
+import type { LiveAgent } from '../types/agent.ts';
+import type { ActArgs, Fight } from '../types/town.ts';
+import type { WorldSpec } from '../types/spec.ts';
 
 const MAX_ROUNDS = 12;
 const HATE = -40; // 好感低于它才会动手
 const CAPTIVE_MINUTES = 360;
 
-export class Combat {
-  /** 属性：基础值 + 人设里的 combat + 装备 */
-  combatStats(this: Town, a: LiveAgent) {
-    let atk = 4 + (a.combat?.atk || 0) + Math.round((a.body.courage - 50) / 25);
-    let def = 1 + (a.combat?.def || 0);
-    const tags = [];
-    for (const [k, n] of Object.entries(a.inventory)) {
-      const it = this.spec.items[k];
-      if (!it?.equip || n < 1) continue;
-      atk += it.mods?.atk || 0;
-      def += it.mods?.def || 0;
-      tags.push(...(it.tags || []));
-    }
-    return { atk: Math.max(1, atk), def: Math.max(0, def), tags };
-  }
+// ---------- 规则（只依赖显式输入） ----------
+type Rand = () => number;
+/** 战斗用到的居民字段 */
+type Fighter = Pick<LiveAgent, 'name' | 'body' | 'inventory' | 'combat'>;
+export interface Stats { atk: number; def: number; tags: string[] }
 
-  /** a 能不能对 b 动手：分级允许，而且 a 恨 b、a 是反派，或者两人的阵营敌对 */
+/** 属性：基础值 + 人设里的 combat + 装备 */
+export function computeStats(a: Fighter, items: WorldSpec['items']): Stats {
+  let atk = 4 + (a.combat?.atk || 0) + Math.round((a.body.courage - 50) / 25);
+  let def = 1 + (a.combat?.def || 0);
+  const tags: string[] = [];
+  for (const [k, n] of Object.entries(a.inventory)) {
+    const it = items[k];
+    if (!it?.equip || n < 1) continue;
+    atk += it.mods?.atk || 0;
+    def += it.mods?.def || 0;
+    tags.push(...(it.tags || []));
+  }
+  return { atk: Math.max(1, atk), def: Math.max(0, def), tags };
+}
+
+/** 能不能动手：返回不能的理由，能动手时返回 null（分级允许，而且恨对方、是反派，或者阵营敌对） */
+export function harmVerdict({ hostileWorld, rating, intent, affinity, villain, factionsHostile, names }: {
+  hostileWorld: boolean; rating: string; intent: string; affinity: number; villain: boolean; factionsHostile: boolean; names: [string, string];
+}): string | null {
+  if (!hostileWorld) return '这个世界里没有人会动手';
+  if (intent === 'kill' && !lethal(rating)) return '这个世界不允许杀人';
+  if (villain || affinity <= HATE || factionsHostile) return null;
+  return `${names[0]}和${names[1]}没有深仇大恨，下不了手`;
+}
+
+/** 一次出手的伤害（至少 1）：攻击 ×（0.8~1.2 的浮动）− 防御的一半 */
+export const blow = (atk: number, def: number, rng: Rand): number => Math.max(1, Math.round(atk * (0.8 + rng() * 0.4) - def * 0.5));
+
+/** 互殴一回合：先算 a 打 b、再算 b 打 a（随机数的取用顺序固定） */
+export function exchange(sa: Stats, sb: Stats, rng: Rand): { hitA: number; hitB: number } {
+  const hitB = blow(sa.atk, sb.def, rng);
+  const hitA = blow(sb.atk, sa.def, rng);
+  return { hitA, hitB };
+}
+
+/** 撑不住（0 < 血量 < 30）又不够勇敢（< 50）的一方逃跑：先看 b 再看 a；没有人逃返回 null */
+export function whoFlees<T extends Fighter>(a: T, b: T): T | null {
+  for (const x of [b, a]) if (x.body.hp > 0 && x.body.hp < 30 && x.body.courage < 50) return x;
+  return null;
+}
+
+/** 偷窃被抓：基础 40%，失主比小偷越勇敢越容易被抓 */
+export const stealCaught = (victimCourage: number, thiefCourage: number, rng: Rand): boolean => rng() < 0.4 + (victimCourage - thiefCourage) / 200;
+
+/** 救人时看守在场：救人的一方掷骰输了就被打回去（先掷救人者、再掷看守） */
+export const guardRepels = (rescuer: Stats, guard: Stats, rng: Rand): boolean => rescuer.atk + rng() * 6 < guard.atk + rng() * 6;
+
+// ---------- Town 上的接口（找人、记日志、写记忆等副作用） ----------
+export class Combat {
+  combatStats(this: Town, a: LiveAgent) { return computeStats(a, this.spec.items); }
+
+  /** a 能不能对 b 动手（规则见 harmVerdict） */
   mayHarm(this: Town, a: LiveAgent, b: LiveAgent, intent = 'subdue') {
-    if (!this.canBeHostile?.()) return '这个世界里没有人会动手';
-    if (intent === 'kill' && !lethal(this.spec.meta.rating)) return '这个世界不允许杀人';
-    const aff = a.relations[b.id]?.affinity ?? 0;
-    if (a.alignment === 'villain' || aff <= HATE || this.factionsHostile(a, b)) return null;
-    return `${a.name}和${b.name}没有深仇大恨，下不了手`;
+    return harmVerdict({
+      hostileWorld: Boolean(this.canBeHostile?.()), rating: this.spec.meta.rating, intent,
+      affinity: a.relations[b.id]?.affinity ?? 0, villain: a.alignment === 'villain', factionsHostile: this.factionsHostile(a, b), names: [a.name, b.name],
+    });
   }
 
   factionsHostile(this: Town, a: LiveAgent, b: LiveAgent) {
@@ -78,18 +115,16 @@ export class Combat {
     const end = (text: string | null, extra = {}) => { this.fights = this.fights.filter((x) => x !== f); if (text) this.log('combat', text, { agents: [f.a, f.b], ...extra }); };
     if (!a || !b || !this.agents.includes(a) || !this.agents.includes(b) || !this.near(a, b, 4)) return end(a && b ? `${a.name}和${b.name}分开了` : '');
     f.round++;
-    const sa = this.combatStats(a), sb = this.combatStats(b);
-    const hitB = Math.max(1, Math.round(sa.atk * (0.8 + this.rng() * 0.4) - sb.def * 0.5));
-    const hitA = Math.max(1, Math.round(sb.atk * (0.8 + this.rng() * 0.4) - sa.def * 0.5));
+    const { hitA, hitB } = exchange(this.combatStats(a), this.combatStats(b), this.rng);
     b.body.hp = Math.max(0, b.body.hp - hitB);
     a.body.hp = Math.max(0, a.body.hp - hitA);
     // 撑不住、又不够勇敢的一方逃跑
-    for (const [x, y] of [[b, a], [a, b]]) {
-      if (x.body.hp > 0 && x.body.hp < 30 && x.body.courage < 50) {
-        x.body.conditions = [...new Set([...x.body.conditions, '受惊'])].slice(-5);
-        addMemory(x, { t: this.t, type: 'event', text: `被${y.name}打得逃走了`, importance: 7 });
-        return end(`🏃 ${x.name}从${y.name}手里逃走了`);
-      }
+    const x = whoFlees(a, b);
+    if (x) {
+      const y = x === a ? b : a;
+      x.body.conditions = [...new Set([...x.body.conditions, '受惊'])].slice(-5);
+      addMemory(x, { t: this.t, type: 'event', text: `被${y.name}打得逃走了`, importance: 7 });
+      return end(`🏃 ${x.name}从${y.name}手里逃走了`);
     }
     const down = b.body.hp <= 0 ? [b, a] : a.body.hp <= 0 ? [a, b] : null;
     if (down) { end(''); this.downed(down[0], down[1], down[1] === a ? f.intent : 'subdue'); return; }
@@ -141,8 +176,7 @@ export class Combat {
     const by = this.byId[x.captive.by];
     // 看守在场就得先打一架
     if (by && this.agents.includes(by) && this.near(by, a, 4)) {
-      const s1 = this.combatStats(a), s2 = this.combatStats(by);
-      if (s1.atk + this.rng() * 6 < s2.atk + this.rng() * 6) {
+      if (guardRepels(this.combatStats(a), this.combatStats(by), this.rng)) {
         this.woundAgent(a, 30, { cause: `guard:${by.id}` });
         this.log('combat', `⚔️ ${a.name}想救出${x.name}，被${by.name}打了回去`, { agents: [a.id, x.id, by.id] });
         return { ok: true };
@@ -164,7 +198,7 @@ export class Combat {
     const no = this.mayHarm(a, b);
     if (no) return { ok: false, reason: no };
     if ((b.inventory[item] || 0) < 1) return { ok: false, reason: `${b.name}身上没有${this.spec.items[item]?.name || item}` };
-    const caught = this.rng() < 0.4 + (b.body.courage - a.body.courage) / 200;
+    const caught = stealCaught(b.body.courage, a.body.courage, this.rng);
     if (caught) {
       const r = (b.relations[a.id] ||= { affinity: 0, note: '' });
       r.affinity = clamp(r.affinity - 25, -100, 100);
@@ -206,7 +240,7 @@ export class Combat {
     const dmg = ts.hit(inst, s.atk, s.tags, a);
     const def = ts.def(inst);
     // 会死的威胁会还手
-    if (def?.mortal && inst.hp! > 0 && def.atk) this.woundAgent(a, Math.max(1, Math.round(def.atk * (0.8 + this.rng() * 0.4) - s.def * 0.5)), { cause: `threat:${inst.type}` });
+    if (def?.mortal && inst.hp! > 0 && def.atk) this.woundAgent(a, blow(def.atk, s.def, this.rng), { cause: `threat:${inst.type}` });
     addMemory(a, { t: this.t, type: 'event', text: dmg ? `和${inst.name}交了手` : `对${inst.name}出手，却好像什么用也没有`, importance: 7 });
     return { ok: true };
   }
