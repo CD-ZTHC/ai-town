@@ -1,5 +1,6 @@
 // 行动（P1）：使用能力、送东西、传授、研究
-// 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
+// 规则（校验模型给出的行动、没成功时的重试策略）是下面只依赖显式输入的函数（重构方案 P6 第三步，测试见 test/actions-rules.test.ts）；
+// Town 上的方法（Actions mixin）负责真正执行行动。
 import { addMemory, parseHM } from '../memory.ts';
 import { useAbility, describeAbility, findAbility, matchResearch } from '../kernel/abilities.ts';
 import { agentsNear, posOf, runEffects } from '../kernel/effects.ts';
@@ -8,50 +9,62 @@ import { clamp, clampStr } from './util.ts';
 import type { Town } from '../sim.ts';
 import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
 import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';
-import type { Persona } from '../types/spec.ts';
+import type { Persona, WorldSpec } from '../types/spec.ts';
 import type { Cell } from '../types/map.ts';
 import type { EffectArgs, Pos } from '../kernel/effects.ts';
 import type { ModelJSON } from '../llm.ts';
 import type { RetrieveOptions } from '../memory.ts';
 
-export class Actions {
-  /** 校验并规范化 LLM 给出的行动；不合法返回 undefined（该条日程照常执行，只是没有行动） */
-  normalizeAct(this: Town, act: Act | null | undefined) {
-    if (!act || typeof act !== 'object') return undefined;
-    const type = String(act.type || '');
-    const to = clampStr(act.to, 12);
-    if (type === 'use' && findAbility(this.spec, act.ability)) {
-      const target = clampStr(act.target, 12);
-      return { type, ability: act.ability, ...(target && target !== 'null' ? { target } : {}) };
-    }
-    if (type === 'give' && Object.hasOwn(this.spec.items, act.item) && to) {
-      return { type, item: act.item, to, count: clamp(Math.floor(Number(act.count) || 1), 1, 5) };
-    }
-    if (type === 'teach' && findAbility(this.spec, act.ability) && to) return { type, ability: act.ability, to };
-    if (type === 'research' && clampStr(act.topic, 20)) return { type, topic: clampStr(act.topic, 20) };
-    return this.normalizeDarkAct(type, act);
+// ---------- 规则（只依赖显式输入） ----------
+/** 校验并规范化模型给出的行动；不合法返回 undefined（该条日程照常执行，只是没有行动）。hostile：这个世界里有没有人会动手 */
+export function parseAct(act: Act | null | undefined, spec: WorldSpec, hostile: boolean) {
+  if (!act || typeof act !== 'object') return undefined;
+  const type = String(act.type || '');
+  const to = clampStr(act.to, 12);
+  if (type === 'use' && findAbility(spec, act.ability)) {
+    const target = clampStr(act.target, 12);
+    return { type, ability: act.ability, ...(target && target !== 'null' ? { target } : {}) };
   }
+  if (type === 'give' && Object.hasOwn(spec.items, act.item) && to) {
+    return { type, item: act.item, to, count: clamp(Math.floor(Number(act.count) || 1), 1, 5) };
+  }
+  if (type === 'teach' && findAbility(spec, act.ability) && to) return { type, ability: act.ability, to };
+  if (type === 'research' && clampStr(act.topic, 20)) return { type, topic: clampStr(act.topic, 20) };
+  return parseDarkAct(type, act, spec, hostile);
+}
 
-  /** 黑暗叙事的行动（设计 §4.1 禁忌姿态、§4.3 对抗、§4.8 派遣、§4.9 敌对行动）；世界里没有对应内容时不接受 */
-  normalizeDarkAct(this: Town, type: string, act: Act) {
-    const spec = this.spec;
-    const threats = Object.keys(spec.threats || {}).length > 0;
-    const name = clampStr(act.target ?? act.to, 12);
-    if (type === 'taboo' && threats) {
-      const holds = (Array.isArray(act.hold) ? act.hold : [act.hold]).filter((h) => Object.hasOwn(POSTURE_NAMES, h));
-      return holds.length ? { type, hold: [...new Set(holds)], ...(parseHM(act.until) != null ? { until: act.until } : {}) } : undefined;
-    }
-    if ((type === 'contain' || type === 'hunt') && threats && clampStr(act.threat, 12)) return { type, threat: clampStr(act.threat, 12) };
-    if (type === 'useItem' && spec.items[act.item]?.use) return { type, item: act.item, ...(name ? { target: name } : {}) };
-    if (type === 'dispatch' && clampStr(act.who, 12) && clampStr(act.incident, 32)) return { type, who: clampStr(act.who, 12), incident: clampStr(act.incident, 32) };
-    if (!this.canBeHostile()) return undefined;
-    if (type === 'attack' && name) return { type, target: name, intent: ['subdue', 'drive_off', 'kill', 'capture'].includes(act.intent) ? act.intent : 'subdue' };
-    const from = clampStr(act.from ?? act.target, 12);
-    if (type === 'steal' && from && Object.hasOwn(spec.items, act.item)) return { type, item: act.item, from };
-    if (type === 'threaten' && name) return { type, target: name, demand: clampStr(act.demand, 30) };
-    if (type === 'rescue' && name) return { type, target: name };
-    return undefined;
+/** 黑暗叙事的行动（设计 §4.1 禁忌姿态、§4.3 对抗、§4.8 派遣、§4.9 敌对行动）；世界里没有对应内容时不接受 */
+export function parseDarkAct(type: string, act: Act, spec: WorldSpec, hostile: boolean) {
+  const threats = Object.keys(spec.threats || {}).length > 0;
+  const name = clampStr(act.target ?? act.to, 12);
+  if (type === 'taboo' && threats) {
+    const holds = (Array.isArray(act.hold) ? act.hold : [act.hold]).filter((h) => Object.hasOwn(POSTURE_NAMES, h));
+    return holds.length ? { type, hold: [...new Set(holds)], ...(parseHM(act.until) != null ? { until: act.until } : {}) } : undefined;
   }
+  if ((type === 'contain' || type === 'hunt') && threats && clampStr(act.threat, 12)) return { type, threat: clampStr(act.threat, 12) };
+  if (type === 'useItem' && spec.items[act.item]?.use) return { type, item: act.item, ...(name ? { target: name } : {}) };
+  if (type === 'dispatch' && clampStr(act.who, 12) && clampStr(act.incident, 32)) return { type, who: clampStr(act.who, 12), incident: clampStr(act.incident, 32) };
+  if (!hostile) return undefined;
+  if (type === 'attack' && name) return { type, target: name, intent: ['subdue', 'drive_off', 'kill', 'capture'].includes(act.intent) ? act.intent : 'subdue' };
+  const from = clampStr(act.from ?? act.target, 12);
+  if (type === 'steal' && from && Object.hasOwn(spec.items, act.item)) return { type, item: act.item, from };
+  if (type === 'threaten' && name) return { type, target: name, demand: clampStr(act.demand, 30) };
+  if (type === 'rescue' && name) return { type, target: name };
+  return undefined;
+}
+
+/** 行动没成功：可以重试（对象不在身边）时每 10 游戏分钟再试一次，同一条日程最多 6 次；返回新的待重试记录，null 表示放弃 */
+export function retryPlan(prev: LiveAgent['pendingAct'], key: string, t: number, retry: boolean | undefined): LiveAgent['pendingAct'] {
+  if (!retry) return null;
+  const tries = (prev?.key === key ? prev.tries : 0) + 1;
+  return tries <= 6 ? { key, next: t + 10, tries } : null;
+}
+
+// ---------- Town 上的接口 ----------
+export class Actions {
+  normalizeAct(this: Town, act: Act | null | undefined) { return parseAct(act, this.spec, this.canBeHostile()); }
+
+  normalizeDarkAct(this: Town, type: string, act: Act) { return parseDarkAct(type, act, this.spec, this.canBeHostile()); }
 
   /** 到达日程地点时执行行动；对象不在身边时稍后重试 */
   runAct(this: Town, a: LiveAgent, e: CurEntry, retry = false) {
@@ -68,10 +81,7 @@ export class Actions {
     else if (act.type === 'teach') r = this.teach(a, act);
     else r = this.runDarkAct(a, act, e);
     if (r?.ok || !r) { a.pendingAct = null; return; }
-    if (r.retry) {
-      const tries = (a.pendingAct?.key === e.key ? a.pendingAct.tries : 0) + 1;
-      a.pendingAct = tries <= 6 ? { key: e.key, next: this.t + 10, tries } : null;
-    } else a.pendingAct = null;
+    a.pendingAct = retryPlan(a.pendingAct, e.key, this.t, r.retry);
     if (!a.pendingAct) addMemory(a, { t: this.t, type: 'obs', text: `本想${e.activity}，可惜没成：${r.reason}`, importance: 2 });
   }
 
