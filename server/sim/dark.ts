@@ -1,6 +1,7 @@
 // 黑暗叙事的居民侧（设计 §4.4、§4.5、§4.8~§4.10）：死亡与死亡预算、受伤与治疗、群众伤亡、负担值、宿主关系、
 // 阵营配给与派遣、反派的欲望与转变，以及写进居民提示词的部分。
-// 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
+// 规则（是否在身边、死亡预算、负担值的一步、寄宿倍率、伤亡记在哪、会不会有人动手）是下面只依赖显式输入的函数
+// （重构方案 P6 第三步，测试见 test/dark-rules.test.ts）；Town 上的方法（Dark mixin）负责死亡、日志、记忆与效果。
 import { addMemory } from '../memory.ts';
 import { runEffects, posOf } from '../kernel/effects.ts';
 import { testExpr, hasPosture } from '../kernel/rules.ts';
@@ -11,7 +12,7 @@ import { clamp } from './util.ts';
 import type { Town } from '../sim.ts';
 import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
 import type { Act, ActArgs, Convo, DarkState, Fight, SaveData, ThreatInstance } from '../types/town.ts';
-import type { Persona } from '../types/spec.ts';
+import type { Persona, WorldSpec } from '../types/spec.ts';
 import type { Cell } from '../types/map.ts';
 import type { Pos } from '../kernel/effects.ts';
 import type { ModelJSON } from '../llm.ts';
@@ -24,22 +25,67 @@ const ANCHOR = 50; // 好感达到多少算「锚」（负担值的 anchor_lost 
 // darkState 是 getter（不能声明 this 参数），这里声明它用到的字段
 export interface Dark { dark: DarkState }
 
-export class Dark {
-  /** 两个居民是否在一起（同一栋楼里，或都在户外、r 格以内） */
-  near(this: Town, a: LiveAgent, b: LiveAgent, r = 3) {
-    if (!a || !b || (a.region || 'town') !== (b.region || 'town')) return false;
-    if (a.inside || b.inside) return a.inside === b.inside;
-    return Math.hypot(a.x - b.x, a.y - b.y) <= r;
+// ---------- 规则（只依赖显式输入） ----------
+type Placed = { x: number; y: number; region?: string | null; inside?: string | null };
+
+/** 两个居民是否在一起（同一栋楼里，或都在户外、r 格以内；不同区域不算） */
+export function isNear(a: Placed | null | undefined, b: Placed | null | undefined, r = 3): boolean {
+  if (!a || !b || (a.region || 'town') !== (b.region || 'town')) return false;
+  if (a.inside || b.inside) return a.inside === b.inside;
+  return Math.hypot(a.x - b.x, a.y - b.y) <= r;
+}
+
+/** 死亡预算：最近 days 天里已经死了几个具名角色，还剩几个名额 */
+export function deathBudgetOf(deaths: ReadonlyArray<{ t: number }>, t: number, named: number, days: number) {
+  const used = deaths.filter((d) => t - d.t < days * 1440).length;
+  return { named, days, used, left: Math.max(0, named - used) };
+}
+
+/** 负担值的一步：截到 [0, max]；跨过 moodAt 的阈值时换成对应的心情（取最后一个）；刚到顶时 full */
+export function burdenStep(before: number, amount: number, max: number, moodAt: ReadonlyArray<readonly [number, string]>): { value: number; mood: string | null; full: boolean } {
+  const value = clamp(before + amount, 0, max);
+  let mood: string | null = null;
+  for (const [v, m] of moodAt) if (before < v && value >= v) mood = m;
+  return { value, mood, full: value >= max && before < max };
+}
+
+/** 寄宿的威胁对某个负担的增速倍率：寄宿的各威胁的 rate 相加，再加上同时寄宿时的互相影响；没有寄宿时为 1 */
+export function hostedDriftMult(hosted: ReadonlyArray<{ threat: string }>, threats: WorldSpec['threats'], burdenId: string): number {
+  const hosts = hosted.map((h) => threats?.[h.threat]?.hostable).filter((h) => h?.burden === burdenId);
+  if (!hosts.length) return 1;
+  let mult = hosts.reduce((s, h) => s + (h!.rate ?? 1), 0);
+  for (const h of hosted) for (const [other, off] of Object.entries(threats?.[h.threat]?.hostable?.offsets || {})) if (hosted.some((x) => x.threat === other)) mult += off;
+  return Math.max(0, mult);
+}
+
+/** 群众伤亡记在哪个地点：候选地点里与 at 同区域、中心离 at 最近的 */
+export function nearestLoc(cands: string[], at: Placed, regionOf: (id: string) => string, centerOf: (id: string) => { x: number; y: number } | null): string | null {
+  let loc: string | null = null, best = Infinity;
+  for (const id of cands) {
+    if (regionOf(id) !== (at.region || 'town')) continue;
+    const c = centerOf(id);
+    const d = c ? Math.hypot(c.x - at.x, c.y - at.y) : Infinity;
+    if (d < best) { best = d; loc = id; }
   }
+  return loc;
+}
+
+/** 这个世界允许居民之间的敌对行动吗：冒险分级起，并且世界包里有阵营、反派或威胁 */
+export function hostileWorld(spec: Pick<WorldSpec, 'meta' | 'factions' | 'personas' | 'threats'>): boolean {
+  if (!['adventure', 'epic', 'dark', 'tragic'].includes(spec.meta.rating)) return false;
+  return Boolean((spec.factions || []).length || spec.personas.some((p) => p.alignment === 'villain') || Object.keys(spec.threats || {}).length);
+}
+
+// ---------- Town 上的接口 ----------
+export class Dark {
+  near(this: Town, a: LiveAgent, b: LiveAgent, r = 3) { return isNear(a, b, r); }
 
   get darkState() { return (this.dark ||= freshDark()); }
 
   /** 死亡预算：每 days 天最多 named 名具名角色死亡（世界设置覆盖世界包参数） */
   deathBudget(this: Town) {
     const named = Number.isInteger(this.worldSettings?.deathNamed) ? this.worldSettings.deathNamed : this.params.deathNamed ?? DEATH_NAMED_DEFAULT;
-    const days = this.params.deathDays ?? DEATH_DAYS_DEFAULT;
-    const used = this.darkState.deaths.filter((d) => this.t - d.t < days * 1440).length;
-    return { named, days, used, left: Math.max(0, named - used) };
+    return deathBudgetOf(this.darkState.deaths, this.t, named, this.params.deathDays ?? DEATH_DAYS_DEFAULT);
   }
 
   // ---------- 死亡（设计 §4.10）----------
@@ -123,13 +169,7 @@ export class Dark {
     let loc: string | null = typeof at === 'string' ? at : null;
     if (!loc && at) {
       const cands = Object.keys(st.population).length ? Object.keys(st.population) : this.publicLocs();
-      let best = Infinity;
-      for (const id of cands) {
-        if (this.locRegion(id) !== ((at as Cell & { region?: string }).region || 'town')) continue;
-        const c = this.locCenter(id);
-        const d = c ? Math.hypot(c.x - (at as Cell).x, c.y - (at as Cell).y) : Infinity;
-        if (d < best) { best = d; loc = id; }
-      }
+      loc = nearestLoc(cands, at as Placed, (id) => this.locRegion(id), (id) => this.locCenter(id));
     }
     const pop = loc && st.population[loc];
     const k = pop ? Math.min(n, pop.alive) : n;
@@ -148,12 +188,11 @@ export class Dark {
     const def = this.spec.burdens?.[id];
     if (!def || !a || !this.agents.includes(a)) return;
     if (amount > 0 && (a.burdenFreeze?.[id] || 0) > this.t) return;
-    const max = def.max ?? 100;
     const bs = (a.burdens ||= {});
-    const before = bs[id] ?? 0;
-    bs[id] = clamp(before + amount, 0, max);
-    for (const [v, mood] of def.moodAt || []) if (before < v && bs[id] >= v) a.mood = { text: mood, emoji: '🌑' };
-    if (bs[id] >= max && before < max && def.onFull?.length) {
+    const step = burdenStep(bs[id] ?? 0, amount, def.max ?? 100, def.moodAt || []);
+    bs[id] = step.value;
+    if (step.mood) a.mood = { text: step.mood, emoji: '🌑' };
+    if (step.full && def.onFull?.length) {
       this.log('burden', `🌑 ${a.name}的${def.name}到了尽头`, { agents: [a.id] });
       runEffects(this, { self: a, target: a, e: a, at: posOf(this, a), source: `burden:${id}` }, def.onFull);
     }
@@ -177,13 +216,7 @@ export class Dark {
       for (const id of Object.keys(a.burdens || {})) {
         const def = spec.burdens[id];
         if (!def || !def.drift) continue;
-        let mult = 1;
-        const hosts = (a.hosted || []).map((h) => spec.threats?.[h.threat]?.hostable).filter((h) => h?.burden === id);
-        if (hosts.length) {
-          mult = hosts.reduce((s, h) => s + (h!.rate ?? 1), 0);
-          for (const h of a.hosted!) for (const [other, off] of Object.entries(spec.threats?.[h.threat]?.hostable?.offsets || {})) if (a.hosted!.some((x) => x.threat === other)) mult += off;
-          mult = Math.max(0, mult);
-        }
+        let mult = hostedDriftMult(a.hosted || [], spec.threats, id);
         for (const m of def.driftMods || []) {
           try { if (testExpr(this, m.when, { self: a, e: a })) mult *= m.mult; } catch { /* 条件出错时忽略这一条 */ }
         }
@@ -351,12 +384,7 @@ export class Dark {
     return lines.length ? `${lines.join('\n')}\n` : '';
   }
 
-  /** 这个世界允许居民之间的敌对行动吗：冒险分级起，并且世界包里有阵营、反派或威胁 */
-  canBeHostile(this: Town) {
-    const r = this.spec.meta.rating;
-    if (!['adventure', 'epic', 'dark', 'tragic'].includes(r)) return false;
-    return Boolean((this.spec.factions || []).length || this.spec.personas.some((p) => p.alignment === 'villain') || Object.keys(this.spec.threats || {}).length);
-  }
+  canBeHostile(this: Town) { return hostileWorld(this.spec); }
 
   hasPosture(this: Town, a: LiveAgent, name: string) { return hasPosture(this, a, name); }
 }
