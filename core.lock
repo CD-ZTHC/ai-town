@@ -68,7 +68,7 @@
   "server/sim/movement.ts": "067379de12bd5db332dde622dc6dcde9d542e871eb0f2b7ebf19a2846d0b01b6",
   "server/sim/persistence.ts": "654a7356b7e7fdddfe6b90964b13458b0701b07446a118a19a45f66af064bbe0",
   "server/sim/planning.ts": "ec625d1fadb4d5a84722b3aecc8fdc3b33148ddcbf122621f1e61d7a946f30e4",
-  "server/sim/regions.ts": "f949a643a632205d4ba786499e7a0d4536246612d0273281b49286a392129334",
+  "server/sim/regions.ts": "fdd522c2795f4dfbcdd9f47c8bc5f4b0f97ab97081a6fad04040f73186ec8c43",
   "server/sim/runtime.ts": "153dbe992b39a104ba92917eef516ed87277ef83d0f88caaa30d82552cb3eee4",
   "server/sim/social.ts": "1d8a93e187ae7e9055bc6299db9aea8e830a76b14283091569f36dd55ce0ea7c",
   "server/sim/state.ts": "238358e392e84c17753649613e35210cd70b6677ff51dd1ce658a58e7e0461e1",

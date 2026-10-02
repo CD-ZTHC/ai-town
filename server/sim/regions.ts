@@ -1,11 +1,55 @@
 // 区域与地点：地点查找、区域开关（暗月界）、地点列表
-// 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
+// 规则（区域是否开放、跨区域路线、地点中心、地名匹配）是下面只依赖显式输入的函数（重构方案 P6 第三步，测试见 test/regions-rules.test.ts）；
+// Town 上的方法（Regions mixin）把世界状态交给它们，并负责开关区域时的副作用（日志、传闻、生物、把人送回来）。
 import { addMemory } from '../memory.ts';
 import type { Town } from '../sim.ts';
 import type { GenWorld, MapLocation } from '../types/map.ts';
 
 /** 区域图的一条有向边：从 from 区域的 a 点出发，到 to 区域的 b 点 */
 export interface RegionLink { from: string; to: string; a: Cell; b: Cell; name: string }
+
+// ---------- 规则（只依赖显式输入） ----------
+/** 区域是否开放：主地图总是开放；世界标记 region_<id> 优先（剧情或管理员开关），否则看区域自己的声明 */
+export function isRegionOpen(worldFlags: Record<string, unknown>, regions: ReadonlyArray<{ id: string; open?: boolean }>, id: string): boolean {
+  if (id === 'town') return true;
+  const flag = worldFlags[`region_${id}`];
+  if (flag !== undefined) return flag === true;
+  return regions.find((r) => r.id === id)?.open === true;
+}
+
+/** 从 from 区域去 to 区域的下一段：广度优先找最少换乘的路线，同一段有多个出口时挑离 pos 最近的；到不了返回 null */
+export function nextHop(links: RegionLink[], isOpen: (id: string) => boolean, from: string, to: string, pos: Cell | null = null): RegionLink | null | undefined {
+  if (from === to) return null;
+  const open = links.filter((l) => isOpen(l.to) && isOpen(l.from));
+  const prev = new Map<string, string | null>([[from, null]]);
+  const q = [from];
+  for (let i = 0; i < q.length && !prev.has(to); i++) for (const l of open) if (l.from === q[i] && !prev.has(l.to)) { prev.set(l.to, q[i]!); q.push(l.to); }
+  if (!prev.has(to)) return null;
+  let next = to;
+  while (prev.get(next) !== from) next = prev.get(next)!;
+  const opts = open.filter((l) => l.from === from && l.to === next);
+  const d = (l: RegionLink) => (pos ? Math.hypot(l.a.x - pos.x, l.a.y - pos.y) : 0);
+  return opts.sort((x, y) => d(x) - d(y))[0];
+}
+
+/** 地点的中心点：第一个站位 → 室内地点的门口 → 区域的中心 */
+export function locationCenter(l: MapLocation | null, buildings: ReadonlyArray<{ id: string; entrance: Cell }>): Cell | null {
+  if (!l) return null;
+  if (l.spots?.length) return { x: l.spots[0]!.x, y: l.spots[0]!.y };
+  if (l.indoor) {
+    const b = buildings.find((x) => x.id === l.indoor);
+    if (b) return { x: b.entrance.x, y: b.entrance.y };
+  }
+  if (l.rect) return { x: Math.round(l.rect.x + l.rect.w / 2), y: Math.round(l.rect.y + l.rect.h / 2) };
+  return null;
+}
+
+/** 模型偶尔写中文地名：互相包含就算匹配，返回第一个匹配的地点 id */
+export function matchLocName(name: string, locations: ReadonlyArray<{ id: string; name: string }>): string | null {
+  return locations.find((l) => name.includes(l.name) || l.name.includes(name))?.id ?? null;
+}
+
+// ---------- Town 上的接口 ----------
 import type { CurEntry, LiveAgent, ScheduleEntry } from '../types/agent.ts';
 import type { Act, ActArgs, Convo, Fight, SaveData, ThreatInstance } from '../types/town.ts';
 import type { Persona, Region } from '../types/spec.ts';
@@ -22,8 +66,7 @@ export class Regions {
     if (this.findLocation(loc) && this.regionOpen(this.locRegion(loc))) return loc;
     // LLM 偶尔写中文地名：在开放的区域里尝试匹配
     const all = Object.values(this.regions).filter((w) => this.regionOpen(w.id)).flatMap((w) => Object.values(w.locations));
-    const hit = all.find((l) => loc.includes(l.name) || l.name.includes(loc));
-    return hit ? hit.id : a.home;
+    return matchLocName(loc, all) ?? a.home;
   }
 
   worldOf(this: Town, region: string | null | undefined): GenWorld { return this.regions[region as string] || this.world; }
@@ -33,12 +76,7 @@ export class Regions {
   findLocation(this: Town, id: string): MapLocation | null { const w = this.worldOf(this.locRegion(id)); return Object.hasOwn(w.locations, id) ? w.locations[id]! : null; }
 
   /** 区域是否开放：剧情或管理员打开的（世界标记），或区域自己声明默认开放（linkRegions / 世界包里的 open） */
-  regionOpen(this: Town, id: string): boolean {
-    if (id === 'town') return true;
-    const flag = this.worldFlags[`region_${id}`];
-    if (flag !== undefined) return flag === true;
-    return this.spec.regions.find((r) => r.id === id)?.open === true;
-  }
+  regionOpen(this: Town, id: string): boolean { return isRegionOpen(this.worldFlags, this.spec.regions, id); }
 
   openRegion(this: Town, id: string, open = true): boolean {
     if (!Object.hasOwn(this.regions, id) || id === 'town') return false;
@@ -102,17 +140,7 @@ export class Regions {
 
   /** 从 from 区域去 to 区域的下一段：广度优先找最少换乘的路线，同一段有多个出口时挑离 pos 最近的 */
   routeStep(this: Town, from: string, to: string, pos: Cell | null = null): RegionLink | null | undefined {
-    if (from === to) return null;
-    const links = this.regionLinks().filter((l) => this.regionOpen(l.to) && this.regionOpen(l.from));
-    const prev = new Map<string, string | null>([[from, null]]);
-    const q = [from];
-    for (let i = 0; i < q.length && !prev.has(to); i++) for (const l of links) if (l.from === q[i] && !prev.has(l.to)) { prev.set(l.to, q[i]!); q.push(l.to); }
-    if (!prev.has(to)) return null;
-    let next = to;
-    while (prev.get(next) !== from) next = prev.get(next)!;
-    const opts = links.filter((l) => l.from === from && l.to === next);
-    const d = (l: RegionLink) => (pos ? Math.hypot(l.a.x - pos.x, l.a.y - pos.y) : 0);
-    return opts.sort((x, y) => d(x) - d(y))[0];
+    return nextHop(this.regionLinks(), (id) => this.regionOpen(id), from, to, pos);
   }
 
   regionsView(this: Town) {
@@ -130,13 +158,6 @@ export class Regions {
 
   locCenter(this: Town, id: string): Cell | null {
     const l = this.findLocation(id);
-    if (!l) return null;
-    if (l.spots?.length) return { x: l.spots[0]!.x, y: l.spots[0]!.y };
-    if (l.indoor) {
-      const b = this.worldOf(this.locRegion(id)).buildings.find((x) => x.id === l.indoor);
-      if (b) return { x: b.entrance.x, y: b.entrance.y };
-    }
-    if (l.rect) return { x: Math.round(l.rect.x + l.rect.w / 2), y: Math.round(l.rect.y + l.rect.h / 2) };
-    return null;
+    return l ? locationCenter(l, this.worldOf(this.locRegion(id)).buildings) : null;
   }
 }
