@@ -7,6 +7,8 @@ export interface MemoryOwner {
   id: string;
   memories: Memory[];
   importanceAcc?: number;
+  /** 记忆 id 的计数（随存档保存）：id 只由居民与计数决定，同一个种子跑两次完全相同 */
+  memSeq?: number;
 }
 
 const PUNCT = /[\s，。！？、；：“”‘’（）《》…—\-,.!?;:'"()[\]{}~·]/g;
@@ -33,8 +35,8 @@ const KEEP_TYPES = new Set(['reflect', 'summary', 'diary']);
 export const isTrivial = (m: Memory): boolean => !KEEP_TYPES.has(m.type) && m.importance < 6;
 const MIN_GROUP = 5; // 同一天至少这么多条琐碎记忆才值得压缩成一条
 
-let memSeq = 0;
-const newId = (agent: { id: string }): string => `${agent.id}-${Date.now().toString(36)}-${(memSeq++).toString(36)}`;
+// 记忆 id：居民 id + 计数（重构方案 P7）。旧存档里的 id 是「居民-时间戳-序号」，格式不同，不会和新 id 撞上
+const newId = (agent: MemoryOwner): string => `${agent.id}-m${(agent.memSeq = (agent.memSeq || 0) + 1)}`;
 
 /** encode(agent, text)：写入前把旅人的昵称换成账号引用（由账号模块设置，见 accounts/refs.ts） */
 export const memoryHooks: { encode: ((agent: MemoryOwner, text: string) => string) | null } = { encode: null };

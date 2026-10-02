@@ -111,7 +111,7 @@ async function runDays(seed: number, days: number): Promise<string> {
     const end = town.t + days * 1440;
     while (town.t < end) { town.advance(STEP); await tick(); }
     for (let i = 0; i < 20; i++) await tick();
-    return JSON.stringify({ t: Math.round(town.t), agents: town.agents.map((a) => [a.id, Math.round(a.x * 100), Math.round(a.y * 100), a.status, a.memories.map((m) => m.text)]), logs: town.logs.map((l) => [l.type, l.text]), rng: town.rng.state });
+    return JSON.stringify({ t: Math.round(town.t), agents: town.agents.map((a) => [a.id, Math.round(a.x * 100), Math.round(a.y * 100), a.status, a.memories.map((m) => [m.id, m.text])]), logs: town.logs.map((l) => [l.type, l.text]), rng: town.rng.state });
   } finally { town.stop(); llm.setMock(null); }
 }
 

@@ -17,6 +17,7 @@ import type { Pos } from '../kernel/effects.ts';
 import type { ModelJSON } from '../llm.ts';
 import type { RetrieveOptions } from '../memory.ts';
 import { DB_FILE, WorldStore } from '../storage/world-store.ts';
+import { loadState, saveState } from './state.ts';
 import { LEGACY_FILE, backupSave, readSnapshotFile, restoreSnapshotFile } from '../storage/save-io.ts';
 
 const SAVE_VERSION = 2;
@@ -82,11 +83,9 @@ export class Persistence {
   saveData(this: Town) {
     // 临时字段在运行时对象里（sim/runtime.ts），居民对象上只是不可枚举的访问器：展开时自然不包含
     const agents = [...this.agents, ...this.away].map((a) => ({ ...a }));
-    const data = { v: SAVE_VERSION, worldId: this.worldId, packHash: this.packHash, t: this.t, weather: this.weather, weatherLock: this.weatherLock, specOps: this.specOps, agents, entities: this.entities, worldFlags: this.worldFlags, paramMods: this.paramMods, ruleState: this.ruleState,
-      threadState: this.threadState, crisis: this.crisis, discovered: this.discovered, story: this.story, migrationState: this.migrationState, mapState: this.mapState, arcRuns: this.arcRuns, voteState: this.voteState,
-      pendingScenes: this.pendingScenes, creatureList: this.creatureList, dark: this.dark, fights: this.fights, portalState: this.portalState, swarmGoal: this.swarmGoal || null,
-      proposals: this.proposals, decisionState: this.decisionState, architectQueue: this.architectQueue, gaps: this.gaps, architectUsage: this.architectUsage,
-      usage: this.usage ? { days: this.usage.days } : undefined, metricsState: this.metricsState, logs: this.logs, convoLog: this.convoLog, newspapers: this.newspapers, board: this.board, pairCd: this.pairCd, flags: this.flags, seq: this.seq, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens }, rng: { seed: this.rng.seed, state: this.rng.state } };
+    // 世界状态按 sim/state.ts 的表写；居民、用量、当日令牌、随机数状态另外算
+    const data = { v: SAVE_VERSION, worldId: this.worldId, packHash: this.packHash, ...saveState(this), agents,
+      usage: this.usage ? { days: this.usage.days } : undefined, llmDay: { key: llm.stats.dayKey, tokens: llm.stats.dayTokens }, rng: { seed: this.rng.seed, state: this.rng.state } };
     return data;
   }
 
@@ -120,16 +119,10 @@ export class Persistence {
         const bak = backupSave(this.dataDir, `v${d.v || 1}`);
         console.log(`[save] 旧版存档已备份为 ${bak}，将升级到 v${SAVE_VERSION}`);
       }
-      Object.assign(this, { t: d.t, weather: Object.hasOwn(this.spec.weather, d.weather) ? d.weather : this.weather, weatherLock: d.weatherLock, logs: d.logs || [], convoLog: d.convoLog || [], newspapers: d.newspapers || [], board: d.board || [], pairCd: d.pairCd || {}, flags: d.flags || {}, seq: d.seq || 0 });
+      // 世界状态按 sim/state.ts 的表读（缺失的用初值，结构不对的告警后用初值）
+      loadState(this, d);
       this.nextWeatherT = this.t + 60;
-      Object.assign(this, { entities: d.entities || [], worldFlags: d.worldFlags || {}, paramMods: d.paramMods || [], ruleState: d.ruleState || { every: {}, at: {} } });
-      Object.assign(this, {
-        threadState: d.threadState || {}, crisis: d.crisis || { morale: 70, supplies: 80 }, discovered: d.discovered || [], story: d.story || undefined, migrationState: d.migrationState || undefined, mapState: d.mapState || undefined,
-        arcRuns: d.arcRuns || [], voteState: d.voteState || [], pendingScenes: d.pendingScenes || [], creatureList: d.creatureList || [], dark: d.dark ? { ...freshDark(), ...d.dark } : freshDark(), fights: d.fights || [], portalState: d.portalState || null, swarmGoal: d.swarmGoal || null,
-        proposals: d.proposals || [], decisionState: (d.decisionState || []).map((x: { status: string }) => (x.status === 'arbitrating' ? { ...x, status: 'waiting' } : x)), architectQueue: d.architectQueue || [], gaps: d.gaps || [], architectUsage: d.architectUsage || undefined,
-        usage: { days: d.usage?.days || {}, mark: null }, // 进程内计数重启后归零，重新开始标记
-        metricsState: d.metricsState || { days: {} },
-      });
+      this.usage = { days: d.usage?.days || {}, mark: null }; // 进程内计数重启后归零，重新开始标记
       if (this.story) this.story.lastHour = -1;
       // 随机数回到存档时的状态（构造小镇时补默认值也会取随机数）；指定了种子（回放、测试）时以种子为准
       if (this.opts?.seed == null && Number.isInteger(d.rng?.state) && d.rng.seed === this.rng.seed) this.rng.restore(d.rng.state);

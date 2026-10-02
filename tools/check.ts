@@ -67,7 +67,7 @@ if (problems.length) { console.error(`✖ 前端资源引用有问题：\n  ${pr
 // 同一个种子才能跑出同一个世界。真正需要真实时间的地方（主循环、日志限频）在同一行写「确定性白名单」说明原因
 const SIM_DIRS = ['server/sim', 'server/story', 'server/kernel', 'server/worldai'];
 const nondet: string[] = [];
-for (const f of ['server/sim.ts', ...SIM_DIRS.flatMap((d) => (fs.existsSync(d) ? [...walk(d)] : []))]) {
+for (const f of ['server/sim.ts', 'server/memory.ts', ...SIM_DIRS.flatMap((d) => (fs.existsSync(d) ? [...walk(d)] : []))]) {
   fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
     const code = line.replace(/\/\/.*$/, '');
     if (/\bMath\.random\b|\bDate\.now\b/.test(code) && !line.includes('确定性白名单')) nondet.push(`${f}:${i + 1}：${line.trim().slice(0, 100)}`);

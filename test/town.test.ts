@@ -10,6 +10,7 @@ for (const k of ['BASE_URL', 'API_KEY', 'MODEL', 'MODEL_FAST', 'MODEL_SMART', 'D
 const { Town } = await import('../server/sim.ts');
 import { readWorldSave, removeSave } from '../server/storage/save-io.ts';
 const { RUNTIME_KEYS } = await import('../server/sim/runtime.ts');
+const { STATE_KEYS } = await import('../server/sim/state.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'town-test-'));
 const tick = () => new Promise((r) => setImmediate(r));
@@ -151,5 +152,32 @@ test('状态分离（P6）：居民的临时字段在 town.rt 里，不进存档
   assert.equal(b.byId.lin.thinking, 0);
   assert.equal(b.byId.lin.convoId, null);
   assert.equal(b.byId.lin.bubble, null);
+  b.stop();
+});
+
+test('状态分离（P6）：世界状态在 town.state 里、由 sim/state.ts 的表定义；存档按表读写；坏掉的字段只重置那一个', () => {
+  const dir = tmp();
+  const a = new Town({ dataDir: dir });
+  a.log('event', '一条动态');
+  a.crisis.morale = 33;
+  assert.equal(a.state.logs, a.logs, 'Town 上的字段就是 state 里的同一个对象');
+  assert.equal(a.state.crisis.morale, 33);
+  for (const k of STATE_KEYS) assert.ok(!Object.keys(a).includes(k), `${k} 不是 Town 自己的字段`);
+  const copy = structuredClone(a.state);
+  assert.deepEqual(copy.crisis, { morale: 33, supplies: 80 }, '状态是纯数据，可以直接复制');
+  const d = a.saveData();
+  for (const k of STATE_KEYS) assert.ok(k in d, `存档里有 ${k}`);
+  assert.deepEqual(Object.keys(d).filter((k) => !(STATE_KEYS as string[]).includes(k)).sort(), ['agents', 'llmDay', 'packHash', 'rng', 'usage', 'v', 'worldId']);
+  a.save();
+  a.stop();
+  // 弄坏一个字段：只有它被重置，其他照常恢复
+  const save = readWorldSave(dir);
+  save.logs = '不是数组';
+  removeSave(dir);
+  fs.writeFileSync(path.join(dir, 'save.json'), JSON.stringify(save));
+  const b = new Town({ dataDir: dir });
+  assert.deepEqual(b.logs, []);
+  assert.equal(b.crisis.morale, 33);
+  assert.equal(b.t, a.t);
   b.stop();
 });

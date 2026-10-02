@@ -144,6 +144,8 @@ export interface Agent {
   diary: DiaryEntry[];
   diaryDay: number;
   importanceAcc: number;
+  /** 记忆 id 的计数（见 memory.ts） */
+  memSeq?: number;
   lastConvoEnd: number;
   lastThoughtT: number;
   lastReflectT: number;

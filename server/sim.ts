@@ -42,6 +42,8 @@ import type { WorldStore } from './storage/world-store.ts';
 import { rngFromSave } from './kernel/rng.ts';
 import { attachRuntime, freshRuntime } from './sim/runtime.ts';
 import type { TownRuntime } from './sim/runtime.ts';
+import { defineStateAccessors } from './sim/state.ts';
+import type { TownState } from './sim/state.ts';
 import type { Rng } from './kernel/rng.ts';
 import { Metrics } from './sim/metrics.ts';
 import { Dark } from './sim/dark.ts';
@@ -75,7 +77,7 @@ const MAX_STRUCTURES = 30;
 const MAP_OPS = new Set(['expandMap', 'addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace']);
 
 // 各职责模块（server/sim/）的方法经文件末尾的 mixin 挂到 Town.prototype 上；这里用声明合并让类型也知道它们
-export interface Town extends Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat {}
+export interface Town extends Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, TownState {}
 
 export class Town extends EventEmitter {
   // 字段只做类型声明（declare）：类型剥离后不生成任何代码，初始化仍在构造函数与各模块里，运行行为不变
@@ -97,17 +99,13 @@ export class Town extends EventEmitter {
   /** 默认规格 + Mod：之后叠加插件内容与存档中的操作历史 */
   declare baseSpec: WorldSpec;
   declare spec: WorldSpec;
-  declare specOps: OpRecord[];
   /** 插件带来的数据内容（自主演化 §5.2 T0/T1） */
   declare overlays: Array<{ id: string; ops: Array<{ op: string; args?: Record<string, unknown> }> }>;
   declare regions: Record<string, GenWorld>;
   declare world: GenWorld;
   // ---- 时间与天气 ----
-  declare t: number;
   declare speed: number;
   declare paused: boolean;
-  declare weather: string;
-  declare weatherLock: SaveV2['weatherLock'];
   declare nextWeatherT: number;
   // ---- 居民 ----
   /** 在场的角色 */
@@ -116,54 +114,23 @@ export class Town extends EventEmitter {
   declare away: LiveAgent[];
   declare byId: Record<string, LiveAgent>;
   declare convos: Map<string, Convo>;
-  declare convoLog: ConvoRecord[];
-  declare logs: LogItem[];
-  declare newspapers: Newspaper[];
-  declare board: unknown[];
-  declare pairCd: Record<string, number>;
-  declare flags: Record<string, unknown>;
-  declare seq: number;
   // ---- 运行时世界状态 ----
   /** 构筑物等临时实体（例如萤火结界） */
-  declare entities: Entity[];
   /** 效果原语 flag 写入的世界标记 */
-  declare worldFlags: Record<string, unknown>;
   /** 效果原语 paramMod 带来的临时参数调整 */
-  declare paramMods: Array<{ name: keyof Params; mul?: number; add?: number; until: number; source: string }>;
-  declare ruleState: SaveV2['ruleState'];
   declare rules: RuleEngine;
   // ---- 叙事、异界与黑暗叙事（各子系统自己的状态结构较大，B6 迁移子系统时再细化） ----
-  declare threadState: Record<string, ThreadState>;
-  declare crisis: SaveV2['crisis'];
-  declare discovered: string[];
   declare encounterCd: Record<string, number>;
-  declare story: StoryState | undefined;
-  declare migrationState: MigrationState | undefined;
   /** 地图演变的状态：压力表、拆除否决（建筑 id → 第几天之前不能再提） */
-  declare mapState: { pressure?: PressureState; vetoes?: Record<string, number>; [k: string]: unknown } | undefined;
-  declare arcRuns: ArcRun[];
-  declare voteState: Vote[];
-  declare pendingScenes: Scene[];
-  declare creatureList: Creature[];
-  declare dark: DarkState;
-  declare fights: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): 战斗记录（sim/combat）
-  declare portalState: Portal | null;
-  declare swarmGoal: string | null;
   /** 异界生物：上次捣乱、上次和平相遇、上次群体心智的游戏分钟 */
   /** 运行时抽样审核已经看过的编年 / 动态（worlds/review.ts） */
   declare sampled?: Set<string>;
   declare mischiefAt?: number;
   declare peacefulAt?: number;
   declare swarmAt?: number;
-  declare proposals: Proposal[];
-  declare decisionState: Decision[];
-  declare architectQueue: ArchitectItem[];
-  declare gaps: Gap[];
-  declare architectUsage: ArchitectUsage | undefined;
   /** 世界架构师插件（plugins/builtin/architect）装上时设置 */
   declare architect: Architect | null;
   declare usage: { days: Record<string, { tokens: number; calls: number; byLabel: Record<string, { calls: number; tokens: number }>; speed: number }>; mark: unknown } | undefined;
-  declare metricsState: { days: Record<string, MetricsDay> };
   // ---- 子系统 ----
   declare decisions: DecisionQueue;
   declare director: Director;
@@ -200,6 +167,8 @@ export class Town extends EventEmitter {
   declare crisisHour?: number;
   declare fightMinute?: number;
   declare lastSnapHour?: number;
+  /** 世界的持久状态（见 sim/state.ts）：存档里属于这个世界的字段；Town 上的同名属性是转发到这里的访问器 */
+  declare state: TownState;
   /** 运行时状态（见 sim/runtime.ts）：居民的路径、气泡、思考中等，永不序列化 */
   declare rt: TownRuntime;
   /** 模拟用的随机数（见 kernel/rng.ts） */
@@ -213,6 +182,7 @@ export class Town extends EventEmitter {
 
   constructor(opts: TownOptions = {}) {
     super();
+    this.state = {} as TownState; // 先于任何状态字段的赋值（它们经访问器写进这里）
     this.dataDir = path.resolve(opts.dataDir || setting('DATA_DIR'));
     this.saveFile = path.join(this.dataDir, 'save.json');
     this.instantTalk = Boolean(opts.instantTalk);
@@ -839,6 +809,8 @@ export class Town extends EventEmitter {
 }
 
 // 把各职责模块的方法挂到 Town 上；重名直接报错，避免悄悄覆盖
+// 世界状态字段（sim/state.ts 的表）：Town 上读写 this.dark、this.logs 等都转发到 this.state
+defineStateAccessors(Town.prototype);
 for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat]) {
   for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) {
     if (name === 'constructor') continue;
