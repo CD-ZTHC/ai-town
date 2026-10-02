@@ -1,5 +1,6 @@
 // 日程：每日规划、兜底日程、约定、收到消息后重新规划
-// 以 Town 的方法形式挂载（见 sim.js 末尾的 mixin），方法里的 this 就是 Town。
+// 规则（日程整理、插入、兜底模板、去暗月界的掷骰）是下面只依赖显式输入的函数（重构方案 P6 第三步，测试见 test/planning-rules.test.ts）；
+// Town 上的方法（Planning mixin）负责调用模型、解析地点、写记忆和日志。
 import * as llm from '../llm.ts';
 import { addMemory, fmtTime, parseHM } from '../memory.ts';
 import { rand, clampStr, GUARD } from './util.ts';
@@ -20,6 +21,53 @@ const MOON_OUTINGS = [
   { location: 'moon_plaza', activity: '去暗月广场看影灵提灯', emoji: '🏮' },
 ];
 
+// ---------- 规则（只依赖显式输入） ----------
+/** 整理日程：按开始时间排序，前一项和后一项重叠时截短前一项，丢掉不足 10 分钟的 */
+export function tidySchedule(out: ScheduleEntry[]): ScheduleEntry[] {
+  out.sort((x, y) => x.start - y.start);
+  for (let i = 1; i < out.length; i++) if (out[i]!.start < out[i - 1]!.end) out[i - 1]!.end = out[i]!.start;
+  return out.filter((e) => e.end - e.start >= 10);
+}
+
+/** 插入一段日程：被它覆盖的部分让开（剩下不足 10 分钟的残段丢掉），结果按开始时间排序 */
+export function spliceEntry(schedule: ScheduleEntry[], c: ScheduleEntry): ScheduleEntry[] {
+  const { start, end } = c;
+  const next: ScheduleEntry[] = [];
+  for (const e of schedule) {
+    if (e.end <= start || e.start >= end) { next.push(e); continue; }
+    if (start - e.start >= 10) next.push({ ...e, end: start });
+    if (e.end - end >= 10) next.push({ ...e, start: end });
+  }
+  next.push(c);
+  return next.sort((x, y) => x.start - y.start);
+}
+
+/** 兜底日程（没有模型时）：起床、工作、午饭、继续工作、傍晚散步（或去暗月界）、晚饭、休息 */
+export function fallbackTemplate({ work, lunch, walk, dinner }: { work: string; lunch: string; walk: [string, string, string]; dinner: string }): ScheduleEntry[] {
+  const raw = [
+    ['06:30', '07:30', 'home', '起床吃早饭', '🍳'], ['07:30', '11:30', work, '忙自己的事', '💼'],
+    ['11:30', '12:30', lunch, '吃午饭', '🍱'], ['12:30', '17:00', work, '继续忙', '💼'],
+    ['17:00', '18:30', ...walk], ['18:30', '20:30', dinner, '吃晚饭', '🍲'],
+    ['20:30', '22:30', 'home', '看书休息', '📖'],
+  ];
+  return raw.map(([s, e, l, act, em]) => ({ start: parseHM(s) as number, end: parseHM(e) as number, location: l as string, activity: act as string, emoji: em as string, src: 'plan' }));
+}
+
+/** 按「角色 + 日期」得到固定的伪随机数 [0, 1)（同一天的结果稳定，不消耗 town.rng） */
+export function dayRoll(agentId: string, day: number): number {
+  let h = 2166136261;
+  for (const ch of `${agentId}:${day}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+  return (h >>> 0) / 2 ** 32;
+}
+
+/** 去不去暗月界：掷骰 r 小于 chance 时去，按 r 在 chance 里的位置挑一处 */
+export function pickOuting(r: number, chance: number): (typeof MOON_OUTINGS)[number] | null {
+  if (r >= chance) return null;
+  return MOON_OUTINGS[Math.floor((r / chance) * MOON_OUTINGS.length) % MOON_OUTINGS.length]!;
+}
+
+// ---------- Town 上的接口 ----------
 export class Planning {
   planAll(this: Town) {
     this.flags.plannedDay = this.day;
@@ -40,14 +88,11 @@ export class Planning {
     const w = a.work === a.home ? this.placesOr(['park'])[0] : a.work;
     // 暗月界开放时，傍晚的散步有机会改成去渡口那头逛逛
     const moon = this.moonOuting(a);
-    const walk = moon ? [moon.location, moon.activity, moon.emoji] : [rand(this.rng, this.placesOr(['square', 'park', 'pier'])), '散步透气', '🚶'];
-    const raw = [
-      ['06:30', '07:30', 'home', '起床吃早饭', '🍳'], ['07:30', '11:30', w, '忙自己的事', '💼'],
-      ['11:30', '12:30', this.placesOr(['cafe'])[0], '吃午饭', '🍱'], ['12:30', '17:00', w, '继续忙', '💼'],
-      ['17:00', '18:30', ...walk], ['18:30', '20:30', rand(this.rng, this.placesOr(['tavern', 'home'])), '吃晚饭', '🍲'],
-      ['20:30', '22:30', 'home', '看书休息', '📖'],
-    ];
-    return raw.map(([s, e, l, act, em]) => ({ start: parseHM(s) as number, end: parseHM(e) as number, location: l as string, activity: act as string, emoji: em as string, src: 'plan' }));
+    // 随机数的取用顺序与原来一致：先挑散步地点，再挑晚饭地点
+    const walk: [string, string, string] = moon ? [moon.location, moon.activity, moon.emoji] : [rand(this.rng, this.placesOr(['square', 'park', 'pier'])), '散步透气', '🚶'];
+    const lunch = this.placesOr(['cafe'])[0]!;
+    const dinner = rand(this.rng, this.placesOr(['tavern', 'home']));
+    return fallbackTemplate({ work: w!, lunch, walk, dinner });
   }
 
   /**
@@ -58,12 +103,7 @@ export class Planning {
     if (!this.regions.moonrealm || !this.regionOpen('moonrealm') || a.kind === 'creature') return null;
     const belief = a.beliefs.find((b) => b.about === '暗月界');
     const chance = 0.25 + (belief ? 0.2 * belief.confidence : 0) + (a.visited?.includes('moonrealm') ? 0.1 : 0);
-    let h = 2166136261;
-    for (const ch of `${a.id}:${this.day}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-    h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
-    const r = (h >>> 0) / 2 ** 32;
-    if (r >= chance) return null;
-    return MOON_OUTINGS[Math.floor((r / chance) * MOON_OUTINGS.length) % MOON_OUTINGS.length];
+    return pickOuting(dayRoll(a.id, this.day), chance);
   }
 
   /** 规划提示里的「去暗月界的理由」：区域关闭时为空 */
@@ -85,10 +125,7 @@ export class Planning {
       const act = this.normalizeAct(it.act);
       out.push({ start: s, end: e, location: this.resolveLoc(a, it.location) === a.home ? 'home' : this.resolveLoc(a, it.location), activity: clampStr(it.activity, 24) || '做点事', emoji: clampStr(it.emoji, 4) || '🙂', src: it.src || 'plan', ...(act ? { act } : {}) });
     }
-    out.sort((x, y) => x.start - y.start);
-    // 去重叠
-    for (let i = 1; i < out.length; i++) if (out[i].start < out[i - 1].end) out[i - 1].end = out[i].start;
-    return out.filter((e) => e.end - e.start >= 10);
+    return tidySchedule(out);
   }
 
   async planDay(this: Town, a: LiveAgent) {
@@ -132,15 +169,7 @@ ${this.moonHint(a)}${this.actionBlock(a)}
 
   insertEntry(this: Town, a: LiveAgent, c: ScheduleEntry) {
     if (a.scheduleDay !== this.day) { a.schedule = []; a.scheduleDay = this.day; }
-    const { start, end } = c;
-    const next = [];
-    for (const e of a.schedule) {
-      if (e.end <= start || e.start >= end) { next.push(e); continue; }
-      if (start - e.start >= 10) next.push({ ...e, end: start });
-      if (e.end - end >= 10) next.push({ ...e, start: end });
-    }
-    next.push(c);
-    a.schedule = next.sort((x, y) => x.start - y.start);
+    a.schedule = spliceEntry(a.schedule, c);
     a.curKey = null;
   }
 
