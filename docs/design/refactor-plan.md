@@ -1,7 +1,7 @@
 # 架构重构方案：TypeScript 迁移与 2 核 2G 线上环境适配 —— 设计方案
 
-> 状态：实施中（2026-09-28 开始）。已完成 P0 诊断（[记录](../reports/2026-09-28-p0-diagnosis.md)）、P1 的代码部分（systemd 单元、迁移脚本、部署改造；线上迁移待执行）、P2、P2b、P3、P4（B1~B9，服务端与测试全部改为 TypeScript）、P5（SQLite 增量存档）、P7（确定性）、P8（结构化输出）、P6 第一、二步（临时字段移到 town.rt；持久状态收进 town.state、由 sim/state.ts 一张表定义）与第三步的示范（指标模块），P9 第一项（沙箱按需运行与全站上限）与第三项的评估（[评估文档](sandbox-evaluation.md)：建议共享沙箱进程 + QuickJS-wasm）。
-> 未做：P6 第三步的其余 10 个子系统（movement、planning、social、dark、combat……，按方案每个子系统一个 PR，做法见 sim/metrics.ts）；P9 的效果 DSL 扩展（需要线上能力缺口统计决定优先级，本地数据里没有缺口记录）与 QuickJS 方案的实施。P5 的线上导入在首次启动新版本时自动进行（save.json 改名备份，可用 mise run export-save 导出回滚）。
+> 状态：实施中（2026-09-28 开始）。已完成 P0 诊断（[记录](../reports/2026-09-28-p0-diagnosis.md)）、P1 的代码部分（systemd 单元、迁移脚本、部署改造；线上迁移待执行）、P2、P2b、P3、P4（B1~B9，服务端与测试全部改为 TypeScript）、P5（SQLite 增量存档）、P7（确定性）、P8（结构化输出）、P6（临时字段移到 town.rt；持久状态收进 town.state、由 sim/state.ts 一张表定义；指标、战斗、区域、日程、作息、行动、黑暗叙事、社交、视图、系统提示词的规则抽成只依赖显式输入的函数，各有不建小镇的测试），P9 第一项（沙箱按需运行与全站上限）与第三项的评估（[评估文档](sandbox-evaluation.md)：建议共享沙箱进程 + QuickJS-wasm）。
+> 未做：P6 里各 mixin 仍挂在 Town 上（规则已抽出，剩下的是调用模型、写日志与记忆等编排；继续拆成独立模块收益有限）；P9 的效果 DSL 扩展（需要线上能力缺口统计决定优先级，本地数据里没有缺口记录）与 QuickJS 方案的实施。P5 的线上导入在首次启动新版本时自动进行（save.json 改名备份，可用 mise run export-save 导出回滚）。
 > 前提：线上服务器 **2 核 2G**，已出现内存（分页）耗尽导致整机卡死。
 > 相关：[multi-world.md](multi-world.md) §7 统一 AI 调度；[autonomous-evolution.md](autonomous-evolution.md) §8 内核冻结；[world-llm.md](world-llm.md)。
 
