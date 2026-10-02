@@ -107,6 +107,8 @@ for f in data data.* plugins/evolved spec/mods/local .env.bak-* server.log*; do
 done
 [ -f "$NEW/server.log" ] && mv "$NEW/server.log" "$NEW/server.log.$TS"
 # systemd 模式：代码归 root 只读，服务用户只能写 data/（ProtectSystem=strict + ReadWritePaths）
+# 本机的构建目录是 mktemp 建的（700），打包时带过来了：服务用户要能进入程序目录
+chmod 755 "$NEW"
 [ "$MODE" = systemd ] && chown -R aitown:aitown "$NEW/data" && chmod 640 "$NEW/.env" && chgrp aitown "$NEW/.env"
 mv "$DIR" "$OLD"
 mv "$NEW" "$DIR"
