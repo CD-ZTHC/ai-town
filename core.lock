@@ -64,7 +64,7 @@
   "server/sim/cognition.ts": "afdbcfaf424eb11b45486f3d1bba4031cf0bf81c3ff76c5b1b6e4fddf8987651",
   "server/sim/combat.ts": "bf6929d95520202fa5a52137b51dbacd5cd8e6618c831d225fc4898d914978e8",
   "server/sim/dark.ts": "fe1cb2f0df90a81a3dd3e18a081000741e32b7bbb5e78aac83ea71e0ed3382ea",
-  "server/sim/metrics.ts": "bfcdcf97984ee39c6bc84d75ecb8ad779c42ff4b3592d8b220e789cbfe6e03a2",
+  "server/sim/metrics.ts": "cc09dccffe85c7239f00e259e1a4b368e052d86899eca0a322ecde90ad5ed68c",
   "server/sim/movement.ts": "067379de12bd5db332dde622dc6dcde9d542e871eb0f2b7ebf19a2846d0b01b6",
   "server/sim/persistence.ts": "654a7356b7e7fdddfe6b90964b13458b0701b07446a118a19a45f66af064bbe0",
   "server/sim/planning.ts": "ec625d1fadb4d5a84722b3aecc8fdc3b33148ddcbf122621f1e61d7a946f30e4",
