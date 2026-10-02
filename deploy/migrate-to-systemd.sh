@@ -49,6 +49,8 @@ echo "▶ 复制 $SRC → $DST"
 mkdir -p "$DST"
 tar -C "$SRC" --exclude='./server.log*' -cf - . | tar -C "$DST" -xf -
 chown -R root:root "$DST"
+# /root/ai-town 通常是 700，tar 会把它带过来：服务用户 aitown 要能进入程序目录（.env 下面单独设成 640）
+chmod 755 "$DST"
 mkdir -p "$DST/data"
 chown -R aitown:aitown "$DST/data"
 for d in plugins/evolved spec/mods/local; do [ -d "$DST/$d" ] && chown -R aitown:aitown "$DST/$d"; done
