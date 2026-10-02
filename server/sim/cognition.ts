@@ -22,6 +22,15 @@ const CONDENSE_MIN = 8; // 一天至少这么多条琐碎记忆才整理
 // chronicle 是 getter（不能声明 this 参数），这里声明它用到的字段
 export interface Cognition { spec: WorldSpec }
 
+/** 角色大脑的系统提示词：由世界规格决定（分级对应的基调、时代禁忌）；有世界包时附上不可违背的设定（重构方案 P6 第三步，测试见 test/social-rules.test.ts） */
+export function systemPrompt(spec: WorldSpec, withPillars: boolean, extra = ''): ChatMessage {
+  const place = spec.voice?.place || '小镇';
+  const rating = ({ cozy: '', adventure: `\n本${place}允许奇幻冒险与紧张的对抗（例如异界生物），但没有死亡、血腥与残酷。`, epic: `\n本${place}允许重大挑战与损失，但没有死亡与血腥描写。`, dark: `\n本${place}是黑暗题材：冲突、危险、战斗与死亡都可能发生；死亡作为叙事事件一笔带过，不描写血腥与残酷的细节。反派有自己的欲望，不会因为几句好话就改变主意；恐惧是真实的。`, tragic: `\n本${place}允许离别与死亡作为叙事事件，但不描写细节，没有血腥与残酷。` } as Record<string, string>)[spec.meta.rating] || '';
+  const era = spec.era?.forbidden?.length ? `\n时代：${spec.era.tech}，不要出现${spec.era.forbidden.join('、')}这类不属于这个时代的东西。` : '';
+  const pillars = withPillars ? `\n不可违背的设定：${spec.lore.pillars!.join('；')}` : '';
+  return { role: 'system', content: `你是「${spec.meta.name}」生成式智能体${place}的角色大脑。${spec.lore.summary}${rating}${era}${pillars}\n要求：角色要鲜活、口语化、符合人设，推动各自的目标与人际关系发展；中文输出；只输出 JSON，不要任何解释或 markdown。${extra}` };
+}
+
 export class Cognition {
   personaBlock(this: Town, a: LiveAgent) {
     const rel = Object.entries(a.relations)
@@ -83,13 +92,7 @@ export class Cognition {
     return this.spec.voice?.chronicle || { name: `${this.spec.meta.name}日报`, kind: '日报', editor: '主编', style: '温暖、俏皮，擅长从小事里挖出故事' };
   }
 
-  sys(this: Town, extra = ''): ChatMessage {
-    const place = this.spec.voice?.place || '小镇';
-    const rating = ({ cozy: '', adventure: `\n本${place}允许奇幻冒险与紧张的对抗（例如异界生物），但没有死亡、血腥与残酷。`, epic: `\n本${place}允许重大挑战与损失，但没有死亡与血腥描写。`, dark: `\n本${place}是黑暗题材：冲突、危险、战斗与死亡都可能发生；死亡作为叙事事件一笔带过，不描写血腥与残酷的细节。反派有自己的欲望，不会因为几句好话就改变主意；恐惧是真实的。`, tragic: `\n本${place}允许离别与死亡作为叙事事件，但不描写细节，没有血腥与残酷。` } as Record<string, string>)[this.spec.meta.rating] || '';
-    const era = this.spec.era?.forbidden?.length ? `\n时代：${this.spec.era.tech}，不要出现${this.spec.era.forbidden.join('、')}这类不属于这个时代的东西。` : '';
-    const pillars = this.pack ? `\n不可违背的设定：${this.spec.lore.pillars!.join('；')}` : '';
-    return { role: 'system', content: `你是「${this.spec.meta.name}」生成式智能体${place}的角色大脑。${this.spec.lore.summary}${rating}${era}${pillars}\n要求：角色要鲜活、口语化、符合人设，推动各自的目标与人际关系发展；中文输出；只输出 JSON，不要任何解释或 markdown。${extra}` };
-  }
+  sys(this: Town, extra = ''): ChatMessage { return systemPrompt(this.spec, Boolean(this.pack), extra); }
 
   async innerThought(this: Town, a: LiveAgent) {
     // 配角（创世生成的世界里 tier 为 support）只按日程生活和对话，不做内心独白与反思

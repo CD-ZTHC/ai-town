@@ -41,3 +41,16 @@ test('推送帧：坐标保留 3 位；气泡过了时间不下发；满血不�
   assert.equal('hp' in f, false);
   assert.equal(agentFrame(a, 1000).bubble, null);
 });
+
+test('系统提示词：按分级写基调；有世界包时附上不可违背的设定；时代禁忌', async () => {
+  const { systemPrompt } = await import('../server/sim/cognition.ts');
+  const { defaultSpec } = await import('../server/kernel/spec.ts');
+  const spec = defaultSpec({});
+  const S = (rating: string, extra: Record<string, unknown> = {}) => ({ ...spec, meta: { ...spec.meta, rating }, ...extra }) as typeof spec;
+  assert.equal(systemPrompt(S('cozy'), false).role, 'system');
+  assert.ok(!systemPrompt(S('cozy'), false).content.includes('死亡'));
+  assert.match(systemPrompt(S('dark'), false).content, /黑暗题材.*反派有自己的欲望/);
+  assert.match(systemPrompt(S('adventure'), false).content, /没有死亡、血腥与残酷/);
+  assert.match(systemPrompt(S('cozy', { lore: { ...spec.lore, pillars: ['月亮会说话'] } }), true).content, /不可违背的设定：月亮会说话/);
+  assert.match(systemPrompt(S('cozy', { era: { tech: '蒸汽时代', forbidden: ['手机'] } }), false, '附加').content, /不要出现手机.*附加$/s);
+});
