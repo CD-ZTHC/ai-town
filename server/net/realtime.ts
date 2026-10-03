@@ -75,8 +75,9 @@ export function onMessage(host: RtHost, s: RtSession, text: string) {
         return;
       }
       case 'mv': {
-        const r = town.avatars.report(s.vid, { x: m.x, y: m.y, dir: m.dir, pv: m.pv });
-        if (!r.ok) s.ws.send({ t: 'ack', ...r });
+        const r = town.avatars.report(s.vid, { x: m.x, y: m.y, dir: m.dir, pv: m.pv, seq: m.seq, via: m.via });
+        // 被拒绝、或者过了路口（客户端要拿到新的版本号）时回执
+        if (!r.ok || r.pv != null) s.ws.send({ t: 'ack', ...r });
         return;
       }
       case 'act': {

@@ -804,6 +804,7 @@ export class Town extends EventEmitter {
       if (a.status === 'walking') { a.curKey = null; a.path = []; }
     }
     this.emit('regions', this.regionsView());
+    this.emit('links', this.linksView());
     this.emit('reinit');
   }
 

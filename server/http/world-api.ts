@@ -379,7 +379,7 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
     requireUser(c);
     if (setting('REALTIME') === 'off') throw new HttpError(409, '没有开启低延迟移动');
     const b = c.get('body');
-    return c.json(town(c).avatars.report(c.get('vid')!, { x: b.x, y: b.y, dir: b.dir, pv: b.pv }));
+    return c.json(town(c).avatars.report(c.get('vid')!, { x: b.x, y: b.y, dir: b.dir, pv: b.pv, seq: b.seq, via: b.via }));
   });
   api.post('/avatar/leave', (c) => c.json({ ok: c.get('vid') ? town(c).avatars.leave(c.get('vid')!) : false }));
 

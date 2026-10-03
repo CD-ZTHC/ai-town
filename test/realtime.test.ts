@@ -219,3 +219,63 @@ test('实时通道：没有票据连不上；连上后心跳、位置纠正、�
   assert.ok(cf.u.some((x: [string]) => x[0] === `threat:${pm.id}`), '战斗通道里有纸扎人');
   assert.ok(cf.u.some((x: [string]) => x[0] === `avatar:${v.id}`));
 });
+
+// ---------- 过图（§4，修复：来回传送、闪回、回弹） ----------
+function twoMaps(t: import('node:test').TestContext) {
+  const PG = loadPack(path.resolve('worlds/pangu'));
+  const town = new Town({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'town-rt-')), worldId: 'pangu', pack: PG, instantTalk: true, mods: [], seed: 3, now: () => clock });
+  t.after(() => town.stop());
+  // 开天：长出天穹（北）与大地（南）两张相邻的地图
+  town.worldFlags.chaos_split = true;
+  const pg = town.byId.pangu!;
+  Object.assign(pg, { status: 'acting', inside: null });
+  assert.ok(town.castAbility(pg, 'kaitian'));
+  const link = town.regionLinks().find((l) => l.from === 'town' && l.to === 'earth')!;
+  const v = town.avatars.join('u1', '127.0.0.1', { name: '阿过' });
+  // 站在路口北边 1 格（朝路口走就会过去）
+  Object.assign(v, { x: link.a.x, y: link.a.y - 1, region: 'town' });
+  v.reportAt = clock;
+  return { town, v, link };
+}
+
+test('服务器兜底换图：只在朝路口走时触发；落地后在落点附近（1.5 格内）不会被送回去；离开后再走回来才会', (t) => {
+  const { town, v, link } = twoMaps(t);
+  clock += 250;
+  const r = town.avatars.report('u1', { x: link.a.x, y: link.a.y, pv: 0, seq: 1 });
+  assert.equal(!r.ok && r.reason, '换了地图');
+  assert.equal(v.region, 'earth');
+  assert.deepEqual(v.landing, { x: link.b.x, y: link.b.y, region: 'earth' });
+  // 在落点附近来回挪：不再触发「大地 → 混沌」的路口
+  for (const dx of [0.3, -0.3, 0.2]) { clock += 100; assert.equal(town.avatars.report('u1', { x: link.b.x + dx, y: link.b.y, pv: 1 }).ok, true); }
+  assert.equal(v.region, 'earth', '没有被来回传送');
+  // 走开 2 格以上，再朝路口走回来：可以回去
+  const away = { x: link.b.x, y: link.b.y + 2.2 };
+  clock += 600; town.avatars.report('u1', { ...away, pv: 1 });
+  assert.equal(v.landing, null, '离开落点后保护解除');
+  clock += 600; const back = town.avatars.report('u1', { x: link.b.x, y: link.b.y + 1.3, pv: 1 });
+  assert.equal(back.ok, true, '还没到路口');
+  clock += 400; town.avatars.report('u1', { x: link.b.x, y: link.b.y, pv: 1 });
+  assert.equal(v.region, 'town');
+});
+
+test('客户端预判过图：经过的路口被校验后换图并返回新版本号；离路口太远的预判被拒绝；版本号过期的上报带 stale 与序号', (t) => {
+  const { town, v, link } = twoMaps(t);
+  clock += 250;
+  const far = town.avatars.report('u1', { x: link.b.x, y: link.b.y, pv: 0, seq: 5, via: { to: 'sky' } });
+  assert.equal(far.ok, false, '天穹的路口不在附近');
+  clock += 250;
+  const ok = town.avatars.report('u1', { x: link.b.x, y: link.b.y + 0.2, pv: 0, seq: 6, via: { to: 'earth' } });
+  assert.deepEqual(ok, { ok: true, pv: 1, region: 'earth', x: link.b.x, y: link.b.y + 0.2, seq: 6 });
+  clock += 100;
+  const stale = town.avatars.report('u1', { x: link.a.x, y: link.a.y, pv: 0, seq: 7 });
+  assert.equal(!stale.ok && stale.stale, true);
+  assert.equal(!stale.ok && stale.seq, 7);
+  assert.equal(v.region, 'earth');
+});
+
+test('路口下发给前端：初始化数据里有开放地图之间的路口，地图变化时推送 links', (t) => {
+  const { town } = twoMaps(t);
+  const links = town.initPayload().links;
+  assert.ok(links.some((l: { from: string; to: string }) => l.from === 'town' && l.to === 'earth'));
+  assert.ok(links.some((l: { from: string; to: string }) => l.from === 'earth' && l.to === 'town'));
+});

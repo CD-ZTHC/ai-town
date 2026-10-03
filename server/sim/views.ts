@@ -87,6 +87,8 @@ export class Views {
       regions: Object.fromEntries(Object.entries(this.regions).filter(([id]) => id !== 'town')),
       worldId: this.worldId,
       regionsOpen: this.regionsView(),
+      // 地图之间的路口（游戏模式的低延迟移动用来预判过图，docs/design/realtime.md §4）
+      links: this.linksView(),
       weathers: this.spec.weather,
       spec: publicSpec(this.spec),
       agents: this.agentsMeta(),

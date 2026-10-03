@@ -86,6 +86,7 @@ export class WorldHost {
     t.on('agents', b('agents'));
     t.on('worldmap', b('worldmap'));
     t.on('regions', b('regions'));
+    t.on('links', b('links'));
     t.on('reinit', () => this.broadcast('init', t.initPayload()));
     // 面板类的推送只通知「有变化」，页面再按需拉取；800ms 内合并成一次
     for (const ev of ['story', 'evolution', 'decisions', 'proposals'] as const) {

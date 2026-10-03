@@ -97,6 +97,7 @@ export class Regions {
       this.creatureList = this.creatures.list.filter((c: { region?: string }) => (c.region || 'town') !== id);
     }
     this.emit('regions', this.regionsView());
+    this.emit('links', this.linksView());
     this.emit('story');
     return true;
   }
@@ -141,6 +142,11 @@ export class Regions {
   /** 从 from 区域去 to 区域的下一段：广度优先找最少换乘的路线，同一段有多个出口时挑离 pos 最近的 */
   routeStep(this: Town, from: string, to: string, pos: Cell | null = null): RegionLink | null | undefined {
     return nextHop(this.regionLinks(), (id) => this.regionOpen(id), from, to, pos);
+  }
+
+  /** 下发给前端的路口：只给开放的地图之间的（坐标取整到 0.01） */
+  linksView(this: Town) {
+    return this.regionLinks().filter((l) => this.regionOpen(l.from) && this.regionOpen(l.to)).map((l) => ({ from: l.from, to: l.to, a: { x: +l.a.x.toFixed(2), y: +l.a.y.toFixed(2) }, b: { x: +l.b.x.toFixed(2), y: +l.b.y.toFixed(2) } }));
   }
 
   regionsView(this: Town) {
