@@ -68,8 +68,8 @@ export interface MetricsDay {
   convoFallback: number;
 }
 
-/** 一场战斗（sim/combat） */
-export type Fight = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): 战斗记录的结构
+/** 一场战斗（sim/combat，结构见 sim/fight-rules.ts） */
+export type { Fight } from '../sim/fight-rules.ts';
 
 /** 存档（读档时的原始数据，字段可能缺失或来自旧版本） */
 export type SaveData = any; // eslint-disable-line @typescript-eslint/no-explicit-any -- 结构见 types/save.ts 的 SaveV2，load() 逐项兜底

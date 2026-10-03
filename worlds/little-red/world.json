@@ -69,7 +69,17 @@
   "flower": { "name": "野花", "emoji": "🌼", "desc": "野花草地的花" }
  },
  "structures": {},
+ "combat": { "avatarKit": ["axe_chop", "wolf_whistle", "red_hood"] },
  "abilities": [
+  { "id": "axe_chop", "name": "劈柴", "emoji": "🪓", "target": "agent", "desc": "抡起斧头往前一劈，劈开挡路的东西", "aiHint": "怪物冲过来的时候",
+   "combat": { "windup": 3, "recover": 4, "range": 2.2, "shape": "cone", "cd": 14 },
+   "effects": [{ "op": "strike", "power": 1.8, "tags": ["iron"] }, { "op": "status", "status": "bleed", "beats": 16, "amount": 3, "target": "target" }] },
+  { "id": "wolf_whistle", "name": "响哨", "emoji": "📯", "target": "area", "desc": "吹一声猎人的哨子，吓得身边的野兽一愣", "aiHint": "被围住的时候",
+   "combat": { "windup": 2, "recover": 3, "radius": 3, "shape": "circle", "cd": 26 },
+   "effects": [{ "op": "status", "status": "stun", "beats": 6 }, { "op": "knockback", "cells": 1 }] },
+  { "id": "red_hood", "name": "裹紧斗篷", "emoji": "🧣", "target": "self", "desc": "裹紧红斗篷，挡住几下抓咬", "aiHint": "血不多的时候",
+   "combat": { "windup": 1, "recover": 2, "cd": 40 },
+   "effects": [{ "op": "status", "status": "shield", "beats": 20, "amount": 25, "target": "self" }] },
   { "id": "pick_flowers", "name": "摘野花", "emoji": "🌼", "target": "self", "desc": "摘一束野花", "aiHint": "在野花草地或花园时", "cost": { "stamina": 5 }, "cooldown": 60,
     "effects": [ { "op": "giveItem", "item": "flower", "count": 1 } ], "learn": { "teach": true } },
   { "id": "bake_cake", "name": "烤蛋糕", "emoji": "🎂", "target": "self", "desc": "用蜂蜜烤一个蛋糕", "aiHint": "在家或面包房、手里有蜂蜜时", "cost": { "stamina": 10, "items": { "honey": 1 } }, "cooldown": 120,

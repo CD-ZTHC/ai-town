@@ -36,6 +36,8 @@ function put(town: TownT, a: LiveAgent, loc: string, dx = 0) {
 }
 const inst = (town: TownT, type: string) => town.dark.threats.find((x) => x.type === type && !['gone', 'contained'].includes(x.state));
 const byName = (town: TownT, n: string) => town.agents.find((a) => a.name === n);
+/** 即时战斗按真实时间一拍一拍推进：一直推到没有战斗（最多 n 拍） */
+const fightOut = (town: TownT, n = 400) => { for (let i = 0; i < n && town.fights.length; i++) town.combatTick(); };
 
 test('分级：dark 排在 epic 与 tragic 之间，会致死；审核放行虚构战斗，拦截血腥', () => {
   assert.ok(ratingAtLeast('dark', 'epic') && !ratingAtLeast('dark', 'tragic'));
@@ -304,8 +306,7 @@ test('战斗：没有仇的人下不了手；反派会动手，致死分级下�
   shen!.body.courage = 80;
   assert.ok(town.attack(xiao!, { target: '沈砚', intent: 'kill' }).ok);
   assert.equal(shen!.relations.xiao.affinity, -40, '被攻击的人好感骤降');
-  town.t += 1;
-  town.combatTick();
+  fightOut(town);
   assert.ok(!town.agents.includes(shen!), '被打倒后死去');
   assert.ok(town.dark.deaths.some((d) => d.id === 'shen' && d.cause === 'attack:xiao'));
   assert.ok(inst(town, 'back_turned'), '他身上的祟脱了出来');
@@ -321,7 +322,10 @@ test('会死的威胁：纸扎人可以被火消灭，掉落材料', (t) => {
   const pm = town.threats.spawn('paper_man', { loc: 'earth_shrine' });
   Object.assign(pm!, { x: shen.x + 1, y: shen.y, path: [] });
   town.threats.random = () => 0;
-  for (let i = 0; i < 6 && pm!.state !== 'gone'; i++) town.hunt(shen, { threat: '纸扎人' });
+  shen.body.courage = 90;
+  assert.ok(town.hunt(shen, { threat: '纸扎人' }).ok);
+  assert.ok(town.engaged('agent', shen.id) && town.engaged('threat', pm!.id), '打起来了');
+  fightOut(town);
   assert.equal(pm!.state, 'gone');
   assert.ok(shen.inventory.cinnabar_lead >= 1, '掉落了朱砂铅');
   assert.equal(town.dark.incidents.find((i) => i.threat === pm!.id)!.outcome, 'slain');
@@ -450,7 +454,9 @@ test('通用：腐化满了变成怪物（负担值 + spawnThreat），会死的
   put(town, hunter, 'forest_path', 1);
   Object.assign(g, { x: hunter.x + 1, y: hunter.y, path: [] });
   town.threats.random = () => 0;
-  for (let i = 0; i < 3 && g.state !== 'gone'; i++) town.hunt(hunter, { threat: '腐狼' });
+  hunter.body.courage = 90;
+  assert.ok(town.hunt(hunter, { threat: '腐狼' }).ok);
+  fightOut(town);
   assert.equal(g.state, 'gone');
   assert.equal(hunter.inventory.wolf_fang, 1);
 });
@@ -469,8 +475,7 @@ test('通用：反派的欲望压力累积到头会逼他行动；打倒对方�
   red.body.hp = 3;
   red.body.courage = 80;
   assert.ok(town.attack(wolf, { target: '小红帽', intent: 'capture' }).ok);
-  town.t += 1;
-  town.combatTick();
+  fightOut(town);
   assert.equal(red.captive?.by, 'wolf', '小红帽被抓走了');
   put(town, hunter, wolf.home);
   hunter.locId = red.captive.at;

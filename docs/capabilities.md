@@ -12,9 +12,10 @@
 | `addThread` | micro | — | 仅管理员 / 剧情弧使用 |
 | `addCalendarEvent` | minor | ✅ | {"id","name":"≤16字","emoji","day":第几天（必须大于今天）,"from":"HH:MM","location":"地点id","hint":"≤60字","countdown":true} |
 | `addWeather` | minor | ✅ | {"id","name":"≤8字","emoji","weight":0~20,"render":{"base":"sunny/cloudy/rain/storm/fog/snow","tint":"#rrggbb","tintAlpha":0~0.5}} |
+| `setWeatherWeights` | major | — | 仅管理员 / 剧情弧使用 |
 | `addItem` | micro | ✅ | {"id","name":"≤8字","emoji","desc":"≤40字"} |
 | `addStructure` | minor | ✅ | {"id","name":"≤8字","emoji","ttl":10~240,"tags":["light"],"light":{"r":20~160,"color":"255,200,100"}} |
-| `addAbility` | minor | ✅ | {"id","name":"≤8字","emoji","target":"self/agent/area","desc":"≤50字","aiHint":"≤50字","cost":{"stamina":0~40,"items":{"物品id":1~3}},"cooldown":0~1440,"requires":"表达式(可选)","effects":[效果，最多8个],"learn":{"teach":true,"research":{"location":"地点id","keywords":["关键词"]}}} |
+| `addAbility` | minor | ✅ | {"id","name":"≤8字","emoji","target":"self/agent/area","desc":"≤50字","aiHint":"≤50字","cost":{"stamina":0~40,"items":{"物品id":1~3}},"cooldown":0~1440,"requires":"表达式(可选)","effects":[效果，最多8个],"learn":{"teach":true,"research":{"location":"地点id","keywords":["关键词"]}},"combat":{"windup":0~12,"recover":0~20,"range":1~8,"shape":"single/circle/line/cone","radius":0~6,"cd":0~400}(可选)} —— 写了 combat 块就是战斗招式（拍数，一拍 0.25 秒）：蓄力 windup 拍后生效，招式命中的敌人由 shape 决定，效果里用 strike / status / knockback；例：{"combat":{"windup":3,"range":5,"shape":"line","cd":16},"effects":[{"op":"strike","power":1.5,"tags":["fire"]},{"op":"status","status":"slow","beats":8}]} |
 | `addBuilding` | minor | ✅ | {"id":"英文小写id","name":"≤10字","kind":"英文小写类型，如 tower/shrine/shop/garden","w":3~7,"h":3~6,"place":{"near":"地点id","within":6~16},"roof":"#rrggbb","wall":"#rrggbb","sign":"一个emoji","desc":"≤60字","lightAtNight":true/false} —— 不要写坐标，系统会在 near 附近自动找空地；新建筑会成为居民可以去的地点 |
 | `setBuildingState` | minor | ✅ | {"id":"现有建筑id","state":"closed 停业 / damaged 受损 / ruin 废墟","reason":"≤30字"} —— 变成废墟与拆除一样要给出 remap（见 removeBuilding），并经过居民议事 |
 | `renovateBuilding` | minor | ✅ | {"id":"现有建筑id","name":"新名字≤10字(可选)","kind":"新类型(可选)","desc":"≤60字(可选)","sign":"emoji(可选)","roof":"#rrggbb(可选)","public":true/false(可选)} —— 改建 / 换用途：占地不变，住户与所有引用照旧；闲置或不合用的建筑优先改建而不是拆 |
@@ -32,6 +33,7 @@
 | `addPersona` | major | — | 仅管理员 / 剧情弧使用 |
 | `setPersonaStatus` | major | — | 仅管理员 / 剧情弧使用 |
 | `settlePersona` | major | — | 仅管理员 / 剧情弧使用 |
+| `setAvatarKit` | minor | ✅ | {"ids":["带 combat 块的能力id"]（最多4个）} —— 旅人（玩家）在游戏模式里能用的技能栏，整体替换 |
 | `addRule` | major | ✅ | {"id","name":"≤16字","when":{"every":10~1440} 或 {"at":"HH:MM"} 或 {"weather":"天气id"} 或 {"enter":"地点id"},"forEach":"agent"(可选),"if":"表达式(可选)","then":[效果]} |
 
 ## 效果原语
@@ -63,6 +65,13 @@
 | `host` | 内核 | {"op":"host","threat":"威胁id","target":…} 让某人成为某个威胁的宿主（寄宿后获得它的能力，也背上它的负担值） |
 | `suppress` | 内核 | {"op":"suppress","power":1~10,"minutes":5~240,"radius":1~8} 压制身边的威胁：强度够的话，它在这段时间里不能移动，规律也不生效 |
 | `damage` | 内核 | {"op":"damage","amount":1~100,"tags":["弱点标签"],"radius":1~8} 攻击身边会死的威胁（杀不死的威胁只会停顿一会儿） |
+| `worldOp` | 内核 | {"op":"worldOp","action":"addRegion/addAdjacentRegion/linkRegions/expandMap/addBuilding/addOutdoorPlace/plantGrove/addPath/addPersona/addWeather/setWeatherWeights/addItem/addCanon","args":{同世界操作},"generate":"意图（可选，≤80字）"} 创世：直接改变世界的结构（只能写在世界包里）；写了 generate 时由模型按意图现场设计新地方的布局（addRegion/addAdjacentRegion/expandMap），args 是兜底 |
+| `transform` | 内核 | {"op":"transform","text":"≤40字，可用 {self}","memory":"≤40字，其他人记住的事"} 化身：这个人离开世界（不算死亡），之后的效果照常执行 |
+| `weather` | 内核 | {"op":"weather","id":"天气id","minutes":30~1440} 天气立刻变成某种，持续一段时间后恢复自动天气 |
+| `cast` | 内核 | {"op":"cast","ability":"能力id","target":"self/e"} 让这个人立即使用一项能力（剧情、规则里用；照常检查条件、消耗、冷却） |
+| `strike` | 内核 | {"op":"strike","power":0.2~5,"add":0~80,"tags":["弱点标签"]} 战斗招式：对命中的敌人造成伤害（攻击力×power+add）；不在战斗中时打身边会死的威胁 |
+| `status` | 内核 | {"op":"status","status":"stun/root/shield/haste/slow/bleed/weaken/guard","beats":1~40,"amount":0~100,"target":"self/target"} 战斗招式：给自己或命中的敌人挂状态（拍数；护盾、流血、架势用 amount） |
+| `knockback` | 内核 | {"op":"knockback","cells":1~4} 战斗招式：把命中的敌人击退几格 |
 | `goTo` | 扩展 | {"op":"goTo","location":"地点id","activity":"≤14字","minutes":30~180,"target":"self/target/e/nearby/all","radius":1~6} 让对象立刻动身前往某地（插入一段即时日程；睡着或正在交谈的人不受影响） |
 
 ## 表达式函数
@@ -98,13 +107,13 @@
 
 ## 其他可用资源
 
-- 特效预设：glow_ring、sparkle、heal、notes、burst、ripple
+- 特效预设：glow_ring、sparkle、heal、notes、burst、ripple、split、quake
 - 生物体型：wisp、hound、warden
 - 可调参数：`walkSpeed`（2~5）、`maxConvos`（1~6）、`convoBaseProb`（0.05~0.6）、`reflectThreshold`（20~80）、`dayEnd`（1260~1500）、`deathNamed`（0~20）、`deathDays`（1~14）
 - 地点：`cafe` 星光咖啡馆、`library` 云溪图书馆、`tavern` 月光酒馆、`clinic` 云溪诊所、`workshop` 铁柱工坊、`square` 中央广场、`market` 广场集市、`park` 樱花公园、`farm` 陈家农场、`pier` 镜湖码头
 - 异界地点（不能建房）：`moon_gate` 月之渡口·彼岸（moonrealm）、`moon_plaza` 暗月广场（moonrealm）、`moon_garden` 月光花园（moonrealm）、`moon_lookout` 星坠崖（moonrealm）
 - 物品：`lantern` 萤火灯、`wood` 木材、`herb` 草药、`melon` 西瓜、`county_record` 县志残页、`moonstone` 月石、`moon_dew` 月露、`moon_lantern` 双月灯
-- 能力：`firefly_ward` 萤火结界、`warm_coffee` 暖心咖啡、`checkup` 问诊、`moon_song` 月光之歌、`craft_lantern` 扎萤火灯、`old_tale` 讲古、`pick_melon` 摘西瓜、`gather_dew` 采月露、`share_dew` 赠月露、`pick_moonstone` 拾月石、`star_wish` 星坠许愿、`craft_moon_lantern` 扎双月灯、`release_moon_lantern` 放双月灯
+- 能力：`firefly_shot` 萤火弹、`bell_ring` 铃铛震、`warm_tea` 热茶、`firefly_ward` 萤火结界、`warm_coffee` 暖心咖啡、`checkup` 问诊、`moon_song` 月光之歌、`craft_lantern` 扎萤火灯、`old_tale` 讲古、`pick_melon` 摘西瓜、`gather_dew` 采月露、`share_dew` 赠月露、`pick_moonstone` 拾月石、`star_wish` 星坠许愿、`craft_moon_lantern` 扎双月灯、`release_moon_lantern` 放双月灯
 
 ## 已加载的扩展（插件）
 

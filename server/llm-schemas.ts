@@ -57,6 +57,15 @@ export const SCHEMAS = {
     memories: z.record(str, obj({ agree: str, forced: str })),
     thread: obj({ title: str, hook: str }),
   })),
+  // 即时战斗（sim/combat-mind）：开打时的战术与台词、濒死时的一句话
+  combatTactic: outputSchema('combat_tactic', obj({ tactic: z.enum(['aggressive', 'defensive', 'protect', 'flee']), protect: nullable(str).optional(), line: str })),
+  combatLine: outputSchema('combat_line', obj({ line: str, tactic: z.enum(['aggressive', 'defensive', 'protect', 'flee']).optional() })),
+  // 创世时现场生成的布局（worldai/genesis-region）：区域有 areas，扩展地块有 places
+  genesisLayout: outputSchema('genesis_layout', obj({
+    name: str, biome: str,
+    areas: z.array(obj({ biome: str.optional(), size: str.optional(), places: z.array(obj({ id: str, kind: str, name: str, emoji: str, desc: str })) })).optional(),
+    places: z.array(obj({ id: str, kind: str, name: str, emoji: str, desc: str })).optional(),
+  })),
   // AI 裁决官：有选项时给 option，否则给 decision
   arbiter: outputSchema('arbiter', obj({ option: str.optional(), decision: str.optional(), confidence: z.number(), reasons: z.array(str) })),
 };

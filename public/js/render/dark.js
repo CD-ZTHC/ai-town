@@ -48,7 +48,7 @@ export class DarkLayer {
       ctx.strokeStyle = 'rgba(200,200,210,.8)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(X, fy - 16, 16, 20, 0, 0, 7); ctx.stroke(); ctx.setLineDash([]);
     }
-    if (th.maxHp) {
+    if (th.maxHp && !this.S?.fightKeys?.has(`threat:${th.id}`)) { // 战斗中的血条由 render/combat 画
       const w = 26, p = Math.max(0, th.hp / th.maxHp);
       ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(X - w / 2, fy - 40, w, 4);
       ctx.fillStyle = '#e04848'; ctx.fillRect(X - w / 2, fy - 40, w * p, 4);
@@ -128,7 +128,7 @@ export class DarkLayer {
     if (a.hp == null && !a.marked && !a.hosted) return;
     const X = a.dx * TS + TS / 2, top = a.dy * TS - 26;
     ctx.save();
-    if (a.hp != null) {
+    if (a.hp != null && !this.S?.fightKeys?.has(`agent:${a.id}`)) {
       const w = 22, p = Math.max(0, a.hp / 100);
       ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(X - w / 2, top, w, 3);
       ctx.fillStyle = p < 0.3 ? '#e04848' : '#e0b048'; ctx.fillRect(X - w / 2, top, w * p, 3);

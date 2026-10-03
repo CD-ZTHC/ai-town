@@ -1,0 +1,162 @@
+{
+ "id": "pangu",
+ "specVersion": 2,
+ "listed": false,
+ "meta": { "name": "开天", "rating": "epic", "storyteller": "voyage" },
+ "lore": {
+  "summary": "天地还没有分开的时候，一切都是混沌，像一只鸡蛋。盘古在里面睡了一万八千年，醒来时四周只有翻涌的浊气和游荡的浊气兽。混沌的最深处，混沌本源一下一下地搏动，想把醒来的东西重新挤回原点。",
+  "pillars": ["开天之前只有盘古一个醒着的人", "清气上升为天，浊气下沉为地", "盘古最后化作天地万物，不是死去"],
+  "breakers": "",
+  "canon": []
+ },
+ "calendar": { "weekdays": ["一日", "二日", "三日", "四日", "五日", "六日", "七日"], "events": [] },
+ "weather": {
+  "murk": { "name": "混沌", "emoji": "🌫️", "weight": 14, "render": { "base": "fog", "tint": "#3a2a5a", "tintAlpha": 0.35 } },
+  "murk_storm": { "name": "浊雷", "emoji": "⛈️", "weight": 6, "render": { "base": "storm", "tint": "#2a1a3a", "tintAlpha": 0.3 } },
+  "sunny": { "name": "日月", "emoji": "☀️", "weight": 0, "render": { "base": "sunny", "tint": "#ffe9b0", "tintAlpha": 0.1 } }
+ },
+ "locations": {},
+ "buildings": [],
+ "personas": [
+  {
+   "id": "pangu", "name": "盘古", "age": 18, "role": "混沌中醒来的巨人", "home": "chaos_egg", "work": "murk_field", "tier": "primordial",
+   "persona": "在混沌里睡了一万八千年才醒来的巨人。话极少，说出口的都是短短几个字；沉稳、执拗，认定的事就一直做下去。手里握着一柄开天的巨斧，对浊气兽毫不留情，却会对一缕微光看上很久。",
+   "goal": "把这团压得人喘不过气的混沌劈开，让轻的上升、重的下沉。",
+   "look": { "skin": "#c9a27a", "hair": "#2a1d14", "hairStyle": "spiky", "shirt": "#7a5a3a", "pants": "#4a3a2a", "acc": ["beard", "coat"] },
+   "start": { "abilities": ["axe_cleave", "primal_roar", "deep_breath", "kaitian", "hold_sky"], "inventory": { "giant_axe": 1 }, "burdens": { "sky_weight": 0 } },
+   "combat": { "atk": 10, "def": 5 },
+   "plotArmor": true,
+   "relations": {},
+   "memories": ["睡了很久，醒来时四周又黑又沉，连手脚都伸不开。", "混沌深处有个东西一直在搏动，每动一下，四周就挤紧一分。", "手边有一柄斧头，好像生来就握着它。"]
+  }
+ ],
+ "creatures": {},
+ "threads": [
+  { "id": "split_chaos", "title": "劈开混沌", "owners": ["pangu"], "hook": "混沌之心里的混沌本源不倒下，天地就分不开" },
+  { "id": "hold_the_sky", "title": "撑天", "owners": ["pangu"], "hook": "天地开了，却每天都想重新合拢" }
+ ],
+ "items": {
+  "giant_axe": { "name": "开天巨斧", "emoji": "🪓", "desc": "盘古醒来时握在手里的巨斧", "equip": "weapon", "mods": { "atk": 6 }, "tags": ["axe"] },
+  "murk_shard": { "name": "浊气结晶", "emoji": "🔮", "desc": "浊气兽散开后留下的一块沉甸甸的结晶" }
+ },
+ "structures": {},
+ "combat": { "avatarKit": ["qing_qi_bolt", "primal_roar", "deep_breath"] },
+ "abilities": [
+  { "id": "axe_cleave", "name": "巨斧劈", "emoji": "🪓", "target": "agent", "desc": "抡起巨斧朝前方劈下去，劈开挡路的浊气", "aiHint": "有东西挡在面前",
+   "combat": { "windup": 3, "recover": 3, "range": 2.6, "shape": "cone", "cd": 10 },
+   "effects": [{ "op": "strike", "power": 1.6, "tags": ["axe"] }, { "op": "knockback", "cells": 1 }] },
+  { "id": "primal_roar", "name": "混元一吼", "emoji": "🗯️", "target": "area", "desc": "一声长吼震荡四周，身边的东西都被震得发懵", "aiHint": "被团团围住的时候",
+   "combat": { "windup": 2, "recover": 3, "radius": 3.5, "shape": "circle", "cd": 24 },
+   "effects": [{ "op": "strike", "power": 0.8 }, { "op": "status", "status": "stun", "beats": 6 }] },
+  { "id": "deep_breath", "name": "吐纳", "emoji": "🌬️", "target": "self", "desc": "吸进一口清气，周身像罩了一层光", "aiHint": "伤得重的时候",
+   "combat": { "windup": 1, "recover": 2, "cd": 40 },
+   "effects": [{ "op": "status", "status": "shield", "beats": 24, "amount": 35, "target": "self" }] },
+  { "id": "qing_qi_bolt", "name": "清气弹", "emoji": "💠", "target": "agent", "desc": "把一团清气凝起来打出去，浊气最怕这个", "aiHint": "浊气兽靠近的时候",
+   "combat": { "windup": 2, "recover": 3, "range": 5, "shape": "line", "radius": 0.8, "cd": 8 },
+   "effects": [{ "op": "strike", "power": 1.3, "tags": ["clear"] }] },
+  { "id": "chaos_wave", "name": "混沌潮", "emoji": "🌀", "target": "area", "desc": "混沌本源猛地一缩一涨，把四周的一切推开", "aiHint": "",
+   "combat": { "windup": 4, "recover": 4, "radius": 4, "shape": "circle", "cd": 20 },
+   "effects": [{ "op": "strike", "power": 1.2 }, { "op": "knockback", "cells": 2 }] },
+  { "id": "chaos_bind", "name": "浊气缠身", "emoji": "⛓️", "target": "agent", "desc": "一条浊气缠上来，把人牢牢定在原地", "aiHint": "",
+   "combat": { "windup": 2, "recover": 3, "range": 5, "shape": "line", "radius": 0.8, "cd": 16 },
+   "effects": [{ "op": "strike", "power": 0.6 }, { "op": "status", "status": "root", "beats": 8 }] },
+  { "id": "kaitian", "name": "开天", "emoji": "⚡", "target": "self", "desc": "以巨斧劈开混沌：清气上升为天，浊气下沉为地", "aiHint": "混沌本源倒下之后",
+   "power": "genesis", "uses": 1, "requires": "flag('chaos_split')",
+   "effects": [
+    { "op": "flag", "name": "sky_split", "value": true },
+    { "op": "say", "text": "开！" },
+    { "op": "worldOp", "action": "addAdjacentRegion", "args": { "id": "sky", "name": "天穹", "from": "town", "side": "north", "length": 32, "biome": "sky",
+      "areas": [{ "id": "sky_high", "biome": "sky", "size": "small", "places": [{ "id": "sky_dome", "kind": "clearing", "name": "天穹之顶", "emoji": "☁️", "desc": "清气上升，凝成了天" }] }] } },
+    { "op": "worldOp", "action": "addAdjacentRegion", "args": { "id": "earth", "name": "大地", "from": "town", "side": "south", "length": 32, "biome": "meadow",
+      "areas": [{ "id": "plain", "biome": "meadow", "size": "medium", "places": [
+        { "id": "first_field", "kind": "field", "name": "初生的原野", "emoji": "🌾", "desc": "浊气下沉，凝成了厚实的土地" },
+        { "id": "first_hut", "kind": "hut", "name": "第一间草屋", "emoji": "🛖", "desc": "大地上第一处可以遮风的地方" }] }] } },
+    { "op": "worldOp", "action": "addCanon", "args": { "text": "盘古以巨斧劈开混沌，清气上升为天，浊气下沉为地。", "tags": ["开天"] } },
+    { "op": "memory", "text": "我劈开了混沌。轻的往上飘，重的往下沉——可它们还想合回去。", "importance": 8 }
+   ] },
+  { "id": "hold_sky", "name": "顶天立地", "emoji": "🙌", "target": "self", "desc": "头顶着天、脚踩着地，把天地再撑开一丈", "aiHint": "天地又要合拢的时候",
+   "power": "genesis", "requires": "flag('sky_split')", "cooldown": 300,
+   "effects": [
+    { "op": "worldOp", "action": "expandMap", "args": { "region": "sky", "side": "north", "by": 8, "biome": "sky", "name": "又高了一丈的天" } },
+    { "op": "burden", "id": "sky_weight", "amount": 25 },
+    { "op": "vfx", "preset": "quake", "color": "#e8d6a8", "radius": 5 },
+    { "op": "say", "text": "起——" }
+   ] }
+ ],
+ "burdens": {
+  "sky_weight": {
+   "name": "天地之重", "max": 100, "drift": 0,
+   "moodAt": [[50, "沉重"], [75, "力竭"]],
+   "selfText": "每撑一次天，肩上就更沉一分；撑到尽头，就该把自己交给天地了",
+   "onFull": [
+    { "op": "transform", "text": "盘古倒下，身体化作了天地万物", "memory": "盘古化作了山川、江河与日月" },
+    { "op": "worldOp", "action": "addAdjacentRegion", "generate": "盘古的头颅化成的高山、毛发化成的草木，云雾缭绕的山川", "args": { "id": "mountains", "name": "山川", "from": "earth", "side": "east", "length": 32, "biome": "mountain",
+      "areas": [{ "id": "peaks", "biome": "mountain", "size": "medium", "places": [
+        { "id": "pangu_peak", "kind": "shrine", "name": "盘古之首", "emoji": "⛰️", "desc": "盘古的头化成的高山，云在半山腰" },
+        { "id": "pine_slope", "kind": "grove", "name": "松坡", "emoji": "🌲", "desc": "盘古的头发化成的松林" }] }] } },
+    { "op": "worldOp", "action": "addAdjacentRegion", "generate": "盘古的血液化成的江河湖泊，岸边最早有了青草", "args": { "id": "rivers", "name": "江河", "from": "earth", "side": "west", "length": 32, "biome": "meadow",
+      "areas": [{ "id": "waters", "biome": "meadow", "size": "medium", "places": [
+        { "id": "blood_river", "kind": "pond", "name": "长河", "emoji": "🌊", "desc": "盘古的血化成的江河，日夜流淌" },
+        { "id": "river_bank", "kind": "meadow", "name": "河岸", "emoji": "🌿", "desc": "江边的草地，最早的生灵在这里饮水" }] }] } },
+    { "op": "worldOp", "action": "setWeatherWeights", "args": { "weights": { "murk": 0, "murk_storm": 1, "sunny": 20 } } },
+    { "op": "weather", "id": "sunny", "minutes": 600 },
+    { "op": "worldOp", "action": "addCanon", "args": { "text": "盘古撑天到了尽头，身体化作山川、江河与日月，世界从此有了生灵。", "tags": ["开天"] } },
+    { "op": "flag", "name": "world_born", "value": true }
+   ]
+  }
+ },
+ "threats": {
+  "murk_beast": {
+   "name": "浊气兽", "emoji": "🐗", "kind": "浊气", "mortal": true, "hp": 40, "atk": 6, "def": 1, "speed": 1.2,
+   "origin": "混沌里沉下去的浊气凝成的野兽，见到会动的东西就扑上去",
+   "haunt": ["murk_field", "murk_pool"], "movement": "wander", "aggro": 3,
+   "weakness": ["axe", "clear"], "loot": [{ "item": "murk_shard", "p": 0.5 }], "clues": [],
+   "counters": [{ "type": "slay" }, { "type": "resolve", "when": "flag('sky_split')", "text": "天地分开，浊气兽沉进了大地" }]
+  },
+  "chaos_core": {
+   "name": "混沌本源", "emoji": "🌑", "kind": "混沌", "mortal": true, "hp": 400, "atk": 9, "def": 3, "speed": 0.6,
+   "origin": "混沌的心，一下一下地搏动，想把醒来的一切重新挤回原点",
+   "haunt": ["chaos_deep"], "movement": "stationary", "aggro": 5,
+   "skills": ["chaos_bind"],
+   "phases": [
+    { "at": 0.7, "text": "混沌本源化作漫天浊雾，翻涌起来！", "skills": ["chaos_wave"], "effects": [{ "op": "vfx", "preset": "ripple", "color": "#5a3a8a", "radius": 5 }] },
+    { "at": 0.35, "text": "混沌本源开始收缩，要把一切挤回原点！", "atk": 1.5, "effects": [{ "op": "status", "status": "shield", "beats": 16, "amount": 40, "target": "self" }, { "op": "vfx", "preset": "quake", "color": "#3a2a5a", "radius": 6 }] }
+   ],
+   "onSlain": [
+    { "op": "flag", "name": "chaos_split", "value": true },
+    { "op": "vfx", "preset": "split", "color": "#ffd166", "radius": 6 },
+    { "op": "worldOp", "action": "addCanon", "args": { "text": "混沌本源被巨斧劈散，混沌第一次裂开了一道缝。", "tags": ["开天"] } }
+   ],
+   "weakness": ["axe"], "clues": [],
+   "counters": [{ "type": "slay" }, { "type": "resolve", "when": "flag('sky_split')", "text": "天地已分，混沌本源再也聚不起来，散成了一缕浊气" }]
+  }
+ },
+ "incidents": { "start": [{ "threat": "murk_beast", "at": "murk_field" }, { "threat": "murk_beast", "at": "murk_pool" }] },
+ "rules": [
+  { "id": "first_people", "name": "初民化生", "when": { "every": 10 }, "if": "flag('world_born') && !flag('people_born')", "then": [
+    { "op": "flag", "name": "people_born", "value": true },
+    { "op": "worldOp", "action": "addPersona", "args": { "id": "he", "name": "禾", "age": 16, "role": "从盘古的气息里化生的初民", "kind": "traveller", "home": "first_hut", "work": "first_field",
+      "persona": "从盘古最后一口气里化生出来的少女。什么都没见过，对什么都好奇；记得自己醒来时听见一声很长的叹息。", "goal": "弄明白这个世界是从哪里来的",
+      "look": { "skin": "#e8c39e", "hair": "#3a2a1a", "hairStyle": "long", "shirt": "#7fae5a", "pants": "#5a6a3a", "acc": [] },
+      "traveller": { "origin": "盘古的最后一口气", "knowledgeGap": ["混沌", "浊气兽"] }, "memories": ["醒来时，耳边有一声很长、很长的叹息。"] } },
+    { "op": "worldOp", "action": "addPersona", "args": { "id": "shi", "name": "石生", "age": 20, "role": "从山石里化生的初民", "kind": "traveller", "home": "first_hut", "work": "first_field",
+      "persona": "从盘古之首的一块山石里化生出来的青年，沉默、力气大，喜欢在山上搬石头垒东西。", "goal": "在大地上垒起第一座像样的屋子",
+      "look": { "skin": "#b98c66", "hair": "#2a2a2a", "hairStyle": "short", "shirt": "#8a8a7a", "pants": "#4a4a3a", "acc": [] },
+      "traveller": { "origin": "盘古之首的山石", "knowledgeGap": ["混沌", "浊气兽"] }, "memories": ["从石头里走出来的时候，山顶上还是热的。"] } }
+  ] },
+  { "id": "beasts_rise", "name": "浊气凝成野兽", "when": { "every": 120 }, "forEach": "agent", "if": "e.id == 'pangu' && !flag('chaos_split') && !asleep(e)", "then": [{ "op": "spawnThreat", "threat": "murk_beast", "target": "self" }] },
+  { "id": "core_wakes", "name": "混沌本源醒来", "when": { "every": 30 }, "forEach": "agent", "if": "e.id == 'pangu' && hour >= 14 && hour < 20 && !flag('core_out')", "then": [{ "op": "flag", "name": "core_out", "value": true }, { "op": "spawnThreat", "threat": "chaos_core", "target": "self" }, { "op": "log", "text": "🌑 混沌深处的搏动猛地加快——混沌本源找上了盘古" }] },
+  { "id": "split_heaven", "name": "开天", "when": { "every": 10 }, "forEach": "agent", "if": "e.id == 'pangu' && flag('chaos_split') && !flag('sky_split')", "then": [{ "op": "cast", "ability": "kaitian", "target": "self" }] },
+  { "id": "hold_heaven", "name": "撑天", "when": { "every": 360 }, "forEach": "agent", "if": "e.id == 'pangu' && flag('sky_split') && !asleep(e)", "then": [{ "op": "cast", "ability": "hold_sky", "target": "self" }] }
+ ],
+ "factions": [],
+ "params": { "walkSpeed": 3.2, "maxConvos": 2, "convoBaseProb": 0.25, "reflectThreshold": 40, "dayEnd": 1320 },
+ "voice": {
+  "name": "开天", "emoji": "🪓", "place": "混沌", "resident": "生灵", "spawn": "clear_ground",
+  "chronicle": { "name": "开天纪", "kind": "纪事", "editor": "记下天地初开的无名者", "style": "古朴雄浑，短句，像神话的口吻" },
+  "ui": { "tagline": "天地混沌如鸡子，盘古生其中……", "welcome": "取材于中国神话「盘古开天辟地」：盘古在混沌中醒来，与浊气兽和混沌本源交战，劈开天地，日日撑天，最后化作山川江河。你可以化作一缕清气走进混沌，和他并肩作战。", "sampleEvents": ["🌫️ 浊气翻涌，又有几头浊气兽从雾里钻了出来。", "✨ 清气凝聚处的光亮了一些。", "🌀 混沌深处的搏动越来越快。"] }
+ },
+ "rhythm": { "plan": "06:00", "diary": "21:30", "chronicle": "22:00" },
+ "era": { "tech": "天地未开的混沌", "forbidden": ["手机", "汽车", "电视", "电脑", "枪", "城市"] },
+ "source": { "title": "盘古开天辟地（中国神话）", "author": "《三五历纪》《五运历年记》", "license": "公版" }
+}

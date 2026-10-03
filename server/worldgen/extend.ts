@@ -17,8 +17,17 @@ export function stripOf([W, H]: readonly number[], side: Side | string, by: numb
   return { rect: { x: 0, y: 0, w: W, h: by }, dx: 0, dy: by, size: [W, H + by] };
 }
 
-/** 新地块里的主路（沿接缝那一侧的长边，把整块地留给地点）与接回原地图的支路（在中间，通到接缝） */
-export function stripRoads(rect: Rect, side: Side | string): { main: Rect; link: Rect; seam: Cell } {
+/**
+ * 新地块里的主路（沿接缝那一侧的长边，把整块地留给地点）与接回原地图的支路（在中间，通到接缝）。
+ * bare（没有地点的地块）：没有主路，支路从接缝一直穿过整块地
+ */
+export function stripRoads(rect: Rect, side: Side | string, bare = false): { main: Rect | null; link: Rect; seam: Cell } {
+  if (bare) {
+    const ew = side === 'east' || side === 'west';
+    const link = ew ? { x: rect.x, y: rect.y + Math.floor(rect.h / 2), w: rect.w, h: 1 } : { x: rect.x + Math.floor(rect.w / 2), y: rect.y, w: 1, h: rect.h };
+    const seam = side === 'east' ? { x: rect.x - 1, y: link.y } : side === 'west' ? { x: rect.x + rect.w, y: link.y } : side === 'south' ? { x: link.x, y: rect.y - 1 } : { x: link.x, y: rect.y + rect.h };
+    return { main: null, link, seam };
+  }
   if (side === 'east' || side === 'west') {
     const x = side === 'east' ? rect.x + 1 : rect.x + rect.w - 2;
     const y = rect.y + Math.floor(rect.h / 2);
@@ -39,7 +48,7 @@ const overlap = (a: Rect, b: Rect, m = 0): boolean => a.x < b.x + b.w + m && a.x
  */
 export function packStrip(rect: Rect, side: Side | string, places: Array<{ id: string; name?: string }>, sizes: Record<string, number[]>): { placed: Record<string, Rect>; problems: string[] } {
   const roads = stripRoads(rect, side);
-  const band = [roads.main, roads.link].map((r) => ({ x: r.x - 1, y: r.y - 1, w: r.w + 2, h: r.h + 2 }));
+  const band = [roads.main!, roads.link].map((r) => ({ x: r.x - 1, y: r.y - 1, w: r.w + 2, h: r.h + 2 }));
   const placed: Record<string, Rect> = {};
   const taken: Rect[] = [];
   const problems: string[] = [];
@@ -76,7 +85,7 @@ function mulberry32(a: number): () => number {
  */
 export function paintExtension(
   c: { W: number; H: number; tiles: number[]; solid: Uint8Array; objects: MapObject[]; biome: Uint8Array; biomeIndex(id: string): number; roads: Set<number> },
-  ext: { rect: Rect; side: Side | string; biome?: string; seed?: number },
+  ext: { rect: Rect; side: Side | string; biome?: string; seed?: number; bare?: boolean },
   BIOMES: Record<string, Biome>,
 ): void {
   const { W, H, tiles, solid, objects } = c;
@@ -88,9 +97,9 @@ export function paintExtension(
   const bio = BIOMES[ext.biome ?? ''] || BIOMES.meadow!;
   const bi = c.biomeIndex(BIOMES[ext.biome ?? ''] ? ext.biome! : 'meadow');
   for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) { set(x, y, T.GRASS); c.biome[y * W + x] = bi; }
-  const roads = stripRoads(r, ext.side);
+  const roads = stripRoads(r, ext.side, Boolean(ext.bare));
   const roadCells = new Set<number>();
-  for (const rr of [roads.main, roads.link]) for (let y = rr.y; y < rr.y + rr.h; y++) for (let x = rr.x; x < rr.x + rr.w; x++) { set(x, y, T.PATH); roadCells.add(y * W + x); }
+  for (const rr of [roads.main, roads.link].filter((x): x is Rect => Boolean(x))) for (let y = rr.y; y < rr.y + rr.h; y++) for (let x = rr.x; x < rr.x + rr.w; x++) { set(x, y, T.PATH); roadCells.add(y * W + x); }
   // 装饰：离路一格以外按地貌撒树、灌木、花、石头；地图最外圈多种树
   const rnd = mulberry32(ext.seed || 1);
   const near = (x: number, y: number): boolean => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (roadCells.has((y + dy) * W + x + dx)) return true; return false; };
@@ -105,6 +114,15 @@ export function paintExtension(
     else if (v < pt + bio.bush) { objects.push({ type: 'bush', x, y, v: rnd() }); solid[y * W + x] = 1; }
     else if (v < pt + bio.bush + bio.flower) set(x, y, T.FLOWER);
     else if (v < pt + bio.bush + bio.flower + bio.rock) objects.push({ type: 'rock', x, y, v: rnd() });
+  }
+  // 没有地点的地块（bare）：原地图边缘那一圈树丛到了地图中间，清掉，让两块地连成一片
+  if (ext.bare) {
+    const ew = ext.side === 'east' || ext.side === 'west';
+    const near2 = (x: number, y: number) => !inRect(x, y) && (ew ? (ext.side === 'east' ? x >= r.x - 2 && x < r.x : x >= r.x + r.w && x < r.x + r.w + 2) : (ext.side === 'south' ? y >= r.y - 2 && y < r.y : y >= r.y + r.h && y < r.y + r.h + 2));
+    for (let i = objects.length - 1; i >= 0; i--) {
+      const o = objects[i]!;
+      if ((o.type === 'bush' || o.type === 'tree') && near2(o.x, o.y)) { objects.splice(i, 1); solid[o.y * W + o.x] = 0; }
+    }
   }
   // 接缝：从支路的尽头往原地图里找最近的路，挡路的树丛石头清掉，草地铺成泥路
   const REMOVABLE = new Set(['tree', 'bush', 'rock']);

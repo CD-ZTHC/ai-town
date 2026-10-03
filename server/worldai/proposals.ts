@@ -28,7 +28,7 @@ export const levelOf = (o: ProposalOp): OpLevel => OPS[o.op]!.levelOf?.(o.args) 
 /** 会让建筑消失（或变成废墟）的操作：需要搬迁去处、施工、居民议事 */
 export const isDemolition = (o: ProposalOp) => o.op === 'removeBuilding' || (o.op === 'setBuildingState' && o.args?.state === 'ruin');
 // 架构师（以及导演、居民、访客的点子）可以提出的操作；管理员直接提交时还可以调参数、改分级
-export const ARCHITECT_OPS = ['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace', 'expandMap', 'addAdjacentRegion', 'addRegion', 'linkRegions', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'addRule', 'addCanon'];
+export const ARCHITECT_OPS = ['addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace', 'expandMap', 'addAdjacentRegion', 'addRegion', 'linkRegions', 'addCalendarEvent', 'addWeather', 'addItem', 'addStructure', 'addAbility', 'setAvatarKit', 'addRule', 'addCanon'];
 export const ADMIN_OPS = [...ARCHITECT_OPS, 'setParam', 'setMeta'];
 const FINAL = new Set(['applied', 'rejected', 'failed', 'expired', 'reverted']);
 

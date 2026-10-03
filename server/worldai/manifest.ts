@@ -27,7 +27,8 @@ export const OP_DOCS: Record<string, string> = {
   addWeather: '{"id","name":"≤8字","emoji","weight":0~20,"render":{"base":"sunny/cloudy/rain/storm/fog/snow","tint":"#rrggbb","tintAlpha":0~0.5}}',
   addItem: '{"id","name":"≤8字","emoji","desc":"≤40字"}',
   addStructure: '{"id","name":"≤8字","emoji","ttl":10~240,"tags":["light"],"light":{"r":20~160,"color":"255,200,100"}}',
-  addAbility: '{"id","name":"≤8字","emoji","target":"self/agent/area","desc":"≤50字","aiHint":"≤50字","cost":{"stamina":0~40,"items":{"物品id":1~3}},"cooldown":0~1440,"requires":"表达式(可选)","effects":[效果，最多8个],"learn":{"teach":true,"research":{"location":"地点id","keywords":["关键词"]}}}',
+  addAbility: '{"id","name":"≤8字","emoji","target":"self/agent/area","desc":"≤50字","aiHint":"≤50字","cost":{"stamina":0~40,"items":{"物品id":1~3}},"cooldown":0~1440,"requires":"表达式(可选)","effects":[效果，最多8个],"learn":{"teach":true,"research":{"location":"地点id","keywords":["关键词"]}},"combat":{"windup":0~12,"recover":0~20,"range":1~8,"shape":"single/circle/line/cone","radius":0~6,"cd":0~400}(可选)} —— 写了 combat 块就是战斗招式（拍数，一拍 0.25 秒）：蓄力 windup 拍后生效，招式命中的敌人由 shape 决定，效果里用 strike / status / knockback；例：{"combat":{"windup":3,"range":5,"shape":"line","cd":16},"effects":[{"op":"strike","power":1.5,"tags":["fire"]},{"op":"status","status":"slow","beats":8}]}',
+  setAvatarKit: '{"ids":["带 combat 块的能力id"]（最多4个）} —— 旅人（玩家）在游戏模式里能用的技能栏，整体替换',
   addRule: '{"id","name":"≤16字","when":{"every":10~1440} 或 {"at":"HH:MM"} 或 {"weather":"天气id"} 或 {"enter":"地点id"},"forEach":"agent"(可选),"if":"表达式(可选)","then":[效果]}',
   addCanon: '{"text":"写进小镇历史的事实（≤100字）","tags":["标签"]}',
 };

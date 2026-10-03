@@ -113,7 +113,7 @@ export function finishRegion(c0: Canvas, region: Region, spec: GenSpec): GenWorl
       let i = biomes.findIndex((b) => b.id === id);
       if (i < 0) { biomes.push({ id, grass: BIOMES[id]!.grass, blade: BIOMES[id]!.blade }); i = biomes.length - 1; }
       return i;
-    }, roads: ROADS_OF }, ext as { rect: Rect; side: string; biome?: string; seed?: number }, BIOMES);
+    }, roads: ROADS_OF }, ext as { rect: Rect; side: string; biome?: string; seed?: number; bare?: boolean }, BIOMES);
   }
 
   // ---- 拆除：基础建筑照常参与了基础生成（保证随机序列不变），在这里变回空地 ----

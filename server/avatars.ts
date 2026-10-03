@@ -28,12 +28,17 @@ export interface Avatar {
   seen: number;
   movedAt: number;
   movedLocAt?: number;
+  /** 即时战斗（sim/combat）：血量（满血 100）；被打倒后到这个时刻（真实毫秒）之前不能行动 */
+  hp?: number;
+  downUntil?: number;
 }
 
 const IDLE_MS = 20 * 60_000; // 20 分钟不操作就离开
 const MOVE_CD_MS = 3000;
 const GOTO_CD_MS = 250; // 游戏模式里点地 / 键盘走路，间隔可以短一些
 const SPEED = 4; // 格/真实秒：化身按真实时间行走，不受调速、暂停影响，操作手感一致
+const DOWN_MS = 3000; // 被打倒后缓多久
+const REGEN = 8; // 不在战斗里时每真实秒回多少血
 const COLORS = ['#e57373', '#64b5f6', '#81c784', '#ffb74d', '#ba68c8', '#4db6ac', '#f06292', '#a1887f'];
 const err = (status: number, message: string): Error & { status: number } => Object.assign(new Error(message), { status });
 
@@ -42,7 +47,7 @@ export class AvatarSystem {
   declare now: () => number;
   declare list: Avatar[];
   declare seq: number;
-  constructor(town: Town, { now = () => Date.now() } = {}) {
+  constructor(town: Town, { now = () => town.now() } = {}) {
     this.town = town;
     this.now = now;
     this.list = [];
@@ -64,10 +69,7 @@ export class AvatarSystem {
       return old;
     }
     if (this.list.length >= setting('AVATAR_MAX')) throw err(429, `这里的访客已经满了（最多 ${setting('AVATAR_MAX')} 位），稍后再来吧`);
-    // 旅人出现的地方：世界包的 voice.spawn，其次是广场，再其次是主地图上第一个有站位的公共地点
-    const spawn = [town.spec.voice?.spawn, 'square', ...town.publicLocs()].find((id) => id && town.locRegion(id) === 'town' && town.findLocation(id)?.spots?.length) || 'square';
-    const spots = town.findLocation(spawn)?.spots || [];
-    const s = spots.length ? spots[Math.floor(this.town.rng() * spots.length)] : town.locCenter(spawn) || town.world.gate;
+    const { spawn, s } = this.spawnPoint();
     const v: Avatar = {
       id: `v${++this.seq}`, uid, ip, name, color: COLORS.includes(color!) ? color! : COLORS[this.seq % COLORS.length]!,
       x: s.x, y: s.y, dir: 'down', moving: false, region: 'town', locId: spawn, path: [], hop: null,
@@ -77,6 +79,22 @@ export class AvatarSystem {
     town.log('avatar', `👣 旅人「${name}」来到了${town.locName(spawn)}`, {});
     town.emit('avatars');
     return v;
+  }
+
+  /** 旅人出现的地方：世界包的 voice.spawn，其次是广场，再其次是主地图上第一个有站位的公共地点 */
+  spawnPoint(): { spawn: string; s: { x: number; y: number } } {
+    const town = this.town;
+    const spawn = [town.spec.voice?.spawn, 'square', ...town.publicLocs()].find((id) => id && town.locRegion(id) === 'town' && town.findLocation(id)?.spots?.length) || 'square';
+    const spots = town.findLocation(spawn)?.spots || [];
+    const s = spots.length ? spots[Math.floor(this.town.rng() * spots.length)]! : town.locCenter(spawn) || town.world.gate;
+    return { spawn, s };
+  }
+
+  /** 战斗中被打倒：回到出生点，缓几秒，血量回满 */
+  knockout(v: Avatar) {
+    const { spawn, s } = this.spawnPoint();
+    Object.assign(v, { region: 'town', x: s.x, y: s.y, path: [], hop: null, target: null, locId: spawn, moving: false, hp: 100, downUntil: this.now() + DOWN_MS });
+    this.town.emit('avatars');
   }
 
   move(uid: string, locId: string) {
@@ -97,6 +115,7 @@ export class AvatarSystem {
     const v = this.mine(uid);
     if (!v) throw err(404, '你还没有在小镇里现身');
     if (this.now() - v.movedAt < GOTO_CD_MS) throw err(429, '慢一点');
+    if ((v.downUntil || 0) > this.now()) throw err(409, '你倒下了，缓一缓');
     const w = town.worldOf(v.region);
     x = Math.round(Number(x)); y = Math.round(Number(y));
     if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= w.W || y >= w.H || !w.walk[y * w.W + x]) throw err(400, '那里走不过去');
@@ -145,6 +164,8 @@ export class AvatarSystem {
     const now = this.now();
     for (const v of [...this.list]) {
       if (now - v.seen > IDLE_MS) { this.remove(v, true); continue; }
+      if ((v.hp ?? 100) < 100 && !this.town.engaged?.('avatar', v.id)) v.hp = Math.min(100, (v.hp ?? 100) + REGEN * dtReal);
+      if ((v.downUntil || 0) > now) continue;
       let dist = SPEED * dtReal;
       v.moving = v.path.length > 0;
       while (dist > 0 && v.path.length) {
@@ -188,7 +209,9 @@ export class AvatarSystem {
   }
 
   view() {
+    const now = this.now();
     return this.list.map((v) => ({ id: v.id, name: v.name, color: v.color, x: +v.x.toFixed(2), y: +v.y.toFixed(2), dir: v.dir, moving: v.moving, region: v.region,
+      ...((v.hp ?? 100) < 100 ? { hp: Math.round(v.hp!) } : {}), ...((v.downUntil || 0) > now ? { down: true } : {}),
       // 接下来要走的几格与终点：前端据此预览路线、平滑插值
       ...(v.path.length ? { next: v.path.slice(0, 3), to: v.path[v.path.length - 1] } : {}) }));
   }

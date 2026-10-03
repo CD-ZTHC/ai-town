@@ -21,6 +21,8 @@ const st = {
   near: [], focus: null, focusPinned: null, chase: null,
   talk: null, detail: null, pending: false, error: '', mode: 'visitor', typed: {},
   goneT: 0,
+  // 即时战斗：正在发的出招请求、本地预估的冷却（招式 → 真实毫秒）、上次报错的时刻
+  acting: false, cd: {}, errT: 0,
 };
 const touch = () => matchMedia('(pointer: coarse)').matches;
 
@@ -37,6 +39,7 @@ export function init(a) {
   $('#dlg-mode').addEventListener('click', () => { st.mode = st.mode === 'visitor' ? 'whisper' : 'visitor'; renderDialog(); $('#dlg-input').focus(); });
   $('#dlg-input').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeDialog(); } });
   joystick();
+  $('#pf-skills').addEventListener('click', (e) => { const b = e.target.closest('[data-skill]'); if (b) act(b.dataset.skill); });
 }
 
 const me = () => app.snap?.avatars?.find((v) => v.id === app.perms.avatar) || null;
@@ -115,7 +118,7 @@ export function enter() {
   $('#joystick').hidden = !touch();
   if (!app.storage.get('town-play-tip')) {
     app.storage.set('town-play-tip', '1');
-    UI.toast(touch() ? '👣 点击地面或用左下角摇杆走路，走到居民身边点 💬 聊天' : '👣 点击地面或用 <kbd>WASD</kbd> 走路，走到居民身边按 <kbd>E</kbd> 聊天', 6000);
+    UI.toast(touch() ? '👣 点击地面或用左下角摇杆走路，走到居民身边点 💬 聊天；遇到怪物点右下角的技能' : '👣 点击地面或用 <kbd>WASD</kbd> 走路，走到居民身边按 <kbd>E</kbd> 聊天；遇到怪物按 <kbd>J</kbd> 攻击、<kbd>K</kbd> 闪避、<kbd>1</kbd>~<kbd>4</kbd> 放技能', 7000);
   }
 }
 export function exit() {
@@ -142,6 +145,10 @@ export function key(e) {
     return askExit();
   }
   if (DIRS[k]) { e.preventDefault(); st.keys.add(k); st.free = false; st.chase = null; return; }
+  // 即时战斗：J / 空格 普攻，K 闪避，1~4 技能
+  if (k === 'j' || k === ' ') { e.preventDefault(); return act('strike'); }
+  if (k === 'k') { e.preventDefault(); return act('dodge'); }
+  if (/^[1-4]$/.test(k)) { const id = kit()[Number(k) - 1]; if (id) { e.preventDefault(); act(id); } return; }
   if (k === 'e' || k === 'enter') {
     e.preventDefault();
     if (st.talk) return $('#dlg-input').focus();
@@ -158,6 +165,78 @@ export function key(e) {
 }
 
 export function free() { st.free = true; }
+
+// ---------- 即时战斗 ----------
+const BEAT_MS = 250;
+const kit = () => app.spec?.combat?.avatarKit || [];
+function skillInfo(id) {
+  if (id === 'strike') return { id, name: '普攻', emoji: '👊', key: 'J', cd: 4 };
+  if (id === 'dodge') return { id, name: '闪避', emoji: '💨', key: 'K', cd: 11 };
+  const ab = (app.spec?.abilities || []).find((x) => x.id === id);
+  if (!ab) return null;
+  return { id, name: ab.name, emoji: ab.emoji || '✨', key: String(kit().indexOf(id) + 1), cd: (ab.combat?.windup ?? 2) + (ab.combat?.cd ?? 12), desc: ab.desc };
+}
+/** 我所在的战斗（快照里的 fights） */
+function myFight() {
+  const v = me();
+  if (!v) return null;
+  for (const F of app.snap?.fights || []) { const f = F.fighters.find((x) => x.kind === 'avatar' && x.id === v.id); if (f) return { F, f }; }
+  return null;
+}
+async function act(skill) {
+  const v = me();
+  if (!v || st.talk) return;
+  if ((st.cd[skill] || 0) > now()) return;
+  if (st.acting) { st.nextAct = skill; return; }
+  st.acting = true;
+  const info = skillInfo(skill);
+  try {
+    // 闪避朝按着的方向（没按方向时服务器让你远离敌人）
+    let dir = null;
+    if (skill === 'dodge') {
+      let dx = 0, dy = 0;
+      for (const k of st.keys) { const d = DIRS[k]; if (d) { dx += d[0]; dy += d[1]; } }
+      if (st.joy) { dx = st.joy.x; dy = st.joy.y; }
+      if (Math.hypot(dx, dy) > 0.1) dir = [dx, dy];
+    }
+    await app.api('/api/avatar/act', { skill, ...(dir ? { dir } : {}) });
+    if (info) st.cd[skill] = now() + info.cd * BEAT_MS;
+  } catch (e) {
+    if (now() - st.errT > 1500) { st.errT = now(); UI.toast(`⚔️ ${esc(e.message)}`, 1800); }
+  } finally {
+    st.acting = false;
+    const n = st.nextAct; st.nextAct = null;
+    if (n) act(n);
+  }
+}
+/** 服务器推来的一拍：自己挨打时技能栏闪一下 */
+export function onCombat(ev) {
+  const v = me();
+  if (!v || !(ev.hits || []).some((h) => h.to.kind === 'avatar' && h.to.id === v.id && h.dmg > 0)) return;
+  const el = $('#play-fight');
+  el.classList.remove('hurt'); void el.offsetWidth; el.classList.add('hurt');
+}
+function renderFight(v) {
+  const el = $('#play-fight');
+  const mf = myFight();
+  const ids = ['strike', 'dodge', ...kit()];
+  // 没有化身技能的世界：只在打起来的时候显示
+  el.hidden = !kit().length && !mf;
+  if (el.hidden) return;
+  const hp = mf ? mf.f.hp : v.hp ?? 100;
+  const serverCd = mf?.f.cds || {};
+  const html = ids.map((id) => {
+    const s = skillInfo(id);
+    if (!s) return '';
+    const left = Math.max(serverCd[id] || 0, ((st.cd[id] || 0) - now()) / 1000);
+    const busy = mf?.f.act?.skill === id && mf.f.act.phase === 'windup';
+    return `<button data-skill="${id}" class="${left > 0.05 ? 'cd' : ''}${busy ? ' on' : ''}" title="${esc(s.name)}${s.desc ? `：${esc(s.desc)}` : ''}"><b>${s.emoji}</b><span>${esc(s.name)}</span><kbd>${s.key}</kbd>${left > 0.05 ? `<i>${left.toFixed(1)}</i>` : ''}</button>`;
+  }).join('');
+  if ($('#pf-skills').dataset.h !== html) { $('#pf-skills').innerHTML = html; $('#pf-skills').dataset.h = html; }
+  $('#pf-hp-bar').style.width = `${Math.max(0, Math.min(100, hp))}%`;
+  $('#pf-hp-bar').classList.toggle('low', hp < 30);
+  $('#pf-hp-text').textContent = v.down ? '💫 倒下了……' : `❤️ ${Math.round(hp)}${mf ? ' · ⚔️ 战斗中' : ''}`;
+}
 export function onAgents() { if (st.talk && !app.meta[st.talk]) closeDialog(); }
 
 // ---------- 移动 ----------
@@ -390,6 +469,7 @@ export function frame(S) {
   if ((v.region || 'town') !== app.view && !st.free) app.setView(v.region || 'town', { center: true });
   stepInput(v);
   chase(v);
+  renderFight(v);
   // 附近的人
   const here = agentsHere(v).filter((a) => !a.inside && a.status !== 'sleeping');
   st.near = here.filter((a) => dist(a, v) <= TALK_R).sort((a, b) => dist(a, v) - dist(b, v)).map((a) => a.id);

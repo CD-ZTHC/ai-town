@@ -14,6 +14,8 @@ export const RUNTIME_KEYS = Object.keys(RUNTIME_DEFAULTS()) as Array<keyof Retur
 /** 每个世界的运行时状态（永不序列化） */
 export interface TownRuntime {
   agents: Record<string, AgentRuntime>;
+  /** 威胁、敌对生物主动找旅人动手的计时（秒，见 sim/combat 的 aggroTick） */
+  aggroAcc?: number;
 }
 
 export const freshRuntime = (): TownRuntime => ({ agents: {} });

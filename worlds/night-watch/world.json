@@ -214,7 +214,17 @@
  "factions": [
   { "id": "watch", "name": "夜巡司", "members": ["lu", "shen", "gu"], "head": "lu", "authority": ["dispatch"], "stipend": { "every": 1440, "cinnabar_lead": 2 } }
  ],
+ "combat": { "avatarKit": ["cinnabar_flick", "lamp_sweep", "steady_breath"] },
  "abilities": [
+  { "id": "cinnabar_flick", "name": "弹朱砂", "emoji": "🔴", "target": "agent", "desc": "把一撮朱砂弹出去，一条线上的东西都会被灼伤", "aiHint": "对付怕火的纸扎",
+   "combat": { "windup": 2, "recover": 3, "range": 5, "shape": "line", "radius": 0.8, "cd": 10 },
+   "effects": [{ "op": "strike", "power": 1.2, "tags": ["fire"] }] },
+  { "id": "lamp_sweep", "name": "灯扫", "emoji": "🏮", "target": "area", "desc": "提灯在身边扫一圈，把近身的东西逼退", "aiHint": "被围住的时候",
+   "combat": { "windup": 3, "recover": 4, "radius": 2.5, "shape": "circle", "cd": 22 },
+   "effects": [{ "op": "strike", "power": 1.4, "tags": ["fire"] }, { "op": "knockback", "cells": 2 }, { "op": "status", "status": "slow", "beats": 8 }] },
+  { "id": "steady_breath", "name": "定神", "emoji": "🫁", "target": "self", "desc": "屏住一口气稳住心神，接下来几下伤不到要害", "aiHint": "血不多的时候",
+   "combat": { "windup": 1, "recover": 2, "cd": 40 },
+   "effects": [{ "op": "status", "status": "shield", "beats": 20, "amount": 25, "target": "self" }] },
   { "id": "look_back", "name": "回望", "emoji": "🧍", "target": "area", "desc": "借背对你的人的力量回头一望，压住身边的祟", "aiHint": "身边有祟、需要压住它的时候",
    "cost": { "stamina": 10, "burden": { "id": "erosion", "amount": 8 } }, "cooldown": 60,
    "effects": [{ "op": "suppress", "power": 3, "minutes": 40, "radius": 5 }, { "op": "vfx", "preset": "ripple", "color": "#3a2a5a", "radius": 3 }] },

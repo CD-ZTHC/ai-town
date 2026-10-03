@@ -135,6 +135,31 @@ body[data-mode='immerse']:not(.im-active), body[data-mode='immerse']:not(.im-act
 .talk-btn { position: absolute; right: 24px; bottom: calc(40px + env(safe-area-inset-bottom)); width: 72px; height: 72px; border-radius: 50%; font-size: 30px; background: linear-gradient(135deg, var(--accent), #ff8f6b); box-shadow: 0 6px 20px rgba(255, 150, 80, 0.5); }
 body[data-mode='play']:has(#dialog:not([hidden])) .joystick { display: none; }
 
+/* 即时战斗：血条与技能栏 */
+.play-fight { position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+body[data-mode='play']:has(#dialog:not([hidden])) .play-fight { display: none; }
+.pf-hp { position: relative; width: 260px; height: 16px; border-radius: 8px; background: rgba(10, 10, 20, 0.7); border: 1px solid var(--line); overflow: hidden; }
+.pf-hp i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #3fb867, #6be08c); transition: width 0.2s; }
+.pf-hp i.low { background: linear-gradient(90deg, #d84040, #f07a4a); }
+.pf-hp span { position: relative; display: block; text-align: center; font-size: 11px; line-height: 16px; color: #fff; text-shadow: 0 1px 2px #000; }
+.pf-skills { display: flex; gap: 8px; }
+.pf-skills button { position: relative; width: 58px; height: 58px; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--line); box-shadow: var(--shadow); color: var(--text); overflow: hidden; }
+.pf-skills button b { font-size: 22px; line-height: 1; font-weight: normal; }
+.pf-skills button span { font-size: 10.5px; opacity: 0.85; }
+.pf-skills button kbd { position: absolute; top: 2px; left: 4px; font-size: 9px; opacity: 0.6; margin: 0; padding: 0; background: none; border: 0; }
+.pf-skills button.cd { filter: grayscale(0.8); opacity: 0.6; }
+.pf-skills button i { position: absolute; inset: 0; display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: 15px; background: rgba(0, 0, 0, 0.45); color: #fff; }
+.pf-skills button.on { outline: 2px solid #ffd166; }
+.play-fight.hurt .pf-hp { animation: pf-hurt 0.3s; }
+@keyframes pf-hurt { 0%, 100% { box-shadow: none; } 30% { box-shadow: 0 0 0 3px rgba(255, 70, 70, 0.8); } }
+@media (pointer: coarse) {
+  .play-fight { left: auto; right: 16px; transform: none; align-items: flex-end; }
+  .pf-hp { width: 180px; }
+  .pf-skills { flex-wrap: wrap; justify-content: flex-end; max-width: 200px; }
+  .pf-skills button kbd { display: none; }
+  body[data-mode='play']:has(#play-fight:not([hidden])) .talk-btn { bottom: calc(190px + env(safe-area-inset-bottom)); }
+}
+
 /* 角色卡 */
 .charcard-wrap { width: min(620px, 94vw); }
 .charcard { display: grid; grid-template-columns: 140px 1fr; gap: 18px; align-items: center; }
