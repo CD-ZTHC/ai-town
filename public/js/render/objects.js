@@ -1,6 +1,6 @@
 // 每帧的物体与角色：水面、动态物件、构筑物与裂隙、异界生物、特效、喷泉、热气球、访客化身、居民
 // 以 Renderer 的方法形式挂载（见 render.js 末尾），方法里的 this 就是 Renderer。
-import { SPR_W, SPR_H } from '../sprites.js';
+import { SPR_W, SPR_H, buildSprites } from '../sprites.js';
 import { TS, T, SCALE, h2, hexToRgb, roundRect } from './util.js';
 
 export class Objects {
@@ -241,7 +241,9 @@ export class Objects {
     const img = spr[c.dir]?.[fi] || spr.down[0];
     ctx.save();
     ctx.globalAlpha = 0.92;
-    ctx.drawImage(img, Math.round(cx - (SPR_W * SCALE) / 2), Math.round(fy - SPR_H * SCALE + 4 + float), SPR_W * SCALE, SPR_H * SCALE);
+    const draw = () => ctx.drawImage(img, Math.round(cx - (SPR_W * SCALE) / 2), Math.round(fy - SPR_H * SCALE + 4 + float), SPR_W * SCALE, SPR_H * SCALE);
+    draw();
+    if (this.flashing(`creature:${c.id}`)) this.flashOver(ctx, draw);
     ctx.restore();
     if (c.friendly && c.name) {
       ctx.save(); ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd6ee';
@@ -426,21 +428,27 @@ export class Objects {
   /** 访客化身：带兜帽的斗篷小人 + 名牌（自己的化身有金色光圈） */
   drawAvatar(ctx, v, S) {
     const cx = v.dx * TS + TS / 2, fy = v.dy * TS + TS - 2;
-    const bob = v.moving ? Math.abs(Math.sin(this.time * 10)) * -2 : 0;
     ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(cx, fy, 10, 4, 0, 0, 7); ctx.fill();
     if (v.mine) {
       const p = (Math.sin(this.time * 4) + 1) / 2;
       ctx.strokeStyle = `rgba(255,214,102,${0.6 + p * 0.4})`; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(cx, fy, 14 + p * 2, 5 + p, 0, 0, 7); ctx.stroke();
     }
-    const y0 = fy - 38 + bob;
-    ctx.fillStyle = v.color;
-    ctx.beginPath(); ctx.moveTo(cx - 11, fy - 2 + bob); ctx.lineTo(cx - 7, y0 + 14); ctx.lineTo(cx + 7, y0 + 14); ctx.lineTo(cx + 11, fy - 2 + bob); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx, y0 + 10, 9, 0, 7); ctx.fill();
-    ctx.fillStyle = '#f3d7b6'; ctx.beginPath(); ctx.arc(cx, y0 + 12, 5.5, 0, 7); ctx.fill();
-    ctx.fillStyle = '#3a2a20';
-    if (v.dir !== 'up') { ctx.fillRect(cx - 3, y0 + 11, 2, 2); ctx.fillRect(cx + 1, y0 + 11, 2, 2); }
-    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(cx - 1, y0 + 20, 2, fy - y0 - 22);
+    // 像素精灵（和居民同一个生成器）：按形象缓存，行走时换帧；被打倒时半透明闪烁
+    const look = v.look || { skin: '#f7d5bd', hair: '#5a3a22', hairStyle: 'short', shirt: v.color, pants: '#4a4a5a', acc: [] };
+    const k = JSON.stringify(look);
+    const cache = (this.avatarSprites ||= {});
+    if (cache[v.id]?.k !== k) cache[v.id] = { k, spr: buildSprites(look) };
+    const spr = cache[v.id].spr;
+    const fi = v.moving ? [1, 0, 2, 0][Math.floor(this.time * 8) % 4] : 0;
+    const img = spr[v.dir]?.[fi] || spr.down[0];
+    const y0 = fy - SPR_H * SCALE + 4;
+    ctx.save();
+    if (v.down) ctx.globalAlpha = 0.35 + (Math.sin(this.time * 12) > 0 ? 0.3 : 0);
+    const draw = () => ctx.drawImage(img, Math.round(cx - (SPR_W * SCALE) / 2), Math.round(y0), SPR_W * SCALE, SPR_H * SCALE);
+    draw();
+    if (this.flashing(`avatar:${v.id}`)) this.flashOver(ctx, draw);
+    ctx.restore();
     ctx.save();
     ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     const label = `👣${v.name}`;
@@ -469,7 +477,9 @@ export class Objects {
       ctx.beginPath(); ctx.ellipse(cx, fy, 15 + p * 3, 6 + p, 0, 0, 7); ctx.stroke();
     }
     const img = spr[a.dir]?.[fi] || spr.down[0];
-    ctx.drawImage(img, Math.round(cx - (SPR_W * SCALE) / 2), Math.round(fy - SPR_H * SCALE + 4 + bob), SPR_W * SCALE, SPR_H * SCALE);
+    const draw = () => ctx.drawImage(img, Math.round(cx - (SPR_W * SCALE) / 2), Math.round(fy - SPR_H * SCALE + 4 + bob), SPR_W * SCALE, SPR_H * SCALE);
+    draw();
+    if (this.flashing(`agent:${a.id}`)) this.flashOver(ctx, draw);
     this.drawAgentStatus(ctx, a);
   }
 }

@@ -62,6 +62,7 @@
    "effects": [{ "op": "strike", "power": 0.6 }, { "op": "status", "status": "root", "beats": 8 }] },
   { "id": "kaitian", "name": "开天", "emoji": "⚡", "target": "self", "desc": "以巨斧劈开混沌：清气上升为天，浊气下沉为地", "aiHint": "混沌本源倒下之后",
    "power": "genesis", "uses": 1, "requires": "flag('chaos_split')",
+   "stage": { "template": "genesis", "target": "self", "text": "⚡ 开天", "title": "清气上升为天，浊气下沉为地", "ai": "用神话的口吻，写盘古一斧劈开混沌的那一刻", "priority": "major" },
    "effects": [
     { "op": "flag", "name": "sky_split", "value": true },
     { "op": "say", "text": "开！" },
@@ -76,6 +77,7 @@
    ] },
   { "id": "hold_sky", "name": "顶天立地", "emoji": "🙌", "target": "self", "desc": "头顶着天、脚踩着地，把天地再撑开一丈", "aiHint": "天地又要合拢的时候",
    "power": "genesis", "requires": "flag('sky_split')", "cooldown": 300,
+   "stage": { "template": "moment", "target": "self", "text": "🙌 天又高了一丈", "color": "#e8d6a8", "priority": "major" },
    "effects": [
     { "op": "worldOp", "action": "expandMap", "args": { "region": "sky", "side": "north", "by": 8, "biome": "sky", "name": "又高了一丈的天" } },
     { "op": "burden", "id": "sky_weight", "amount": 25 },
@@ -89,6 +91,7 @@
    "moodAt": [[50, "沉重"], [75, "力竭"]],
    "selfText": "每撑一次天，肩上就更沉一分；撑到尽头，就该把自己交给天地了",
    "onFull": [
+    { "op": "stage", "template": "aftermath", "target": "self", "text": "盘古倒下，身体化作了天地万物", "ai": "用神话的口吻，写盘古倒下、身体化作山川江河日月的那一刻", "priority": "major" },
     { "op": "transform", "text": "盘古倒下，身体化作了天地万物", "memory": "盘古化作了山川、江河与日月" },
     { "op": "worldOp", "action": "addAdjacentRegion", "generate": "盘古的头颅化成的高山、毛发化成的草木，云雾缭绕的山川", "args": { "id": "mountains", "name": "山川", "from": "earth", "side": "east", "length": 32, "biome": "mountain",
       "areas": [{ "id": "peaks", "biome": "mountain", "size": "medium", "places": [
@@ -117,7 +120,11 @@
    "name": "混沌本源", "emoji": "🌑", "kind": "混沌", "mortal": true, "hp": 400, "atk": 9, "def": 3, "speed": 0.6,
    "origin": "混沌的心，一下一下地搏动，想把醒来的一切重新挤回原点",
    "haunt": ["chaos_deep"], "movement": "stationary", "aggro": 5,
-   "skills": ["chaos_bind"],
+   "skills": ["chaos_bind"], "boss": true,
+   "stage": {
+    "intro": { "template": "intro", "target": "threat", "name": "🌑 混沌本源", "title": "一切尚未分开之处", "ai": "用古朴的一句话，写混沌本源从混沌深处现身", "priority": "major" },
+    "slain": { "template": "moment", "target": "at", "text": "🌑 混沌本源被一斧劈散", "color": "#ffd166", "ai": "用神话口吻写混沌第一次裂开一道缝", "priority": "major" }
+   },
    "phases": [
     { "at": 0.7, "text": "混沌本源化作漫天浊雾，翻涌起来！", "skills": ["chaos_wave"], "effects": [{ "op": "vfx", "preset": "ripple", "color": "#5a3a8a", "radius": 5 }] },
     { "at": 0.35, "text": "混沌本源开始收缩，要把一切挤回原点！", "atk": 1.5, "effects": [{ "op": "status", "status": "shield", "beats": 16, "amount": 40, "target": "self" }, { "op": "vfx", "preset": "quake", "color": "#3a2a5a", "radius": 6 }] }
@@ -144,10 +151,11 @@
       "look": { "skin": "#b98c66", "hair": "#2a2a2a", "hairStyle": "short", "shirt": "#8a8a7a", "pants": "#4a4a3a", "acc": [] },
       "traveller": { "origin": "盘古之首的山石", "knowledgeGap": ["混沌", "浊气兽"] }, "memories": ["从石头里走出来的时候，山顶上还是热的。"] } }
   ] },
-  { "id": "beasts_rise", "name": "浊气凝成野兽", "when": { "every": 120 }, "forEach": "agent", "if": "e.id == 'pangu' && !flag('chaos_split') && !asleep(e)", "then": [{ "op": "spawnThreat", "threat": "murk_beast", "target": "self" }] },
-  { "id": "core_wakes", "name": "混沌本源醒来", "when": { "every": 30 }, "forEach": "agent", "if": "e.id == 'pangu' && hour >= 14 && hour < 20 && !flag('core_out')", "then": [{ "op": "flag", "name": "core_out", "value": true }, { "op": "spawnThreat", "threat": "chaos_core", "target": "self" }, { "op": "log", "text": "🌑 混沌深处的搏动猛地加快——混沌本源找上了盘古" }] },
+  { "id": "beasts_rise", "name": "浊气凝成野兽", "when": { "every": 120 }, "forEach": "agent", "if": "e.id == 'pangu' && !flag('chaos_split') && !asleep(e) && !e.inside", "then": [{ "op": "spawnThreat", "threat": "murk_beast", "target": "self" }] },
+  { "id": "core_wakes", "name": "混沌本源醒来", "when": { "every": 30 }, "forEach": "agent", "if": "e.id == 'pangu' && hour >= 9 && hour < 20 && !e.inside && !asleep(e) && !flag('core_out')", "then": [{ "op": "flag", "name": "core_out", "value": true }, { "op": "spawnThreat", "threat": "chaos_core", "target": "self" }, { "op": "log", "text": "🌑 混沌深处的搏动猛地加快——混沌本源找上了盘古" }] },
   { "id": "split_heaven", "name": "开天", "when": { "every": 10 }, "forEach": "agent", "if": "e.id == 'pangu' && flag('chaos_split') && !flag('sky_split')", "then": [{ "op": "cast", "ability": "kaitian", "target": "self" }] },
-  { "id": "hold_heaven", "name": "撑天", "when": { "every": 360 }, "forEach": "agent", "if": "e.id == 'pangu' && flag('sky_split') && !asleep(e)", "then": [{ "op": "cast", "ability": "hold_sky", "target": "self" }] }
+  { "id": "hold_dawn", "name": "清晨撑天", "when": { "at": "06:30" }, "forEach": "agent", "if": "e.id == 'pangu' && flag('sky_split')", "then": [{ "op": "cast", "ability": "hold_sky", "target": "self" }] },
+  { "id": "hold_dusk", "name": "傍晚撑天", "when": { "at": "18:00" }, "forEach": "agent", "if": "e.id == 'pangu' && flag('sky_split')", "then": [{ "op": "cast", "ability": "hold_sky", "target": "self" }] }
  ],
  "factions": [],
  "params": { "walkSpeed": 3.2, "maxConvos": 2, "convoBaseProb": 0.25, "reflectThreshold": 40, "dayEnd": 1320 },

@@ -67,6 +67,7 @@
 | `damage` | 内核 | {"op":"damage","amount":1~100,"tags":["弱点标签"],"radius":1~8} 攻击身边会死的威胁（杀不死的威胁只会停顿一会儿） |
 | `worldOp` | 内核 | {"op":"worldOp","action":"addRegion/addAdjacentRegion/linkRegions/expandMap/addBuilding/addOutdoorPlace/plantGrove/addPath/addPersona/addWeather/setWeatherWeights/addItem/addCanon","args":{同世界操作},"generate":"意图（可选，≤80字）"} 创世：直接改变世界的结构（只能写在世界包里）；写了 generate 时由模型按意图现场设计新地方的布局（addRegion/addAdjacentRegion/expandMap），args 是兜底 |
 | `transform` | 内核 | {"op":"transform","text":"≤40字，可用 {self}","memory":"≤40字，其他人记住的事"} 化身：这个人离开世界（不算死亡），之后的效果照常执行 |
+| `stage` | 内核 | {"op":"stage","template":"intro/moment/reveal/aftermath/genesis","target":"self/target/threat/at/loc:地点id/agent:居民id/region:区域id","name":"≤40字","title":"≤40字","text":"≤40字","ai":"让模型写旁白的提示（可选）","priority":"minor/major"} 演出：镜头、黑边、慢镜、名字卡、横幅、旁白（也可以用 steps 写分镜：[{"do":"focus/letterbox/slow/card/banner/narrate/flash/shake/vfx/reveal/sound/wait",…}]，最多 12 步、15 秒）；普通演出全世界 30 秒最多一次 |
 | `weather` | 内核 | {"op":"weather","id":"天气id","minutes":30~1440} 天气立刻变成某种，持续一段时间后恢复自动天气 |
 | `cast` | 内核 | {"op":"cast","ability":"能力id","target":"self/e"} 让这个人立即使用一项能力（剧情、规则里用；照常检查条件、消耗、冷却） |
 | `strike` | 内核 | {"op":"strike","power":0.2~5,"add":0~80,"tags":["弱点标签"]} 战斗招式：对命中的敌人造成伤害（攻击力×power+add）；不在战斗中时打身边会死的威胁 |

@@ -49,6 +49,7 @@ import { Metrics } from './sim/metrics.ts';
 import { Dark } from './sim/dark.ts';
 import { Combat } from './sim/combat.ts';
 import { CombatMind } from './sim/combat-mind.ts';
+import { Stage } from './sim/stage.ts';
 import { get as setting } from './settings/index.ts';
 import type { Embedder } from './embeddings.ts';
 import type { WorldSpec, Params, Persona } from './types/spec.ts';
@@ -78,7 +79,7 @@ const MAX_STRUCTURES = 30;
 const MAP_OPS = new Set(['expandMap', 'addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace']);
 
 // 各职责模块（server/sim/）的方法经文件末尾的 mixin 挂到 Town.prototype 上；这里用声明合并让类型也知道它们
-export interface Town extends Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, CombatMind, TownState {}
+export interface Town extends Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, CombatMind, Stage, TownState {}
 
 export class Town extends EventEmitter {
   // 字段只做类型声明（declare）：类型剥离后不生成任何代码，初始化仍在构造函数与各模块里，运行行为不变
@@ -814,7 +815,7 @@ export class Town extends EventEmitter {
 // 把各职责模块的方法挂到 Town 上；重名直接报错，避免悄悄覆盖
 // 世界状态字段（sim/state.ts 的表）：Town 上读写 this.dark、this.logs 等都转发到 this.state
 defineStateAccessors(Town.prototype);
-for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, CombatMind]) {
+for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, CombatMind, Stage]) {
   for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) {
     if (name === 'constructor') continue;
     if (Object.hasOwn(Town.prototype, name)) throw new Error(`Town.${name} 重复定义（${part.name}）`);

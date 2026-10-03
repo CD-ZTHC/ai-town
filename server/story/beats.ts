@@ -1,6 +1,8 @@
 // 剧情节拍：叙事导演与剧情弧共用的「剧情动作」。每个动作先校验、再执行，非法动作会被丢弃。
 // 普通动作导演可以直接使用；标记为 privileged 的动作（开裂隙、刷怪、角色登场/离场、投票……）只允许剧情弧模板使用。
 import { addMemory } from '../memory.ts';
+import { checkStage } from '../sim/stage.ts';
+import type { StageScript } from '../sim/stage.ts';
 import { checkEffects, runEffects, posOf, VFX } from '../kernel/effects.ts';
 import { advanceThread } from './threads.ts';
 import type { Town } from '../sim.ts';
@@ -30,6 +32,14 @@ const str = (v: unknown, max: number): string => String(v ?? '').trim().slice(0,
 const inRange = (v: unknown, lo: number, hi: number): boolean => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 // 导演直接使用 effect 动作时允许的效果（不含授予能力、临时参数等影响更大的原语）
 const DIRECTOR_EFFECTS = new Set(['stat', 'condition', 'mood', 'memory', 'vfx', 'say', 'flag', 'belief']);
+
+/** 导演的演出节拍 → 演出脚本：who（姓名）/ at（地点 id）变成目标；优先级固定为普通 */
+function directorStage(town: Town, b: Beat): StageScript {
+  const who = b.who ? resolveWho(town, b.who)[0] : null;
+  const target = who ? `agent:${who.id}` : b.at ? `loc:${str(b.at, 40)}` : undefined;
+  const pick = (k: string) => (b[k] != null ? { [k]: b[k] } : {});
+  return { template: b.template, ...(Array.isArray(b.steps) ? { steps: b.steps } : {}), ...(target ? { target } : {}), ...pick('name'), ...pick('title'), ...pick('text'), ...pick('ai'), ...pick('emoji'), priority: 'minor' } as StageScript;
+}
 
 /** 把姓名或 id 解析成在场的角色 */
 export function resolveWho(town: Town, who: unknown, { all = false }: { all?: boolean } = {}): LiveAgent[] {
@@ -133,6 +143,11 @@ const KINDS: Record<string, BeatKind> = {
   weather: {
     check(b, town) { return Object.hasOwn(town.spec.weather, b.id || '') ? null : `未知天气：${b.id}`; },
     run(town, b) { town.setWeatherFor(b.id, 180); },
+  },
+  // 演出（docs/design/presentation.md §4）：导演给某人、某地一段镜头；导演放的都是普通演出（受节流，不会刷屏）
+  stage: {
+    check(b, town) { return checkStage(directorStage(town, b), town.spec); },
+    run(town, b, ctx) { town.stage(directorStage(town, b), {}, { source: ctx.source || 'director' }); },
   },
   canon: {
     check(b) { return str(b.text, 200) ? null : 'text 不能为空'; },

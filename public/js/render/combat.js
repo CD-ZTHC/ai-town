@@ -5,19 +5,29 @@ import { TS, roundRect } from './util.js';
 const STATUS_ICON = { stun: '💫', root: '⛓️', shield: '🛡️', haste: '💨', slow: '🐌', bleed: '🩸', weaken: '🥀', guard: '🧱', dodge: '👻' };
 const SKILL_COLOR = { strike: '#ffffff', dodge: '#9fd8ff' };
 const FONT = '"PingFang SC","Microsoft YaHei",sans-serif';
+const ZERO = Object.freeze({ x: 0, y: 0 });
 
 export class CombatLayer {
-  /** 服务器推来的一拍：特效、飘字、横幅、震屏 */
+  /** 服务器推来的一拍：特效、飘字、横幅、震屏，以及打击感（受击闪白、后退、出手前冲、打击停顿）与音效 */
   addCombat(ev) {
     const t = this.time;
     this.cfx ||= []; this.floats ||= [];
+    const key = (u) => `${u.kind}:${u.id}`;
     for (const f of ev.fx || []) {
-      if (f.skill === 'dodge') { this.cfx.push({ kind: 'dash', from: f.from, to: f.to, born: t, life: 0.35 }); continue; }
+      if (f.skill === 'dodge') { this.cfx.push({ kind: 'dash', from: f.from, to: f.to, born: t, life: 0.35 }); this.sfx?.('dodge', f.to); continue; }
+      // 出手前冲：朝目标冲 0.25 格再收回
+      if (f.to) this.push(key(f.by), f.to.x - f.from.x, f.to.y - f.from.y, 0.25, 0.18);
+      this.sfx?.('swing', f.from);
       const kind = f.skill === 'strike' ? 'slash' : { line: 'beam', cone: 'cone', circle: 'wave' }[f.shape] || 'slash';
       this.cfx.push({ kind, from: f.from, to: f.to || f.from, range: f.range, radius: f.radius, whiff: !!f.whiff, color: this.skillColor(f.skill), born: t, life: kind === 'wave' ? 0.55 : kind === 'beam' ? 0.4 : 0.28 });
     }
     for (const h of ev.hits || []) {
-      if (h.dodged) { this.floats.push({ x: h.x, y: h.y, text: '闪避', color: '#9fd8ff', size: 13, born: t }); continue; }
+      if (h.dodged) { this.floats.push({ x: h.x, y: h.y, text: '闪避', color: '#9fd8ff', size: 13, born: t }); this.sfx?.('dodge', h); continue; }
+      // 受击后退（沿出手的人指向自己的方向；暴击更远）与音效
+      const src = h.by && this.unitPos(this.S || {}, h.by.kind, h.by.id);
+      if (src) this.push(key(h.to), h.x - src.x, h.y - src.y, h.crit ? 0.35 : 0.18, 0.16);
+      this.sfx?.(h.crit ? 'crit' : h.dmg > 0 ? 'hit' : 'shield', h);
+      if (h.absorbed) this.sfx?.('shield', h);
       this.cfx.push({ kind: 'spark', from: { x: h.x, y: h.y }, color: h.crit ? '#ffd166' : '#ffffff', born: t, life: 0.25 });
       if (h.dmg > 0) this.floats.push({ x: h.x, y: h.y, text: h.crit ? `${h.dmg}!` : String(h.dmg), color: h.crit ? '#ffd166' : '#ff6b6b', size: h.crit ? 22 : 15, born: t, dx: (Math.random() - 0.5) * 0.6 });
       if (h.absorbed) this.floats.push({ x: h.x, y: h.y - 0.4, text: `🛡️${h.absorbed}`, color: '#bfe3ff', size: 12, born: t });
@@ -25,13 +35,47 @@ export class CombatLayer {
       this.flashes[`${h.to.kind}:${h.to.id}`] = t;
       const mine = this.myRef && h.to.kind === this.myRef.kind && h.to.id === this.myRef.id;
       if (h.crit || h.dmg >= 15 || mine) this.shake = Math.max(this.shake || 0, h.crit ? 7 : mine ? 5 : 3);
+      // 打击停顿：暴击、重击、自己挨打时画面停住一瞬
+      if (h.crit || h.dmg >= 15 || mine) this.hitstop(h.crit ? 90 : 60);
     }
     for (const n of ev.notes || []) this.floats.push({ x: n.x, y: n.y - 0.3, text: n.text, color: '#e9d8ff', size: 12, born: t });
     for (const c of ev.casts || []) if (c.windup >= 3) this.banner = { text: `${c.emoji} ${c.name}`, born: t };
     // Boss 进入新阶段：红色横幅 + 震屏
-    if (ev.phase) { this.banner = { text: `${ev.phase.emoji} ${ev.phase.text}`, born: t, color: '#ff6b6b' }; this.shake = Math.max(this.shake || 0, 9); }
+    if (ev.phase) { this.banner = { text: `${ev.phase.emoji} ${ev.phase.text}`, born: t, color: '#ff6b6b' }; this.shake = Math.max(this.shake || 0, 9); this.hitstop(120); this.sfx?.('roar'); }
     if (this.cfx.length > 60) this.cfx.splice(0, this.cfx.length - 60);
     if (this.floats.length > 60) this.floats.splice(0, this.floats.length - 60);
+  }
+
+  /** 记一次位移冲量（受击后退、出手前冲）：沿 (dx, dy) 方向推 amp 格，dur 秒内弹回 */
+  push(key, dx, dy, amp, dur) {
+    const L = Math.hypot(dx, dy);
+    if (L < 0.01) return;
+    (this.impulses ||= {})[key] = { x: (dx / L) * amp, y: (dy / L) * amp, born: performance.now(), dur: dur * 1000 };
+  }
+
+  /** 某个单位此刻的显示偏移（格）：先快后慢地推出去再弹回 */
+  offsetOf(key) {
+    const m = this.impulses?.[key];
+    if (!m) return ZERO;
+    const k = (performance.now() - m.born) / m.dur;
+    if (k >= 1) { delete this.impulses[key]; return ZERO; }
+    const s = Math.sin(Math.PI * Math.min(1, k * 1.3)) * (1 - k * 0.3);
+    return { x: m.x * s, y: m.y * s };
+  }
+
+  /** 打击停顿：画面停住 ms 毫秒（主循环把这段时间的显示时间记为 0） */
+  hitstop(ms) { this.hitstopUntil = Math.max(this.hitstopUntil || 0, performance.now() + ms); }
+
+  /** 受击闪白：这个单位最近 0.12 秒内被打中过 */
+  flashing(key) { const f = this.flashes?.[key]; return f != null && this.time - f < 0.12; }
+
+  /** 在刚画好的精灵上叠一层白光（受击闪白）：用加色混合把图像本身再画一遍 */
+  flashOver(ctx, draw) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.85;
+    draw(); draw();
+    ctx.restore();
   }
 
   /** 能力的颜色：取能力 id 的哈希，同一招颜色固定 */
@@ -122,7 +166,7 @@ export class CombatLayer {
   }
 
   /** 世界长出了新地方（创世、扩展地图、新区域）：全屏闪光，再从中间展开一行字 */
-  revealRegion(text) { this.reveal = { text, born: this.time }; this.shake = Math.max(this.shake || 0, 10); }
+  revealRegion(text) { this.reveal = { text, born: this.time }; this.shake = Math.max(this.shake || 0, 10); this.sfx?.('chime'); }
 
   drawReveal(ctx) {
     const r = this.reveal;

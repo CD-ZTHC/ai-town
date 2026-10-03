@@ -16,6 +16,8 @@ export interface TownRuntime {
   agents: Record<string, AgentRuntime>;
   /** 威胁、敌对生物主动找旅人动手的计时（秒，见 sim/combat 的 aggroTick） */
   aggroAcc?: number;
+  /** 上一次普通演出的真实时间（毫秒，sim/stage 的节流） */
+  stageAt?: number;
 }
 
 export const freshRuntime = (): TownRuntime => ({ agents: {} });

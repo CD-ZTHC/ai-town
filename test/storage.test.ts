@@ -45,9 +45,10 @@ test('增量写入：多天运行中反复存盘（记忆压缩、日志轮转�
     let rewrites = 0;
     const orig = store.syncList.bind(store);
     store.syncList = (list, items) => { const n = orig(list, items); if (n > items.length) rewrites++; return n; };
-    const end = town.t + 3 * 1440;
+    // 至少跑 3 天；动态流还没轮转（没写满 400 条，取决于随机生成的世界）就接着跑，最多 6 天
+    const end = town.t + 3 * 1440, hardEnd = town.t + 6 * 1440;
     let checks = 0;
-    while (town.t < end) {
+    while (town.t < end || (town.logs.length < 400 && town.t < hardEnd)) {
       town.advance(0.1);
       await new Promise((r) => setImmediate(r));
       // 每天清晨把前一天的琐碎记忆压缩成摘要（摘要插在列表中间，和真实的记忆压缩一样）

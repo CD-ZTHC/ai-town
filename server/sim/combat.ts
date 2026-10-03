@@ -88,7 +88,8 @@ interface BeatEvents {
   region: string;
   casts: Array<{ by: UnitRef; skill: string; name: string; emoji: string; windup: number; target: UnitRef | null }>;
   fx: Array<{ by: UnitRef; skill: string; shape: string; range: number; radius: number; from: { x: number; y: number }; to: { x: number; y: number } | null; whiff?: boolean }>;
-  hits: Array<{ to: UnitRef; dmg: number; crit?: boolean; heal?: boolean; absorbed?: number; dodged?: boolean; x: number; y: number }>;
+  /** by：出手的人（流血等没有出手的人时为空），前端据此画后退方向 */
+  hits: Array<{ to: UnitRef; by?: UnitRef; dmg: number; crit?: boolean; heal?: boolean; absorbed?: number; dodged?: boolean; x: number; y: number }>;
   notes: Array<{ to: UnitRef; text: string; x: number; y: number }>;
   /** Boss 进入新阶段 */
   phase?: { name: string; emoji: string; text: string };
@@ -267,6 +268,14 @@ export class Combat {
     }
     if (ua.agent && ua.agent.inside) this.moveUnit(ua, ua.x, ua.y);
     if (ub.agent && ub.agent.inside) this.moveUnit(ub, ub.x, ub.y);
+    // Boss 第一次开打：登场演出（威胁自己写了 stage.intro 就用它的）
+    for (const u of [ua, ub]) {
+      const def = u.threat && this.threats.def(u.threat);
+      if (!u.threat || !def || !(def.boss || def.phases?.length) || u.threat.introduced) continue;
+      u.threat.introduced = true;
+      this.stage(def.stage?.intro || { template: 'intro', target: 'threat', name: `${def.emoji} ${def.name}`, title: ((def.kind ? `${def.kind} · ` : '') + (def.origin || '')).slice(0, 40), priority: 'major' },
+        { threat: u.threat, at: { x: u.x, y: u.y, inside: null, region: u.region } }, { source: `threat:${u.threat.type}` });
+    }
     // 新加入的居民定战术、说开场白（combat-mind）
     for (const f of F.fighters) if (!f.out && f.kind === 'agent' && !f.tactic && (sameUnit(f, a) || sameUnit(f, b))) this.planFighter(F, f);
     this.emit('combat', { id: F.id, region: F.region, start: true, casts: [], fx: [], hits: [], notes: [] } satisfies BeatEvents);
@@ -450,14 +459,14 @@ export class Combat {
     if (!tu) return;
     const me = effectiveStats(u.base, f, F.beat);
     const allTags = [...me.tags, ...tags];
-    if (hasStatus(h, 'dodge', F.beat)) { ev.hits.push({ to: refOf(h.kind, h.id), dmg: 0, dodged: true, x: tu.x, y: tu.y }); return; }
+    if (hasStatus(h, 'dodge', F.beat)) { ev.hits.push({ to: refOf(h.kind, h.id), by: refOf(f.kind, f.id), dmg: 0, dodged: true, x: tu.x, y: tu.y }); return; }
     if (tu.threat) {
       const { dmg: raw, crit } = damageRoll(me.atk, 0, this.rng, { power, add });
       const before = tu.threat.hp!;
       this.threats.hit(tu.threat, raw, allTags, u.agent || null);
       const dmg = Math.max(0, before - Math.max(0, tu.threat.hp!));
       h.lastHit = refOf(f.kind, f.id);
-      ev.hits.push({ to: refOf(h.kind, h.id), dmg, crit, x: tu.x, y: tu.y });
+      ev.hits.push({ to: refOf(h.kind, h.id), by: refOf(f.kind, f.id), dmg, crit, x: tu.x, y: tu.y });
       this.afterHit(F, h, tu, dmg, ev);
       this.threatPhase(F, h, tu.threat, ev);
       if ((tu.threat.hp ?? 0) <= 0 || tu.threat.state === 'gone') { h.out = 'down'; if (!u.agent) this.log('threat', `⚔️ ${u.name}消灭了${tu.name}`, { threat: tu.threat.id }); }
@@ -475,7 +484,7 @@ export class Combat {
     const real = absorb(h, dmg, F.beat);
     this.setUnitHp(tu, tu.hp - real);
     if (by) h.lastHit = refOf(by.kind, by.id);
-    ev.hits.push({ to: refOf(h.kind, h.id), dmg: real, crit, ...(real < dmg ? { absorbed: dmg - real } : {}), x: tu.x, y: tu.y });
+    ev.hits.push({ to: refOf(h.kind, h.id), ...(by ? { by: refOf(by.kind, by.id) } : {}), dmg: real, crit, ...(real < dmg ? { absorbed: dmg - real } : {}), x: tu.x, y: tu.y });
     this.afterHit(F, h, tu, real, ev);
     if (tu.threat) this.threatPhase(F, h, tu.threat, ev);
     if (tu.hp <= 0) this.unitDown(F, h, tu);
@@ -781,6 +790,14 @@ export class Combat {
     return best;
   }
 
+  /** Boss 的大血条用：名字、第几阶段 */
+  bossView(this: Town, id: string) {
+    const inst = this.threats.live().find((x) => x.id === id);
+    const def = inst && this.threats.def(inst);
+    if (!def || !(def.boss || def.phases?.length)) return {};
+    return { boss: { name: def.name, emoji: def.emoji, phase: typeof inst!.phase === 'number' ? inst!.phase + 1 : 0, phases: def.phases?.length || 0 } };
+  }
+
   /** 快照里的战斗：参战单位的血量、招式与读条、状态 */
   fightsView(this: Town) {
     return (this.fights || []).map((F) => ({
@@ -792,6 +809,7 @@ export class Combat {
           kind: f.kind, id: f.id, side: f.side, hp: Math.round(u?.hp ?? 0), maxHp: u?.maxHp ?? 100, ...(f.tactic ? { tactic: f.tactic } : {}),
           ...(f.act && s ? { act: { skill: s.id, name: s.name, emoji: s.emoji, phase: f.act.phase, p: f.act.phase === 'windup' && f.act.until > f.act.from ? +((F.beat - f.act.from) / (f.act.until - f.act.from)).toFixed(2) : 1, big: s.windup >= 3 } } : {}),
           ...(f.statuses.length ? { st: [...new Set(f.statuses.filter((x) => x.until > F.beat).map((x) => x.id))] } : {}),
+          ...(f.kind === 'threat' ? this.bossView(f.id) : {}),
           ...(f.kind === 'avatar' ? { cds: Object.fromEntries(Object.entries(f.cds).filter(([, b]) => b > F.beat).map(([k, b]) => [k, +((b - F.beat) * BEAT).toFixed(1)])) } : {}),
         };
       }),

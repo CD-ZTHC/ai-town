@@ -522,6 +522,8 @@ export class ThreatSystem {
     if (by) addMemory(by, { t: town.t, type: 'obs', text, importance: 8 });
     // 被打死时的效果（世界包写的剧情：例如 Boss 倒下后天地开裂）
     const def = this.def(inst);
+    const at = { x: inst.x, y: inst.y, inside: null, region: inst.region || 'town' };
+    if (how === 'slain' && def && (def.boss || def.phases?.length)) town.stage(def.stage?.slain || { template: 'moment', target: 'at', text: `${def.emoji} ${def.name}倒下了`, priority: 'major' }, { self: by, at, threat: inst }, { source: `threat:${inst.type}` });
     if (how === 'slain' && def?.onSlain?.length) runEffects(town, { self: by, target: null, e: by, at: { x: inst.x, y: inst.y, inside: null, region: inst.region || 'town' }, source: `threat:${inst.type}`, threat: inst }, def.onSlain);
     try { town.applyWorldOp({ op: 'addCanon', args: { text: `第${town.day}天，${text}。`, tags: ['事件'] } }, { by: 'threat' }, { quiet: true }); } catch { /* 正典满了也不影响 */ }
     town.emit('story');

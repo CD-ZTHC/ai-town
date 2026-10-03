@@ -5,6 +5,8 @@ import { parse, ExprError } from './expr.ts';
 import { addMemory } from '../memory.ts';
 import { STATUS_IDS } from '../sim/fight-rules.ts';
 import { GENERATABLE, generateLayout } from '../worldai/genesis-region.ts';
+import { checkStage } from '../sim/stage.ts';
+import type { StageScript } from '../sim/stage.ts';
 import type { WorldSpec } from '../types/spec.ts';
 import type { AgentLike, ThreatInstance, TownLike } from '../types/town.ts';
 
@@ -408,6 +410,12 @@ export const EFFECTS: Record<string, EffectDef> = {
       for (const o of town.agents) if (o !== x && o.kind !== 'creature') addMemory(o, { t: town.t, type: 'event', text: memo, importance: 9 });
       town.depart(x.id, 'transform', `✨ ${a.text ? fill(str(a.text, 40), ctx) : `${x.name}化作了天地万物`}`);
     },
+  },
+  // 演出（docs/design/presentation.md §4）：只影响观众的画面，不改变世界
+  stage: {
+    doc: '{"op":"stage","template":"intro/moment/reveal/aftermath/genesis","target":"self/target/threat/at/loc:地点id/agent:居民id/region:区域id","name":"≤40字","title":"≤40字","text":"≤40字","ai":"让模型写旁白的提示（可选）","priority":"minor/major"} 演出：镜头、黑边、慢镜、名字卡、横幅、旁白（也可以用 steps 写分镜：[{"do":"focus/letterbox/slow/card/banner/narrate/flash/shake/vfx/reveal/sound/wait",…}]，最多 12 步、15 秒）；普通演出全世界 30 秒最多一次',
+    check(a, spec) { return checkStage(a, spec); },
+    apply(town, ctx, a) { town.stage(a as StageScript, ctx, { source: ctx.source || '' }); },
   },
   weather: {
     doc: '{"op":"weather","id":"天气id","minutes":30~1440} 天气立刻变成某种，持续一段时间后恢复自动天气',

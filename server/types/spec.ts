@@ -167,6 +167,8 @@ export interface Ability {
   power?: 'genesis';
   /** 创世级能力每个人一共能用几次 */
   uses?: number;
+  /** 使用时的演出（docs/design/presentation.md）；创世级能力没写时用 genesis 模板 */
+  stage?: import('../sim/stage.ts').StageScript;
   /** 即时战斗里的招式节奏（设计 combat.md §3.3）：没有时不能在战斗里用 */
   combat?: { windup?: number; recover?: number; range?: number; shape?: 'single' | 'circle' | 'line' | 'cone'; radius?: number; cd?: number };
   learn?: { research?: { location: string; keywords: string[] }; [k: string]: unknown };
@@ -322,6 +324,10 @@ export interface ThreatType {
   phases?: Array<{ at: number; text: string; effects?: Effect[]; skills?: string[]; atk?: number }>;
   onSlain?: Effect[];
   aggro?: number;
+  /** Boss：开打时有登场演出、屏幕顶部有大血条（有 phases 的威胁也算） */
+  boss?: boolean;
+  /** 自定义 Boss 的登场 / 倒下演出（不写时用 intro / moment 模板） */
+  stage?: { intro?: import('../sim/stage.ts').StageScript; slain?: import('../sim/stage.ts').StageScript };
   /** 群众伤亡：每隔多少分钟、杀几个 */
   crowd?: { every: number; kills: [number, number] };
   look?: unknown;
