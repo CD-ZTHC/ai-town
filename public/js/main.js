@@ -161,6 +161,7 @@ function connect() {
     Version.seen(d.build);
     const first = !app.world;
     app.regionWorlds = { town: d.world, ...(d.regions || {}) };
+    app.links = d.links || []; // 地图之间的路口（游戏模式预判过图）
     app.regionsOpen = d.regionsOpen || {};
     if (!app.regionWorlds[app.view] || (app.view !== 'town' && !app.regionsOpen[app.view]?.open)) app.view = 'town';
     const viewChanged = app.world && app.world.id !== app.view;
@@ -217,6 +218,7 @@ function connect() {
   es.addEventListener('combat', (e) => { const v = JSON.parse(e.data); if ((v.region || 'town') === app.view) renderer.addCombat(v); Play.onCombat?.(v); });
   // 画面里的音效（命中、挥动、低吼……）：只播当前看着的地图里的，按与镜头的距离衰减
   renderer.sfx = (kind, at) => Sfx.play(app.sound, kind, { at, cam: app.cam });
+  es.addEventListener('links', (e) => { app.links = JSON.parse(e.data); });
   es.addEventListener('regions', (e) => {
     app.regionsOpen = JSON.parse(e.data);
     if (app.view !== 'town' && !app.regionsOpen[app.view]?.open) app.setView('town');
@@ -459,7 +461,9 @@ function loop(now) {
     } : null;
     // 访客化身
     const mine = app.perms.avatar;
-    const avatars = (s.avatars || []).filter(here).map((v0) => {
+    // 自己的化身按本地的地图判断（预判过图后，快照可能还停在旧地图上）
+    const myLocal = app.mode === 'play' ? Play.localPos() : null;
+    const avatars = (s.avatars || []).filter((v) => (v.id === mine && myLocal ? myLocal.region === app.view : here(v))).map((v0) => {
       const v = { ...v0, ...(v0.id === mine ? lerpPos(`v:${v0.id}`, v0, now) : pos(`avatar:${v0.id}`, `v:${v0.id}`, v0)) };
       const d = (app.vdisp ||= {})[v.id] ||= { dx: v.x, dy: v.y };
       if (Math.hypot(v.x - d.dx, v.y - d.dy) > 4) { d.dx = v.x; d.dy = v.y; }

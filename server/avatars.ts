@@ -39,6 +39,8 @@ export interface Avatar {
    * reportAt：上一次接受上报的真实时间；strikes：最近被拒绝的上报（时间）；serverMove：异常太多，退回由服务器决定位置
    */
   pv?: number;
+  /** 换地图后的落点：离开它 1.5 格之前不触发任何路口（否则落在对面路口上，下一次上报又被送回来） */
+  landing?: { x: number; y: number; region: string } | null;
   /** 测得的往返延迟（毫秒，实时通道的心跳）：战斗的延迟补偿用 */
   rtt?: number;
   reportAt?: number;
@@ -46,10 +48,16 @@ export interface Avatar {
   serverMove?: boolean;
 }
 
-/** 一次位置上报 */
-export interface PosReport { x: unknown; y: unknown; dir?: unknown; pv?: unknown }
-/** 上报的结果：被接受，或者给出服务器认可的位置让客户端回弹 */
-export type PosResult = { ok: true } | { ok: false; reason: string; x: number; y: number; region: string; pv: number; fallback?: boolean };
+/** 一次位置上报；seq：客户端的序号（回执带回去，客户端据此丢掉过期的回执）；via：客户端预判自己走过了路口，去哪张地图 */
+export interface PosReport { x: unknown; y: unknown; dir?: unknown; pv?: unknown; seq?: unknown; via?: unknown }
+/**
+ * 上报的结果：被接受（过路口时带上新的版本号与地图），或者给出服务器认可的位置让客户端回弹。
+ * stale：这次上报带的版本号已经过期（服务器在它之后改过位置）——客户端已经知道新版本时可以直接忽略
+ */
+export type PosResult =
+  | { ok: true; seq?: number; pv?: number; region?: string; x?: number; y?: number }
+  | { ok: false; reason: string; x: number; y: number; region: string; pv: number; seq?: number; stale?: boolean; fallback?: boolean };
+const LANDING_R = 1.5;
 
 const IDLE_MS = 20 * 60_000; // 20 分钟不操作就离开
 const MOVE_CD_MS = 3000;
@@ -136,20 +144,35 @@ export class AvatarSystem {
     if (!v) throw err(404, '你还没有在小镇里现身');
     const now = this.now();
     v.seen = now;
-    const back = (reason: string, strike = false): PosResult => {
+    const seq = Number.isInteger(Number(r.seq)) ? Number(r.seq) : undefined;
+    const back = (reason: string, strike = false, stale = false): PosResult => {
       if (strike) {
         v.strikes = [...(v.strikes || []).filter((t) => now - t < 60_000), now];
         if (v.strikes.length > STRIKE_MAX) v.serverMove = true;
       }
-      return { ok: false, reason, x: v.x, y: v.y, region: v.region, pv: v.pv || 0, ...(v.serverMove ? { fallback: true } : {}) };
+      return { ok: false, reason, x: v.x, y: v.y, region: v.region, pv: v.pv || 0, ...(seq != null ? { seq } : {}), ...(stale ? { stale: true } : {}), ...(v.serverMove ? { fallback: true } : {}) };
     };
     if (v.serverMove) return back('由服务器决定位置');
     if ((v.downUntil || 0) > now) return back('倒下了');
-    if (Number(r.pv ?? 0) !== (v.pv || 0)) return back('位置已被服务器改过');
+    if (Number(r.pv ?? 0) !== (v.pv || 0)) return back('位置已被服务器改过', false, true);
     const x = Number(r.x), y = Number(r.y);
+    const dt = Math.min(1, Math.max(0.05, (now - (v.reportAt || now - 1000)) / 1000));
+    const links = town.regionLinks().filter((l) => l.from === (v.region || 'town') && town.regionOpen(l.to));
+    // 客户端预判自己走过了路口（docs/design/realtime.md §4，过图不等一个往返）：校验路口确实存在、
+    // 服务器认可的位置就在路口边上、上报的位置就在对面的落点边上，然后换图
+    if (r.via && typeof r.via === 'object') {
+      const to = String((r.via as { to?: unknown }).to || '');
+      const reach = SPEED * dt * SPEED_SLACK + 1.5;
+      const l = links.find((k) => k.to === to && Math.hypot(k.a.x - v.x, k.a.y - v.y) <= reach && Number.isFinite(x) && Number.isFinite(y) && Math.hypot(k.b.x - x, k.b.y - y) <= 1.5);
+      if (!l || this.landed(v)) return back('过不了这个路口', true);
+      const tw = town.worldOf(to);
+      if (!tw.walk[Math.round(y) * tw.W + Math.round(x)]) return back('过不了这个路口', true);
+      v.reportAt = now;
+      this.cross(v, l.to, x, y, l.b);
+      return { ok: true, pv: v.pv || 0, region: v.region, x: v.x, y: v.y, ...(seq != null ? { seq } : {}) };
+    }
     const w = town.worldOf(v.region);
     if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > w.W - 1 || y > w.H - 1) return back('越界', true);
-    const dt = Math.min(1, Math.max(0.05, (now - (v.reportAt || now - 1000)) / 1000));
     const d = Math.hypot(x - v.x, y - v.y);
     if (d > SPEED * dt * SPEED_SLACK + 0.3) return back('太快了', true);
     // 沿途每 1/4 格检查一次：不能穿过走不通的格子
@@ -159,20 +182,37 @@ export class AvatarSystem {
       if (!w.walk[cy * w.W + cx]) return back('走不过去', true);
     }
     const moved = d > 0.01;
+    const ox = v.x, oy = v.y;
     if (moved) {
       const dx = x - v.x, dy = y - v.y;
       v.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
     }
     if (['up', 'down', 'left', 'right'].includes(r.dir as string)) v.dir = r.dir as Avatar['dir'];
     Object.assign(v, { x, y, moving: moved, reportAt: now, movedAt: now, path: [], hop: null, target: null, locId: null });
-    // 走到路口：换到那边的地图（和服务器寻路时一样，经 regionLinks）
-    const link = town.regionLinks().find((l) => l.from === (v.region || 'town') && town.regionOpen(l.to) && Math.hypot(l.a.x - x, l.a.y - y) <= 1);
-    if (link) {
-      Object.assign(v, { region: link.to, x: link.b.x, y: link.b.y, moving: false });
-      this.forced(v);
-      return back('换了地图');
+    // 兜底（客户端没有预判时）：走到路口就换图——只在离开落点之后、而且是朝着路口走的时候
+    if (moved && !this.landed(v)) {
+      const link = links.find((l) => Math.hypot(l.a.x - x, l.a.y - y) <= 1 && Math.hypot(l.a.x - x, l.a.y - y) < Math.hypot(l.a.x - ox, l.a.y - oy));
+      if (link) {
+        this.cross(v, link.to, link.b.x, link.b.y, link.b);
+        return back('换了地图');
+      }
     }
-    return { ok: true };
+    return { ok: true, ...(seq != null ? { seq } : {}) };
+  }
+
+  /** 还在换图后的落点附近（离开 1.5 格之前不触发路口）；离开了就清掉 */
+  landed(v: Avatar): boolean {
+    const l = v.landing;
+    if (!l) return false;
+    if (l.region === v.region && Math.hypot(l.x - v.x, l.y - v.y) < LANDING_R) return true;
+    v.landing = null;
+    return false;
+  }
+
+  /** 换到另一张地图：位置、落点保护、版本号加一 */
+  cross(v: Avatar, to: string, x: number, y: number, landing: { x: number; y: number }) {
+    Object.assign(v, { region: to, x, y, moving: false, path: [], hop: null, landing: { x: landing.x, y: landing.y, region: to } });
+    this.forced(v);
   }
 
   /** 战斗中被打倒：回到出生点，缓几秒，血量回满 */
@@ -275,7 +315,7 @@ export class AvatarSystem {
       v.hop = null;
       if (!town.regionOpen(to)) return;
       const g = arrive || town.worldOf(to).gate;
-      Object.assign(v, { region: to, x: g.x, y: g.y });
+      Object.assign(v, { region: to, x: g.x, y: g.y, landing: { x: g.x, y: g.y, region: to } });
       this.forced(v);
       this.walk(v, locId);
       return;
