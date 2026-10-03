@@ -13,7 +13,17 @@ export class CombatLayer {
     const t = this.time;
     this.cfx ||= []; this.floats ||= [];
     const key = (u) => `${u.kind}:${u.id}`;
+    // 出招预警（无锁定，realtime.md §5.3）：敌人蓄力时在地上画出攻击范围
+    for (const c of ev.casts || []) if (c.from && c.aim && c.ms) this.telegraph({ ...c, mine: this.myRef && c.by.kind === this.myRef.kind && c.by.id === this.myRef.id });
     for (const f of ev.fx || []) {
+      // 弹道：开始飞 / 消失
+      if (f.shape === 'projectile') {
+        this.shots ||= {};
+        if (f.end) delete this.shots[f.pid];
+        else this.shots[f.pid] = { from: f.from, to: f.to, speed: f.speed, born: performance.now(), color: this.skillColor(f.skill) };
+        if (!f.end) this.sfx?.('swing', f.from);
+        continue;
+      }
       if (f.skill === 'dodge') { this.cfx.push({ kind: 'dash', from: f.from, to: f.to, born: t, life: 0.35 }); this.sfx?.('dodge', f.to); continue; }
       // 出手前冲：朝目标冲 0.25 格再收回
       if (f.to) this.push(key(f.by), f.to.x - f.from.x, f.to.y - f.from.y, 0.25, 0.18);
@@ -44,6 +54,67 @@ export class CombatLayer {
     if (ev.phase) { this.banner = { text: `${ev.phase.emoji} ${ev.phase.text}`, born: t, color: '#ff6b6b' }; this.shake = Math.max(this.shake || 0, 9); this.hitstop(120); this.sfx?.('roar'); }
     if (this.cfx.length > 60) this.cfx.splice(0, this.cfx.length - 60);
     if (this.floats.length > 60) this.floats.splice(0, this.floats.length - 60);
+  }
+
+  /** 攻击范围预警：mine 为自己（金色），其余旅人淡蓝，居民与怪物红色；本地预测的那条在服务器的到达后被替换 */
+  telegraph(t) {
+    this.tele ||= [];
+    const key = `${t.by.kind}:${t.by.id}`;
+    if (!t.local) this.tele = this.tele.filter((x) => !(x.local && x.key === key));
+    else if (this.tele.some((x) => x.key === key && !x.local && performance.now() - x.born < 300)) return;
+    this.tele.push({ ...t, key, born: performance.now() });
+    if (this.tele.length > 30) this.tele.shift();
+  }
+
+  /** 世界坐标：攻击范围预警、飞行中的弹道、自己的瞄准方向 */
+  drawTelegraphs(ctx, S) {
+    const now = performance.now();
+    const P = (x, y) => [x * TS + TS / 2, y * TS + TS / 2];
+    ctx.save();
+    this.tele = (this.tele || []).filter((t) => now - t.born < t.ms + 120);
+    for (const t of this.tele) {
+      const k = Math.min(1, (now - t.born) / t.ms);
+      const col = t.mine ? '255,209,102' : t.by.kind === 'avatar' ? '150,200,255' : '255,70,70';
+      const [fx, fy] = P(t.from.x, t.from.y);
+      const ang = Math.atan2(t.aim.y, t.aim.x);
+      const shape = () => {
+        ctx.beginPath();
+        if (t.shape === 'circle') ctx.arc(fx, fy, Math.max(1, t.radius) * TS, 0, 7);
+        else if (t.shape === 'line') { ctx.save(); ctx.translate(fx, fy); ctx.rotate(ang); const w = Math.max(0.5, t.radius || 0.8) * TS; ctx.rect(0, -w, t.range * TS, w * 2); ctx.restore(); }
+        else { const half = t.shape === 'cone' ? Math.PI / 4 : (35 / 180) * Math.PI; const r = (t.range + (t.shape === 'cone' ? 0.5 : 0.4)) * TS; ctx.moveTo(fx, fy); ctx.arc(fx, fy, r, ang - half, ang + half); ctx.closePath(); }
+      };
+      ctx.globalAlpha = t.mine ? 0.18 : 0.22; ctx.fillStyle = `rgb(${col})`; shape(); ctx.fill();
+      ctx.globalAlpha = 0.75; ctx.strokeStyle = `rgb(${col})`; ctx.lineWidth = 2; shape(); ctx.stroke();
+      // 蓄力进度：从中心向外填满
+      ctx.save(); shape(); ctx.clip();
+      ctx.globalAlpha = 0.28; ctx.fillStyle = `rgb(${col})`;
+      ctx.beginPath(); ctx.arc(fx, fy, Math.max(t.range, t.radius, 1) * TS * 1.2 * k, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+    // 弹道
+    this.shots ||= {};
+    for (const [id, s] of Object.entries(this.shots)) {
+      const len = Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y);
+      const d = Math.min(len, ((now - s.born) / 1000) * s.speed);
+      if (d >= len) { delete this.shots[id]; continue; }
+      const x = s.from.x + ((s.to.x - s.from.x) / len) * d, y = s.from.y + ((s.to.y - s.from.y) / len) * d;
+      const [px, py] = P(x, y);
+      ctx.globalAlpha = 1;
+      const g = ctx.createRadialGradient(px, py - 6, 1, px, py - 6, 12);
+      g.addColorStop(0, '#fff'); g.addColorStop(0.4, s.color); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py - 6, 12, 0, 7); ctx.fill();
+    }
+    // 战斗姿态：脚下朝瞄准方向的淡扇形
+    const me = S.play?.aim && (S.avatars || []).find((v) => v.mine);
+    if (me) {
+      const [fx, fy] = P(me.dx, me.dy);
+      const a = Math.atan2(S.play.aim.y, S.play.aim.x);
+      ctx.globalAlpha = 0.16; ctx.fillStyle = '#ffd166';
+      ctx.beginPath(); ctx.moveTo(fx, fy + 8); ctx.arc(fx, fy + 8, TS * 1.4, a - 0.45, a + 0.45); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 0.6; ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(fx + Math.cos(a) * TS * 0.6, fy + 8 + Math.sin(a) * TS * 0.6); ctx.lineTo(fx + Math.cos(a) * TS * 1.6, fy + 8 + Math.sin(a) * TS * 1.6); ctx.stroke();
+    }
+    ctx.restore();
   }
 
   /** 记一次位移冲量（受击后退、出手前冲）：沿 (dx, dy) 方向推 amp 格，dur 秒内弹回 */

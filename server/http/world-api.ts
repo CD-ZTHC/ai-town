@@ -8,6 +8,7 @@ import { registry, forkTimeline, setActive } from '../timelines.ts';
 import * as llm from '../llm.ts';
 import { useAbility } from '../kernel/abilities.ts';
 import { checkStage } from '../sim/stage.ts';
+import { issueTicket } from '../net/realtime.ts';
 import { config, sanitize, moderate, targetsResident } from '../guard.ts';
 import { authorize } from '../accounts/authz.ts';
 import { quota, remaining as quotaLeft } from '../accounts/quota.ts';
@@ -79,6 +80,8 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
       user: user ? { id: user.id, username: user.username, nickname: user.nickname, role: user.role, local: user.id === 'u_local' } : null,
       grants: user && deps.accounts ? deps.accounts.grantsOf(user.id) : [],
       interaction: (config.allowInteraction || admin) && Boolean(user || admin),
+      // 游戏模式的低延迟操作（docs/design/realtime.md）：off / move / on
+      realtime: setting('REALTIME'),
       loginToInteract: config.allowInteraction && !user && !admin,
       limits: { chatPerHour: config.chatPerHour, eventPerHour: config.eventPerHour, weatherCooldownSec: config.weatherCooldownSec },
       remaining: remaining(c),
@@ -360,9 +363,23 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
   api.post('/avatar/act', (c) => {
     requireUser(c);
     const b = c.get('body');
-    const r = town(c).avatarAct(c.get('vid')!, { skill: b.skill, target: b.target, dir: b.dir }, { residents: Boolean(reviewer(c)) });
+    const r = town(c).avatarAct(c.get('vid')!, { skill: b.skill, target: b.target, dir: b.dir, ax: b.ax, ay: b.ay }, { residents: Boolean(reviewer(c)) });
     if (!r.ok) throw new HttpError(409, r.reason!);
     return c.json(r);
+  });
+  // 实时通道（docs/design/realtime.md §3）：换一张 30 秒内有效、只能用一次的票据，再用它连 WebSocket
+  api.post('/realtime/ticket', (c) => {
+    requireUser(c);
+    if (setting('REALTIME') === 'off') throw new HttpError(409, '没有开启低延迟操作');
+    return c.json({ ticket: issueTicket(c.get('vid')!, c.get('host').id, Boolean(reviewer(c))) });
+  });
+
+  // 低延迟移动（docs/design/realtime.md §4）：客户端上报自己的位置，服务器校验；不通过时返回认可的位置让客户端回弹
+  api.post('/avatar/pos', (c) => {
+    requireUser(c);
+    if (setting('REALTIME') === 'off') throw new HttpError(409, '没有开启低延迟移动');
+    const b = c.get('body');
+    return c.json(town(c).avatars.report(c.get('vid')!, { x: b.x, y: b.y, dir: b.dir, pv: b.pv }));
   });
   api.post('/avatar/leave', (c) => c.json({ ok: c.get('vid') ? town(c).avatars.leave(c.get('vid')!) : false }));
 

@@ -1,6 +1,7 @@
 // 前端入口：实时数据流、相机与输入、渲染循环
 import * as Sfx from './sfx.js';
 import * as Stage from './stage.js';
+import * as Realtime from './realtime.js';
 import { Renderer, TS } from './render.js';
 import * as UI from './ui.js';
 import * as Modes from './modes.js';
@@ -82,6 +83,7 @@ export const app = {
     const w = app.regionWorlds[id];
     if (!w || app.view === id) return;
     app.view = id;
+    Realtime.view(id); // 战斗通道只推看着的这张地图
     app.world = w;
     renderer.setWorld(w);
     app.disp = {}; app.cdisp = {}; app.vdisp = {};
@@ -188,7 +190,7 @@ function connect() {
       setTimeout(() => document.getElementById('loading').classList.add('done'), 400);
     }
   });
-  es.addEventListener('tick', (e) => onSnap(JSON.parse(e.data)));
+  es.addEventListener('tick', (e) => { Realtime.onSnapshot(); onSnap(JSON.parse(e.data)); });
   // 世界自带的模型服务出了致命错误：世界暂停，修好后自动恢复（world-llm 设计 §5.4）
   es.addEventListener('halt', (e) => showHalt(JSON.parse(e.data || '{}')));
   es.addEventListener('resume', () => { showHalt(null); UI.toast('✅ AI 服务恢复了，世界继续运转', 5000); });
@@ -330,7 +332,7 @@ canvas.addEventListener('pointermove', (e) => {
 const endPointer = (e) => {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) pinch = null;
-  if (drag && !drag.moved && e.type === 'pointerup') {
+  if (drag && !drag.moved && e.type === 'pointerup' && e.button === 0) {
     const id = renderer.hitTest(e.clientX, e.clientY);
     if (app.mode === 'play') Play.tap(e.clientX, e.clientY, id);
     else if (id) app.select(id);
@@ -339,6 +341,8 @@ const endPointer = (e) => {
   canvas.classList.remove('dragging');
 };
 canvas.addEventListener('pointerup', endPointer);
+// 游戏模式的战斗姿态：右键闪避，不弹浏览器菜单（docs/design/realtime.md §5.1）
+canvas.addEventListener('contextmenu', (e) => { if (app.mode === 'play' && Play.combatClick(2)) e.preventDefault(); });
 canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('pointerleave', () => { app.hover = null; UI.tooltip(null); });
 canvas.addEventListener('wheel', (e) => {
@@ -405,11 +409,15 @@ function loop(now) {
     if (keys.has('w') || keys.has('arrowup')) { app.cam.y -= pan; app.follow = null; }
     if (keys.has('s') || keys.has('arrowdown')) { app.cam.y += pan; app.follow = null; }
 
+    // 游戏模式：自己的化身在本地先走（低延迟移动，docs/design/realtime.md §4）
+    if (app.mode === 'play') Play.tickLocal(dt);
     // 平滑角色位置
     // 角色登场 / 离场的瞬间，快照与角色信息可能差一帧：只画两边都有的角色
     const here = (x) => (x.region || 'town') === app.view;
+    // 战斗通道（实时通道连着时）里的单位用它的位置：每秒 15 帧、延后 100 毫秒插值（docs/design/realtime.md §6）
+    const pos = (key, cacheKey, p) => Realtime.posOf(key) || lerpPos(cacheKey, p, now);
     const agents = s.agents.filter((a) => app.meta[a.id] && renderer.meta?.[a.id] && here(a)).map((a0) => {
-      const a = { ...a0, ...lerpPos(`a:${a0.id}`, a0, now) };
+      const a = { ...a0, ...pos(`agent:${a0.id}`, `a:${a0.id}`, a0) };
       let d = app.disp[a.id];
       if (!d) d = app.disp[a.id] = { dx: a.x, dy: a.y, walkPhase: 0 };
       const dist = Math.hypot(a.x - d.dx, a.y - d.dy);
@@ -427,7 +435,7 @@ function loop(now) {
     });
     // 异界生物也做平滑插值
     const creatures = (s.creatures || []).filter(here).map((c0) => {
-      const c = { ...c0, ...lerpPos(`c:${c0.id}`, c0, now) };
+      const c = { ...c0, ...pos(`creature:${c0.id}`, `c:${c0.id}`, c0) };
       let d = app.cdisp[c.id];
       if (!d || Math.hypot(c.x - d.dx, c.y - d.dy) > 4) d = app.cdisp[c.id] = { dx: c.x, dy: c.y };
       const k = 1 - Math.exp(-dt * 10);
@@ -439,7 +447,7 @@ function loop(now) {
     const dk = s.dark;
     const dark = dk ? {
       threats: (dk.threats || []).filter(here).map((t0) => {
-        const th = { ...t0, ...lerpPos(`t:${t0.id}`, t0, now) };
+        const th = { ...t0, ...pos(`threat:${t0.id}`, `t:${t0.id}`, t0) };
         let d = (app.tdisp ||= {})[th.id];
         if (!d || Math.hypot(th.x - d.dx, th.y - d.dy) > 4) d = app.tdisp[th.id] = { dx: th.x, dy: th.y };
         const k = 1 - Math.exp(-dt * 8);
@@ -452,12 +460,15 @@ function loop(now) {
     // 访客化身
     const mine = app.perms.avatar;
     const avatars = (s.avatars || []).filter(here).map((v0) => {
-      const v = { ...v0, ...lerpPos(`v:${v0.id}`, v0, now) };
+      const v = { ...v0, ...(v0.id === mine ? lerpPos(`v:${v0.id}`, v0, now) : pos(`avatar:${v0.id}`, `v:${v0.id}`, v0)) };
       const d = (app.vdisp ||= {})[v.id] ||= { dx: v.x, dy: v.y };
       if (Math.hypot(v.x - d.dx, v.y - d.dy) > 4) { d.dx = v.x; d.dy = v.y; }
       const k = 1 - Math.exp(-dt * 10);
       d.dx += (v.x - d.dx) * k; d.dy += (v.y - d.dy) * k;
       const o = renderer.offsetOf(`avatar:${v.id}`);
+      // 自己的化身用本地位置（不插值、不平滑，按键即动）
+      const lp = v.id === mine && app.mode === 'play' ? Play.localPos() : null;
+      if (lp) { d.dx = lp.x; d.dy = lp.y; return { ...v, ...lp, dx: lp.x + o.x, dy: lp.y + o.y, mine: true }; }
       return { ...v, dx: d.dx + o.x, dy: d.dy + o.y, mine: v.id === mine };
     });
     app.avatars = s.avatars || [];

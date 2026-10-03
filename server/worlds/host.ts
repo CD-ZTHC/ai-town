@@ -1,4 +1,6 @@
 import { withContext } from '../scheduler/context.ts';
+import { pushChannel, CHANNEL_HZ } from '../net/realtime.ts';
+import type { RtSession } from '../net/realtime.ts';
 import { get as setting } from '../settings/index.ts';
 import type { Town } from '../sim.ts';
 import type { World } from '../types/world.ts';
@@ -24,6 +26,9 @@ export class WorldHost {
   declare _idle: number | (() => number);
   declare now: () => number;
   declare clients: Set<SseClient>;
+  /** 游戏模式的实时通道（server/net/realtime.ts）：连上来的观众；有人时每 1/15 秒推一帧战斗通道 */
+  rt: Set<RtSession> = new Set();
+  declare rtTimer?: ReturnType<typeof setInterval> | null;
   declare clientsPerIp: Map<string, number>;
   declare lastViewer: number;
   declare town: Town;
@@ -42,6 +47,10 @@ export class WorldHost {
     this._idle = idlePauseSec;
     this.now = now;
     this.clients = new Set(); // { push(event, bytes) | write(text), ip }：见 http/app.ts 的 openStream
+    // 实时通道的观众进出：有人时开战斗通道的定时器，没人时关掉
+    const add = this.rt.add.bind(this.rt), del = this.rt.delete.bind(this.rt);
+    this.rt.add = (s) => { add(s); this.wake(); if (!this.rtTimer) { this.rtTimer = setInterval(() => { try { pushChannel(this); } catch (e) { console.warn('[realtime]', (e as Error).message); } }, 1000 / CHANNEL_HZ); this.rtTimer.unref?.(); } return this.rt; };
+    this.rt.delete = (s) => { const r = del(s); if (!this.rt.size && this.rtTimer) { clearInterval(this.rtTimer); this.rtTimer = null; } return r; };
     this.clientsPerIp = new Map();
     this.lastViewer = now();
     this.town = null as unknown as Town;
@@ -158,6 +167,7 @@ export class WorldHost {
   close({ save = true }: { save?: boolean } = {}): void {
     for (const c of this.clients) c.close?.();
     this.clients.clear();
+    for (const s of [...this.rt]) s.ws.close(1001, 'world closed');
     if (save) this.town.save();
     this.town.stop();
   }
