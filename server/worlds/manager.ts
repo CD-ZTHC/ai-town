@@ -3,7 +3,7 @@
 //   open(id)   加载（或唤醒）世界；超出上限时先卸载一个无人观看、空闲最久的世界；都有人在看就返回「世界满员」
 //   close(id)  存盘并从内存卸载
 //   tick()     每个世界各自计算「无人观看」时长：先休眠（IDLE_PAUSE_SEC，不推进时间、不调用模型），再卸载（WORLD_UNLOAD_SEC）
-// 常驻世界（PINNED_WORLDS）不会被卸载，但计入上限。
+// 常驻世界（PINNED_WORLDS）不休眠、不会被卸载，但计入上限。
 import fs from 'node:fs';
 import { WorldHost } from './host.ts';
 import { WorldRegistry } from './registry.ts';
@@ -70,7 +70,7 @@ export class WorldManager {
         t.diskFull = (host as WorldHost | null)?.diskFull || false;
         this.onWire?.(this.registry.get(id) || w!, t);
       },
-      idlePauseSec: () => setting('IDLE_PAUSE_SEC'),
+      idlePauseSec: () => (this.isPinned(id) ? 0 : setting('IDLE_PAUSE_SEC')),
       now: this.now,
     });
     host.dataRoot = root;
