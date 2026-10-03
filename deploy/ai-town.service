@@ -1,25 +1,45 @@
-# 不用 Docker 时的 systemd 部署：复制到 /etc/systemd/system/ai-town.service
-# 然后 systemctl daemon-reload && systemctl enable --now ai-town
+# systemd 部署（重构方案 P1 §5.1）：复制到 /etc/systemd/system/ai-town.service，
+# 然后 systemctl daemon-reload && systemctl enable --now ai-town。从 nohup 方式迁移见 deploy/migrate-to-systemd.sh。
+#
+# 内存上限作用于整个 cgroup（守护进程、服务进程、插件沙箱、试运行、进化引擎全部算在内）：
+#   超过 MemoryHigh 时内核开始积极回收、限速但不杀；超过 MemoryMax 时 OOM kill，由 systemd 拉起。
+# 下面的数值按「与其他业务共用一台 2 核 ~1.7G 的机器」估算（见 docs/reports/2026-09-28-p0-diagnosis.md）：
+#   服务进程堆 384MB（NODE_OPTIONS）+ 非堆约 100MB + 守护进程 64MB + 按需的沙箱 / 试运行（各自有堆上限）
 [Unit]
-Description=AI Town (云溪镇)
+Description=AI Town
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=aitown
+Group=aitown
 WorkingDirectory=/opt/ai-town
+# .env 里的设置优先于下面的 Environment=（systemd 的规则：EnvironmentFile 覆盖 Environment）
+Environment=NODE_ENV=production PUBLIC_MODE=1 TRUST_PROXY=1 HOST=127.0.0.1 PORT=3000
+Environment=NODE_OPTIONS=--max-old-space-size=384
 EnvironmentFile=/opt/ai-town/.env
-Environment=PUBLIC_MODE=1 TRUST_PROXY=1 HOST=127.0.0.1 PORT=3000
-ExecStart=/usr/bin/node server/main.js
+# 不经过 mise：直接用 Node 26（官方二进制解压到 /opt/node，见 migrate-to-systemd.sh）。
+# 守护进程只负责拉起服务进程，自己的堆限制在 64MB（不会传给服务进程）
+ExecStart=/opt/node/bin/node --max-old-space-size=64 server/main.ts
+# SIGTERM 时各个世界会先存档；给足时间
+KillSignal=SIGTERM
+TimeoutStopSec=40
 Restart=on-failure
 RestartSec=5
+MemoryHigh=600M
+MemoryMax=768M
+MemorySwapMax=256M
+# 内存不够时优先杀 ai-town，而不是同机的其他业务
+OOMScoreAdjust=300
 # 加固
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=/opt/ai-town/data
-MemoryMax=512M
+# 运行时产生、不在 git 里的其他目录（旧版的 AI 插件目录、本地 Mod）
+ReadWritePaths=-/opt/ai-town/plugins/evolved -/opt/ai-town/spec/mods/local
 
 [Install]
 WantedBy=multi-user.target

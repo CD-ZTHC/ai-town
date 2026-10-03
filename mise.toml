@@ -19,19 +19,19 @@ _.file = ".env"
 
 [tasks.start]
 description = "启动 AI 小镇 (http://localhost:3000)；由守护进程拉起，管理面板里可以一键重启"
-run = "node server/main.js"
+run = "node server/main.ts"
 
 [tasks.dev]
 description = "开发模式（文件变更自动重启）"
-run = "node --watch-path=server server/index.js"
+run = "node --watch-path=server server/index.ts"
 
 [tasks.reset]
 description = "清空云溪镇的存档，从第一天重新开始"
-run = "rm -rf data/worlds/yunxi/save.json data/worlds/yunxi/timelines data/worlds/yunxi/timelines.json && echo '云溪镇的存档与时间线已清除（AI 插件与进化记录保留；清除它们请删除 data/worlds/yunxi/plugins 与 data/worlds/yunxi/evolution）'"
+run = "rm -rf data/worlds/yunxi/save.json data/worlds/yunxi/world.db data/worlds/yunxi/world.db-wal data/worlds/yunxi/world.db-shm data/worlds/yunxi/timelines data/worlds/yunxi/timelines.json && echo '云溪镇的存档与时间线已清除（AI 插件与进化记录保留；清除它们请删除 data/worlds/yunxi/plugins 与 data/worlds/yunxi/evolution）'"
 
 [tasks.public]
 description = "以公网模式启动（需在 .env 中设置 ADMIN_TOKEN）"
-run = "PUBLIC_MODE=1 node server/main.js"
+run = "PUBLIC_MODE=1 node server/main.ts"
 
 [tasks.token]
 description = "生成一个随机的管理员令牌"
@@ -39,43 +39,51 @@ run = "node -e \"console.log('ADMIN_TOKEN=' + require('crypto').randomBytes(24).
 
 [tasks.check]
 description = "语法检查"
-run = "node tools/check.js"
+run = "node tools/check.ts"
+
+[tasks.typecheck]
+description = "类型检查（tsc --noEmit；服务端 .ts 由 Node 直接剥离类型运行，不编译）"
+run = "npx tsc -p ."
 
 [tasks.test]
 description = "运行测试（不调用 LLM，使用临时存档目录）"
-run = "node --test test/*.test.js"
+run = "node --test test/*.test.ts"
 
 [tasks.smoke]
 description = "用真实模型对每个 AI 模块各调用一次，检查输出与 token 用量（需要 .env 中的 BASE_URL / API_KEY）"
-run = "node tools/smoke-llm.js"
+run = "node tools/smoke-llm.ts"
 
 [tasks.evolve]
 description = "让进化引擎处理一个需求（写需求文档 → 评审 → 实施 → 多轮评审 → 试运行 → 提交裁决）"
-run = "node evolution/daemon.js --once"
+run = "node evolution/daemon.ts --once"
 
 [tasks."evolve:rfc"]
 description = "把 AI 心愿单里的能力缺口整理成给人看的需求文档（docs/rfcs/，不写代码）"
-run = "node tools/evolve.js"
+run = "node tools/evolve.ts"
 
 [tasks."settings:doc"]
 description = "由设置声明表重新生成 docs/settings.md"
-run = "node tools/settings-doc.js"
+run = "node tools/settings-doc.ts"
 
 [tasks.manifest]
 description = "重新生成能力清单 docs/capabilities.md"
-run = "node tools/manifest.js"
+run = "node tools/manifest.ts"
 
 [tasks.export-mod]
 description = "把存档里 AI 创造的内容导出成 Mod（例：mise run export-mod -- --id my-mod --name 我的小镇）"
-run = "node tools/export-mod.js"
+run = "node tools/export-mod.ts"
+
+[tasks.export-save]
+description = "把存档数据库导出成 save.json（回滚到旧版本、排查问题用；例：mise run export-save -- --dir data/worlds/yunxi）"
+run = "node tools/export-save.ts"
 
 [tasks.spec]
 description = "打印当前默认世界规格（JSON）"
-run = "node --input-type=module -e \"import { defaultSpec } from './server/kernel/spec.js'; console.log(JSON.stringify(defaultSpec(), null, 2))\""
+run = "node --input-type=module -e \"import { defaultSpec } from './server/kernel/spec.ts'; console.log(JSON.stringify(defaultSpec(), null, 2))\""
 
 [tasks.browser-check]
 description = "用本机的无头 Chrome 打开页面，逐个打开主要面板与三种模式，检查控制台错误并截图（前端改动后跑）"
-run = "node tools/browser-check.js"
+run = "node tools/browser-check.ts"
 [tasks."core:lock"]
 description = "人工修改冻结区（server/ public/ plugin-host/ evolution/ plugins/builtin/）之后，重新生成 core.lock"
-run = "node tools/core-guard.js --lock"
+run = "node tools/core-guard.ts --lock"

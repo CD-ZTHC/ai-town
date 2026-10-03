@@ -1,8 +1,8 @@
 // 内置插件 go-to（RFC 0001，docs/rfcs/0001-go-to.md）：让居民立刻动身前往指定地点。
 // 来源：AI 心愿单 —— 叙事导演想「萤火节傍晚，把镇上的人都召集到码头一起放灯」，但没有对应的能力。
 // 效果是进程级的全局注册，所以在模块加载时注册一次；setup 不需要做任何事。
-import { registerEffect } from '../../../plugin-host/registry.js';
-import { checkTarget, resolveTargets } from '../../../server/kernel/effects.js';
+import { registerEffect } from '../../../plugin-host/registry.ts';
+import { checkTarget, resolveTargets } from '../../../server/kernel/effects.ts';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 

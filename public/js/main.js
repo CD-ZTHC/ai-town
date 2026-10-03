@@ -5,6 +5,7 @@ import * as Modes from './modes.js';
 import * as Immerse from './immerse.js';
 import * as Play from './play.js';
 import { requireLogin } from './ui/auth.js';
+import * as Version from './version.js';
 
 export const storage = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -43,7 +44,7 @@ export const app = {
     const token = storage.get('town-admin');
     if (token) headers['X-Admin-Token'] = token;
     const opts = body === undefined ? { headers } : { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
-    const res = await fetch(path.replace(/^\//, ''), opts);
+    const res = Version.fromResponse(await fetch(path.replace(/^\//, ''), opts));
     let data = {};
     try { data = await res.json(); } catch {}
     // 游客点了互动入口：弹出登录框，登录成功后自动继续刚才的操作
@@ -120,10 +121,40 @@ function showHalt(info) {
 }
 
 // ---------- 数据流 ----------
+// 快照每秒只推几次（服务端 TICK_HZ）：记下上一帧的坐标，渲染时在两帧之间线性插值（落后一帧，换来匀速的移动）
+const posOf = (s) => {
+  const m = {};
+  for (const a of s?.agents || []) m[`a:${a.id}`] = a;
+  for (const c of s?.creatures || []) m[`c:${c.id}`] = c;
+  for (const th of s?.dark?.threats || []) m[`t:${th.id}`] = th;
+  for (const v of s?.avatars || []) m[`v:${v.id}`] = v;
+  return m;
+};
+function onSnap(s) {
+  const now = performance.now();
+  // 上一帧的位置取「此刻插值到的位置」，新旧两段首尾相接，推送不均匀时也不跳
+  const prev = {};
+  for (const [k, p] of Object.entries(posOf(app.snap))) prev[k] = lerpPos(k, p, now);
+  const gap = app.snapAt ? now - app.snapAt : 250;
+  app.snapGap = Math.max(50, Math.min(1000, gap * 0.7 + (app.snapGap || gap) * 0.3));
+  app.prevPos = prev;
+  app.snapAt = now;
+  app.snap = s;
+}
+/** 插值后的坐标（k：a:/c:/t:/v: + id；p：当前快照里的对象） */
+function lerpPos(k, p, now = performance.now()) {
+  const q = app.prevPos?.[k];
+  if (!q || !app.snapAt) return { x: p.x, y: p.y };
+  const f = Math.max(0, Math.min(1, (now - app.snapAt) / (app.snapGap || 250)));
+  if (Math.hypot(p.x - q.x, p.y - q.y) > 4) return { x: p.x, y: p.y }; // 瞬移（进出建筑、传送）不插值
+  return { x: q.x + (p.x - q.x) * f, y: q.y + (p.y - q.y) * f };
+}
+
 function connect() {
   const es = new EventSource('api/stream');
   es.addEventListener('init', (e) => {
     const d = JSON.parse(e.data);
+    Version.seen(d.build);
     const first = !app.world;
     app.regionWorlds = { town: d.world, ...(d.regions || {}) };
     app.regionsOpen = d.regionsOpen || {};
@@ -138,6 +169,7 @@ function connect() {
     app.board = d.board;
     app.llm = d.llm;
     app.snap = d.state;
+    app.prevPos = null;
     app.disp = {};
     if (first || viewChanged || app.view === 'town') renderer.setWorld(app.world);
     renderer.setAgents(d.agents);
@@ -154,7 +186,7 @@ function connect() {
       setTimeout(() => document.getElementById('loading').classList.add('done'), 400);
     }
   });
-  es.addEventListener('tick', (e) => { app.snap = JSON.parse(e.data); });
+  es.addEventListener('tick', (e) => onSnap(JSON.parse(e.data)));
   // 世界自带的模型服务出了致命错误：世界暂停，修好后自动恢复（world-llm 设计 §5.4）
   es.addEventListener('halt', (e) => showHalt(JSON.parse(e.data || '{}')));
   es.addEventListener('resume', () => { showHalt(null); UI.toast('✅ AI 服务恢复了，世界继续运转', 5000); });
@@ -361,7 +393,8 @@ function loop(now) {
     // 平滑角色位置
     // 角色登场 / 离场的瞬间，快照与角色信息可能差一帧：只画两边都有的角色
     const here = (x) => (x.region || 'town') === app.view;
-    const agents = s.agents.filter((a) => app.meta[a.id] && renderer.meta?.[a.id] && here(a)).map((a) => {
+    const agents = s.agents.filter((a) => app.meta[a.id] && renderer.meta?.[a.id] && here(a)).map((a0) => {
+      const a = { ...a0, ...lerpPos(`a:${a0.id}`, a0, now) };
       let d = app.disp[a.id];
       if (!d) d = app.disp[a.id] = { dx: a.x, dy: a.y, walkPhase: 0 };
       const dist = Math.hypot(a.x - d.dx, a.y - d.dy);
@@ -377,7 +410,8 @@ function loop(now) {
       return { ...a, dx: d.dx, dy: d.dy, walkPhase: d.walkPhase, moving, speaking: !!(a.convo && a.bubble && a.bubble.kind === 'say') };
     });
     // 异界生物也做平滑插值
-    const creatures = (s.creatures || []).filter(here).map((c) => {
+    const creatures = (s.creatures || []).filter(here).map((c0) => {
+      const c = { ...c0, ...lerpPos(`c:${c0.id}`, c0, now) };
       let d = app.cdisp[c.id];
       if (!d || Math.hypot(c.x - d.dx, c.y - d.dy) > 4) d = app.cdisp[c.id] = { dx: c.x, dy: c.y };
       const k = 1 - Math.exp(-dt * 10);
@@ -387,7 +421,8 @@ function loop(now) {
     // 黑暗叙事：威胁（平滑插值）、区域、墓碑
     const dk = s.dark;
     const dark = dk ? {
-      threats: (dk.threats || []).filter(here).map((th) => {
+      threats: (dk.threats || []).filter(here).map((t0) => {
+        const th = { ...t0, ...lerpPos(`t:${t0.id}`, t0, now) };
         let d = (app.tdisp ||= {})[th.id];
         if (!d || Math.hypot(th.x - d.dx, th.y - d.dy) > 4) d = app.tdisp[th.id] = { dx: th.x, dy: th.y };
         const k = 1 - Math.exp(-dt * 8);
@@ -398,7 +433,8 @@ function loop(now) {
     } : null;
     // 访客化身
     const mine = app.perms.avatar;
-    const avatars = (s.avatars || []).filter(here).map((v) => {
+    const avatars = (s.avatars || []).filter(here).map((v0) => {
+      const v = { ...v0, ...lerpPos(`v:${v0.id}`, v0, now) };
       const d = (app.vdisp ||= {})[v.id] ||= { dx: v.x, dy: v.y };
       if (Math.hypot(v.x - d.dx, v.y - d.dy) > 4) { d.dx = v.x; d.dy = v.y; }
       const k = 1 - Math.exp(-dt * 10);

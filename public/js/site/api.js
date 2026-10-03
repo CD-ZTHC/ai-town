@@ -1,4 +1,6 @@
 // 表单类页面共用：请求接口、转义、提示。站点根目录按本模块的位置推算（/js/site/api.js → /），支持部署在子路径下。
+import { fromResponse } from '../version.js';
+
 export const ROOT = new URL('../../', import.meta.url);
 
 export const storage = {
@@ -18,7 +20,7 @@ export async function api(path, body, method) {
   const m = method || (body === undefined ? 'GET' : 'POST');
   const opts = { method: m, headers, credentials: 'same-origin' };
   if (body !== undefined) { headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
-  const res = await fetch(new URL(path.replace(/^\//, ''), ROOT), opts);
+  const res = fromResponse(await fetch(new URL(path.replace(/^\//, ''), ROOT), opts));
   let data = {};
   try { data = await res.json(); } catch { /* 空响应 */ }
   if (!res.ok) throw new ApiError(data.error || `请求失败（${res.status}）`, res.status, data);

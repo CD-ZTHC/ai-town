@@ -1,0 +1,21 @@
+// 类型检查（重构方案 §8）：服务端用原生 .ts + Node 类型剥离，不编译；tsc 只做检查（npm run typecheck）
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmit": true,
+    // 服务端迁移已完成。保留 allowJs 只为 test/frontend.test.ts 导入前端的 public/js/*.js（浏览器代码，不迁移）时能推断类型；
+    // 其余 .js 是插件契约的入口（plugins/builtin/*/server.js、AI 插件与它的测试夹具），由插件宿主按路径加载
+    "allowJs": true,
+    "checkJs": false,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true, // 禁止 enum / namespace / 参数属性等 Node 无法剥离的语法
+    "verbatimModuleSyntax": true, // 强制 import type
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["server", "plugin-host", "evolution", "plugins/builtin", "tools", "test"]
+}

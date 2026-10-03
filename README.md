@@ -14,6 +14,7 @@ mise run reset      # 清空存档，从第一天重新开始
 mise run public     # 以公网模式启动（需要 ADMIN_TOKEN）
 mise run token      # 生成管理员令牌
 mise run check      # 语法检查
+mise run typecheck  # 类型检查（服务端逐步迁移到原生 TypeScript，Node 直接剥离类型运行，不编译）
 mise run test       # 运行测试（不调用 LLM；含用录制回复跑 7 个游戏日的无头回放）
 mise run spec       # 打印默认世界规格
 mise run evolve     # 让进化引擎处理一个需求（需求文档 → 评审 → 实施 → 多轮评审 → 试运行 → 提交表决）
@@ -30,7 +31,7 @@ mise run smoke      # 接入新模型时的快速验收：每个 AI 模块真实
 所有设置在**管理面板 `/admin` → 设置**里修改：按组编辑，保存前校验取值范围，模型相关的改动可以先「测试连接」，每次保存生成一个版本（可以查看历史、一键恢复）。只有 7 项「启动必需」的设置必须用环境变量（`PORT`、`HOST`、`DATA_DIR`、`PUBLIC_MODE`、`TRUST_PROXY`、`ADMIN_TOKEN`、`SECRETS_KEY`，见 `.env.example`）。
 
 - 值的来源：**面板保存的值（`data/settings.json`）> 环境变量（只作初始值）> 默认值**。环境变量只在还没保存过时作为初始值导入设置文件，之后一律以保存的值为准，面板上没有被环境变量锁定的项；再改 `.env` 不会生效（启动日志与面板会提示「已忽略」）。从旧版本升级时，`.env` 里的值会在第一次启动时导入。
-- 大部分设置保存后立即生效；少数（例如服务类型、embedding）需要重启——面板顶部会提示，点「立即重启」即可。服务由守护进程 `server/main.js` 拉起：新设置如果连续两次启动失败，会自动回退到上一个正常的版本。
+- 大部分设置保存后立即生效；少数（例如服务类型、embedding）需要重启——面板顶部会提示，点「立即重启」即可。服务由守护进程 `server/main.ts` 拉起：新设置如果连续两次启动失败，会自动回退到上一个正常的版本。
 - 全部设置项、默认值与取值范围见 [docs/settings.md](docs/settings.md)（由 `mise run settings:doc` 从声明表生成）。
 
 依赖保持很少：`hono`（路由与中间件）、`zod`（校验）；账号与账本用 Node 内置的 `node:sqlite`。默认的 OpenAI 兼容接口零依赖；Anthropic、Google 等其他服务商经 [Vercel AI SDK](https://ai-sdk.dev)（`ai` + `@ai-sdk/*`，可选依赖，默认安装）接入，只在用到时加载。`LLM_PROVIDER=aisdk` 时模型名写成「服务商/模型」，不同档位可以混用多家；旧的 `LLM_PROVIDER=pi` 自动按 `aisdk` 处理。前端是原生 Canvas + ES Modules，没有构建步骤，所有像素美术均为程序化生成。
@@ -60,7 +61,7 @@ cp .env.example .env      # 启动必需的几项；模型地址与密钥也可�
 mise run token            # 生成管理员令牌，把输出的 ADMIN_TOKEN=... 写进 .env
 ```
 
-世界自带模型服务的凭据用主密钥 `SECRETS_KEY` 加密。不配置时首次启动会自动生成 `data/secret.key`：**务必备份它**，丢了所有凭据都要重填；生产环境建议改用环境变量提供（`node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`）。更换主密钥：停服务后运行 `node tools/rotate-secrets.js`。
+世界自带模型服务的凭据用主密钥 `SECRETS_KEY` 加密。不配置时首次启动会自动生成 `data/secret.key`：**务必备份它**，丢了所有凭据都要重填；生产环境建议改用环境变量提供（`node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`）。更换主密钥：停服务后运行 `node tools/rotate-secrets.ts`。
 
 **2A. Docker 部署（推荐）**
 
@@ -70,10 +71,11 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 
 容器以非 root 用户运行，根文件系统只读，并丢弃所有 capabilities。
 
-**2B. 直接用 Node 部署**：参考 `deploy/ai-town.service`（systemd，带沙箱加固）。
+**2B. 直接用 Node 部署**：参考 `deploy/ai-town.service`（systemd，带沙箱加固与整个进程组的内存上限，直接启动 `node`、不经过 mise）。原来用 `nohup mise run start` 运行的，用 `deploy/migrate-to-systemd.sh` 一次性迁到 `/opt/ai-town`；之后 `tools/deploy.sh` 会自动识别 systemd 方式。`tools/deploy.sh` 在本机装好生产依赖、打包上传，线上不再 `npm ci`。
 
 **3. 反向代理**：`deploy/Caddyfile` 和 `deploy/nginx.conf` 给出了**独立子域名**和**子路径**（如 `https://example.com/town/`）两种写法。页面使用相对路径，挂在任意子路径下都能用。注意：
 - 设置 `TRUST_PROXY=1`（compose 与 systemd 模板里已设置），否则所有访客会共用反向代理的 IP 和限流额度；
+- 反向代理前面还有 CDN（例如 Cloudflare）时，反向代理要信任 CDN 的地址段（Caddy 的 `trusted_proxies`），`TRUST_PROXY` 相应改为 2；CDN 的「浏览器缓存 TTL」请设为遵循源站（页面资源已经带内容哈希，源站会给出合适的缓存头）；
 - 代理必须关闭对 SSE 的缓冲（模板里已配置）。
 
 **4. 管理**：先在首页注册一个账号，然后打开 `/admin`，用 `ADMIN_TOKEN` 把这个账号认领为超级管理员；之后用这个账号登录即可管理（令牌保留为应急入口，每次使用都写审计）。世界页面里管理员可以调速、暂停、立即出版号外和重置世界。
@@ -227,7 +229,7 @@ docker compose up -d --build     # 仅监听 127.0.0.1:3000，存档在 town-dat
 
 ## 世界规格与世界操作
 
-小镇的设定、居民、建筑、地点、天气、日历和内核参数都由一份**世界规格**描述（`server/kernel/spec.js`，默认规格由 `personas.js` / `world.js` 生成）。对世界的修改都是一条可校验、可重放的 **WorldOp**（`server/kernel/ops.js`）：
+小镇的设定、居民、建筑、地点、天气、日历和内核参数都由一份**世界规格**描述（`server/kernel/spec.ts`，默认规格由世界包（`worlds/<id>/`）生成）。对世界的修改都是一条可校验、可重放的 **WorldOp**（`server/kernel/ops.ts`）：
 
 - 存档只保存操作历史，读档时 = 默认规格 + 按序重放；审计日志追加写入 `data/ops.jsonl`，每个游戏小时的快照保存在 `data/snapshots/`；
 - 目前支持 `setParam`（在上下限内调节步速、对话数等）、`setMeta`（内容分级 / 叙事者）、`addCanon`（设定集）、`addCalendarEvent`（新节日）、`addWeather`（新天气）、`addItem`（新物品）、`addStructure`（新构筑物）、`addAbility`（新能力）、`addRule`（新世界法则）；新能力和法则只能由效果原语组合，数值有上限，越界会被拒绝；
@@ -246,40 +248,40 @@ curl -X POST localhost:3000/api/world/op -H 'content-type: application/json' \
 server/
   index.js     HTTP + SSE 实时推送 + REST 接口（权限、限流、休眠）
   guard.js     公网防护：配置、管理员鉴权、限流器、内容审核
-  sim.js       模拟核心：世界状态、主循环、天气、角色登场与离开、世界操作
+  sim.ts       模拟核心：世界状态、主循环、天气、角色登场与离开、世界操作
   sim/         Town 的其余职责（以 mixin 挂到 Town 上）：regions 区域与地点、movement 移动与日程执行、
                planning 规划与约定、actions 能力与行动、cognition 独白 / 反思 / 日记 / 日报、
                social 对话 / 信念 / 旅人 / 事件、views 前端视图、persistence 存档与快照、metrics AI 表现指标
-  kernel/spec.js  世界规格：默认规格、校验、日历与天气工具
-  kernel/ops.js   WorldOp：操作定义、校验、应用、重放、审计日志
-  kernel/expr.js  安全表达式（手写解析器）
-  kernel/effects.js 效果原语：能力、规则、剧情共用的「动词表」
-  kernel/rules.js 规则引擎（定时 / 每日 / 天气 / 进入地点触发）
-  kernel/abilities.js 能力：校验、使用、研究
-  story/director.js 叙事导演；story/tension.js 张力模型；story/threads.js 剧情线程
-  story/beats.js  剧情节拍（导演与剧情弧共用的剧情动作）；story/scene.js 多人场景；story/votes.js 投票
-  kernel/placement.js 新建筑的语义化选址与连通性校验
-  worldai/manifest.js 能力清单（自动生成）
-  kernel/mods.js  Mod 导出与加载；timelines.js 时间线分支；avatars.js 访客化身
+  kernel/spec.ts  世界规格：默认规格、校验、日历与天气工具
+  kernel/ops.ts   WorldOp：操作定义、校验、应用、重放、审计日志
+  kernel/expr.ts  安全表达式（手写解析器）
+  kernel/effects.ts 效果原语：能力、规则、剧情共用的「动词表」
+  kernel/rules.ts 规则引擎（定时 / 每日 / 天气 / 进入地点触发）
+  kernel/abilities.ts 能力：校验、使用、研究
+  story/director.ts 叙事导演；story/tension.ts 张力模型；story/threads.ts 剧情线程
+  story/beats.ts  剧情节拍（导演与剧情弧共用的剧情动作）；story/scene.ts 多人场景；story/votes.ts 投票
+  kernel/placement.ts 新建筑的语义化选址与连通性校验
+  worldai/manifest.ts 能力清单（自动生成）
+  kernel/mods.ts  Mod 导出与加载；timelines.ts 时间线分支；avatars.ts 访客化身
   main.js         守护进程：拉起服务、请求重启（退出码 75）、设置导致启动失败时回退
-  settings/       设置中心：schema.js 声明表（唯一出处）、index.js 三层来源、版本与回退
+  settings/       设置中心：schema.ts 声明表（唯一出处）、index.ts 三层来源、版本与回退
   http/           Hono 应用：app.js 路由与中间件、identity.js 身份、world-api.js 世界接口、auth-api.js 账号、
                   admin-api.js 管理、worlds-api.js 大厅与世界管理、genesis-api.js 创世、pages.js 满员 / 下架页
   accounts/       账号：db.js（node:sqlite）、passwords.js、nickname.js、authz.js 授权、quota.js 配额、refs.js 记忆里的账号引用
   worlds/         pack.js 世界包、registry.js 世界登记与状态机、manager.js 世界管理器、host.js 单个世界的托管、
                   disk.js 磁盘上限、review.js 发布审核与抽样审核、migrate.js 数据迁移
-  worldgen/       地图生成器：index.js 注册表、layout.js 语义布局（layout-v1）
-  scheduler/      统一 AI 调度：classes.js 级别表、index.js 调度器、budget.js 账本与分层预算、context.js 调用归属
+  worldgen/       地图生成器：index.ts 注册表、layout.ts 语义布局（layout-v1）
+  scheduler/      统一 AI 调度：classes.ts 级别表、index.ts 调度器、budget.ts 账本与分层预算、context.ts 调用归属
   genesis/        创世：source.js 原文、pipeline.js G1~G5、assemble.js 组装、jobs.js 任务、shadow.js 无头试跑
   ext/            扩展点：registry.js 注册表、index.js 加载器、go-to.js（RFC 0001）
-  worldai/architect.js 世界架构师；worldai/proposals.js 提案与审批；worldai/canon.js 设定考据官
-  story/arcs.js   剧情弧引擎；story/creatures.js 异界生物
-  llm.js       LLM 客户端：按通道（一把钥匙一条）排队、自适应限流、重试、预算与统计、JSON 提取、回复录制
-  llm-providers.js 模型服务接口与默认的 OpenAI 兼容实现；llm-aisdk.js Vercel AI SDK 适配器（anthropic / google / aisdk）
-  world-llm.js 按世界配置模型服务：世界 → 通道的解析、暂停与恢复、测试连接；secrets.js 凭据加密；net/safe-fetch.js 防 SSRF 的请求
-  memory.js    记忆流：写入、压缩成摘要、检索（双字组 + 可选的语义相似度）
-  embeddings.js 可选的 embedding（EMBED_MODEL）与向量缓存（node:sqlite）
-  world.js     手工布局的地图生成器（云溪镇 yunxi-v1、暗月界 moonrealm-v1）与 A* 寻路
+  worldai/architect.js 世界架构师；worldai/proposals.ts 提案与审批；worldai/canon.ts 设定考据官
+  story/arcs.ts   剧情弧引擎；story/creatures.ts 异界生物
+  llm.ts       LLM 客户端：按通道（一把钥匙一条）排队、自适应限流、重试、预算与统计、JSON 提取、回复录制
+  llm-providers.ts 模型服务接口与默认的 OpenAI 兼容实现；llm-aisdk.ts Vercel AI SDK 适配器（anthropic / google / aisdk）
+  world-llm.ts 按世界配置模型服务：世界 → 通道的解析、暂停与恢复、测试连接；secrets.ts 凭据加密；net/safe-fetch.ts 防 SSRF 的请求
+  memory.ts    记忆流：写入、压缩成摘要、检索（双字组 + 可选的语义相似度）
+  embeddings.ts 可选的 embedding（EMBED_MODEL）与向量缓存（node:sqlite）
+  world.ts     手工布局的地图生成器（云溪镇 yunxi-v1、暗月界 moonrealm-v1）与 A* 寻路
 public/
   js/render.js 世界渲染器：数据更新、坐标换算、每帧调度；render/ 下是 terrain 静态层、objects 物体与角色、
                atmosphere 粒子 / 光照 / 天气、overlays 标签与气泡 / 小地图、util 常量与纯函数
@@ -300,13 +302,13 @@ Dockerfile, docker-compose.yml, .env.example
 plugin-host/   插件宿主：内置插件加载、AI 插件（哈希锁定、覆盖层、沙箱、灰度与熔断）、静态检查、沙箱运行器
 plugins/       builtin/（人维护的插件：架构师、施工、go-to）
 evolution/     进化引擎：需求发现、各个 Agent、自动闸门、影子试运行、流水线、守护进程
-core.lock      冻结区文件哈希（tools/core-guard.js）
+core.lock      冻结区文件哈希（tools/core-guard.ts）
 tools/         rotate-secrets.js（更换凭据加密主密钥）、evolve.js（能力缺口 → 需求文档）、manifest.js（生成能力清单）、export-mod.js（导出 Mod）、smoke-llm.js（真实模型验收）、check.js（语法检查 + 冻结区校验）、browser-check.js（无头 Chrome 冒烟检查）、core-guard.js（冻结区校验）
 spec/mods/     Mod（AI 创造的内容包）
-test/          node:test 测试（AI SDK 相关的在没装时跳过）；replay.test.js 无头回放，fixtures/llm/ 录制的模型回复
-.github/       CI：Node 22（不装可选依赖）/ Node 26（装上 AI SDK）跑语法检查、测试与 smoke --mock；Node 26 另跑无头 Chrome 冒烟检查
+test/          node:test 测试（AI SDK 相关的在没装时跳过）；replay.test.ts 无头回放，fixtures/llm/ 录制的模型回复
+.github/       CI：Node 22.18（不装可选依赖）/ Node 26（装上 AI SDK）跑语法检查、测试与 smoke --mock；Node 26 另跑类型检查与无头 Chrome 冒烟检查
 docs/design/   设计方案；docs/settings.md 全部设置项（自动生成）
 data/          accounts.db 账号 / 世界登记 / 举报 / 用量账本 / 审计 / 模型服务凭据（加密）；secret.key 凭据加密主密钥（没有用 SECRETS_KEY 时）；settings.json 面板保存的设置（版本）；evolution/ 进化引擎的任务与账本；
-               genesis/ 创世任务；worlds/<id>/ 每个世界：save.json 存档（每 20 秒）、ops.jsonl 世界变更日志、snapshots/ 每小时快照、
+               genesis/ 创世任务；worlds/<id>/ 每个世界：world.db 存档（SQLite，每 20 秒只写变化的部分；`mise run export-save` 可导出成 save.json）、ops.jsonl 世界变更日志、snapshots/ 每小时快照、
                timelines/ 分支时间线、plugins/ 与 evolution/ 这个世界的 AI 插件、pack/ 用户世界的世界包
 ```
