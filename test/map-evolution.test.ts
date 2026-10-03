@@ -277,6 +277,17 @@ test('修路：穿过树林的新路让往返变近；入口与站位都还在�
   assert.equal(town.proposalSystem.prepare([{ op: 'addPath', args: { from: 'village_square', to: 'wolf_den' } }]).error?.includes('已经有路了'), true);
 });
 
+test('修路：模型把参数写扁（没有 args）时照样接受；缺 from / to 时报清楚缺什么', (t) => {
+  const town = redTown();
+  t.after(() => town.stop());
+  const ps = town.proposalSystem;
+  const r = ps.prepare([{ op: 'addPath', from: 'village_square', to: 'wolf_den', surface: 'dirt' }]);
+  assert.ok(!r.error, r.error!);
+  assert.deepEqual([r.ops![0].op, r.ops![0].args.from, r.ops![0].args.to, r.ops![0].args.surface], ['addPath', 'village_square', 'wolf_den', 'dirt']);
+  assert.ok(!('op' in r.ops![0].args));
+  assert.match(ps.prepare([{ op: 'addPath', args: { from: 'village_square' } }]).error!, /addPath 缺少 to/);
+});
+
 test('架桥、清地、种树、新的户外地点：求解后落地，读档重放得到同样的地图', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'town-map-'));
   const town = new Town({ dataDir: dir, instantTalk: true });

@@ -33,14 +33,17 @@ export const OP_DOCS: Record<string, string> = {
   addCanon: '{"text":"写进小镇历史的事实（≤100字）","tags":["标签"]}',
 };
 
-export function effectsText(): string {
-  return Object.entries(EFFECTS).map(([name, d]) => `- ${name}${d.ext ? '（扩展）' : ''}：${d.doc}`).join('\n');
+export function effectsText(skip: readonly string[] = []): string {
+  return Object.entries(EFFECTS).filter(([name]) => !skip.includes(name)).map(([name, d]) => `- ${name}${d.ext ? '（扩展）' : ''}：${d.doc}`).join('\n');
 }
 
 export function exprText(): string {
   return `变量：e.loc e.region e.inside e.stamina e.courage e.status e.name（规则中的居民；能力里用 self / target）、weather hour minute day flags.标记名
 函数：${Object.values(EXPR_FN_DOCS).join('；')}`;
 }
+
+// 创世效果只能写在世界包里（AI 写的规则与能力里不允许，见 touchesGenesis）：不给架构师看，免得被当成操作用
+const GENESIS_EFFECTS = ['worldOp', 'transform'];
 
 const townLocs = (spec: WorldSpec) => Object.entries(spec.locations).filter(([, l]) => !l.region);
 const farLocs = (spec: WorldSpec) => Object.entries(spec.locations).filter(([, l]) => l.region);
@@ -50,7 +53,7 @@ export function manifestText(spec: WorldSpec, day = 1): string {
   return `可用操作（ops 数组中每项为 {"op":"…","args":{…}}，只能用这些：${Object.keys(OP_DOCS).join('、')}）：
 ${Object.entries(OP_DOCS).map(([k, v]) => `- ${k} ${v.replace('必须大于今天', `必须大于今天 ${day}`)}`).join('\n')}
 效果（能力的 effects、规则的 then 里使用）：
-${effectsText()}
+${effectsText(GENESIS_EFFECTS)}
 表达式：
 ${exprText()}
 现有地点：${townLocs(spec).map(([id, l]) => `${id}(${l.name})`).join('、')}${farLocs(spec).length ? `
