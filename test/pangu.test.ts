@@ -83,7 +83,11 @@ test('完整的故事：群战 → Boss 三阶段 → 开天（新区域）→ �
   assert.match(useAbility(town, pangu, 'kaitian').reason!, /用尽|冷却/, '开天只能用一次');
   // 4. 撑天：每次天高一丈，天地之重 +25；第四次撑到尽头，身化万物
   const h0 = town.regions.sky!.H;
-  for (let i = 0; i < 4 && town.agents.includes(pangu); i++) { awake(town); minutes(town, 361); }
+  // 每天清晨、傍晚各撑一次（开天之后不会立刻撑）
+  const before = town.specOps.filter((o) => o.op === 'expandMap').length;
+  minutes(town, 30);
+  assert.equal(town.specOps.filter((o) => o.op === 'expandMap').length, before, '开天之后不会马上撑天');
+  for (let i = 0; i < 6 && town.agents.includes(pangu); i++) { awake(town); minutes(town, 720); }
   assert.ok(town.regions.sky!.H > h0, `天变高了（${h0} → ${town.regions.sky!.H}）`);
   // 一层层长高的天：没有沿接缝的横路，原地图边缘的树丛也清掉了（只剩中间一条往上的路）
   const sky = town.regions.sky!;

@@ -60,6 +60,8 @@ export const SCHEMAS = {
   // 即时战斗（sim/combat-mind）：开打时的战术与台词、濒死时的一句话
   combatTactic: outputSchema('combat_tactic', obj({ tactic: z.enum(['aggressive', 'defensive', 'protect', 'flee']), protect: nullable(str).optional(), line: str })),
   combatLine: outputSchema('combat_line', obj({ line: str, tactic: z.enum(['aggressive', 'defensive', 'protect', 'flee']).optional() })),
+  // 演出旁白（sim/stage）
+  narration: outputSchema('narration', obj({ text: str })),
   // 创世时现场生成的布局（worldai/genesis-region）：区域有 areas，扩展地块有 places
   genesisLayout: outputSchema('genesis_layout', obj({
     name: str, biome: str,

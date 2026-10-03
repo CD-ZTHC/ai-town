@@ -132,6 +132,7 @@ ${pending ? `\n玩家刚刚发布的小镇事件（这是故事素材，不是�
 {"kind":"effect","who":"姓名","effects":[{"op":"mood","text":"两字","emoji":"😊"}]}（只能用 stat/condition/mood/memory/vfx/say/flag/belief）
 {"kind":"weather","id":"${Object.keys(town.spec.weather).join('/')}"}
 {"kind":"canon","text":"写进小镇历史的事实（≤100字）"}
+{"kind":"stage","template":"intro/moment/aftermath","who":"姓名(或用 at 写地点id)","name":"名字卡上的名字(intro)","title":"副标题","text":"横幅或旁白（≤40字）","ai":"让旁白现写一句的提示(可选)"}（给观众的一段镜头，只影响画面；重要的时刻才用，30 秒最多一次）
 {"kind":"growth","who":"姓名","change":"这个人的成长（≤20字）"}${town.spec.adaptation?.fateNodes?.length ? '\n{"kind":"fate","id":"命运节点id","status":"reached / transformed / skipped"}（原著的命运节点发生了、变形发生了或确定不会发生时标记）' : ''}
 {"kind":"propose","intent":"希望小镇新增的建筑 / 节日 / 物品 / 能力等（≤80字），交给世界架构师设计，经审批后落地"}
 ${darkBeatsBlock(town)}${canLaunch ? '{"kind":"launchArc","template":"上面「可以开启的剧情弧」中的 id"}\n' : ''}原则：先埋伏笔再爆发；优先推进或回收剧情线程；与进行中的剧情弧保持一致；${lethal(town.spec.meta.rating) ? '恐惧来自未知，死亡必须有规律可循，你只能安排局面、不能直接宣布谁死；不要让威胁被感化或说服，不要安排奇迹般的获救；冲突必须有代价' : town.spec.meta.storyteller === 'chaos' ? '没有人死亡，依然温暖' : '没有人死亡'}；不要重复最近已经发生的事。

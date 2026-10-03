@@ -3,6 +3,7 @@ import { checkEffects, checkExpr, runEffects, posOf, agentsNear, touchesGenesis 
 import { testExpr } from './rules.ts';
 import { addMemory, fmtTime } from '../memory.ts';
 import { checkCombatBlock } from '../sim/fight-rules.ts';
+import { checkStage } from '../sim/stage.ts';
 import type { Ability, WorldSpec } from '../types/spec.ts';
 import type { AgentLike, TownLike } from '../types/town.ts';
 
@@ -34,6 +35,7 @@ export function validateAbility(ab: Ability, spec: WorldSpec): string | null {
   if (ab.uses != null && !(Number.isInteger(ab.uses) && ab.uses >= 1 && ab.uses <= 99)) return 'uses 应为 1~99 的整数';
   if (ab.power !== 'genesis' && touchesGenesis(ab.effects, spec)) return 'worldOp / transform（以及让人放创世级能力）只能用在 power 为 genesis 的能力里';
   if (ab.power === 'genesis' && ab.combat) return '创世级的能力不能是战斗招式';
+  if (ab.stage != null) { const e = checkStage(ab.stage, spec); if (e) return `stage ${e}`; }
   const r = ab.learn?.research;
   if (r) {
     if (!Object.hasOwn(spec.locations, r.location)) return `learn.research 未知地点：${r.location}`;
@@ -105,8 +107,9 @@ export function useAbility(town: TownLike, a: AgentLike, abilityId: string, targ
   }
   (a.cooldowns ||= {})[ab.id] = town.t + (ab.cooldown || 0);
   if (ab.uses) town.worldFlags[usesKey(ab.id, a.id)] = Number(town.worldFlags[usesKey(ab.id, a.id)] || 0) + 1;
-  // 创世：全屏的裂开特效
+  // 创世：全屏的裂开特效 + 演出（能力自己写了 stage 就用它的）
   if (ab.power === 'genesis') { const p = posOf(town, a); if (p) town.emit('vfx', { preset: 'split', x: p.x, y: p.y, color: '#ffd166', radius: 6, region: p.region }); }
+  if (ab.stage || ab.power === 'genesis') town.stage(ab.stage || { template: 'genesis', target: 'self', text: `${ab.emoji || '✨'} ${ab.name}`, title: ab.desc.slice(0, 40), priority: 'major' }, { self: a, target, at: posOf(town, a) }, { source: `ability:${ab.id}` });
   if (c.burden) town.addBurden?.(a, c.burden.id, c.burden.amount, 'ability_used');
   runEffects(town, { self: a, target, at: posOf(town, a), source: `ability:${ab.id}` }, ab.effects);
   addMemory(a, { t: town.t, type: 'obs', text: `我${target ? `对${target.name}` : ''}使用了「${ab.name}」${why}`, importance: 3 });

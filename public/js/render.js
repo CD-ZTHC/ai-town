@@ -8,6 +8,7 @@ import { Atmosphere } from './render/atmosphere.js';
 import { Overlays } from './render/overlays.js';
 import { DarkLayer } from './render/dark.js';
 import { CombatLayer } from './render/combat.js';
+import { StageLayer } from './render/stage.js';
 
 // 其他模块与测试从这里导入
 export { TS, skyAt, h2, vnoise, hexToRgb, mix, lerp, clamp01 } from './render/util.js';
@@ -168,6 +169,7 @@ export class Renderer {
     this.hits = [];
     this.drawOverlays(ctx, S, ox, oy, z);
     this.drawCombatOverlay(ctx, S, ox, oy, z);
+    this.drawCinema(ctx, S);
     this.drawMinimap(S);
   }
 
@@ -181,7 +183,7 @@ export class Renderer {
 }
 
 // 把各部分的方法挂到 Renderer 上；重名直接报错，避免悄悄覆盖
-for (const part of [Terrain, Objects, Atmosphere, Overlays, DarkLayer, CombatLayer]) {
+for (const part of [Terrain, Objects, Atmosphere, Overlays, DarkLayer, CombatLayer, StageLayer]) {
   for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) {
     if (name === 'constructor') continue;
     if (Object.hasOwn(Renderer.prototype, name)) throw new Error(`Renderer.${name} 重复定义（${part.name}）`);

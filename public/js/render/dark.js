@@ -42,8 +42,10 @@ export class DarkLayer {
     ctx.globalAlpha = Math.max(0.2, flick);
     ctx.font = '26px "Apple Color Emoji","Segoe UI Emoji",sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    ctx.fillText(th.emoji || '👁️', X, fy - 4 + Math.sin(t * 2 + th.dx) * 2);
+    const draw = () => ctx.fillText(th.emoji || '👁️', X, fy - 4 + Math.sin(t * 2 + th.dx) * 2);
+    draw();
     ctx.globalAlpha = 1;
+    if (this.flashing(`threat:${th.id}`)) this.flashOver(ctx, draw); // 受击闪白
     if (held) {
       ctx.strokeStyle = 'rgba(200,200,210,.8)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(X, fy - 16, 16, 20, 0, 0, 7); ctx.stroke(); ctx.setLineDash([]);

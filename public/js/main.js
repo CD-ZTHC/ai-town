@@ -1,4 +1,6 @@
 // 前端入口：实时数据流、相机与输入、渲染循环
+import * as Sfx from './sfx.js';
+import * as Stage from './stage.js';
 import { Renderer, TS } from './render.js';
 import * as UI from './ui.js';
 import * as Modes from './modes.js';
@@ -202,8 +204,17 @@ function connect() {
     es.close();
     UI.worldClosed(reason);
   });
-  es.addEventListener('vfx', (e) => { const v = JSON.parse(e.data); if ((v.region || 'town') === app.view) renderer.addVfx(v); });
+  es.addEventListener('vfx', (e) => {
+    const v = JSON.parse(e.data);
+    if ((v.region || 'town') !== app.view) return;
+    renderer.addVfx(v);
+    if (v.preset === 'split' || v.preset === 'quake') renderer.sfx?.(v.preset, v);
+  });
+  // 演出（docs/design/presentation.md）：排队播放
+  es.addEventListener('stage', (e) => Stage.enqueue(JSON.parse(e.data)));
   es.addEventListener('combat', (e) => { const v = JSON.parse(e.data); if ((v.region || 'town') === app.view) renderer.addCombat(v); Play.onCombat?.(v); });
+  // 画面里的音效（命中、挥动、低吼……）：只播当前看着的地图里的，按与镜头的距离衰减
+  renderer.sfx = (kind, at) => Sfx.play(app.sound, kind, { at, cam: app.cam });
   es.addEventListener('regions', (e) => {
     app.regionsOpen = JSON.parse(e.data);
     if (app.view !== 'town' && !app.regionsOpen[app.view]?.open) app.setView('town');
@@ -381,7 +392,8 @@ function uiTint(minute) {
 // ---------- 主循环 ----------
 let last = performance.now();
 function loop(now) {
-  const dt = Math.min(0.1, (now - last) / 1000);
+  // 打击停顿：画面里的一切停住几十毫秒；慢镜：显示时间按比例放慢（都只影响画面，见 render/combat.js）
+  const dt = renderer.hitstopUntil > now ? 0 : Math.min(0.1, (now - last) / 1000) * (renderer.timeScale ?? 1);
   last = now;
   if (app.ready && app.snap) {
     const s = app.snap;
@@ -410,7 +422,8 @@ function loop(now) {
       }
       const moving = a.moving || dist > 0.05;
       if (!moving) d.walkPhase = 0;
-      return { ...a, dx: d.dx, dy: d.dy, walkPhase: d.walkPhase, moving, speaking: !!(a.convo && a.bubble && a.bubble.kind === 'say') };
+      const o = renderer.offsetOf(`agent:${a.id}`); // 受击后退 / 出手前冲
+      return { ...a, dx: d.dx + o.x, dy: d.dy + o.y, walkPhase: d.walkPhase, moving, speaking: !!(a.convo && a.bubble && a.bubble.kind === 'say') };
     });
     // 异界生物也做平滑插值
     const creatures = (s.creatures || []).filter(here).map((c0) => {
@@ -419,7 +432,8 @@ function loop(now) {
       if (!d || Math.hypot(c.x - d.dx, c.y - d.dy) > 4) d = app.cdisp[c.id] = { dx: c.x, dy: c.y };
       const k = 1 - Math.exp(-dt * 10);
       d.dx += (c.x - d.dx) * k; d.dy += (c.y - d.dy) * k;
-      return { ...c, dx: d.dx, dy: d.dy };
+      const o = renderer.offsetOf(`creature:${c.id}`);
+      return { ...c, dx: d.dx + o.x, dy: d.dy + o.y };
     });
     // 黑暗叙事：威胁（平滑插值）、区域、墓碑
     const dk = s.dark;
@@ -430,7 +444,8 @@ function loop(now) {
         if (!d || Math.hypot(th.x - d.dx, th.y - d.dy) > 4) d = app.tdisp[th.id] = { dx: th.x, dy: th.y };
         const k = 1 - Math.exp(-dt * 8);
         d.dx += (th.x - d.dx) * k; d.dy += (th.y - d.dy) * k;
-        return { ...th, dx: d.dx, dy: d.dy };
+        const o = renderer.offsetOf(`threat:${th.id}`);
+        return { ...th, dx: d.dx + o.x, dy: d.dy + o.y };
       }),
       zones: (dk.zones || []).filter(here), graves: (dk.graves || []).filter(here), crowd: app.view === 'town' ? dk.crowd || null : null,
     } : null;
@@ -442,14 +457,16 @@ function loop(now) {
       if (Math.hypot(v.x - d.dx, v.y - d.dy) > 4) { d.dx = v.x; d.dy = v.y; }
       const k = 1 - Math.exp(-dt * 10);
       d.dx += (v.x - d.dx) * k; d.dy += (v.y - d.dy) * k;
-      return { ...v, dx: d.dx, dy: d.dy, mine: v.id === mine };
+      const o = renderer.offsetOf(`avatar:${v.id}`);
+      return { ...v, dx: d.dx + o.x, dy: d.dy + o.y, mine: v.id === mine };
     });
     app.avatars = s.avatars || [];
     const agentMap = Object.fromEntries(agents.map((a) => [a.id, a]));
     const occupancy = {};
     for (const a of agents) if (a.inside) (occupancy[a.inside] ||= []).push(a.id);
 
-    if (app.mode === 'immerse') Immerse.camera(dt, agentMap);
+    if (Stage.camera()) { /* 演出接管镜头 */ }
+    else if (app.mode === 'immerse') Immerse.camera(dt, agentMap);
     else if (app.mode === 'play') Play.camera(dt, avatars);
     else if (app.follow) {
       const p = app.agentWorldPos(app.follow);
@@ -558,3 +575,5 @@ app.sound = Sound;
 app.storage = storage;
 // 模式、界面外壳与按键（依赖上面的 app.sound / app.storage）
 Modes.init(app);
+Stage.init(app);
+app.stageMode = Stage.cycleMode;

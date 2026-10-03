@@ -62,6 +62,7 @@ export function toggleSound() { app.sound.toggle(); syncSound(); }
 export function run(cmd) {
   if (cmd === 'palette') return openPalette();
   if (cmd === 'sound') return toggleSound();
+  if (cmd === 'stage') return app.stageMode?.();
   if (cmd === 'minimap') return setMinimap(document.body.classList.contains('no-minimap') ? '1' : '0');
   if (cmd === 'help') return UI.helpModal();
   if (cmd === 'admin') return UI.adminModal();

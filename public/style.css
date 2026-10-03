@@ -446,6 +446,11 @@ body.moon-view #minimap-wrap { box-shadow: 0 0 0 2px rgba(181, 140, 255, 0.55), 
 .av-colors { display: flex; gap: 6px; align-items: center; }
 .av-c { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
 .av-c.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 214, 102, 0.7); }
+.av-row { display: flex; align-items: center; gap: 10px; }
+.av-row > span { width: 30px; flex: none; font-size: 12px; opacity: 0.75; }
+.av-styles { display: flex; flex-wrap: wrap; gap: 4px; }
+.av-s { padding: 3px 8px; border-radius: 8px; font-size: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--text); cursor: pointer; }
+.av-s.on { border-color: #ffd666; background: rgba(255, 214, 102, 0.18); }
 .av-locs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 #av-name, #tl-name { flex: 1; min-width: 160px; padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(0, 0, 0, 0.25); color: var(--text); font: inherit; }
 .story-body h3 { margin: 12px 0 4px; font-size: 14px; }
@@ -478,3 +483,7 @@ body.world-preview #topbar::after { content: '预览中 · 只有你能看见'; 
 .region-menu button { text-align: left; padding: 6px 10px; border-radius: 8px; background: transparent; color: inherit; border: 0; font-size: 13px; cursor: pointer; }
 .region-menu button:hover, .region-menu button.on { background: rgba(255, 255, 255, 0.1); }
 .region-menu small { margin-left: 8px; opacity: 0.6; }
+
+/* 演出（docs/design/presentation.md）：跳过按钮 */
+#stage-skip { position: fixed; right: 18px; bottom: calc(14vh + 10px); z-index: 40; padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(10, 8, 18, 0.6); color: #f4ead2; font-size: 13px; cursor: pointer; backdrop-filter: blur(6px); }
+#stage-skip:hover { background: rgba(10, 8, 18, 0.8); }

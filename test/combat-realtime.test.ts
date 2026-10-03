@@ -259,3 +259,19 @@ test('模型定战术与台词：开打时问一次，回复到了覆盖兜底�
   assert.ok(asked.includes('战斗台词'), '濒死时问了一句');
   assert.equal(asked.filter((x) => x === '战斗战术').length, 2, '每个参战的居民各问一次');
 });
+
+test('旅人的像素形象：白名单里的发型、发色、肤色照用，乱写的换成默认值；裤子跟衣服配色；快照里带形象', (t) => {
+  const town = nwTown();
+  t.after(() => town.stop());
+  const v = town.avatars.join('u9', '127.0.0.1', { name: '阿形', color: '#64b5f6', look: { hairStyle: 'braid', hair: '#d9b26a', skin: '#8d5f43' } });
+  assert.deepEqual(v.look, { skin: '#8d5f43', hair: '#d9b26a', hairStyle: 'braid', shirt: '#64b5f6', pants: '#3e4a5e', acc: [] });
+  const w = town.avatars.join('u8', '127.0.0.1', { name: '阿乱', color: 'red', look: { hairStyle: '<script>', hair: 'url(x)', skin: 1 as unknown as string } });
+  assert.equal(w.look.hairStyle, 'short');
+  assert.match(w.look.hair, /^#[0-9a-f]{6}$/);
+  assert.equal(w.look.shirt, w.color, '衣服颜色就是化身的颜色');
+  // 再次现身只换衣服：发型保留
+  town.avatars.join('u9', '127.0.0.1', { name: '阿形', color: '#81c784' });
+  assert.equal(v.look.hairStyle, 'braid');
+  assert.equal(v.look.shirt, '#81c784');
+  assert.ok(town.avatars.view().every((x) => x.look?.hairStyle));
+});

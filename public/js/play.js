@@ -1,5 +1,6 @@
 // 🎮 游戏模式：以旅人化身在小镇里走动，走到居民身边和 TA 面对面聊天
 import { TS } from './render.js';
+import { buildSprites, SPR_W, SPR_H } from './sprites.js';
 import * as UI from './ui.js';
 import * as HUD from './hud.js';
 
@@ -14,6 +15,13 @@ const LEAVE_R = 5; // 走开多远自动结束对话（服务端认定「站在�
 const EAR_R = 6; // 旁听范围
 const DIRS = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
 const AV_COLORS = ['#e57373', '#64b5f6', '#81c784', '#ffb74d', '#ba68c8', '#4db6ac', '#f06292', '#a1887f'];
+// 旅人的像素形象（与服务器 avatars.ts 的白名单一致）
+const AV_STYLES = [['short', '短发'], ['long', '长发'], ['bun', '盘发'], ['spiky', '刺头'], ['messy', '乱发'], ['braid', '麻花辫']];
+const AV_HAIRS = ['#2b1d14', '#5a3a22', '#8a5a2b', '#d9b26a', '#c8c8c8', '#7a2e2e'];
+const AV_SKINS = ['#f7d5bd', '#eec39a', '#d9a88a', '#b98c66', '#8d5f43'];
+const AV_PANTS = { '#e57373': '#5a4a6a', '#64b5f6': '#3e4a5e', '#81c784': '#4a5a3a', '#ffb74d': '#5a4632', '#ba68c8': '#4a3a5a', '#4db6ac': '#3a4f4c', '#f06292': '#5a3a4a', '#a1887f': '#4a3e38' };
+/** 角色卡上的选择 → 精灵生成器用的形象 */
+export const avatarLook = (color, look = {}) => ({ skin: look.skin || AV_SKINS[0], hair: look.hair || AV_HAIRS[1], hairStyle: look.hairStyle || 'short', shirt: color, pants: AV_PANTS[color] || '#4a4a5a', acc: [] });
 
 const st = {
   keys: new Set(), joy: null, lastDir: null, sendT: 0, sending: false, queued: null,
@@ -52,6 +60,9 @@ export async function ensureAvatar() {
   if (app.perms.avatar && me()) return true;
   return new Promise((resolve) => {
     let color = app.storage.get('town-avatar-color') || AV_COLORS[0];
+    let look = {};
+    try { look = JSON.parse(app.storage.get('town-avatar-look') || '{}') || {}; } catch { look = {}; }
+    const swatches = (key, list, cur) => list.map((c) => `<button class="av-c${c === cur ? ' on' : ''}" data-k="${key}" data-c="${c}" style="background:${c}" aria-label="${key}"></button>`).join('');
     // 登录的用户用账号昵称现身，只需要挑衣服
     const nick = app.perms.user?.nickname || '';
     const card = UI.openModal(`<div class="charcard">
@@ -60,14 +71,22 @@ export async function ensureAvatar() {
         <h2>👣 以旅人的身份走进小镇</h2>
         <div class="sub">${nick ? `挑件衣服吧，${esc(nick)}。` : '起个名字、挑件衣服。'}你会出现在中央广场，居民们看得见你、会跟你打招呼，和你聊过的话也会记住是你说的。20 分钟不操作会自动离开。</div>
         ${nick ? '' : `<input id="cc-name" maxlength="8" placeholder="你的名字（≤8 字）" value="${esc(app.storage.get('town-avatar-name') || '')}">`}
-        <div class="av-colors">${AV_COLORS.map((c) => `<button class="av-c${c === color ? ' on' : ''}" data-c="${c}" style="background:${c}" aria-label="衣服颜色"></button>`).join('')}</div>
+        <div class="av-row"><span>衣服</span><div class="av-colors">${swatches('shirt', AV_COLORS, color)}</div></div>
+        <div class="av-row"><span>发型</span><div class="av-styles">${AV_STYLES.map(([k, n]) => `<button class="av-s${k === (look.hairStyle || 'short') ? ' on' : ''}" data-style="${k}">${n}</button>`).join('')}</div></div>
+        <div class="av-row"><span>发色</span><div class="av-colors">${swatches('hair', AV_HAIRS, look.hair || AV_HAIRS[1])}</div></div>
+        <div class="av-row"><span>肤色</span><div class="av-colors">${swatches('skin', AV_SKINS, look.skin || AV_SKINS[0])}</div></div>
         <div class="row"><button class="primary" id="cc-go">走进小镇 ✨</button><span class="quota" id="cc-msg"></span></div>
         <div class="sub cc-tips">点击地面或用 <kbd>WASD</kbd> 走路 · 走到居民身边按 <kbd>E</kbd> 聊天 · <kbd>Esc</kbd> 退出</div>
       </div></div>`, 'charcard-wrap');
-    const draw = () => drawPreview($('#cc-preview', card), color, nick || $('#cc-name', card)?.value.trim() || '旅人');
+    const draw = () => drawPreview($('#cc-preview', card), avatarLook(color, look), nick || $('#cc-name', card)?.value.trim() || '旅人');
     draw();
     $('#cc-name', card)?.addEventListener('input', draw);
-    $$('.av-c', card).forEach((b) => b.addEventListener('click', () => { color = b.dataset.c; $$('.av-c', card).forEach((x) => x.classList.toggle('on', x === b)); draw(); }));
+    $$('.av-c', card).forEach((b) => b.addEventListener('click', () => {
+      if (b.dataset.k === 'shirt') color = b.dataset.c; else look = { ...look, [b.dataset.k]: b.dataset.c };
+      $$(`.av-c[data-k="${b.dataset.k}"]`, card).forEach((x) => x.classList.toggle('on', x === b));
+      draw();
+    }));
+    $$('.av-s', card).forEach((b) => b.addEventListener('click', () => { look = { ...look, hairStyle: b.dataset.style }; $$('.av-s', card).forEach((x) => x.classList.toggle('on', x === b)); draw(); }));
     let done = false;
     const finish = (ok) => { if (done) return; done = true; obs.disconnect(); resolve(ok); };
     // 弹窗被关掉（✕ / 点背景 / Esc）就当取消
@@ -76,8 +95,9 @@ export async function ensureAvatar() {
     const go = async () => {
       const nm = nick || $('#cc-name', card).value.trim();
       try {
-        const r = await app.api('/api/avatar', { name: nm, color });
+        const r = await app.api('/api/avatar', { name: nm, color, look });
         app.storage.set('town-avatar-name', r.avatar.name); app.storage.set('town-avatar-color', r.avatar.color);
+        app.storage.set('town-avatar-look', JSON.stringify({ hairStyle: r.avatar.look?.hairStyle, hair: r.avatar.look?.hair, skin: r.avatar.look?.skin }));
         await app.refreshPerms();
         // 等下一帧快照里出现自己的化身
         for (let i = 0; i < 20 && !me(); i++) await new Promise((res) => setTimeout(res, 100));
@@ -91,20 +111,23 @@ export async function ensureAvatar() {
     setTimeout(() => ($('#cc-name', card) || $('#cc-go', card))?.focus(), 50);
   });
 }
-function drawPreview(cv, color, label) {
+/** 角色卡预览：用和小镇里一样的像素精灵（正面，轻轻踏步） */
+function drawPreview(cv, look, label) {
   const g = cv.getContext('2d');
-  g.clearRect(0, 0, cv.width, cv.height);
-  g.save(); g.translate(60, 128); g.scale(2.4, 2.4);
-  g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(0, 0, 10, 4, 0, 0, 7); g.fill();
-  const y0 = -38;
-  g.fillStyle = color;
-  g.beginPath(); g.moveTo(-11, -2); g.lineTo(-7, y0 + 14); g.lineTo(7, y0 + 14); g.lineTo(11, -2); g.closePath(); g.fill();
-  g.beginPath(); g.arc(0, y0 + 10, 9, 0, 7); g.fill();
-  g.fillStyle = '#f3d7b6'; g.beginPath(); g.arc(0, y0 + 12, 5.5, 0, 7); g.fill();
-  g.fillStyle = '#3a2a20'; g.fillRect(-3, y0 + 11, 2, 2); g.fillRect(1, y0 + 11, 2, 2);
-  g.restore();
-  g.font = 'bold 13px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#ffe08a';
-  g.fillText(`👣${label}`, 60, 20);
+  const spr = buildSprites(look);
+  clearInterval(cv._timer);
+  let f = 0;
+  const paint = () => {
+    g.clearRect(0, 0, cv.width, cv.height);
+    g.imageSmoothingEnabled = false;
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(60, 132, 22, 7, 0, 0, 7); g.fill();
+    const s = 4;
+    g.drawImage(spr.down[[0, 1, 0, 2][f++ % 4]], 60 - (SPR_W * s) / 2, 134 - SPR_H * s, SPR_W * s, SPR_H * s);
+    g.font = 'bold 13px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#ffe08a';
+    g.fillText(`👣${label}`, 60, 16);
+  };
+  paint();
+  cv._timer = setInterval(() => (cv.isConnected ? paint() : clearInterval(cv._timer)), 260);
 }
 
 export function enter() {

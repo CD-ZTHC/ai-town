@@ -1,6 +1,7 @@
 // 黑暗叙事的规格校验（黑暗叙事设计 §4、§6.1）：威胁、负担值、阵营权威、人口、反派心智、装备。
 // 这些字段都是可选的：世界包没有声明时，validateDark 什么也不检查，相关系统也不会运行。
 import { checkEffects, checkExpr } from './effects.ts';
+import { checkStage } from '../sim/stage.ts';
 import { RATINGS } from './ratings.ts';
 import { parseHM } from '../memory.ts';
 import type { WorldSpec } from '../types/spec.ts';
@@ -126,6 +127,8 @@ export function validateThreat(id: string, t: Raw, spec: WorldSpec): string | nu
   }
   if (t.onSlain != null) { if (!t.mortal) return 'onSlain 只能用在会死的威胁上'; const e = checkEffects(t.onSlain, spec); if (e) return `onSlain ${e}`; }
   if (t.aggro != null && !(t.mortal && inRange(t.aggro, 1, 8))) return 'aggro 只能用在会死的威胁上，应在 1~8（格）';
+  if (t.boss != null && typeof t.boss !== 'boolean') return 'boss 应为布尔值';
+  for (const k of ['intro', 'slain']) { const s = t.stage?.[k]; if (s != null) { const e = checkStage(s, spec); if (e) return `stage.${k} ${e}`; } }
   if (t.crowd != null && !(inRange(t.crowd.every, 30, 1440) && Array.isArray(t.crowd.kills) && inRange(t.crowd.kills[0], 0, 50) && inRange(t.crowd.kills[1], t.crowd.kills[0], 50))) return 'crowd 应为 {every: 30~1440, kills: [最少, 最多]}';
   return null;
 }

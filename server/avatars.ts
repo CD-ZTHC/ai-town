@@ -28,6 +28,8 @@ export interface Avatar {
   seen: number;
   movedAt: number;
   movedLocAt?: number;
+  /** 像素形象（前端用和居民一样的精灵生成器画）：衣服颜色就是 color */
+  look: AvatarLook;
   /** 即时战斗（sim/combat）：血量（满血 100）；被打倒后到这个时刻（真实毫秒）之前不能行动 */
   hp?: number;
   downUntil?: number;
@@ -39,6 +41,17 @@ const GOTO_CD_MS = 250; // 游戏模式里点地 / 键盘走路，间隔可以�
 const SPEED = 4; // 格/真实秒：化身按真实时间行走，不受调速、暂停影响，操作手感一致
 const DOWN_MS = 3000; // 被打倒后缓多久
 const REGEN = 8; // 不在战斗里时每真实秒回多少血
+/** 旅人可选的发型、发色、肤色（白名单，前端角色卡与之一致） */
+export const HAIR_STYLES = ['short', 'long', 'bun', 'spiky', 'messy', 'braid'];
+export const HAIR_COLORS = ['#2b1d14', '#5a3a22', '#8a5a2b', '#d9b26a', '#c8c8c8', '#7a2e2e'];
+export const SKINS = ['#f7d5bd', '#eec39a', '#d9a88a', '#b98c66', '#8d5f43'];
+export interface AvatarLook { skin: string; hair: string; hairStyle: string; shirt: string; pants: string; acc: string[] }
+const PANTS: Record<string, string> = { '#e57373': '#5a4a6a', '#64b5f6': '#3e4a5e', '#81c784': '#4a5a3a', '#ffb74d': '#5a4632', '#ba68c8': '#4a3a5a', '#4db6ac': '#3a4f4c', '#f06292': '#5a3a4a', '#a1887f': '#4a3e38' };
+/** 角色卡给的形象：不在白名单里的值用默认值（旧客户端只传颜色时也一样） */
+export function avatarLook(color: string, raw: Partial<AvatarLook> | null | undefined): AvatarLook {
+  const pick = (list: string[], v: unknown, d: string) => (list.includes(v as string) ? (v as string) : d);
+  return { skin: pick(SKINS, raw?.skin, SKINS[0]!), hair: pick(HAIR_COLORS, raw?.hair, HAIR_COLORS[1]!), hairStyle: pick(HAIR_STYLES, raw?.hairStyle, 'short'), shirt: color, pants: PANTS[color] || '#4a4a5a', acc: [] };
+}
 const COLORS = ['#e57373', '#64b5f6', '#81c784', '#ffb74d', '#ba68c8', '#4db6ac', '#f06292', '#a1887f'];
 const err = (status: number, message: string): Error & { status: number } => Object.assign(new Error(message), { status });
 
@@ -57,7 +70,7 @@ export class AvatarSystem {
   mine(uid: string): Avatar | null { return this.list.find((v) => v.uid === uid) || null; }
 
   /** uid：账号 id；name：账号昵称（由服务端给出）。已经现身的账号再次现身时沿用同一个化身 */
-  join(uid: string, ip: string, { name, color }: { name?: string; color?: string } = {}): Avatar {
+  join(uid: string, ip: string, { name, color, look }: { name?: string; color?: string; look?: Partial<AvatarLook> | null } = {}): Avatar {
     const town = this.town;
     name = String(name ?? '').replace(/[\s<>{}[\]"'`\\]/g, '').slice(0, 8);
     if (name.length < 1) throw err(400, '起个名字吧');
@@ -65,13 +78,15 @@ export class AvatarSystem {
     const old = this.mine(uid);
     if (old) {
       Object.assign(old, { name, ip, seen: this.now(), ...(COLORS.includes(color!) ? { color } : {}) });
+      old.look = avatarLook(old.color, look || old.look);
       town.emit('avatars');
       return old;
     }
     if (this.list.length >= setting('AVATAR_MAX')) throw err(429, `这里的访客已经满了（最多 ${setting('AVATAR_MAX')} 位），稍后再来吧`);
     const { spawn, s } = this.spawnPoint();
+    const c = COLORS.includes(color!) ? color! : COLORS[(this.seq + 1) % COLORS.length]!;
     const v: Avatar = {
-      id: `v${++this.seq}`, uid, ip, name, color: COLORS.includes(color!) ? color! : COLORS[this.seq % COLORS.length]!,
+      id: `v${++this.seq}`, uid, ip, name, color: c, look: avatarLook(c, look),
       x: s.x, y: s.y, dir: 'down', moving: false, region: 'town', locId: spawn, path: [], hop: null,
       seen: this.now(), movedAt: 0,
     };
@@ -210,7 +225,7 @@ export class AvatarSystem {
 
   view() {
     const now = this.now();
-    return this.list.map((v) => ({ id: v.id, name: v.name, color: v.color, x: +v.x.toFixed(2), y: +v.y.toFixed(2), dir: v.dir, moving: v.moving, region: v.region,
+    return this.list.map((v) => ({ id: v.id, name: v.name, color: v.color, look: v.look, x: +v.x.toFixed(2), y: +v.y.toFixed(2), dir: v.dir, moving: v.moving, region: v.region,
       ...((v.hp ?? 100) < 100 ? { hp: Math.round(v.hp!) } : {}), ...((v.downUntil || 0) > now ? { down: true } : {}),
       // 接下来要走的几格与终点：前端据此预览路线、平滑插值
       ...(v.path.length ? { next: v.path.slice(0, 3), to: v.path[v.path.length - 1] } : {}) }));

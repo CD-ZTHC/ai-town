@@ -7,6 +7,7 @@ import { ADMIN_OPS } from '../worldai/proposals.ts';
 import { registry, forkTimeline, setActive } from '../timelines.ts';
 import * as llm from '../llm.ts';
 import { useAbility } from '../kernel/abilities.ts';
+import { checkStage } from '../sim/stage.ts';
 import { config, sanitize, moderate, targetsResident } from '../guard.ts';
 import { authorize } from '../accounts/authz.ts';
 import { quota, remaining as quotaLeft } from '../accounts/quota.ts';
@@ -339,11 +340,22 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
       const m = await moderate(name, 'chat', t.spec.meta.rating, worldCtx(t));
       if (!m.ok) throw new HttpError(422, m.reason!);
     }
-    const v = t.avatars.join(c.get('vid')!, c.get('ip'), { name, color: b.color });
-    return c.json({ ok: true, avatar: { id: v.id, name: v.name, color: v.color } });
+    const v = t.avatars.join(c.get('vid')!, c.get('ip'), { name, color: b.color, look: b.look && typeof b.look === 'object' ? b.look : null });
+    return c.json({ ok: true, avatar: { id: v.id, name: v.name, color: v.color, look: v.look } });
   });
   api.post('/avatar/move', (c) => { requireUser(c); town(c).avatars.move(c.get('vid')!, String(c.get('body').location || '')); return c.json({ ok: true }); });
   api.post('/avatar/goto', (c) => { requireUser(c); const b = c.get('body'); town(c).avatars.goto(c.get('vid')!, b.x, b.y); return c.json({ ok: true }); });
+  // 放一段演出（docs/design/presentation.md §4.4）：世界的创建者或管理员预览 / 手动放；不受普通演出的节流
+  api.post('/stage', (c) => {
+    if (!reviewer(c)) throw new HttpError(403, '只有这个世界的创建者或管理员可以放演出');
+    const b = c.get('body');
+    const script = b.script && typeof b.script === 'object' ? b.script : b;
+    const err = checkStage(script, town(c).spec);
+    if (err) throw new HttpError(422, err);
+    town(c).stage(script, {}, { source: 'owner', force: true });
+    return c.json({ ok: true });
+  });
+
   // 游戏模式里出招（即时战斗，不调用模型）：只有世界的创建者或管理员能对居民动手
   api.post('/avatar/act', (c) => {
     requireUser(c);
