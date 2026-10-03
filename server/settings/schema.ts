@@ -68,7 +68,7 @@ export const SETTINGS = {
   MEM_ALERT_MB: { group: 'site', ...int(0, 65536), default: 900, apply: 'live', label: '内存告警阈值（MB）', help: '服务进程的常驻内存超过它时写一条审计，管理面板「概览」里提示；0 = 不告警' },
   HEAP_SNAPSHOT: { group: 'site', ...bool(), default: true, apply: 'restart', label: '接近堆上限时留下堆快照', help: '服务进程快要内存不足时在 <数据目录>/diag/ 写一份堆快照（最多保留 2 份），用来排查泄漏。写快照本身要占用与堆相当的内存' },
   ASSET_VERSIONING: { group: 'site', ...bool(), default: true, apply: 'live', label: '前端资源版本', help: '页面里的脚本与样式带上内容哈希、长期缓存，更新后已打开的页面会提示刷新。出问题时关掉，全部资源退回每次重新验证' },
-  IDLE_PAUSE_SEC: { group: 'site', ...int(0, 86400), default: 90, apply: 'live', label: '无人观看多久后休眠（秒）', help: '0 = 永不休眠。休眠的世界不推进时间、不调用模型' },
+  IDLE_PAUSE_SEC: { group: 'site', ...int(0, 86400), default: 90, apply: 'live', label: '无人观看多久后休眠（秒）', help: '0 = 永不休眠（常驻世界始终不休眠）。休眠的世界不推进时间、不调用模型' },
   AVATAR_MAX: { group: 'site', ...int(0, 200), default: 8, apply: 'live', label: '每个世界同时现身的旅人上限' },
 
   // ---------- 模型 ----------
@@ -138,7 +138,7 @@ export const SETTINGS = {
 
   // ---------- 世界 ----------
   MAX_ACTIVE_WORLDS: { group: 'worlds', ...int(1, 32), default: 4, apply: 'live', label: '同时运行的世界上限', help: '超过后会卸载无人观看、空闲最久的世界' },
-  PINNED_WORLDS: { group: 'worlds', ...list(), default: ['yunxi'], apply: 'live', label: '常驻世界', help: '不会被卸载，但计入上限；逗号分隔' },
+  PINNED_WORLDS: { group: 'worlds', ...list(), default: ['yunxi'], apply: 'live', label: '常驻世界', help: '不休眠、不会被卸载，但计入上限；逗号分隔' },
   DEFAULT_WORLD: { group: 'worlds', ...str(32), default: 'yunxi', apply: 'live', label: '默认世界', help: '旧路径 /api/* 映射到的世界' },
   WORLD_UNLOAD_SEC: { group: 'worlds', ...int(10, 864000), default: 600, apply: 'live', label: '休眠多久后存盘卸载（秒）' },
   WORLD_DISK_MB: { group: 'worlds', ...int(1, 1e6), default: 200, apply: 'live', label: '每个用户世界的默认磁盘上限（MB）' },

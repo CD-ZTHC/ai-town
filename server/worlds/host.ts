@@ -140,7 +140,11 @@ export class WorldHost {
 
   /** 定时调用：无人观看超过 idlePauseSec 就休眠（不推进时间、不调用模型） */
   idleCheck(): void {
-    if (!(this.idlePauseSec > 0)) return;
+    // 不休眠（设置改为 0、或者世界改成了常驻）：已经在休眠的立即恢复
+    if (!(this.idlePauseSec > 0)) {
+      if (this.town.idle) { this.town.idle = false; console.log(`[idle] ${this.id}：不再休眠，继续运转`); }
+      return;
+    }
     if (this.clients.size) { this.wake(); return; }
     if (!this.town.idle && this.now() - this.lastViewer > this.idlePauseSec * 1000) {
       this.town.idle = true;

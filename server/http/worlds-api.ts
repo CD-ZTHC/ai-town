@@ -58,7 +58,7 @@ export function worldsApi(deps: WorldsDeps): Hono<AppEnv> {
     const h = manager.get(w.id);
     return {
       id: w.id, title: w.title, summary: w.summary, sourceTitle: w.sourceTitle, rating: w.rating, official: w.official, status: w.status,
-      owner: w.ownerId ? accounts?.get(w.ownerId)?.nickname || null : null, viewers: h ? h.clients.size : 0, running: Boolean(h), day: h?.town.day ?? null,
+      owner: w.ownerId ? accounts?.get(w.ownerId)?.nickname || null : null, viewers: h ? h.clients.size : 0, running: Boolean(h && !h.town.idle), day: h?.town.day ?? null,
       publishedAt: w.publishedAt, halted: Boolean(w.settings?.ai?.halt),
     };
   };

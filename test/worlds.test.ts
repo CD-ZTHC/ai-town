@@ -132,6 +132,21 @@ test('休眠与卸载：无人观看先休眠（不推进时间），再过 WORL
   assert.equal(Math.round(manager.open('moon-town').town.t), Math.round(before));
 });
 
+test('常驻世界不休眠；已经休眠的世界改成常驻后立即恢复', (t) => {
+  const { manager, advance } = twoWorlds(t);
+  const h = manager.open('moon-town');
+  advance(61_000);
+  manager.tick();
+  assert.equal(h.town.idle, true);
+  settings._setForTest({ MAX_ACTIVE_WORLDS: 2, PINNED_WORLDS: ['moon-town'], IDLE_PAUSE_SEC: 60, WORLD_UNLOAD_SEC: 60 });
+  manager.tick();
+  assert.equal(h.town.idle, false);
+  advance(3600_000);
+  manager.tick();
+  assert.equal(h.town.idle, false, '常驻世界无人观看也继续运转');
+  assert.ok(manager.get('moon-town'));
+});
+
 test('下架立即停止运行；暂停的世界不推进时间', (t) => {
   const { manager, reg } = twoWorlds(t);
   manager.open('moon-town');
