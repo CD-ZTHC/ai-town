@@ -82,6 +82,24 @@ test('SSE：先推送 init，断开后观众计数归零', async (t) => {
   assert.equal(host.clients.size, 0);
 });
 
+test('SSE：init 本身超过积压上限时照常推送，观众计数不泄漏', async (t) => {
+  const settings = await import('../server/settings/index.ts');
+  settings._setForTest({ SSE_MAX_BUFFER_KB: 32 });
+  const { app, host } = setup();
+  t.after(() => { host.close({ save: false }); settings._setForTest({}); });
+  assert.ok(JSON.stringify(host.town.initPayload()).length > 32 * 1024, '前提：init 比上限大');
+  const res = await app.request('/api/stream');
+  const reader = res.body!.getReader();
+  let text = '';
+  for (let r; !text.includes('event: init') && !(r = await reader.read()).done;) text += new TextDecoder().decode(r.value);
+  assert.match(text, /event: init/, '大 init 不能把刚连上的观众断开');
+  const [client] = host.clients;
+  assert.equal(host.viewersFrom(client.ip), 1);
+  await reader.cancel();
+  assert.equal(host.clients.size, 0);
+  assert.equal(host.viewersFrom(client.ip), 0, '断开后按 IP 的计数归零');
+});
+
 test('SSE 背压：不读数据的观众只留最新一帧 tick，其他事件积压超限时断开', async (t) => {
   const { app, host } = setup();
   t.after(() => host.close({ save: false }));

@@ -191,8 +191,10 @@ export function openStream(c: Ctx, host: WorldHost): Response {
   let leave: (() => void) | null = null, ka: ReturnType<typeof setInterval> | undefined;
   const stream = new ReadableStream<Uint8Array>({
     start() {
-      client.write('retry: 3000\n\n');
-      client.write(`event: init\ndata: ${JSON.stringify({ ...host.town.initPayload(), build: c.get('build') || null })}\n\n`);
+      // retry 与 init 作为一条消息入队：单条消息可以超过积压上限，两条一起超限会被当成「收不动」立即断开
+      client.push('init', sseEnc.encode(`retry: 3000\n\nevent: init\ndata: ${JSON.stringify({ ...host.town.initPayload(), build: c.get('build') || null })}\n\n`));
+      // 已经被关掉的连接不再加入观众列表：cleanup 已经跑过，加入后计数永远不会归还
+      if (client.closed) return;
       leave = host.join(client);
       ka = setInterval(() => client.write(': ka\n\n'), 15000);
     },
