@@ -100,7 +100,9 @@ export class ProposalSystem {
     for (const [i, raw] of rawOps.entries()) {
       const name = String(raw?.op || '');
       if (!allowed.includes(name) || !Object.hasOwn(OPS, name)) return { error: `第 ${i + 1} 个操作不允许：${name}` };
-      const args = raw.args && typeof raw.args === 'object' ? structuredClone(raw.args) : {};
+      // 模型常把参数写扁（{"op":"addPath","from":…}，和效果的写法一样）：没有 args 时把其余字段当作 args
+      const { op: _op, ...flat } = raw;
+      const args = raw.args && typeof raw.args === 'object' ? structuredClone(raw.args) : structuredClone(flat);
       if (name === 'addBuilding') {
         if (args.x == null || args.y == null) {
           // 模型常把 place 写扁（args.near / args.within）或写成字符串：意思明确，照样接受

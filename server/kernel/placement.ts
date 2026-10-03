@@ -112,6 +112,7 @@ export function checkEdit(spec: WorldSpec, edit: TerrainEdit, base: GenWorld = w
 
 /** 修路：两地点之间代价最低的一条路（已有的路最便宜，草地其次，树丛要砍，窄水面架桥），只返回需要铺的格子 */
 export function solvePath(spec: WorldSpec, from: string, to: string): { cells: Array<[number, number]>; error?: undefined } | { error: string; cells?: undefined } {
+  if (!from || !to) return { error: `addPath 缺少 ${!from ? 'from' : 'to'}（参数写在 args 里：{"op":"addPath","args":{"from":"地点id","to":"地点id"}}）` };
   const w = worldOf(spec);
   const a = locationCenter(w, from), b = locationCenter(w, to);
   if (!a) return { error: `未知地点：${from}` };
