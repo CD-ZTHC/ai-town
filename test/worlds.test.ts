@@ -42,6 +42,15 @@ test('世界登记：短名规则、保留字、占用；状态机只允许合�
   assert.throws(() => reg.setStatus('little-red', 'archived'), /不能变成/, '下架的世界 owner 不能自己归档绕开');
 });
 
+test('官方世界包写了 listed: false：第一次登记为不公开（不进大厅）；管理员切成公开后，重启也不会被改回去', () => {
+  const reg = new WorldRegistry(openDb(':memory:'));
+  assert.equal(reg.ensureOfficial('pangu', { title: '开天', summary: '', packHash: 'a', listed: false }).status, 'unlisted');
+  assert.equal(reg.ensureOfficial('yunxi', { title: '云溪镇', summary: '', packHash: 'a' }).status, 'public');
+  reg.setStatus('pangu', 'public');
+  assert.equal(reg.ensureOfficial('pangu', { title: '开天', summary: '', packHash: 'b', listed: false }).status, 'public', '已登记的世界保持管理员设的状态');
+  assert.equal(officialPack('pangu').world.listed, false, '《开天》世界包默认不公开');
+});
+
 /** 两个世界：官方云溪镇 + 一个由云溪镇世界包改名得到的用户世界 */
 function twoWorlds(t: import('node:test').TestContext, { max = 4 } = {}) {
   settings._setForTest({ MAX_ACTIVE_WORLDS: max, PINNED_WORLDS: [], IDLE_PAUSE_SEC: 60, WORLD_UNLOAD_SEC: 60 });

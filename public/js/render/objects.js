@@ -304,6 +304,37 @@ export class Objects {
           }
           break;
         }
+        case 'split': {
+          // 创世：一道金色的裂缝从天到地劈开，四周一圈光
+          const L = R * 3, segs = 14;
+          ctx.save();
+          ctx.globalAlpha = Math.min(1, (1 - k) * 1.6);
+          ctx.shadowColor = `rgb(${r},${g},${b})`; ctx.shadowBlur = 24;
+          for (const [w, col] of [[10 * (1 - k) + 3, `rgb(${r},${g},${b})`], [3, '#fff']]) {
+            ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath();
+            for (let i = 0; i <= segs; i++) {
+              const yy = Y - L + (2 * L * i) / segs * Math.min(1, k * 4);
+              const xx = X + Math.sin(i * 2.7 + v.seed * 10) * TS * 0.6 * (i % 2 ? 1 : -1);
+              i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+            }
+            ctx.stroke();
+          }
+          ctx.globalAlpha = (1 - k) * 0.5;
+          const gr = ctx.createRadialGradient(X, Y, 0, X, Y, R * 2);
+          gr.addColorStop(0, `rgba(${r},${g},${b},0.9)`); gr.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = gr; ctx.fillRect(X - R * 2, Y - R * 2, R * 4, R * 4);
+          ctx.restore();
+          break;
+        }
+        case 'quake': {
+          ctx.strokeStyle = `rgba(${r},${g},${b},.8)`;
+          for (let i = 0; i < 3; i++) {
+            const kk = Math.min(1, k * 1.5 + i * 0.15);
+            ctx.lineWidth = 4 * (1 - kk) + 1;
+            ctx.beginPath(); ctx.ellipse(X, Y + 8, R * kk * 1.4, R * kk * 0.6, 0, 0, 7); ctx.stroke();
+          }
+          break;
+        }
         case 'sparkle':
         case 'heal':
         case 'notes': {

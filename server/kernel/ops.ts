@@ -10,6 +10,7 @@ import { stripOf, packStrip, SIDES, MAX_SIZE } from '../worldgen/extend.ts';
 import { buildRegion } from '../worldgen/index.ts';
 import { validateAbility } from './abilities.ts';
 import { validateRule } from './rules.ts';
+import { touchesGenesis } from './effects.ts';
 import { solveLayout, layoutProblems, regionSize, mapSize, BIOME_IDS, BUILDING_KINDS, OUTDOOR_KINDS } from '../worldgen/layout.ts';
 import type { OpLevel } from '../types/ops.ts';
 import type { Ability, Building, Region, RegionEdit, Rule, Side, WorldSpec } from '../types/spec.ts';
@@ -215,6 +216,22 @@ export const OPS: Record<string, OpDef> = {
     },
     describe: (a) => `天空中出现了一种新的天气：${str(a.emoji, 4)} ${str(a.name, 8)}`,
   },
+  // 调整已有天气出现的权重（创世：天地开辟之后混沌的天气不再出现）；只给世界包里的创世能力用，架构师不能提出
+  setWeatherWeights: {
+    level: 'major',
+    check(spec, a) {
+      const ws = a.weights;
+      if (!ws || typeof ws !== 'object' || Array.isArray(ws) || !Object.keys(ws).length) return 'weights 应为 {天气id: 权重}';
+      for (const [id, w] of Object.entries(ws)) {
+        if (!Object.hasOwn(spec.weather, id)) return `未知天气：${id}`;
+        if (!Number.isInteger(w) || (w as number) < 0 || (w as number) > 100) return 'weight 应为 0~100 的整数';
+      }
+      const total = Object.entries(spec.weather).reduce((s, [id, x]) => s + (Object.hasOwn(ws, id) ? (ws[id] as number) : x.weight), 0);
+      return total > 0 ? null : '至少要有一种天气会出现';
+    },
+    apply(spec, a) { for (const [id, w] of Object.entries(a.weights as Record<string, number>)) spec.weather[id] = { ...spec.weather[id]!, weight: w }; },
+    describe: (a, spec) => `天气变了：${Object.entries(a.weights as Record<string, number>).filter(([, w]) => w > 0).map(([id]) => spec?.weather[id]?.name || id).join('、')}成了常见的天气`,
+  },
   addItem: {
     level: 'micro',
     check(spec, a) {
@@ -250,11 +267,13 @@ export const OPS: Record<string, OpDef> = {
     check(spec, a) {
       if (!validId(a.id)) return 'id 不合法';
       if (spec.abilities.some((x) => x.id === a.id)) return `能力已存在：${a.id}`;
+      // 创世级的能力（改世界结构、化身离开）只能写在世界包里
+      if (a.power != null) return 'power 只能写在世界包里';
       return validateAbility(a, spec);
     },
     apply(spec, a) {
-      const { id, name, emoji, desc, aiHint, target, range, cost, cooldown, requires, effects, learn } = structuredClone(a);
-      spec.abilities.push((Object.fromEntries(Object.entries({ id, name, emoji: str(emoji, 4) || '✨', desc, aiHint, target, range, cost, cooldown, requires, effects, learn }).filter(([, v]) => v !== undefined)) as unknown as Ability));
+      const { id, name, emoji, desc, aiHint, target, range, cost, cooldown, requires, effects, learn, combat } = structuredClone(a);
+      spec.abilities.push((Object.fromEntries(Object.entries({ id, name, emoji: str(emoji, 4) || '✨', desc, aiHint, target, range, cost, cooldown, requires, effects, learn, combat }).filter(([, v]) => v !== undefined)) as unknown as Ability));
     },
     describe: (a) => `世界上出现了一种新能力：${str(a.emoji, 4)}「${str(a.name, 8)}」`,
   },
@@ -483,7 +502,8 @@ export const OPS: Record<string, OpDef> = {
           });
         }
       }
-      (region.extensions ||= []).push({ side: a.side, by: a.by, biome: BIOME_IDS.includes(a.biome) ? a.biome : 'meadow', name: str(a.name, 16), rect, seed });
+      // 没有地点的扩展块（例如一层层长高的天）：不修沿接缝的主路，只有一条穿过中间的路（bare）；旧存档里的扩展块没有这个标记，画法不变
+      (region.extensions ||= []).push({ side: a.side, by: a.by, biome: BIOME_IDS.includes(a.biome) ? a.biome : 'meadow', name: str(a.name, 16), rect, seed, ...(places.length ? {} : { bare: true }) });
     },
     describe: (a) => `${SIDE_NAMES[a.side] || ''}长出了一片新地方：「${str(a.name, 16)}」`,
   },
@@ -608,11 +628,28 @@ export const OPS: Record<string, OpDef> = {
     },
     describe: (a, spec) => `${pName(spec, a.id)}定居下来`,
   },
+  // 游戏模式里旅人化身的技能栏（即时战斗，combat.md §4）：最多 4 个，只能放带 combat 块的能力
+  setAvatarKit: {
+    level: 'minor',
+    check(spec, a) {
+      if (!Array.isArray(a.ids) || a.ids.length > 4 || new Set(a.ids).size !== a.ids.length) return 'ids 应为 0~4 个不重复的能力 id';
+      for (const id of a.ids) {
+        const ab = spec.abilities.find((x) => x.id === id);
+        if (!ab) return `未知能力：${id}`;
+        if (!ab.combat) return `${id} 没有 combat 块，不能在战斗里用`;
+        if (ab.power) return `${id} 是创世级的能力，不能给旅人`;
+      }
+      return null;
+    },
+    apply(spec, a) { spec.combat = { ...spec.combat, avatarKit: [...a.ids] }; },
+    describe: (a, spec) => `旅人们学会了新的招式：${(a.ids as string[]).map((id) => spec?.abilities.find((x) => x.id === id)?.name || id).join('、')}`,
+  },
   addRule: {
     level: 'major',
     check(spec, a) {
       if (spec.rules.some((x) => x.id === a.id)) return `规则已存在：${a.id}`;
       if (spec.rules.length >= 40) return '规则数量已达上限';
+      if (touchesGenesis(a.then, spec)) return '规则里不能有创世效果（worldOp / transform / 放创世级能力），只能写在世界包里';
       return validateRule(a, spec);
     },
     apply(spec, a) {

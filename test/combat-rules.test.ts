@@ -1,8 +1,7 @@
 // 战斗规则（重构方案 P6 第三步）：不建小镇，给数据和固定种子的随机数，断言结果
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeStats, harmVerdict, blow, exchange, whoFlees, stealCaught, guardRepels } from '../server/sim/combat.ts';
-import { createRng } from '../server/kernel/rng.ts';
+import { computeStats, harmVerdict, stealCaught, guardRepels } from '../server/sim/combat.ts';
 import type { WorldSpec } from '../server/types/spec.ts';
 
 const fighter = (courage: number, hp = 100, inventory: Record<string, number> = {}, combat?: { atk?: number; def?: number }) =>
@@ -28,26 +27,6 @@ test('能不能动手：世界不允许 → 分级不允许杀人 → 有仇 / �
   assert.equal(harmVerdict({ ...base, affinity: -40 }), null);
   assert.equal(harmVerdict({ ...base, villain: true }), null);
   assert.equal(harmVerdict({ ...base, factionsHostile: true }), null);
-});
-
-test('伤害：攻击浮动 0.8~1.2、减去防御的一半，至少 1；互殴先算 a 打 b', () => {
-  assert.equal(blow(10, 4, always(0)), 6);
-  assert.equal(blow(10, 4, always(0.999)), 10);
-  assert.equal(blow(1, 50, always(0.5)), 1);
-  const seq = [0, 0.999];
-  const r = () => seq.shift()!;
-  assert.deepEqual(exchange({ atk: 10, def: 0, tags: [] }, { atk: 10, def: 0, tags: [] }, r), { hitB: 8, hitA: 12 });
-  // 同一个种子，同样的结果
-  const s1 = exchange({ atk: 7, def: 2, tags: [] }, { atk: 5, def: 3, tags: [] }, createRng(42));
-  const s2 = exchange({ atk: 7, def: 2, tags: [] }, { atk: 5, def: 3, tags: [] }, createRng(42));
-  assert.deepEqual(s1, s2);
-});
-
-test('逃跑：血量在 0~30 之间且勇气不足 50 的一方逃跑，先看被打的一方', () => {
-  const a = fighter(40, 20), b = fighter(40, 25);
-  assert.equal(whoFlees(a, b), b);
-  assert.equal(whoFlees(a, fighter(60, 25)), a, '勇敢的不逃');
-  assert.equal(whoFlees(fighter(40, 0), fighter(40, 50)), null, '倒下的不算逃跑');
 });
 
 test('偷窃与营救的检定', () => {

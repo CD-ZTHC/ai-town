@@ -91,10 +91,11 @@ export class WorldRegistry {
    * 官方世界：启动时登记（已有则只更新标题与包哈希）。
    * 会致死的分级（dark、tragic）第一次登记为不公开（有链接才能看），由管理员决定是否公开（黑暗叙事设计 §3）
    */
-  ensureOfficial(id: string, { title, summary, packHash, settings, rating = 'cozy' }: { title: string; summary: string; packHash: string | null; settings?: WorldSettings; rating?: string }): World {
+  ensureOfficial(id: string, { title, summary, packHash, settings, rating = 'cozy', listed = true }: { title: string; summary: string; packHash: string | null; settings?: WorldSettings; rating?: string; listed?: boolean }): World {
     const w = this.get(id);
     const r = settings?.rating || rating;
-    if (!w) return this.create({ id, title, summary, status: lethal(r) ? 'unlisted' : 'public', official: true, packHash, settings, rating: r });
+    // 第一次登记：致死分级、或世界包写了 listed: false（还在打磨的新世界）时不在大厅公开，管理员在面板里切成「公开」
+    if (!w) return this.create({ id, title, summary, status: lethal(r) || !listed ? 'unlisted' : 'public', official: true, packHash, settings, rating: r });
     // 管理员改过的标题 / 简介（settings.overrides）不再被世界包覆盖（按世界配置模型服务设计 §9.2）
     const o = w.settings?.overrides || {};
     this.db.prepare('UPDATE worlds SET title = ?, summary = ?, pack_hash = ?, official = 1, rating = ? WHERE id = ?')

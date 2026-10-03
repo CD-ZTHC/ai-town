@@ -108,6 +108,24 @@ export function validateThreat(id: string, t: Raw, spec: WorldSpec): string | nu
   if (t.rule && !(t.clues || []).length) return '有规律的威胁至少要有一条真线索（clues）';
   for (const l of t.research || []) if (!Object.hasOwn(spec.locations, l)) return `research 未知地点：${l}`;
   for (const x of t.loot || []) if (!Object.hasOwn(spec.items || {}, x.item) || !inRange(x.p, 0, 1)) return 'loot 不合法';
+  const combatSkills = (ids: unknown, where: string) => {
+    if (ids == null) return null;
+    if (!Array.isArray(ids) || ids.length > 4) return `${where} 应为 ≤4 个能力 id`;
+    for (const id of ids) { const ab = spec.abilities.find((x) => x.id === id); if (!ab?.combat) return `${where} 里的 ${id} 不存在或没有 combat 块`; }
+    return null;
+  };
+  { const e = combatSkills(t.skills, 'skills'); if (e) return e; }
+  if (t.phases != null) {
+    if (!t.mortal || !Array.isArray(t.phases) || t.phases.length > 4) return 'phases 只能用在会死的威胁上，最多 4 个';
+    for (const [i, ph] of t.phases.entries()) {
+      if (!inRange(ph.at, 0.05, 0.95) || !isStr(ph.text, 40)) return `phases[${i}] 需要 at（0.05~0.95 的血量比例）与 text（≤40字）`;
+      if (ph.atk != null && !inRange(ph.atk, 0.5, 3)) return `phases[${i}].atk 应在 0.5~3（倍数）`;
+      if (ph.effects != null) { const e = checkEffects(ph.effects, spec); if (e) return `phases[${i}].effects ${e}`; }
+      const e = combatSkills(ph.skills, `phases[${i}].skills`); if (e) return e;
+    }
+  }
+  if (t.onSlain != null) { if (!t.mortal) return 'onSlain 只能用在会死的威胁上'; const e = checkEffects(t.onSlain, spec); if (e) return `onSlain ${e}`; }
+  if (t.aggro != null && !(t.mortal && inRange(t.aggro, 1, 8))) return 'aggro 只能用在会死的威胁上，应在 1~8（格）';
   if (t.crowd != null && !(inRange(t.crowd.every, 30, 1440) && Array.isArray(t.crowd.kills) && inRange(t.crowd.kills[0], 0, 50) && inRange(t.crowd.kills[1], t.crowd.kills[0], 50))) return 'crowd 应为 {every: 30~1440, kills: [最少, 最多]}';
   return null;
 }

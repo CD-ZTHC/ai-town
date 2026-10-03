@@ -5,7 +5,7 @@
 import { addMemory } from '../memory.ts';
 import { runEffects, posOf } from '../kernel/effects.ts';
 import { testExpr, hasPosture } from '../kernel/rules.ts';
-import { findAbility } from '../kernel/abilities.ts';
+import { findAbility, mayHold } from '../kernel/abilities.ts';
 import { lethal } from '../kernel/ratings.ts';
 import { freshDark } from '../story/threats.ts';
 import { clamp } from './util.ts';
@@ -259,7 +259,7 @@ export class Dark {
       if (!h) continue;
       (a.hosted ||= []).push({ threat: t, since: 0 });
       burdens[h.burden] ??= 0;
-      for (const id of h.grants) if (!a.abilities.includes(id) && findAbility(this.spec, id)) a.abilities.push(id);
+      for (const id of h.grants) if (!a.abilities.includes(id) && mayHold(this.spec, a.id, findAbility(this.spec, id))) a.abilities.push(id);
     }
     if (Object.keys(burdens).length) a.burdens = burdens;
   }

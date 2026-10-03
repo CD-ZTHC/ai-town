@@ -1,0 +1,20 @@
+{
+ "regions": [
+  {
+   "id": "town", "generator": "layout-v1", "name": "混沌", "seed": 2201, "size": [56, 40], "biome": "chaos", "gate": "clear_ground",
+   "areas": [
+    { "id": "core", "name": "混沌腹地", "biome": "chaos", "size": "medium", "places": [
+      { "id": "chaos_egg", "kind": "hut", "name": "混沌之卵", "emoji": "🥚", "desc": "盘古沉睡了一万八千年的地方，壳上布满裂纹", "public": false,
+        "style": { "roof": "#2b2238", "wall": "#4b3d62", "roofShape": "flat", "material": "stone" } },
+      { "id": "murk_field", "kind": "clearing", "name": "浊气翻涌处", "emoji": "🌫️", "desc": "沉重的浊气在这里翻滚，常有浊气兽从雾里钻出来" },
+      { "id": "clear_ground", "kind": "clearing", "name": "清气凝聚处", "emoji": "✨", "desc": "一小片微微发亮的地方，轻的清气在这里慢慢往上飘" }
+    ] },
+    { "id": "deep", "name": "混沌深处", "biome": "chaos", "size": "medium", "places": [
+      { "id": "chaos_deep", "kind": "shrine", "name": "混沌之心", "emoji": "🌀", "desc": "一切还没分开的地方，混沌本源就在这里搏动" },
+      { "id": "murk_pool", "kind": "pond", "name": "浊水洼", "emoji": "🫧", "desc": "说不清是水还是雾的一洼东西，深不见底" }
+    ] }
+   ],
+   "links": [ { "from": "core", "to": "deep", "via": "path" } ]
+  }
+ ]
+}

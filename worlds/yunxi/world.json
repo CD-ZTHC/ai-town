@@ -968,7 +968,17 @@
    }
   }
  },
+ "combat": { "avatarKit": ["firefly_shot", "bell_ring", "warm_tea"] },
  "abilities": [
+  { "id": "firefly_shot", "name": "萤火弹", "emoji": "✨", "target": "agent", "desc": "攒一团萤火丢出去，影子最怕这个", "aiHint": "暗月界的东西靠近时",
+   "combat": { "windup": 2, "recover": 3, "range": 5, "shape": "line", "radius": 0.8, "cd": 8 },
+   "effects": [{ "op": "strike", "power": 1.3, "tags": ["light"] }] },
+  { "id": "bell_ring", "name": "铃铛震", "emoji": "🔔", "target": "area", "desc": "摇响铃铛，震得身边的影子晕头转向", "aiHint": "被围住的时候",
+   "combat": { "windup": 3, "recover": 4, "radius": 2.5, "shape": "circle", "cd": 24 },
+   "effects": [{ "op": "strike", "power": 0.8 }, { "op": "knockback", "cells": 2 }, { "op": "status", "status": "stun", "beats": 6 }] },
+  { "id": "warm_tea", "name": "热茶", "emoji": "🍵", "target": "self", "desc": "喝口热茶缓一缓，身上暖起来", "aiHint": "累了的时候",
+   "combat": { "windup": 1, "recover": 2, "cd": 40 },
+   "effects": [{ "op": "status", "status": "shield", "beats": 20, "amount": 25, "target": "self" }] },
   {
    "id": "firefly_ward",
    "name": "萤火结界",

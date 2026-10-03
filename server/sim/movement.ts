@@ -69,6 +69,8 @@ export class Movement {
   updateAgent(this: Town, a: LiveAgent, dt: number): void {
     this.updateBody(a, dt);
     if (a.convoId) return;
+    // 正在战斗：走位与出招由战斗时钟负责（sim/combat）
+    if (this.fights?.length && this.engaged('agent', a.id)) return;
     const e = this.desired(a);
     if (e.key !== a.curKey) {
       if (a.researching && a.researching.key !== e.key) this.finishResearch(a);
@@ -98,10 +100,10 @@ export class Movement {
     this.noteSettle(a, e);
     // 保持「不开门」的人不进屋，在门口熬一夜
     if (e.sleep && !this.hasPosture(a, 'noOpen')) {
-      const home = this.world.locations[a.home]!;
-      a.inside = home.indoor as string | null;
-      const b = this.world.buildings.find((x) => x.id === home.indoor)!;
-      a.x = b.entrance.x; a.y = b.entrance.y;
+      // 家可能在别的地图上（例如新长出来的区域）：按家所在的地图找房子；没有房子的人就地睡
+      const home = this.findLocation(a.home);
+      const b = home?.indoor ? this.worldOf(this.locRegion(a.home)).buildings.find((x) => x.id === home.indoor) : null;
+      if (b) { a.inside = b.id; a.x = b.entrance.x; a.y = b.entrance.y; }
     }
   }
 

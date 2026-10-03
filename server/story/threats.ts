@@ -174,7 +174,7 @@ export class ThreatSystem {
   move(inst: ThreatInstance, dt: number): void {
     const town = this.town;
     const def = this.def(inst);
-    if (!def || inst.state === 'suppressed') { inst.path = []; return; }
+    if (!def || inst.state === 'suppressed' || town.engaged?.('threat', inst.id)) { inst.path = []; return; }
     // 怕的东西（ward）：离开它的范围
     const ward = this.wardNear(inst, def);
     if (ward && !inst.fleeing) {
@@ -514,6 +514,9 @@ export class ThreatSystem {
     town.log('threat', `${emoji} ${text}`, { agents: by ? [by.id] : [], threat: inst.id, result: how });
     if (how === 'resolved') town.worldFlags[`resolved_${inst.type}`] = true;
     if (by) addMemory(by, { t: town.t, type: 'obs', text, importance: 8 });
+    // 被打死时的效果（世界包写的剧情：例如 Boss 倒下后天地开裂）
+    const def = this.def(inst);
+    if (how === 'slain' && def?.onSlain?.length) runEffects(town, { self: by, target: null, e: by, at: { x: inst.x, y: inst.y, inside: null, region: inst.region || 'town' }, source: `threat:${inst.type}`, threat: inst }, def.onSlain);
     try { town.applyWorldOp({ op: 'addCanon', args: { text: `第${town.day}天，${text}。`, tags: ['事件'] } }, { by: 'threat' }, { quiet: true }); } catch { /* 正典满了也不影响 */ }
     town.emit('story');
   }

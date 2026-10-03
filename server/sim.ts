@@ -48,6 +48,7 @@ import type { Rng } from './kernel/rng.ts';
 import { Metrics } from './sim/metrics.ts';
 import { Dark } from './sim/dark.ts';
 import { Combat } from './sim/combat.ts';
+import { CombatMind } from './sim/combat-mind.ts';
 import { get as setting } from './settings/index.ts';
 import type { Embedder } from './embeddings.ts';
 import type { WorldSpec, Params, Persona } from './types/spec.ts';
@@ -77,7 +78,7 @@ const MAX_STRUCTURES = 30;
 const MAP_OPS = new Set(['expandMap', 'addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace']);
 
 // 各职责模块（server/sim/）的方法经文件末尾的 mixin 挂到 Town.prototype 上；这里用声明合并让类型也知道它们
-export interface Town extends Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, TownState {}
+export interface Town extends Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, CombatMind, TownState {}
 
 export class Town extends EventEmitter {
   // 字段只做类型声明（declare）：类型剥离后不生成任何代码，初始化仍在构造函数与各模块里，运行行为不变
@@ -165,7 +166,6 @@ export class Town extends EventEmitter {
   declare snapshotEvery?: () => number;
   declare hookHour?: number;
   declare crisisHour?: number;
-  declare fightMinute?: number;
   declare lastSnapHour?: number;
   /** 世界的持久状态（见 sim/state.ts）：存档里属于这个世界的字段；Town 上的同名属性是转发到这里的访问器 */
   declare state: TownState;
@@ -230,7 +230,9 @@ export class Town extends EventEmitter {
     this.speed = 1;
     this.paused = false;
     // 没有「晴」的世界（例如夜巡）用它的第一种天气作为开局天气
-    this.weather = Object.hasOwn(this.spec.weather, 'sunny') ? 'sunny' : Object.keys(this.spec.weather)[0];
+    // 开局天气：晴天（会出现的话），否则权重最大的那种（例如开天之前只有混沌的世界）
+    const kinds = Object.entries(this.spec.weather);
+    this.weather = (this.spec.weather.sunny?.weight ?? 0) > 0 || kinds.every(([, w]) => !w.weight) ? (Object.hasOwn(this.spec.weather, 'sunny') ? 'sunny' : kinds[0]![0]) : kinds.sort((x, y) => y[1].weight - x[1].weight)[0]![0];
     this.weatherLock = false;
     this.nextWeatherT = this.t + 180;
     // agents：在场的角色；away：离开小镇的角色（数据保留，可以回来）
@@ -313,14 +315,15 @@ export class Town extends EventEmitter {
   locName(id: string | null | undefined): string { return this.findLocation(id as string)?.name || (Object.hasOwn(this.spec.locations, id as string) && this.spec.locations[id as string]!.name) || (id as string); }
 
   createAgent(p: Persona): LiveAgent {
-    const home = this.world.locations[p.home];
-    const b = home?.indoor ? this.world.buildings.find((x) => x.id === home.indoor) : null;
+    // 家可能在别的地图上（区域里的角色、新长出来的地图上化生的人）
+    const home = this.findLocation(p.home);
+    const b = home?.indoor ? this.worldOf(this.locRegion(p.home)).buildings.find((x) => x.id === home.indoor) : null;
     // 没有房子的角色（例如暗月守门人）出现在所属地点的某个站位
     const spot = b ? b.entrance : (home?.spots?.[0] || this.locCenter(p.home) || { x: 50, y: 34 });
     const a: LiveAgent = {
       id: p.id, name: p.name, age: p.age, role: p.role, persona: p.persona, goal: p.goal, look: p.look, ...(p.tier ? { tier: p.tier } : {}),
       home: p.home, work: p.work,
-      x: spot.x, y: spot.y, dir: 'down', moving: false, inside: b ? b.id : null, locId: p.home, region: 'town',
+      x: spot.x, y: spot.y, dir: 'down', moving: false, inside: b ? b.id : null, locId: p.home, region: this.locRegion(p.home),
       status: 'sleeping', action: { text: '睡觉', emoji: '😴' }, thought: '', mood: { text: '平静', emoji: '🙂' },
       schedule: [], scheduleDay: 0, curKey: null, path: [], dest: null,
       memories: [], relations: {}, diary: [], importanceAcc: 0,
@@ -419,7 +422,7 @@ export class Town extends EventEmitter {
       this.rules.tick();
       this.creatures.tick(dtGame);
       this.threats.tick(dtGame);
-      this.combatTick();
+      this.combatTick(dtReal);
       this.darkHourly();
       this.scenes.tick();
       this.votes.tick();
@@ -811,7 +814,7 @@ export class Town extends EventEmitter {
 // 把各职责模块的方法挂到 Town 上；重名直接报错，避免悄悄覆盖
 // 世界状态字段（sim/state.ts 的表）：Town 上读写 this.dark、this.logs 等都转发到 this.state
 defineStateAccessors(Town.prototype);
-for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat]) {
+for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, CombatMind]) {
   for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) {
     if (name === 'constructor') continue;
     if (Object.hasOwn(Town.prototype, name)) throw new Error(`Town.${name} 重复定义（${part.name}）`);

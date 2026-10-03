@@ -1,7 +1,8 @@
 // 能力系统（设计文档 6.3）：能力是由效果原语组合而成的数据。居民可以使用、研究、互相传授。
-import { checkEffects, checkExpr, runEffects, posOf, agentsNear } from './effects.ts';
+import { checkEffects, checkExpr, runEffects, posOf, agentsNear, touchesGenesis } from './effects.ts';
 import { testExpr } from './rules.ts';
 import { addMemory, fmtTime } from '../memory.ts';
+import { checkCombatBlock } from '../sim/fight-rules.ts';
 import type { Ability, WorldSpec } from '../types/spec.ts';
 import type { AgentLike, TownLike } from '../types/town.ts';
 
@@ -27,6 +28,12 @@ export function validateAbility(ab: Ability, spec: WorldSpec): string | null {
   if (c.burden != null && !(Object.hasOwn(spec.burdens || {}, c.burden.id) && inRange(c.burden.amount, 1, 50))) return 'cost.burden 应为 {id: 负担id, amount: 1~50}';
   if (ab.cooldown != null && !inRange(ab.cooldown, 0, 1440)) return 'cooldown 应在 0~1440（游戏分钟）';
   if (ab.requires != null) { const e = checkExpr(ab.requires); if (e) return `requires ${e}`; }
+  { const e = checkCombatBlock(ab.combat); if (e) return e; }
+  // 创世级（combat.md §5）：改世界结构、让人离开世界的效果只能用在 power 为 genesis 的能力里
+  if (ab.power != null && ab.power !== 'genesis') return 'power 只能是 genesis';
+  if (ab.uses != null && !(Number.isInteger(ab.uses) && ab.uses >= 1 && ab.uses <= 99)) return 'uses 应为 1~99 的整数';
+  if (ab.power !== 'genesis' && touchesGenesis(ab.effects, spec)) return 'worldOp / transform（以及让人放创世级能力）只能用在 power 为 genesis 的能力里';
+  if (ab.power === 'genesis' && ab.combat) return '创世级的能力不能是战斗招式';
   const r = ab.learn?.research;
   if (r) {
     if (!Object.hasOwn(spec.locations, r.location)) return `learn.research 未知地点：${r.location}`;
@@ -36,6 +43,14 @@ export function validateAbility(ab: Ability, spec: WorldSpec): string | null {
 }
 
 export const findAbility = (spec: WorldSpec, id: string): Ability | undefined => spec.abilities.find((x) => x.id === id);
+
+/** 这个人能不能拥有这项能力：创世级的只给人设 tier 为 primordial 的角色 */
+export function mayHold(spec: WorldSpec, agentId: string, ab: Ability | undefined): boolean {
+  if (!ab) return false;
+  return ab.power !== 'genesis' || spec.personas.find((p) => p.id === agentId)?.tier === 'primordial';
+}
+/** 创世级能力已经用了几次（记在世界标记里，存档、回溯都跟着走） */
+export const usesKey = (abilityId: string, agentId: string): string => `uses_${abilityId}_${agentId}`;
 
 /** 写进提示词的能力说明 */
 export function describeAbility(town: TownLike, a: AgentLike, ab: Ability): string {
@@ -52,7 +67,8 @@ export type Prepared = { error: string; retry?: boolean; ab?: undefined; target?
 export function prepare(town: TownLike, a: AgentLike, abilityId: string, targetRef: unknown): Prepared {
   const ab = findAbility(town.spec, abilityId);
   if (!ab) return { error: `没有这种能力：${abilityId}` };
-  if (!a.abilities.includes(ab.id)) return { error: `${a.name}还不会「${ab.name}」` };
+  if (!a.abilities.includes(ab.id) || !mayHold(town.spec, a.id, ab)) return { error: `${a.name}还不会「${ab.name}」` };
+  if (ab.uses && Number(town.worldFlags[usesKey(ab.id, a.id)] || 0) >= ab.uses) return { error: `「${ab.name}」已经用尽了` };
   if (a.status === 'sleeping') return { error: `${a.name}在睡觉` };
   if ((a.cooldowns?.[ab.id] || 0) > town.t) return { error: `「${ab.name}」还在冷却` };
   const c: NonNullable<Ability['cost']> = ab.cost || {};
@@ -88,6 +104,9 @@ export function useAbility(town: TownLike, a: AgentLike, abilityId: string, targ
     if (left > 0) a.inventory[item] = left; else delete a.inventory[item];
   }
   (a.cooldowns ||= {})[ab.id] = town.t + (ab.cooldown || 0);
+  if (ab.uses) town.worldFlags[usesKey(ab.id, a.id)] = Number(town.worldFlags[usesKey(ab.id, a.id)] || 0) + 1;
+  // 创世：全屏的裂开特效
+  if (ab.power === 'genesis') { const p = posOf(town, a); if (p) town.emit('vfx', { preset: 'split', x: p.x, y: p.y, color: '#ffd166', radius: 6, region: p.region }); }
   if (c.burden) town.addBurden?.(a, c.burden.id, c.burden.amount, 'ability_used');
   runEffects(town, { self: a, target, at: posOf(town, a), source: `ability:${ab.id}` }, ab.effects);
   addMemory(a, { t: town.t, type: 'obs', text: `我${target ? `对${target.name}` : ''}使用了「${ab.name}」${why}`, importance: 3 });

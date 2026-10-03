@@ -95,7 +95,7 @@ export interface Persona {
   relations: Record<string, [number, string]>;
   memories: string[];
   alignment?: string;
-  combat?: { atk?: number; def?: number };
+  combat?: { atk?: number; def?: number; spd?: number };
   /** 主角光环：不会死（降为重伤） */
   plotArmor?: boolean;
   /** 反派回心转意的条件（表达式） */
@@ -163,6 +163,12 @@ export interface Ability {
   /** 表达式（kernel/expr.ts） */
   requires?: string;
   effects: Effect[];
+  /** 创世级（combat.md §5）：可以改世界结构（worldOp）、让人离开世界（transform）；只能写在世界包里，只有 tier 为 primordial 的角色能学会和使用 */
+  power?: 'genesis';
+  /** 创世级能力每个人一共能用几次 */
+  uses?: number;
+  /** 即时战斗里的招式节奏（设计 combat.md §3.3）：没有时不能在战斗里用 */
+  combat?: { windup?: number; recover?: number; range?: number; shape?: 'single' | 'circle' | 'line' | 'cone'; radius?: number; cd?: number };
   learn?: { research?: { location: string; keywords: string[] }; [k: string]: unknown };
 }
 
@@ -311,6 +317,11 @@ export interface ThreatType {
   /** 可以研究它的地点 */
   research?: string[];
   loot?: Array<{ item: string; p: number }>;
+  /** 即时战斗（combat.md §3、§5）：会用的招式（带 combat 块的能力）、血量阶段（Boss）、被打死时的效果、主动攻击身边居民的距离 */
+  skills?: string[];
+  phases?: Array<{ at: number; text: string; effects?: Effect[]; skills?: string[]; atk?: number }>;
+  onSlain?: Effect[];
+  aggro?: number;
   /** 群众伤亡：每隔多少分钟、杀几个 */
   crowd?: { every: number; kills: [number, number] };
   look?: unknown;
@@ -377,4 +388,8 @@ export interface WorldSpec {
   params: Params;
   regions: Region[];
   arcs?: Arc[];
+  /** 官方世界包：false 时第一次登记为「不公开」（不进大厅，链接可以进），管理员在面板里切成公开 */
+  listed?: boolean;
+  /** 即时战斗：游戏模式里旅人化身的技能（1~4 键，能力 id） */
+  combat?: { avatarKit?: string[] };
 }

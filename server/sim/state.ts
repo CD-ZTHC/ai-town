@@ -20,6 +20,7 @@ import type { StoryState } from '../story/director.ts';
 import type { ArchitectItem, ArchitectUsage, Gap } from '../../plugins/builtin/architect/architect.ts';
 import type { PressureState } from '../worldai/pressure.ts';
 import type { Scene } from '../story/scene.ts';
+import type { Fight } from './fight-rules.ts';
 import type { Proposal, Vote } from '../types/story.ts';
 
 const isObj = (v: unknown): boolean => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
@@ -76,7 +77,8 @@ export const STATE = {
   creatureList: field(arr<Creature>(), { load: orDefault, fallback: () => [] }),
   // 旧存档缺的黑暗叙事字段用初值补齐
   dark: field(obj<DarkState>(), { load: (v) => (v ? { ...freshDark(), ...(v as object) } : undefined), fallback: () => freshDark() }),
-  fights: field(arr<any>(), { load: orDefault, fallback: () => [] }), // eslint-disable-line @typescript-eslint/no-explicit-any -- TODO(types): 战斗记录（sim/combat）
+  // 即时战斗（sim/combat）：旧版的回合制打斗读档时丢弃；化身不进存档，读档后视为离场
+  fights: field(arr<Fight>(), { load: (v) => (Array.isArray(v) ? v.filter((f: Fight) => Array.isArray(f?.fighters)).map((f: Fight) => ({ ...f, fighters: f.fighters.map((x) => (x.kind === 'avatar' ? { ...x, out: 'gone' as const } : x)) })) : undefined), fallback: () => [] }),
   portalState: field(nul(obj<Portal>()), { load: orDefault, fallback: () => null }),
   swarmGoal: field(nul(str()), { load: orDefault, fallback: () => null, save: (v) => v || null }),
   proposals: field(arr<Proposal>(), { load: orDefault, fallback: () => [] }),

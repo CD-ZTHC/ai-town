@@ -2,7 +2,7 @@
 // 规则（校验模型给出的行动、没成功时的重试策略）是下面只依赖显式输入的函数（重构方案 P6 第三步，测试见 test/actions-rules.test.ts）；
 // Town 上的方法（Actions mixin）负责真正执行行动。
 import { addMemory, parseHM } from '../memory.ts';
-import { useAbility, describeAbility, findAbility, matchResearch } from '../kernel/abilities.ts';
+import { useAbility, describeAbility, findAbility, matchResearch, mayHold } from '../kernel/abilities.ts';
 import { agentsNear, posOf, runEffects } from '../kernel/effects.ts';
 import { POSTURE_NAMES } from './dark.ts';
 import { clamp, clampStr } from './util.ts';
@@ -180,9 +180,16 @@ export class Actions {
     else addMemory(a, { t: this.t, type: 'obs', text: `在${this.locName(r.loc)}研究了「${r.topic}」，有了些头绪`, importance: 3 });
   }
 
+  /** 立即使用一项能力（效果 cast：剧情、规则让角色出手） */
+  castAbility(this: Town, a: LiveAgent, id: string) {
+    const r = useAbility(this, a, id, null, '');
+    if (!r.ok) console.warn(`[cast] ${a.name} 用不了 ${id}：${r.reason}`);
+    return r.ok;
+  }
+
   learnAbility(this: Town, a: LiveAgent, id: string, how = '') {
     const ab = findAbility(this.spec, id);
-    if (!ab || a.abilities.includes(id)) return false;
+    if (!ab || a.abilities.includes(id) || !mayHold(this.spec, a.id, ab)) return false;
     a.abilities.push(id);
     addMemory(a, { t: this.t, type: 'obs', text: `我${how}学会了「${ab.name}」：${ab.desc}`, importance: 6 });
     this.log('learn', `✨ ${a.name}${how}学会了${ab.emoji || ''}「${ab.name}」`, { agents: [a.id], ability: id });

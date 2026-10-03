@@ -99,7 +99,7 @@ for (const id of officialIds()) {
   const p = officialPack(id);
   const first = !registry.get(id);
   registry.ensureOfficial(id, {
-    title: p.world.voice.name, summary: p.world.lore.summary.slice(0, 200), packHash: p.hash, rating: p.world.meta.rating,
+    title: p.world.voice.name, summary: p.world.lore.summary.slice(0, 200), packHash: p.hash, rating: p.world.meta.rating, listed: p.world.listed !== false,
     settings: first && id === 'yunxi' ? { rating: process.env.STORY_RATING || undefined, storyteller: process.env.STORYTELLER || undefined, mods: settings.get('MODS') } : {},
   });
 }

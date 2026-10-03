@@ -71,6 +71,12 @@ export const BIOMES: Record<string, Biome> = {
   urban: { grass: ['#6f7176', '#7d7f84'], blade: ['#63656a', '#8b8d92'], trees: { oak: 1 }, tree: 0.004, flower: 0, rock: 0.015, bush: 0.01 },
   // 老城区：更暗、更旧
   old_town: { grass: ['#5d5a55', '#6b6760'], blade: ['#524f4a', '#77726a'], trees: { oak: 0.7, pine: 0.3 }, tree: 0.012, flower: 0, rock: 0.04, bush: 0.03 },
+  // 混沌：灰紫色的雾地，没有草木，只有翻起来的石块
+  chaos: { grass: ['#3b3448', '#4a4158'], blade: ['#2f2a3a', '#5a5068'], trees: {}, tree: 0, flower: 0, rock: 0.07, bush: 0 },
+  // 天穹：清气凝成的云地
+  sky: { grass: ['#cfe3f5', '#e8f2fb'], blade: ['#b8d3ec', '#ffffff'], trees: {}, tree: 0, flower: 0, rock: 0, bush: 0.01 },
+  // 山地：灰绿的岩坡与松树
+  mountain: { grass: ['#6e7a5e', '#83907a'], blade: ['#5c6850', '#99a68c'], trees: { pine: 0.85, oak: 0.15 }, tree: 0.14, flower: 0.01, rock: 0.12, bush: 0.04 },
 };
 export const BIOME_IDS = Object.keys(BIOMES);
 

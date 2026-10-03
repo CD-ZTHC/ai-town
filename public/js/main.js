@@ -203,6 +203,7 @@ function connect() {
     UI.worldClosed(reason);
   });
   es.addEventListener('vfx', (e) => { const v = JSON.parse(e.data); if ((v.region || 'town') === app.view) renderer.addVfx(v); });
+  es.addEventListener('combat', (e) => { const v = JSON.parse(e.data); if ((v.region || 'town') === app.view) renderer.addCombat(v); Play.onCombat?.(v); });
   es.addEventListener('regions', (e) => {
     app.regionsOpen = JSON.parse(e.data);
     if (app.view !== 'town' && !app.regionsOpen[app.view]?.open) app.setView('town');
@@ -236,6 +237,8 @@ function connect() {
   es.addEventListener('world', (e) => {
     const w = JSON.parse(e.data);
     app.spec = w.spec;
+    // 世界长出了新地方：揭开的动画
+    if (w.op && !w.quiet && ['addRegion', 'addAdjacentRegion', 'expandMap'].includes(w.op.op)) renderer.revealRegion(`🌌 ${w.desc}`);
     app.weathers = w.spec.weather;
     renderer.setCreatureTypes(w.spec.creatures);
     UI.onWorld(w);
@@ -473,7 +476,10 @@ function loop(now) {
       festival: app.view === 'town' && ((app.forceFestival && app.spec?.calendar.events?.some((e) => e.vfx === 'festival_lanterns')) || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns')),
       mode: app.mode, subtitles: app.mode === 'immerse' && Immerse.subsOn(),
       play: app.mode === 'play' ? Play.state() : null,
+      // 即时战斗：这个区域里进行中的战斗（血条、读条由 render/combat 画）
+      fights: (s.fights || []).filter(here),
     };
+    S.fightKeys = new Set(S.fights.flatMap((F) => F.fighters.map((f) => `${f.kind}:${f.id}`)));
     if (now - (app.safeT || 0) > 300) { app.safeT = now; renderer.safe = safeInsets(); }
     if (now - (app.tintT || 0) > 1000) { app.tintT = now; document.body.style.setProperty('--tint', uiTint(minute)); }
     renderer.frame(S, dt);

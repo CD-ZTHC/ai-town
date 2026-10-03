@@ -3,6 +3,8 @@
 // ctx：{ self, target, e, at: {x, y, inside}, source }，self / target / e 为居民对象（可能为空）。
 import { parse, ExprError } from './expr.ts';
 import { addMemory } from '../memory.ts';
+import { STATUS_IDS } from '../sim/fight-rules.ts';
+import { GENERATABLE, generateLayout } from '../worldai/genesis-region.ts';
 import type { WorldSpec } from '../types/spec.ts';
 import type { AgentLike, ThreatInstance, TownLike } from '../types/town.ts';
 
@@ -66,7 +68,9 @@ export const EXPR_FN_DOCS: Record<string, string> = {
 export const EXT_FNS: Record<string, (helpers: unknown, ...args: any[]) => unknown> = {}; // eslint-disable-line @typescript-eslint/no-explicit-any
 export const STATS: readonly string[] = ['hp', 'stamina', 'courage'];
 export const TARGETS: readonly string[] = ['self', 'target', 'e', 'nearby', 'all'];
-export const VFX: readonly string[] = ['glow_ring', 'sparkle', 'heal', 'notes', 'burst', 'ripple'];
+export const VFX: readonly string[] = ['glow_ring', 'sparkle', 'heal', 'notes', 'burst', 'ripple', 'split', 'quake'];
+/** 创世级能力可以执行的世界操作（combat.md §5）：都走 town.applyWorldOp（记入历史、可重放、自动重建地图） */
+export const GENESIS_OPS: readonly string[] = ['addRegion', 'addAdjacentRegion', 'linkRegions', 'expandMap', 'addBuilding', 'addOutdoorPlace', 'plantGrove', 'addPath', 'addPersona', 'addWeather', 'setWeatherWeights', 'addItem', 'addCanon'];
 export const MAX_EFFECTS = 8;
 
 const str = (v: unknown, max: number): string => String(v ?? '').trim().slice(0, max);
@@ -362,7 +366,91 @@ export const EFFECTS: Record<string, EffectDef> = {
     check(a) { return !(inRange(a.amount, 1, 100) && inRange(a.radius ?? 3, 1, 8)) ? 'amount 1~100、radius 1~8' : a.tags != null && !Array.isArray(a.tags) ? 'tags 应为数组' : null; },
     apply(town, ctx, a) { town.threats?.damageNear(posOf(town, ctx.self) || ctx.at, a.amount, a.tags || [], a.radius ?? 3, ctx.self); },
   },
+  // ---------- 创世（combat.md §5）：只能用在 power 为 genesis 的能力里（世界包里写的规则、负担值、威胁结局不受限制） ----------
+  worldOp: {
+    doc: '{"op":"worldOp","action":"addRegion/addAdjacentRegion/linkRegions/expandMap/addBuilding/addOutdoorPlace/plantGrove/addPath/addPersona/addWeather/setWeatherWeights/addItem/addCanon","args":{同世界操作},"generate":"意图（可选，≤80字）"} 创世：直接改变世界的结构（只能写在世界包里）；写了 generate 时由模型按意图现场设计新地方的布局（addRegion/addAdjacentRegion/expandMap），args 是兜底',
+    check(a) {
+      if (!GENESIS_OPS.includes(a.action)) return `action 只能是 ${GENESIS_OPS.join('/')}`;
+      if (a.generate != null && !(GENERATABLE.includes(a.action) && str(a.generate, 80))) return `generate 只能用在 ${GENERATABLE.join('/')}，是一句 ≤80 字的意图`;
+      return a.args && typeof a.args === 'object' && !Array.isArray(a.args) ? null : 'args 应为对象';
+    },
+    apply(town, ctx, a) {
+      const cause = { by: ctx.source || 'genesis', ...(ctx.self ? { agent: ctx.self.id } : {}) };
+      const who = ctx.self?.name ? `${ctx.self.name}的` : '';
+      // 求解地形（和架构师的提案一样：只写意图 near / side，系统求出格子、通道）→ 应用；失败返回错误文本
+      const tryApply = (args: EffectArgs): string | null => {
+        try {
+          const err = town.proposalSystem.solveTerrain(town.spec, a.action, args);
+          if (err) return err;
+          town.applyWorldOp({ op: a.action, args }, cause);
+          if (a.action === 'addPersona') town.syncAgents();
+          return null;
+        } catch (e) { return (e as Error).message; }
+      };
+      if (a.generate) {
+        void generateLayout(town, a.action, structuredClone(a.args), str(a.generate, 80), (args) => !tryApply(structuredClone(args)));
+        return;
+      }
+      const err = tryApply(structuredClone(a.args));
+      if (err) town.log('world', `🌫️ ${who}力量落了空：${err}`, { agents: ctx.self ? [ctx.self.id] : [] });
+    },
+  },
+  transform: {
+    doc: '{"op":"transform","text":"≤40字，可用 {self}","memory":"≤40字，其他人记住的事"} 化身：这个人离开世界（不算死亡），之后的效果照常执行',
+    check(a) { return (a.text != null && !str(a.text, 40)) || (a.memory != null && !str(a.memory, 40)) ? 'text / memory 过长（≤40字）' : null; },
+    apply(town, ctx, a) {
+      const x = ctx.self;
+      if (!x || !town.agents.includes(x)) return;
+      const at = posOf(town, x);
+      if (at) town.emit('vfx', { preset: 'split', x: at.x, y: at.y, color: '#ffd166', radius: 6, region: at.region });
+      town.worldFlags[`transformed_${x.id}`] = true;
+      const memo = a.memory ? fill(str(a.memory, 40), ctx) : `${x.name}化作了天地万物`;
+      for (const o of town.agents) if (o !== x && o.kind !== 'creature') addMemory(o, { t: town.t, type: 'event', text: memo, importance: 9 });
+      town.depart(x.id, 'transform', `✨ ${a.text ? fill(str(a.text, 40), ctx) : `${x.name}化作了天地万物`}`);
+    },
+  },
+  weather: {
+    doc: '{"op":"weather","id":"天气id","minutes":30~1440} 天气立刻变成某种，持续一段时间后恢复自动天气',
+    check(a, spec) { return !Object.hasOwn(spec.weather, a.id) ? `未知天气：${a.id}` : a.minutes != null && !inRange(a.minutes, 30, 1440) ? 'minutes 应在 30~1440' : null; },
+    apply(town, _ctx, a) { if (Object.hasOwn(town.spec.weather, a.id)) town.setWeatherFor(a.id, a.minutes ?? 180); },
+  },
+  cast: {
+    doc: '{"op":"cast","ability":"能力id","target":"self/e"} 让这个人立即使用一项能力（剧情、规则里用；照常检查条件、消耗、冷却）',
+    check(a, spec) { return spec.abilities.some((x) => x.id === a.ability) ? checkTarget(a, ['self', 'e']) : `未知能力：${a.ability}`; },
+    apply(town, ctx, a) {
+      const who = (a.target ?? 'self') === 'e' ? ctx.e : ctx.self;
+      if (who && town.agents.includes(who)) town.castAbility(who, a.ability);
+    },
+  },
+  // 即时战斗（combat.md §3.4）：作用于招式命中的敌人；由 sim/combat 结算
+  strike: {
+    doc: '{"op":"strike","power":0.2~5,"add":0~80,"tags":["弱点标签"]} 战斗招式：对命中的敌人造成伤害（攻击力×power+add）；不在战斗中时打身边会死的威胁',
+    check(a) {
+      if (!inRange(a.power ?? 1, 0.2, 5) || !inRange(a.add ?? 0, 0, 80)) return 'power 0.2~5、add 0~80';
+      return a.tags != null && !(Array.isArray(a.tags) && a.tags.every((t: unknown) => typeof t === 'string')) ? 'tags 应为字符串数组' : null;
+    },
+    apply(town, ctx, a) { town.combatEffect('strike', ctx, a); },
+  },
+  status: {
+    doc: '{"op":"status","status":"stun/root/shield/haste/slow/bleed/weaken/guard","beats":1~40,"amount":0~100,"target":"self/target"} 战斗招式：给自己或命中的敌人挂状态（拍数；护盾、流血、架势用 amount）',
+    check(a) {
+      if (!STATUS_IDS.includes(a.status) || a.status === 'dodge') return `status 只能是 ${STATUS_IDS.filter((x) => x !== 'dodge').join('/')}`;
+      if (!inRange(a.beats, 1, 40) || !inRange(a.amount ?? 0, 0, 100)) return 'beats 1~40、amount 0~100';
+      return checkTarget(a, ['self', 'target']);
+    },
+    apply(town, ctx, a) { town.combatEffect('status', ctx, a); },
+  },
+  knockback: {
+    doc: '{"op":"knockback","cells":1~4} 战斗招式：把命中的敌人击退几格',
+    check(a) { return inRange(a.cells, 1, 4) ? null : 'cells 应在 1~4'; },
+    apply(town, ctx, a) { town.combatEffect('knockback', ctx, a); },
+  },
 };
+
+/** 一组效果是否会碰到创世（改世界结构、让人离开世界、让人放创世级的能力）：AI 写的规则与能力里不允许 */
+export function touchesGenesis(list: unknown, spec: WorldSpec): boolean {
+  return Array.isArray(list) && list.some((e) => e && (e.op === 'worldOp' || e.op === 'transform' || (e.op === 'cast' && spec.abilities.find((x) => x.id === e.ability)?.power === 'genesis')));
+}
 
 /** 校验一组效果，返回错误文本或 null */
 export function checkEffects(list: unknown, spec: WorldSpec): string | null {

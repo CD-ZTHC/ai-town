@@ -165,6 +165,7 @@ export class CreatureSystem {
     const town = this.town;
     const def = this.def(c);
     if (!def) { c.hp = 0; return; }
+    if (town.engaged?.('creature', c.id)) { c.path = []; return; } // 正在战斗（sim/combat）
     const beh = def.behavior;
     // 昼伏夜出：白天回到裂隙附近躲起来（友善的小家伙除外）
     if (!c.friendly && !this.active(def)) {

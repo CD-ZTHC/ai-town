@@ -117,6 +117,11 @@ export function validateSpec(spec: unknown): string[] {
     const e = validateAbility(ab, s);
     if (e) err(`abilities.${ab.id}`, e);
   }
+  for (const id of s.combat?.avatarKit || []) {
+    if (!abIds.has(id)) err('combat.avatarKit', `能力不存在：${id}`);
+    else if (!s.abilities.find((ab: Raw) => ab.id === id).combat) err('combat.avatarKit', `${id} 没有 combat 块，不能在战斗里用`);
+  }
+  if ((s.combat?.avatarKit || []).length > 4) err('combat.avatarKit', '最多 4 个');
   const ruleIds = new Set();
   for (const r of s.rules || []) {
     if (ruleIds.has(r.id)) err(`rules.${r.id}`, 'id 重复');
@@ -160,7 +165,10 @@ export function validateSpec(spec: unknown): string[] {
     } else if (!homeB.has(p.home)) err(path, bIds.has(p.home) ? `home 已被拆除或成了废墟：${p.home}` : `home 不是建筑：${p.home}`);
     if (!locs[p.work] && !liveB.has(p.work)) err(path, `work 不存在：${p.work}`);
     if (!p.look || typeof p.look !== 'object') err(path, '缺少 look');
-    for (const id of p.start?.abilities || []) if (!abIds.has(id)) err(path, `初始能力不存在：${id}`);
+    for (const id of p.start?.abilities || []) {
+      if (!abIds.has(id)) err(path, `初始能力不存在：${id}`);
+      else if (s.abilities.find((ab: Raw) => ab.id === id).power === 'genesis' && p.tier !== 'primordial') err(path, `创世级的能力 ${id} 只能给 tier 为 primordial 的角色`);
+    }
     for (const id of Object.keys(p.start?.inventory || {})) if (!Object.hasOwn(items, id)) err(path, `初始物品不存在：${id}`);
   }
   if ((s.personas || []).length > MAX_PERSONAS) err('personas', `角色最多 ${MAX_PERSONAS} 位`);
@@ -223,7 +231,8 @@ export function publicSpec(spec: WorldSpec) {
     items: spec.items, structures: spec.structures,
     creatures: Object.fromEntries(Object.entries(spec.creatures!).map(([id, c]) => [id, { name: c.name, emoji: c.emoji, look: c.look, lore: c.lore, weakness: c.weakness, origin: c.origin, temperament: c.temperament, leader: Boolean(c.leader) }])),
     threads: spec.threads,
-    abilities: spec.abilities.map(({ id, name, emoji, desc, target }) => ({ id, name, emoji, desc, target })),
+    abilities: spec.abilities.map(({ id, name, emoji, desc, target, combat }) => ({ id, name, emoji, desc, target, ...(combat ? { combat } : {}) })),
+    combat: { avatarKit: spec.combat?.avatarKit || [] },
     rules: spec.rules.map(({ id, name }) => ({ id, name })),
     // 威胁只下发名字和外观：规律、线索、对抗方式都不给前端（真相由引擎掌握）
     threats: Object.fromEntries(Object.entries(spec.threats || {}).map(([id, t]) => [id, { name: t.name, emoji: t.emoji, kind: t.kind || null, mortal: t.mortal, look: t.look || null }])),

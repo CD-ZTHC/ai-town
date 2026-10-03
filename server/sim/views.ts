@@ -43,6 +43,7 @@ export class Views {
       creatures: this.creatures.view(),
       ...(this.threats.enabled || this.dark.graves.length ? { dark: this.threats.view() } : {}),
       avatars: this.avatars.view(),
+      ...(this.fights?.length ? { fights: this.fightsView() } : {}),
       overlay: this.evolved.snapshotExtra(),
       story: { tension: this.story?.now?.value ?? null, arc: this.arcs.active()?.phase || null, vote: this.votes.list.some((v) => v.status !== 'closed') },
     };

@@ -344,6 +344,14 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
   });
   api.post('/avatar/move', (c) => { requireUser(c); town(c).avatars.move(c.get('vid')!, String(c.get('body').location || '')); return c.json({ ok: true }); });
   api.post('/avatar/goto', (c) => { requireUser(c); const b = c.get('body'); town(c).avatars.goto(c.get('vid')!, b.x, b.y); return c.json({ ok: true }); });
+  // 游戏模式里出招（即时战斗，不调用模型）：只有世界的创建者或管理员能对居民动手
+  api.post('/avatar/act', (c) => {
+    requireUser(c);
+    const b = c.get('body');
+    const r = town(c).avatarAct(c.get('vid')!, { skill: b.skill, target: b.target, dir: b.dir }, { residents: Boolean(reviewer(c)) });
+    if (!r.ok) throw new HttpError(409, r.reason!);
+    return c.json(r);
+  });
   api.post('/avatar/leave', (c) => c.json({ ok: c.get('vid') ? town(c).avatars.leave(c.get('vid')!) : false }));
 
   // 打开 / 关闭异界区域（管理员）

@@ -164,7 +164,7 @@ export interface Agent {
 
   // ---------- 黑暗叙事（docs/design/night-watch.md）----------
   alignment?: string;
-  combat?: { atk?: number; def?: number };
+  combat?: { atk?: number; def?: number; spd?: number };
   /** 负担值：负担名 → 当前值 */
   burdens?: Record<string, number>;
   hosted?: Array<{ threat: string; since: number }>;

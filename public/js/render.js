@@ -7,6 +7,7 @@ import { Objects } from './render/objects.js';
 import { Atmosphere } from './render/atmosphere.js';
 import { Overlays } from './render/overlays.js';
 import { DarkLayer } from './render/dark.js';
+import { CombatLayer } from './render/combat.js';
 
 // 其他模块与测试从这里导入
 export { TS, skyAt, h2, vnoise, hexToRgb, mix, lerp, clamp01 } from './render/util.js';
@@ -38,7 +39,9 @@ export class Renderer {
 
   /** 能力等产生的一次性特效（世界坐标，单位：格） */
   addVfx(v) {
-    this.vfx.push({ ...v, born: this.time, life: v.preset === 'ripple' ? 2.4 : 1.8 });
+    this.vfx.push({ ...v, born: this.time, life: v.preset === 'split' ? 2.6 : v.preset === 'ripple' ? 2.4 : 1.8, seed: Math.random() });
+    // 创世的裂开、地震：震屏
+    if (v.preset === 'split' || v.preset === 'quake') this.shake = Math.max(this.shake || 0, v.preset === 'split' ? 12 : 8);
     if (this.vfx.length > 40) this.vfx.shift();
   }
 
@@ -110,7 +113,8 @@ export class Renderer {
 
     // 世界坐标变换
     const z = cam.zoom;
-    const ox = this.vw / 2 - cam.x * z, oy = this.vh / 2 - cam.y * z;
+    const [shx, shy] = this.shakeOffset(dt); // 战斗震屏
+    const ox = this.vw / 2 - cam.x * z + shx, oy = this.vh / 2 - cam.y * z + shy;
     ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * ox, dpr * oy);
     const vx0 = cam.x - this.vw / 2 / z, vy0 = cam.y - this.vh / 2 / z;
     const vx1 = cam.x + this.vw / 2 / z, vy1 = cam.y + this.vh / 2 / z;
@@ -148,6 +152,7 @@ export class Renderer {
     items.sort((p, q) => p.y - q.y);
     for (const it of items) it.th ? this.drawThreat(ctx, it.th) : it.g ? this.drawGrave(ctx, it.g) : it.p ? this.drawPasserby(ctx, it.p) : it.v ? this.drawAvatar(ctx, it.v, S) : it.o ? this.drawObject(ctx, it.o, S) : it.e ? (it.e.kind === 'portal' ? this.drawPortal(ctx, it.e) : this.drawEntity(ctx, it.e)) : it.c ? this.drawCreature(ctx, it.c) : this.drawAgent(ctx, it.a, S);
     this.drawVfx(ctx);
+    this.drawCombatFx(ctx);
     this.drawPluginOverlay(ctx, S);
 
     this.updateParticles(dt, S, sky);
@@ -162,6 +167,7 @@ export class Renderer {
     // UI 叠加层（屏幕坐标）
     this.hits = [];
     this.drawOverlays(ctx, S, ox, oy, z);
+    this.drawCombatOverlay(ctx, S, ox, oy, z);
     this.drawMinimap(S);
   }
 
@@ -175,7 +181,7 @@ export class Renderer {
 }
 
 // 把各部分的方法挂到 Renderer 上；重名直接报错，避免悄悄覆盖
-for (const part of [Terrain, Objects, Atmosphere, Overlays, DarkLayer]) {
+for (const part of [Terrain, Objects, Atmosphere, Overlays, DarkLayer, CombatLayer]) {
   for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) {
     if (name === 'constructor') continue;
     if (Object.hasOwn(Renderer.prototype, name)) throw new Error(`Renderer.${name} 重复定义（${part.name}）`);
