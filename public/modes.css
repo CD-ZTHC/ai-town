@@ -228,3 +228,6 @@ body[data-mode='play']:has(#dialog:not([hidden])) .play-fight { display: none; }
 /* 检查器按钮在 360px 宽度下不折字 */
 .ibtns { flex-wrap: wrap; }
 .ibtns button { white-space: nowrap; }
+
+/* 无锁定战斗的战斗姿态（docs/design/realtime.md §5.1） */
+canvas.aiming { cursor: crosshair; }

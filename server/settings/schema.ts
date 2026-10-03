@@ -70,6 +70,10 @@ export const SETTINGS = {
   ASSET_VERSIONING: { group: 'site', ...bool(), default: true, apply: 'live', label: '前端资源版本', help: '页面里的脚本与样式带上内容哈希、长期缓存，更新后已打开的页面会提示刷新。出问题时关掉，全部资源退回每次重新验证' },
   IDLE_PAUSE_SEC: { group: 'site', ...int(0, 86400), default: 90, apply: 'live', label: '无人观看多久后休眠（秒）', help: '0 = 永不休眠（常驻世界始终不休眠）。休眠的世界不推进时间、不调用模型' },
   AVATAR_MAX: { group: 'site', ...int(0, 200), default: 8, apply: 'live', label: '每个世界同时现身的旅人上限' },
+  REALTIME: {
+    group: 'site', ...oneOf(['off', 'move', 'on']), default: 'off', apply: 'live', label: '游戏模式的低延迟操作',
+    help: 'off 现状（移动、出招都等服务器）；move 自己的移动在本地先走、服务器校验；on 再加上无锁定战斗、实时通道（docs/design/realtime.md）',
+  },
 
   // ---------- 模型 ----------
   LLM_PROVIDER: {

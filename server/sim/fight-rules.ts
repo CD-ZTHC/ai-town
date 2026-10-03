@@ -17,7 +17,7 @@ export const STATUS_IDS = ['stun', 'root', 'shield', 'haste', 'slow', 'bleed', '
 export type StatusId = (typeof STATUS_IDS)[number];
 export interface Status { id: StatusId; until: number; amount?: number }
 
-/** 正在出的招 */
+/** 正在出的招；aim：出招方向（单位向量，开始蓄力时定下，之后不变——这样能被躲开） */
 export interface Action {
   skill: string;
   phase: 'windup' | 'recover';
@@ -26,6 +26,7 @@ export interface Action {
   /** 蓄力开始的拍数（前端画读条） */
   from: number;
   target: UnitRef | null;
+  aim?: { x: number; y: number } | null;
 }
 
 export interface Fighter extends UnitRef {
@@ -44,7 +45,9 @@ export interface Fighter extends UnitRef {
   /** 最后打中它的人（结局用） */
   lastHit?: UnitRef;
   /** 玩家操控（化身）：等着执行的指令 */
-  queued?: { skill: string; target: UnitRef | null; dir?: [number, number] | null } | null;
+  queued?: { skill: string; target: UnitRef | null; dir?: [number, number] | null; aim?: { x: number; y: number } | null } | null;
+  /** 旅人能不能打居民（世界创建者 / 管理员，且世界允许敌对）：无锁定时判定区域里的居民才算敌人 */
+  residents?: boolean;
   /** 正在执行的指令带的方向（闪避） */
   queuedDir?: [number, number] | null;
   /** 战术（C3：开打时模型或兜底规则给出）与要保护的人 */
@@ -62,6 +65,10 @@ export interface Fight {
   fighters: Fighter[];
   /** 已经考虑过要不要加入的旁观者（居民 id） */
   seen?: string[];
+  /** 旅人对空出招时临时开的「一个人的战斗」：招式落空就悄悄结束，打中谁就把谁拉进来 */
+  solo?: boolean;
+  /** 飞行中的弹道 */
+  projectiles?: Projectile[];
 }
 
 // ---------- 战术（C3） ----------
@@ -207,9 +214,26 @@ export function inShape(skill: Pick<Skill, 'shape' | 'range' | 'radius'>, from: 
       const diff = Math.abs(((a2 - a1 + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
       return diff <= Math.PI / 4;
     }
-    default: return false; // single：只打目标本身（由调用方处理）
+    default: {
+      // single（无锁定，docs/design/realtime.md §5.2）：面前的一小段弧（近战挥砍）
+      if (d > skill.range + 0.4) return false;
+      if (d < 0.5) return true;
+      const a1 = Math.atan2(to.y - from.y, to.x - from.x), a2 = Math.atan2(p.y - from.y, p.x - from.x);
+      return Math.abs(((a2 - a1 + Math.PI * 3) % (Math.PI * 2)) - Math.PI) <= ARC;
+    }
   }
 }
+
+const ARC = (35 / 180) * Math.PI;
+/** 单位向量；长度为 0 时返回 null */
+export function unitVec(x: number, y: number): { x: number; y: number } | null {
+  const L = Math.hypot(x, y);
+  return Number.isFinite(L) && L > 1e-6 ? { x: x / L, y: y / L } : null;
+}
+/** 弹道（line 招式，§5.2）：每拍飞多少格 */
+export const PROJECTILE_STEP = 2.5;
+/** 弹道：每拍推进一次，沿途每 1/4 格检查一次 */
+export interface Projectile { id: string; by: UnitRef; side: 0 | 1; skill: string; x: number; y: number; dx: number; dy: number; left: number; width: number }
 
 // ---------- 规则 AI ----------
 export interface Situation {

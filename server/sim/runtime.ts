@@ -18,6 +18,8 @@ export interface TownRuntime {
   aggroAcc?: number;
   /** 上一次普通演出的真实时间（毫秒，sim/stage 的节流） */
   stageAt?: number;
+  /** 延迟补偿（sim/combat）：单位 → 最近 1 秒的 [真实毫秒, x, y] */
+  posHist?: Map<string, Array<[number, number, number]>>;
 }
 
 export const freshRuntime = (): TownRuntime => ({ agents: {} });

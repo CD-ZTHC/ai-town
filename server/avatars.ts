@@ -33,13 +33,31 @@ export interface Avatar {
   /** 即时战斗（sim/combat）：血量（满血 100）；被打倒后到这个时刻（真实毫秒）之前不能行动 */
   hp?: number;
   downUntil?: number;
+  /**
+   * 低延迟移动（docs/design/realtime.md §4）：位置由客户端上报、服务器校验。
+   * pv：服务器强制改过位置的次数（被打倒、击退、闪避、换地图）——客户端看到它变了就对齐，旧版本的上报会被忽略；
+   * reportAt：上一次接受上报的真实时间；strikes：最近被拒绝的上报（时间）；serverMove：异常太多，退回由服务器决定位置
+   */
+  pv?: number;
+  /** 测得的往返延迟（毫秒，实时通道的心跳）：战斗的延迟补偿用 */
+  rtt?: number;
+  reportAt?: number;
+  strikes?: number[];
+  serverMove?: boolean;
 }
+
+/** 一次位置上报 */
+export interface PosReport { x: unknown; y: unknown; dir?: unknown; pv?: unknown }
+/** 上报的结果：被接受，或者给出服务器认可的位置让客户端回弹 */
+export type PosResult = { ok: true } | { ok: false; reason: string; x: number; y: number; region: string; pv: number; fallback?: boolean };
 
 const IDLE_MS = 20 * 60_000; // 20 分钟不操作就离开
 const MOVE_CD_MS = 3000;
 const GOTO_CD_MS = 250; // 游戏模式里点地 / 键盘走路，间隔可以短一些
 const SPEED = 4; // 格/真实秒：化身按真实时间行走，不受调速、暂停影响，操作手感一致
 const DOWN_MS = 3000; // 被打倒后缓多久
+const SPEED_SLACK = 1.2; // 上报的速度允许超出这么多（网络抖动时两次上报挤在一起）
+const STRIKE_MAX = 10; // 一分钟内被拒绝这么多次：退回由服务器决定位置
 const REGEN = 8; // 不在战斗里时每真实秒回多少血
 /** 旅人可选的发型、发色、肤色（白名单，前端角色卡与之一致） */
 export const HAIR_STYLES = ['short', 'long', 'bun', 'spiky', 'messy', 'braid'];
@@ -105,9 +123,62 @@ export class AvatarSystem {
     return { spawn, s };
   }
 
+  /** 服务器强制改了位置（被打倒、击退、闪避、换地图）：客户端据此对齐，之前的上报作废 */
+  forced(v: Avatar) { v.pv = (v.pv || 0) + 1; }
+
+  /**
+   * 低延迟移动：客户端上报自己的位置，服务器校验——不能比走路快（留余量）、不能穿过走不通的格子、不能跨地图（只能经路口）。
+   * 通过就采用；不通过就停在上一个合法的位置，让客户端回弹；一分钟内被拒绝太多次，退回由服务器决定位置
+   */
+  report(uid: string, r: PosReport): PosResult {
+    const town = this.town;
+    const v = this.mine(uid);
+    if (!v) throw err(404, '你还没有在小镇里现身');
+    const now = this.now();
+    v.seen = now;
+    const back = (reason: string, strike = false): PosResult => {
+      if (strike) {
+        v.strikes = [...(v.strikes || []).filter((t) => now - t < 60_000), now];
+        if (v.strikes.length > STRIKE_MAX) v.serverMove = true;
+      }
+      return { ok: false, reason, x: v.x, y: v.y, region: v.region, pv: v.pv || 0, ...(v.serverMove ? { fallback: true } : {}) };
+    };
+    if (v.serverMove) return back('由服务器决定位置');
+    if ((v.downUntil || 0) > now) return back('倒下了');
+    if (Number(r.pv ?? 0) !== (v.pv || 0)) return back('位置已被服务器改过');
+    const x = Number(r.x), y = Number(r.y);
+    const w = town.worldOf(v.region);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > w.W - 1 || y > w.H - 1) return back('越界', true);
+    const dt = Math.min(1, Math.max(0.05, (now - (v.reportAt || now - 1000)) / 1000));
+    const d = Math.hypot(x - v.x, y - v.y);
+    if (d > SPEED * dt * SPEED_SLACK + 0.3) return back('太快了', true);
+    // 沿途每 1/4 格检查一次：不能穿过走不通的格子
+    const steps = Math.ceil(d * 4);
+    for (let i = 1; i <= steps; i++) {
+      const cx = Math.round(v.x + ((x - v.x) * i) / steps), cy = Math.round(v.y + ((y - v.y) * i) / steps);
+      if (!w.walk[cy * w.W + cx]) return back('走不过去', true);
+    }
+    const moved = d > 0.01;
+    if (moved) {
+      const dx = x - v.x, dy = y - v.y;
+      v.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
+    }
+    if (['up', 'down', 'left', 'right'].includes(r.dir as string)) v.dir = r.dir as Avatar['dir'];
+    Object.assign(v, { x, y, moving: moved, reportAt: now, movedAt: now, path: [], hop: null, target: null, locId: null });
+    // 走到路口：换到那边的地图（和服务器寻路时一样，经 regionLinks）
+    const link = town.regionLinks().find((l) => l.from === (v.region || 'town') && town.regionOpen(l.to) && Math.hypot(l.a.x - x, l.a.y - y) <= 1);
+    if (link) {
+      Object.assign(v, { region: link.to, x: link.b.x, y: link.b.y, moving: false });
+      this.forced(v);
+      return back('换了地图');
+    }
+    return { ok: true };
+  }
+
   /** 战斗中被打倒：回到出生点，缓几秒，血量回满 */
   knockout(v: Avatar) {
     const { spawn, s } = this.spawnPoint();
+    this.forced(v);
     Object.assign(v, { region: 'town', x: s.x, y: s.y, path: [], hop: null, target: null, locId: spawn, moving: false, hp: 100, downUntil: this.now() + DOWN_MS });
     this.town.emit('avatars');
   }
@@ -120,6 +191,7 @@ export class AvatarSystem {
     locId = String(locId || '');
     if (!town.publicLocs().includes(locId)) throw err(400, '只能去开放的公共地点');
     v.movedAt = v.movedLocAt = v.seen = this.now();
+    v.reportAt = 0; // 快速前往由服务器寻路，客户端跟着服务器的位置走，到了再接着上报
     this.walk(v, locId);
     return v;
   }
@@ -137,7 +209,7 @@ export class AvatarSystem {
     const path = findPath(w, Math.round(v.x), Math.round(v.y), x, y);
     if (!path) throw err(400, '那里走不过去');
     v.movedAt = v.seen = this.now();
-    Object.assign(v, { path, hop: null, target: null, locId: null });
+    Object.assign(v, { path, hop: null, target: null, locId: null, reportAt: 0 });
     return v;
   }
 
@@ -181,6 +253,8 @@ export class AvatarSystem {
       if (now - v.seen > IDLE_MS) { this.remove(v, true); continue; }
       if ((v.hp ?? 100) < 100 && !this.town.engaged?.('avatar', v.id)) v.hp = Math.min(100, (v.hp ?? 100) + REGEN * dtReal);
       if ((v.downUntil || 0) > now) continue;
+      // 客户端上报位置的化身：一段时间没有新上报就算停下了
+      if (v.reportAt && !v.path.length) { if (now - v.reportAt > 300) v.moving = false; continue; }
       let dist = SPEED * dtReal;
       v.moving = v.path.length > 0;
       while (dist > 0 && v.path.length) {
@@ -202,6 +276,7 @@ export class AvatarSystem {
       if (!town.regionOpen(to)) return;
       const g = arrive || town.worldOf(to).gate;
       Object.assign(v, { region: to, x: g.x, y: g.y });
+      this.forced(v);
       this.walk(v, locId);
       return;
     }
@@ -227,6 +302,7 @@ export class AvatarSystem {
     const now = this.now();
     return this.list.map((v) => ({ id: v.id, name: v.name, color: v.color, look: v.look, x: +v.x.toFixed(2), y: +v.y.toFixed(2), dir: v.dir, moving: v.moving, region: v.region,
       ...((v.hp ?? 100) < 100 ? { hp: Math.round(v.hp!) } : {}), ...((v.downUntil || 0) > now ? { down: true } : {}),
+      ...(v.pv ? { pv: v.pv } : {}), ...(v.serverMove ? { serverMove: true } : {}),
       // 接下来要走的几格与终点：前端据此预览路线、平滑插值
       ...(v.path.length ? { next: v.path.slice(0, 3), to: v.path[v.path.length - 1] } : {}) }));
   }

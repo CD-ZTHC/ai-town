@@ -1,5 +1,6 @@
 // 服务入口：设置、账号、世界管理器（多世界）、HTTP 应用（Hono，见 http/app.ts）与进化引擎，然后监听端口
 import fs from 'node:fs';
+import { handleUpgrade, netSummary } from './net/realtime.ts';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -308,7 +309,8 @@ const app = createApp({
     defaultId: () => settings.get('DEFAULT_WORLD'),
     resolve: resolveWorld,
     page: (c, id) => worldPage({ c, id, registry, manager: manager! }),
-    health: () => ({ worlds: manager!.view().map(({ id, viewers, idle }) => ({ id, viewers, idle })), clients: manager!.view().reduce((s, w) => s + w.viewers, 0), rssMb: processMem().rss }),
+    // rt：实时通道的连接数与观众上报的往返延迟、推送到达间隔（docs/design/realtime.md §7）
+    health: () => ({ worlds: manager!.view().map(({ id, viewers, idle }) => { const h = manager!.get(id); return { id, viewers, idle, ...(h?.rt.size ? { rt: netSummary(h) } : {}) }; }), clients: manager!.view().reduce((s, w) => s + w.viewers, 0), rssMb: processMem().rss }),
   },
 });
 
@@ -328,6 +330,10 @@ watchMemory({
   },
 });
 (server as Server).headersTimeout = 20_000;
+// 游戏模式的实时通道（WebSocket，docs/design/realtime.md §3）：只接受 /api/realtime 这类路径，其余的升级请求直接关掉
+(server as Server).on('upgrade', (req, socket) => {
+  if (!handleUpgrade(req, socket, { hostOf: (id) => manager!.get(id), defaultWorld: () => settings.get('DEFAULT_WORLD') })) socket.destroy();
+});
 (server as Server).requestTimeout = 30_000;
 
 // ---------- 进化引擎（自主演化设计 §3、多世界设计 §9）：一台引擎服务所有开启进化的世界 ----------

@@ -1,6 +1,8 @@
 // 🎮 游戏模式：以旅人化身在小镇里走动，走到居民身边和 TA 面对面聊天
 import { TS } from './render.js';
 import { buildSprites, SPR_W, SPR_H } from './sprites.js';
+import * as Local from './localmove.js';
+import * as Realtime from './realtime.js';
 import * as UI from './ui.js';
 import * as HUD from './hud.js';
 
@@ -36,6 +38,9 @@ const touch = () => matchMedia('(pointer: coarse)').matches;
 
 export function init(a) {
   app = a;
+  Local.init(a);
+  // 实时通道上回来的出招失败（docs/design/realtime.md §3）
+  Realtime.init(a, { onError: (reason) => { if (now() - st.errT > 1500) { st.errT = now(); UI.toast(`⚔️ ${esc(reason)}`, 1800); } } });
   window.addEventListener('keyup', (e) => st.keys.delete(e.key.toLowerCase()));
   window.addEventListener('blur', () => st.keys.clear());
   $('#play-exit').addEventListener('click', askExit);
@@ -50,7 +55,28 @@ export function init(a) {
   $('#pf-skills').addEventListener('click', (e) => { const b = e.target.closest('[data-skill]'); if (b) act(b.dataset.skill); });
 }
 
-const me = () => app.snap?.avatars?.find((v) => v.id === app.perms.avatar) || null;
+/** 快照里自己的化身 */
+const rawMe = () => app.snap?.avatars?.find((v) => v.id === app.perms.avatar) || null;
+/** 自己的化身：低延迟移动开着时，位置以本地为准（docs/design/realtime.md §4） */
+const me = () => { const v = rawMe(); const p = v && Local.pos(); return p ? { ...v, ...p } : v; };
+/** 主循环每帧、在画画面之前调用：推进本地移动并上报 */
+export function tickLocal(dt) {
+  if (!Local.sync(rawMe())) return;
+  Local.input(moveVector());
+  Local.step(dt);
+  Local.flush();
+}
+/** 自己此刻的本地位置（给画面用；没开低延迟移动时为 null） */
+export const localPos = () => Local.pos();
+/** 方向键 / 摇杆合成的移动方向 */
+function moveVector() {
+  if (st.talk && document.activeElement?.id === 'dlg-input') return null;
+  let dx = 0, dy = 0;
+  for (const k of st.keys) { const d = DIRS[k]; if (d) { dx += d[0]; dy += d[1]; } }
+  if (st.joy) { dx = st.joy.x; dy = st.joy.y; }
+  const len = Math.hypot(dx, dy);
+  return len > 0.01 ? [dx / Math.max(1, len), dy / Math.max(1, len)] : null;
+}
 const agentsHere = (v) => (app.snap?.agents || []).filter((a) => app.meta[a.id] && (a.region || 'town') === (v.region || 'town'));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -131,6 +157,7 @@ function drawPreview(cv, look, label) {
 }
 
 export function enter() {
+  Realtime.start();
   app.follow = null;
   st.free = false;
   st.focusPinned = null;
@@ -145,6 +172,7 @@ export function enter() {
   }
 }
 export function exit() {
+  Realtime.stop();
   closeDialog();
   st.keys.clear(); st.joy = null; st.chase = null;
   $('#joystick').hidden = true;
@@ -222,7 +250,13 @@ async function act(skill) {
       if (st.joy) { dx = st.joy.x; dy = st.joy.y; }
       if (Math.hypot(dx, dy) > 0.1) dir = [dx, dy];
     }
-    await app.api('/api/avatar/act', { skill, ...(dir ? { dir } : {}) });
+    // 无锁定（REALTIME = on，docs/design/realtime.md §5）：带上瞄准方向；本地先画出这一招的范围
+    const aim = noLock() ? aimVector(v) : null;
+    if (aim && skill !== 'dodge') predictCast(v, skill, aim);
+    if (aim && skill === 'dodge' && !dir) dir = [aim.x, aim.y];
+    const body = { skill, ...(dir ? { dir } : {}), ...(aim ? { ax: +aim.x.toFixed(3), ay: +aim.y.toFixed(3) } : {}) };
+    // 实时通道连着就走它（失败由通道回报），否则走 HTTP
+    if (!Realtime.act(body)) await app.api('/api/avatar/act', body);
     if (info) st.cd[skill] = now() + info.cd * BEAT_MS;
   } catch (e) {
     if (now() - st.errT > 1500) { st.errT = now(); UI.toast(`⚔️ ${esc(e.message)}`, 1800); }
@@ -295,6 +329,7 @@ async function goto(x, y) {
 export function tap(sx, sy, id) {
   const v = me();
   if (!v) return;
+  if (!id && combatClick(0)) return; // 战斗姿态：左键是攻击
   if (id) return talkTo(id);
   if ((v.region || 'town') !== app.view) { app.setView(v.region || 'town'); return; }
   const [wx, wy] = app.renderer.screenToWorld(sx, sy, app.cam);
@@ -303,10 +338,12 @@ export function tap(sx, sy, id) {
   if (!p) return UI.toast('那里走不过去', 1500);
   st.chase = null;
   st.click = { x: p.x, y: p.y, t: now() };
+  if (Local.active()) { if (!Local.goTo(p.x, p.y)) UI.toast('那里走不过去', 1500); return; }
   goto(p.x, p.y);
 }
 
 function stepInput(v) {
+  if (Local.active()) return; // 低延迟移动：方向输入由 tickLocal 直接驱动
   let dx = 0, dy = 0;
   for (const k of st.keys) { const d = DIRS[k]; if (d) { dx += d[0]; dy += d[1]; } }
   if (st.joy) { dx = st.joy.x; dy = st.joy.y; }
@@ -370,7 +407,7 @@ function chase(v) {
     c.sent = now();
     // 站到 TA 身边，而不是跟 TA 叠在一起
     const p = nearestWalkable(Math.round(a.x), Math.round(a.y), 2, v, 1);
-    if (p) { st.click = { ...p, t: now() }; goto(p.x, p.y); }
+    if (p) { st.click = { ...p, t: now() }; if (Local.active()) Local.goTo(p.x, p.y); else goto(p.x, p.y); }
   }
 }
 
@@ -460,7 +497,58 @@ async function send(e) {
 // ---------- 每帧 ----------
 export function state() {
   const v = me();
-  return v ? { me: v.id, near: st.near, focus: st.talk ? null : st.focus, talk: st.talk, to: v.to || null, next: v.next || null, click: st.click, touch: touch() } : null;
+  const stance = v && noLock() && inStance(v);
+  return v ? { me: v.id, near: st.near, focus: st.talk ? null : st.focus, talk: st.talk, to: v.to || null, next: v.next || null, click: st.click, touch: touch(), ...(stance ? { aim: aimVector(v), pos: { x: v.x, y: v.y } } : {}) } : null;
+}
+
+// ---------- 无锁定战斗（docs/design/realtime.md §5） ----------
+/** 是否用无锁定的操作（服务器的 REALTIME 设置为 on） */
+const noLock = () => app.perms?.realtime === 'on';
+/** 鼠标在画布上的位置（屏幕坐标），用来瞄准 */
+const mouse = { x: null, y: null };
+window.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') { mouse.x = e.clientX; mouse.y = e.clientY; } });
+/** 身边能打的东西（会死的威胁、敌对的生物）：6 格内有，或者自己已经在打，就进入战斗姿态 */
+function hostilesNear(v, r = 6) {
+  const here = (u) => (u.region || 'town') === (v.region || 'town') && Math.hypot(u.x - v.x, u.y - v.y) <= r;
+  return [...(app.snap?.dark?.threats || []).filter((t) => t.maxHp && here(t)), ...(app.snap?.creatures || []).filter((c) => !c.friendly && here(c))];
+}
+function inStance(v) {
+  const fighting = (app.snap?.fights || []).some((F) => !F.solo && F.fighters.some((f) => f.kind === 'avatar' && f.id === v.id) && F.fighters.length > 1);
+  return fighting || hostilesNear(v).length > 0;
+}
+/** 瞄准方向（单位向量）：电脑上朝鼠标；手机上朝摇杆 / 最后的移动方向，前方 ±30° 内有敌人时吸过去 */
+function aimVector(v) {
+  let ax = 0, ay = 0;
+  if (!touch() && mouse.x != null) {
+    const [wx, wy] = app.renderer.screenToWorld(mouse.x, mouse.y, app.cam);
+    ax = wx / TS - 0.5 - v.x; ay = wy / TS - 0.5 - v.y;
+  } else {
+    const d = st.joy ? [st.joy.x, st.joy.y] : st.lastDir || { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[v.dir] || [0, 1];
+    ax = d[0]; ay = d[1];
+    // 吸附：前方 ±30° 内最近的敌人
+    const a0 = Math.atan2(ay, ax);
+    let best = null, bd = 7;
+    for (const h of hostilesNear(v, 7)) {
+      const da = Math.abs(((Math.atan2(h.y - v.y, h.x - v.x) - a0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+      const d = Math.hypot(h.x - v.x, h.y - v.y);
+      if (da <= Math.PI / 6 && d < bd) { bd = d; best = h; }
+    }
+    if (best) { ax = best.x - v.x; ay = best.y - v.y; }
+  }
+  const L = Math.hypot(ax, ay);
+  return L > 1e-3 ? { x: ax / L, y: ay / L } : { x: 0, y: 1 };
+}
+/** 本地先画出这一招的范围（服务器的出招到达后由它接手） */
+function predictCast(v, skill, aim) {
+  const s = skill === 'strike' ? { shape: 'single', range: 1.6, radius: 0, windup: 1 } : (() => { const ab = (app.spec?.abilities || []).find((x) => x.id === skill); return ab?.combat ? { shape: ab.combat.shape || (ab.target === 'area' ? 'circle' : 'single'), range: ab.combat.range ?? 1.6, radius: ab.combat.radius ?? 0, windup: ab.combat.windup ?? 2 } : null; })();
+  if (s) app.renderer.telegraph?.({ by: { kind: 'avatar', id: v.id }, from: { x: v.x, y: v.y }, aim, shape: s.shape, range: s.range, radius: s.radius, ms: Math.max(150, s.windup * 250), mine: true, local: true });
+}
+/** 战斗姿态下：左键攻击、右键闪避（返回 true 表示这次点击已经处理） */
+export function combatClick(button) {
+  const v = me();
+  if (!v || !noLock() || st.talk || !inStance(v)) return false;
+  act(button === 2 ? 'dodge' : 'strike');
+  return true;
 }
 
 export function camera(dt, avatars) {
@@ -493,6 +581,8 @@ export function frame(S) {
   stepInput(v);
   chase(v);
   renderFight(v);
+  // 战斗姿态：鼠标变成准星（左键攻击、右键闪避）
+  app.renderer.canvas.classList.toggle('aiming', Boolean(noLock() && !touch() && inStance(v)));
   // 附近的人
   const here = agentsHere(v).filter((a) => !a.inside && a.status !== 'sleeping');
   st.near = here.filter((a) => dist(a, v) <= TALK_R).sort((a, b) => dist(a, v) - dist(b, v)).map((a) => a.id);

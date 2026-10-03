@@ -9,7 +9,7 @@ import { lethal } from '../kernel/ratings.ts';
 import { clamp } from './util.ts';
 import {
   BEAT, MAX_BEATS, MAX_FIGHTS, STEP, INTERRUPT, STRIKE, DODGE, DODGE_CELLS, DODGE_BEATS,
-  abilitySkill, addStatus, absorb, chooseSkill, damageRoll, dist, effectiveStats, hasStatus, inShape, sameUnit, stepToward, wantsFlee,
+  abilitySkill, addStatus, absorb, chooseSkill, damageRoll, dist, effectiveStats, hasStatus, inShape, sameUnit, stepToward, wantsFlee, unitVec, unitKey, PROJECTILE_STEP,
 } from './fight-rules.ts';
 import type { Fight, Fighter, Skill, Stats as FightStats, StatusId, UnitKind, UnitRef } from './fight-rules.ts';
 import type { Town } from '../sim.ts';
@@ -86,8 +86,10 @@ interface CombatCtx { fight: Fight; fighter: Fighter; hits: Fighter[]; events: B
 interface BeatEvents {
   id: string;
   region: string;
-  casts: Array<{ by: UnitRef; skill: string; name: string; emoji: string; windup: number; target: UnitRef | null }>;
-  fx: Array<{ by: UnitRef; skill: string; shape: string; range: number; radius: number; from: { x: number; y: number }; to: { x: number; y: number } | null; whiff?: boolean }>;
+  /** 出招；from / aim / shape / range / radius / ms 是攻击范围预警（前端在地上画出来，见 realtime.md §5.3） */
+  casts: Array<{ by: UnitRef; skill: string; name: string; emoji: string; windup: number; target: UnitRef | null; from?: { x: number; y: number }; aim?: { x: number; y: number } | null; shape?: string; range?: number; radius?: number; ms?: number }>;
+  /** shape 为 projectile 时是弹道：speed 格/秒，前端据此画飞行 */
+  fx: Array<{ by: UnitRef; skill: string; shape: string; range: number; radius: number; from: { x: number; y: number }; to: { x: number; y: number } | null; whiff?: boolean; speed?: number; pid?: string; end?: boolean }>;
   /** by：出手的人（流血等没有出手的人时为空），前端据此画后退方向 */
   hits: Array<{ to: UnitRef; by?: UnitRef; dmg: number; crit?: boolean; heal?: boolean; absorbed?: number; dodged?: boolean; x: number; y: number }>;
   notes: Array<{ to: UnitRef; text: string; x: number; y: number }>;
@@ -168,6 +170,7 @@ export class Combat {
     if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) o.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
     o.x = x; o.y = y;
     if (u.agent) u.agent.inside = null;
+    if (u.avatar) this.avatars.forced(u.avatar); // 击退、闪避：客户端对齐服务器的位置
     u.x = x; u.y = y;
     return true;
   }
@@ -251,6 +254,7 @@ export class Combat {
     }
     if (fa || fb) {
       F = (fa || fb)!;
+      F.solo = false;
       const inside = F.fighters.find((x) => !x.out && sameUnit(x, fa ? a : b))!;
       const joiner = fa ? b : a;
       F.fighters = F.fighters.filter((x) => !sameUnit(x, joiner));
@@ -302,6 +306,7 @@ export class Combat {
   /** 主循环每帧调用（dtReal：真实秒数）：每场战斗按拍推进 */
   combatTick(this: Town, dtReal = BEAT) {
     this.aggroTick(dtReal);
+    this.recordPositions();
     if (!this.fights?.length) return;
     for (const F of [...this.fights]) {
       F.acc += dtReal;
@@ -333,7 +338,7 @@ export class Combat {
     for (const ref of foes) {
       if (this.fightOf(ref)) continue;
       const u = this.unit(ref);
-      const v = u && this.avatars.list.find((x) => x.region === u.region && (x.downUntil || 0) <= this.now() && Math.hypot(x.x - u.x, x.y - u.y) <= 2.5 && !this.fightOf(refOf('avatar', x.id)));
+      const v = u && this.avatars.list.find((x) => x.region === u.region && (x.downUntil || 0) <= this.now() && Math.hypot(x.x - u.x, x.y - u.y) <= 2.5 && !(this.fightOf(refOf('avatar', x.id))?.solo === false));
       if (v) this.engage(ref, refOf('avatar', v.id));
     }
   }
@@ -357,14 +362,15 @@ export class Combat {
       const enemies = F.fighters.filter((x) => !x.out && x.side !== f.side);
       // 离最近的敌人太远：脱离战斗
       const near = enemies.map((x) => this.unit(x)).filter((x): x is Unit => Boolean(x)).sort((p, q) => dist(p, u) - dist(q, u))[0];
-      if (!near || dist(near, u) > LEAVE_DIST) { f.out = 'fled'; ev.notes.push({ to: refOf(f.kind, f.id), text: '脱离了战斗', x: u.x, y: u.y }); continue; }
+      const solo = F.solo && f.kind === 'avatar';
+      if (!solo && (!near || dist(near, u) > LEAVE_DIST)) { f.out = 'fled'; ev.notes.push({ to: refOf(f.kind, f.id), text: '脱离了战斗', x: u.x, y: u.y }); continue; }
       if (hasStatus(f, 'stun', beat)) { f.act = null; continue; }
       if (f.act) {
         if (f.act.phase === 'windup' && beat >= f.act.until) {
           const s = this.skillsOf(f).find((x) => x.id === f.act!.skill);
           const act = f.act;
           f.act = { ...act, phase: 'recover', until: beat + (s?.recover ?? 2) };
-          if (s) this.resolveSkill(F, f, s, act.target, ev);
+          if (s) this.resolveSkill(F, f, s, act.target, ev, act.aim || null);
         } else if (f.act.phase === 'recover' && beat >= f.act.until) f.act = null;
         if (f.act) continue;
       }
@@ -376,7 +382,9 @@ export class Combat {
         f.queued = null;
         const s = q && kit.find((x) => x.id === q.skill);
         f.queuedDir = q?.dir || null;
-        if (s) this.startSkill(F, f, s, q!.target && enemies.some((x) => sameUnit(x, q!.target)) ? q!.target : near.ref, ev);
+        // 无锁定（带了瞄准方向）：朝方向出招；旧的写法：朝目标 / 最近的敌人
+        if (s && q?.aim) this.startSkill(F, f, s, null, ev, q.aim);
+        else if (s && near) this.startSkill(F, f, s, q!.target && enemies.some((x) => sameUnit(x, q!.target)) ? q!.target : near.ref, ev);
         continue;
       }
       // 规则 AI：目标 → 逃跑 → 选招 → 走近或出招
@@ -403,15 +411,20 @@ export class Combat {
       }
       this.startSkill(F, f, s, tgt.ref, ev);
     }
-    // 结局：一方没人了，或者打太久
+    if (F.projectiles?.length) this.flyProjectiles(F, ev);
+    // 结局：一方没人了，或者打太久；一个人的战斗（对空出招）在招式、弹道都结束后悄悄收掉
     const alive = [0, 1].map((side) => F.fighters.some((x) => !x.out && x.side === side));
-    if (!alive[0] || !alive[1]) this.endFight(F, '', ev);
+    if (F.solo) { const me = F.fighters.find((x) => !x.out); if (!me || (!me.act && !me.queued && !F.projectiles?.length)) this.endFight(F, '', ev); }
+    else if (!alive[0] || !alive[1]) this.endFight(F, '', ev);
     else if (beat >= MAX_BEATS) this.endFight(F, '打得筋疲力尽，各自散了', ev);
     if (ev.casts.length || ev.fx.length || ev.hits.length || ev.notes.length || ev.end || ev.phase) this.emit('combat', ev);
   }
 
-  startSkill(this: Town, F: Fight, f: Fighter, s: Skill, target: UnitRef | null, ev: BeatEvents) {
-    f.act = { skill: s.id, phase: 'windup', from: F.beat, until: F.beat + s.windup, target };
+  startSkill(this: Town, F: Fight, f: Fighter, s: Skill, target: UnitRef | null, ev: BeatEvents, aim0: { x: number; y: number } | null = null) {
+    // 出招方向在开始蓄力时定下（之后不变，所以能被躲开）：给了就用，否则朝目标此刻的位置
+    const me = this.unit(f), tu = this.unit(target);
+    const aim = aim0 || (me && tu ? unitVec(tu.x - me.x, tu.y - me.y) : null) || (me?.avatar ? unitVec(...(DIRV[me.avatar.dir] || [0, 1])) : null);
+    f.act = { skill: s.id, phase: 'windup', from: F.beat, until: F.beat + s.windup, target, aim };
     f.cds[s.id] = F.beat + s.windup + s.cd;
     // 居民放能力照常支付消耗（冷却按战斗的拍数另算）
     const c = s.ability?.cost;
@@ -422,35 +435,155 @@ export class Combat {
       if (c.burden) this.addBurden?.(a, c.burden.id, c.burden.amount, 'ability_used');
       if (!a.convoId && s.windup >= 2) this.say(a, `${s.emoji} ${s.name}！`, 2500);
     }
-    ev.casts.push({ by: refOf(f.kind, f.id), skill: s.id, name: s.name, emoji: s.emoji, windup: s.windup, target });
+    const self = s.role === 'heal' || s.role === 'guard' || s.id === 'dodge';
+    ev.casts.push({ by: refOf(f.kind, f.id), skill: s.id, name: s.name, emoji: s.emoji, windup: s.windup, target,
+      ...(me && !self ? { from: { x: me.x, y: me.y }, aim, shape: s.shape, range: s.range, radius: s.radius, ms: s.windup * BEAT * 1000 } : {}) });
     if (s.windup === 0) {
       f.act = { ...f.act, phase: 'recover', until: F.beat + s.recover };
-      this.resolveSkill(F, f, s, target, ev);
+      this.resolveSkill(F, f, s, target, ev, aim);
     }
   }
 
-  /** 招式生效：找出命中的敌人，结算伤害与效果 */
-  resolveSkill(this: Town, F: Fight, f: Fighter, s: Skill, target: UnitRef | null, ev: BeatEvents) {
+  /**
+   * 招式生效（无锁定，docs/design/realtime.md §5.2）：以出手的人为原点、朝出招方向展开判定区域，打中区域里所有敌对的单位；
+   * 直线招式变成飞行的弹道。旅人出手时按他当时看到的位置判定（延迟补偿），区域里可以打的单位会被拉进战斗
+   */
+  resolveSkill(this: Town, F: Fight, f: Fighter, s: Skill, target: UnitRef | null, ev: BeatEvents, aim: { x: number; y: number } | null = null) {
     const u = this.unit(f);
     if (!u) return;
     if (s.id === 'dodge') return this.dodge(F, f, u, ev, f.queuedDir || null);
     const tu = this.unit(target);
-    const aim = tu || (u.avatar ? facing(u) : null);
-    const enemies = F.fighters.filter((x) => !x.out && x.side !== f.side);
-    let hits: Fighter[];
-    if (s.role === 'heal' || s.role === 'guard') hits = [];
-    else if (s.shape === 'single') hits = tu && dist(u, tu) <= s.range + 1 ? enemies.filter((x) => sameUnit(x, target)) : [];
-    else hits = enemies.filter((x) => { const p = this.unit(x); return p && aim && inShape(s, u, aim, p); });
-    ev.fx.push({ by: refOf(f.kind, f.id), skill: s.id, shape: s.shape, range: s.range, radius: s.radius, from: { x: u.x, y: u.y }, to: aim ? { x: aim.x, y: aim.y } : null, ...(hits.length || s.role === 'heal' || s.role === 'guard' ? {} : { whiff: true }) });
+    const dir = aim || (tu ? unitVec(tu.x - u.x, tu.y - u.y) : null) || unitVec(...(DIRV[u.avatar?.dir || 'down'] || [0, 1]))!;
+    const reach = Math.max(s.range, 1);
+    const aimAt = { x: u.x + dir.x * reach, y: u.y + dir.y * reach };
+    const self = s.role === 'heal' || s.role === 'guard';
+    if (!self && s.shape === 'line') return this.launch(F, f, u, s, dir, ev);
+    const hits = self ? [] : this.inArea(F, f, u, (p) => inShape(s, u, aimAt, p));
+    ev.fx.push({ by: refOf(f.kind, f.id), skill: s.id, shape: s.shape, range: s.range, radius: s.radius, from: { x: u.x, y: u.y }, to: aimAt, ...(hits.length || self ? {} : { whiff: true }) });
+    this.applySkill(F, f, u, s, hits, tu, ev);
+  }
+
+  /** 结算一招对 hits 的效果：普攻直接扣血，能力执行效果（strike / status / knockback 作用于 hits） */
+  applySkill(this: Town, F: Fight, f: Fighter, u: Unit, s: Skill, hits: Fighter[], tu: Unit | null, ev: BeatEvents) {
     if (s.id === 'strike') {
       for (const h of hits) this.strikeOne(F, f, u, h, { power: s.power || 1 }, ev);
       return;
     }
     const ctx: EffectCtx = {
-      self: u.agent || null, target: tu?.agent || null, at: { x: u.x, y: u.y, inside: null, region: u.region }, source: `ability:${s.id}`,
+      self: u.agent || null, target: tu?.agent || this.unit(hits[0])?.agent || null, at: { x: u.x, y: u.y, inside: null, region: u.region }, source: `ability:${s.id}`,
       combat: { fight: F, fighter: f, hits, events: ev } satisfies CombatCtx,
     };
     runEffects(this, ctx, s.ability!.effects);
+  }
+
+  /**
+   * 判定区域里的敌人：这场战斗里对面的人，加上（旅人出手时）身边可以打、还没在别的战斗里的单位——后者被拉进这场战斗。
+   * 旅人出手按他当时看到的位置判定（回溯 单程延迟 + 插值延后，最多 250 毫秒）
+   */
+  inArea(this: Town, F: Fight, f: Fighter, u: Unit, test: (p: { x: number; y: number }) => boolean): Fighter[] {
+    const back = f.kind === 'avatar' ? Math.min(250, Math.max(0, (u.avatar!.rtt ?? 150) / 2 + 100)) : 0;
+    const at = (ref: UnitRef) => (back ? this.posAt(ref, this.now() - back) : null) || this.unit(ref);
+    const out: Fighter[] = F.fighters.filter((x) => { if (x.out || x.side === f.side) return false; const p = at(x); return Boolean(p && test(p)); });
+    if (f.kind !== 'avatar') return out;
+    for (const ref of this.avatarCandidates(u, f.residents === true)) {
+      if (F.fighters.some((x) => !x.out && sameUnit(x, ref)) || this.fightOf(ref)) continue;
+      const p = at(ref);
+      if (!p || !test(p)) continue;
+      const r = this.engage(refOf(f.kind, f.id), ref);
+      if (!r.ok) continue;
+      this.avatarStruck(u.avatar!, ref);
+      const h = r.fight.fighters.find((x) => !x.out && sameUnit(x, ref));
+      if (h) out.push(h);
+    }
+    return out;
+  }
+
+  /** 旅人身边（8 格内）可以打的单位：会死的威胁、敌对的生物；居民要 residents 为真且世界允许敌对 */
+  avatarCandidates(this: Town, u: Unit, residents: boolean): UnitRef[] {
+    const near = (x: number, y: number, region?: string) => (region || 'town') === u.region && Math.hypot(x - u.x, y - u.y) <= 8;
+    return [
+      ...this.threats.live().filter((t) => this.threats.def(t)?.mortal && near(t.x, t.y, t.region)).map((t) => refOf('threat', t.id)),
+      ...this.creatures.list.filter((c) => !c.friendly && !c.hidden && c.hp > 0 && near(c.x, c.y, c.region)).map((c) => refOf('creature', c.id)),
+      ...(residents && this.canBeHostile?.() ? this.agents.filter((a) => a.kind !== 'creature' && !a.inside && near(a.x, a.y, a.region)).map((a) => refOf('agent', a.id)) : []),
+    ];
+  }
+
+  /** 旅人打中了一个之前没在打的单位：居民记恨、记一笔日志 */
+  avatarStruck(this: Town, v: Avatar, ref: UnitRef) {
+    const fu = this.unit(ref);
+    if (fu?.agent) {
+      const rel = ((fu.agent.travellers ||= {})[v.uid] ||= { affinity: 0, chats: 0 } as never) as { affinity: number };
+      rel.affinity = clamp((rel.affinity || 0) - 40, -100, 100);
+      addMemory(fu.agent, { t: this.t, type: 'event', text: `旅人${v.name}对我动手了`, importance: 8 });
+    }
+    this.log('combat', `⚔️ 旅人「${v.name}」向${fu?.name || '对手'}动手了`, { agents: fu?.agent ? [fu.agent.id] : [] });
+  }
+
+  /** 直线招式：放出一个弹道（每拍飞 PROJECTILE_STEP 格，打中第一个敌人或撞墙就消失） */
+  launch(this: Town, F: Fight, f: Fighter, u: Unit, s: Skill, dir: { x: number; y: number }, ev: BeatEvents) {
+    const p = { id: `p${++this.seq}`, by: refOf(f.kind, f.id), side: f.side, skill: s.id, x: u.x + dir.x * 0.6, y: u.y + dir.y * 0.6, dx: dir.x, dy: dir.y, left: s.range, width: Math.max(0.5, s.radius || 0.8) };
+    (F.projectiles ||= []).push(p);
+    ev.fx.push({ by: p.by, skill: s.id, shape: 'projectile', pid: p.id, range: s.range, radius: p.width, from: { x: p.x, y: p.y }, to: { x: p.x + dir.x * s.range, y: p.y + dir.y * s.range }, speed: PROJECTILE_STEP / BEAT });
+  }
+
+  /** 每拍：弹道往前飞，沿途每 1/4 格检查一次撞墙、撞人 */
+  flyProjectiles(this: Town, F: Fight, ev: BeatEvents) {
+    const w = this.worldOf(F.region);
+    for (const p of [...(F.projectiles || [])]) {
+      const f = F.fighters.find((x) => sameUnit(x, p.by));
+      const u = f && !f.out ? this.unit(f) : null;
+      const s = f && this.skillsOf(f).find((x) => x.id === p.skill);
+      const done = (end = true) => { F.projectiles = (F.projectiles || []).filter((x) => x !== p); if (end) ev.fx.push({ by: p.by, skill: p.skill, shape: 'projectile', pid: p.id, end: true, range: 0, radius: 0, from: { x: p.x, y: p.y }, to: { x: p.x, y: p.y } }); };
+      if (!f || !u || !s) { done(); continue; }
+      let fly = Math.min(PROJECTILE_STEP, p.left);
+      let hit: Fighter[] = [];
+      while (fly > 1e-6 && !hit.length) {
+        const d = Math.min(0.25, fly);
+        p.x += p.dx * d; p.y += p.dy * d; p.left -= d; fly -= d;
+        const cx = Math.round(p.x), cy = Math.round(p.y);
+        if (cx < 0 || cy < 0 || cx >= w.W || cy >= w.H || !w.walk[cy * w.W + cx]) { p.left = 0; break; }
+        hit = this.inArea(F, f, u, (q) => Math.hypot(q.x - p.x, q.y - p.y) <= p.width).slice(0, 1);
+      }
+      if (hit.length) { this.applySkill(F, f, u, s, hit, null, ev); done(); }
+      else if (p.left <= 1e-6) done();
+    }
+  }
+
+  // ---------- 延迟补偿：最近 1 秒的位置 ----------
+  /** 每帧记一次：参战单位，以及旅人身边的单位 */
+  recordPositions(this: Town) {
+    if (!this.avatars.list.length) return;
+    const now = this.now();
+    const hist = (this.rt.posHist ||= new Map());
+    const put = (ref: UnitRef) => {
+      const u = this.unit(ref);
+      if (!u) return;
+      const k = unitKey(ref);
+      const a = hist.get(k) || [];
+      a.push([now, u.x, u.y]);
+      while (a.length && now - a[0]![0] > 1000) a.shift();
+      hist.set(k, a);
+    };
+    for (const F of this.fights || []) for (const f of F.fighters) if (!f.out) put(f);
+    for (const v of this.avatars.list) for (const ref of this.avatarCandidates(this.unit(refOf('avatar', v.id)) || { x: v.x, y: v.y, region: v.region } as Unit, true)) put(ref);
+    for (const k of hist.keys()) { const a = hist.get(k)!; if (!a.length || now - a[a.length - 1]![0] > 1000) hist.delete(k); }
+  }
+
+  /** 某个单位在 t 时刻（真实毫秒）的位置：在记录里插值；没有记录时返回 null */
+  posAt(this: Town, ref: UnitRef, t: number): { x: number; y: number } | null {
+    const a = this.rt.posHist?.get(unitKey(ref));
+    if (!a?.length) return null;
+    if (t <= a[0]![0]) return { x: a[0]![1], y: a[0]![2] };
+    for (let i = a.length - 1; i >= 0; i--) {
+      const [t0, x0, y0] = a[i]!;
+      if (t0 <= t) {
+        const n = a[i + 1];
+        if (!n) return { x: x0, y: y0 };
+        const k = (t - t0) / Math.max(1, n[0] - t0);
+        return { x: x0 + (n[1] - x0) * k, y: y0 + (n[2] - y0) * k };
+      }
+    }
+    return null;
   }
 
   /** 普攻 / strike 效果对一个敌人：威胁走自己的扣血（弱点、掉落、事件），其余按攻防结算 */
@@ -731,7 +864,7 @@ export class Combat {
    * 化身出招：skill 是 strike / dodge / 世界包 combat.avatarKit 里的能力；target 形如 "threat:t3"，不给时打身边最近的敌人。
    * 不在战斗里时先开打（residents：能不能对居民动手由调用方按身份判断后传入）
    */
-  avatarAct(this: Town, uid: string, { skill, target, dir: rawDir }: { skill?: unknown; target?: unknown; dir?: unknown }, { residents = false } = {}) {
+  avatarAct(this: Town, uid: string, { skill, target, dir: rawDir, ax, ay }: { skill?: unknown; target?: unknown; dir?: unknown; ax?: unknown; ay?: unknown }, { residents = false } = {}) {
     // 闪避的方向（玩家按着的方向键）：单位向量
     const dv = Array.isArray(rawDir) ? rawDir.map(Number) : [];
     const dl = Math.hypot(dv[0] || 0, dv[1] || 0);
@@ -743,6 +876,19 @@ export class Combat {
     const sid = String(skill || 'strike');
     if (!this.skillsOf({ ...me, side: 0, intent: 'subdue', act: null, statuses: [], cds: {}, target: null }).some((s) => s.id === sid)) return { ok: false, reason: '没有这一招' };
     let F = this.fightOf(me);
+    // 无锁定（docs/design/realtime.md §5）：带了瞄准方向就随时可以出招——不在战斗里时开一场「一个人的战斗」，打中谁再把谁拉进来
+    const aim = ax != null && ay != null ? unitVec(Number(ax), Number(ay)) : null;
+    if (aim) {
+      if (!F) {
+        if ((this.fights || []).length >= MAX_FIGHTS * 3) return { ok: false, reason: '到处都在打，乱成一团' };
+        F = { id: `f${++this.seq}`, beat: 0, acc: 0, region: v.region, solo: true, fighters: [{ ...me, name: v.name, side: 0, intent: 'subdue', act: null, statuses: [], cds: {}, target: null }] };
+        (this.fights ||= []).push(F);
+      }
+      const f = F.fighters.find((x) => !x.out && sameUnit(x, me))!;
+      f.residents = residents;
+      f.queued = { skill: sid, target: null, dir, aim };
+      return { ok: true, fight: F.id };
+    }
     const want = parseRef(target);
     if (!F) {
       if (sid === 'dodge') { const u = this.unit(me)!; this.dodge(null, null, u, null, dir); this.emit('combat', { id: '', region: u.region, casts: [], fx: [{ by: me, skill: 'dodge', shape: 'single', range: 0, radius: 0, from: { x: u.x, y: u.y }, to: { x: u.x, y: u.y } }], hits: [], notes: [] }); return { ok: true }; }
@@ -752,13 +898,7 @@ export class Combat {
       const r = this.engage(me, foe);
       if (!r.ok) return { ok: false, reason: r.reason };
       F = r.fight;
-      const fu = this.unit(foe);
-      if (fu?.agent) {
-        const rel = ((fu.agent.travellers ||= {})[v.uid] ||= { affinity: 0, chats: 0 } as never) as { affinity: number };
-        rel.affinity = clamp((rel.affinity || 0) - 40, -100, 100);
-        addMemory(fu.agent, { t: this.t, type: 'event', text: `旅人${v.name}对我动手了`, importance: 8 });
-      }
-      this.log('combat', `⚔️ 旅人「${v.name}」向${fu?.name || '对手'}动手了`, { agents: fu?.agent ? [fu.agent.id] : [] });
+      this.avatarStruck(v, foe);
     }
     const f = F.fighters.find((x) => !x.out && sameUnit(x, me))!;
     f.queued = { skill: sid, target: want && F.fighters.some((x) => !x.out && x.side !== f.side && sameUnit(x, want)) ? want : f.target, dir };
@@ -801,7 +941,7 @@ export class Combat {
   /** 快照里的战斗：参战单位的血量、招式与读条、状态 */
   fightsView(this: Town) {
     return (this.fights || []).map((F) => ({
-      id: F.id, region: F.region,
+      id: F.id, region: F.region, ...(F.solo ? { solo: true } : {}),
       fighters: F.fighters.filter((f) => !f.out).map((f) => {
         const u = this.unit(f);
         const s = f.act && this.skillsOf(f).find((x) => x.id === f.act!.skill);
