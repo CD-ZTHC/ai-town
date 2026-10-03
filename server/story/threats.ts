@@ -289,8 +289,10 @@ export class ThreatSystem {
     let spared = false;
     try { spared = Boolean(def.rule!.unless) && testExpr(town, def.rule!.unless, b); } catch { spared = false; }
     if (spared) {
-      addMemory(a, { t: town.t, type: 'obs', text: `那东西找上门来，又停住了——我逃过了一劫。${this.pick(def.clues)}，也许就是这个原因`, importance: 8 });
-      this.believe(a, def, this.pick(def.clues), 0.85);
+      // 世界包里的威胁可以不写线索（如《开天》的混沌本源）：那就只记得逃过了一劫
+      const clue = def.clues?.length ? this.pick(def.clues) : null;
+      addMemory(a, { t: town.t, type: 'obs', text: clue ? `那东西找上门来，又停住了——我逃过了一劫。${clue}，也许就是这个原因` : '那东西找上门来，又停住了——我逃过了一劫', importance: 8 });
+      if (clue) this.believe(a, def, clue, 0.85);
       town.log('survive', `🫣 ${a.name}逃过了一劫`, { agents: [a.id], threat: inst.id });
       return 'spared';
     }
@@ -326,13 +328,15 @@ export class ThreatSystem {
       o.body.courage = clamp(o.body.courage - 15, 0, 100);
       o.body.conditions = [...new Set([...o.body.conditions, '受惊'])].slice(-5);
       // 目击者记住的是死者死前做过的事：可能是真正的规律，也可能只是巧合
-      const real = !def.decoys?.length || this.random() < 0.55;
-      this.believe(o, def, real ? this.pick(def.clues) : this.pick(def.decoys!), real ? 0.55 : 0.5);
+      const real = !def.decoys?.length || (Boolean(def.clues?.length) && this.random() < 0.55);
+      const list = real ? def.clues : def.decoys!;
+      if (list?.length) this.believe(o, def, this.pick(list), real ? 0.55 : 0.5);
     }
   }
 
   /** 对某个威胁的看法（信念）：只在新的看法更确信时覆盖旧的 */
   believe(a: LiveAgent, def: ThreatType, claim: string, confidence: number): boolean {
+    if (!claim) return false;
     const about = def.name.slice(0, 12);
     const mine = a.beliefs.find((b) => b.about === about);
     if (mine && mine.confidence > confidence && mine.claim !== claim) return false;
@@ -353,8 +357,10 @@ export class ThreatSystem {
       town.log('clue', `📓 ${a.name}得知了下一个会出事的人`, { agents: [a.id] });
       return marked.x.name;
     }
-    if (!defs.length) return null;
-    const [, def] = this.pick(defs);
+    // 只从写了来历 / 线索的威胁里挑（世界包里的威胁可以不写，如《开天》的混沌本源）
+    const usable = defs.filter(([, d]) => (kind === 'origin' ? d.origin : d.clues?.length));
+    if (!usable.length) return null;
+    const [, def] = this.pick(usable);
     if (kind === 'origin') {
       if (!def.origin) return null;
       addMemory(a, { t: town.t, type: 'obs', text: `查到了${def.name}的来历：${def.origin}`, importance: 8 });

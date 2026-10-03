@@ -171,3 +171,16 @@ test('创世时现场生成布局（generate）：模型按意图给名字、地
   await new Promise((r) => setTimeout(r, 30));
   assert.equal(town.regions.peaks?.name, '万峰', '收缩后放下了');
 });
+
+test('没写线索的威胁（混沌本源、浊气兽）：研究 / 目击都不会想出「undefined」，也不会记下空的看法', (t) => {
+  const town = pgTown();
+  t.after(() => town.stop());
+  const he = town.agents.find((a) => a.id !== 'pangu') || town.byId.pangu!;
+  for (const type of ['chaos_core', 'murk_beast']) {
+    assert.deepEqual(town.spec.threats![type]!.clues, [], `${type} 没写线索`);
+    assert.equal(town.threats.giveClue(he, 'rule', type), null);
+    town.threats.giveWitnessClues(town.spec.threats![type]!, town.byId.pangu!, [he]);
+  }
+  assert.ok(!he.memories.some((m) => m.text.includes('undefined')), '记忆里没有 undefined');
+  assert.ok(!he.beliefs.some((b) => b.claim == null || String(b.claim).includes('undefined')), '没有空的看法');
+});
