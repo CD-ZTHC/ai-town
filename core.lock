@@ -19,7 +19,7 @@
   "server/genesis/threats.ts": "619f91aebb9bd33d3d90bf266962b3d4226b9e0f949cfb54fd482c0cfeeff95e",
   "server/guard.ts": "abef96550d9e760d990636735903957bc0e6cdfe6eaef396d8bfec2ef4ebe530",
   "server/http/admin-api.ts": "2863e1e168d41b9b36efaecd691dfeeedec02f0daac21245c85fb049f293f08a",
-  "server/http/app.ts": "90c44d55dd1f5304193ffad86bfa9906219d86e46857a5d580aa81d5ceaab379",
+  "server/http/app.ts": "ef20efab59a550b558e9b3d305a853e005c4d16ef42af7518c621e705d7de70f",
   "server/http/assets.ts": "c670e18ffd3e3a0aefa3013f07a54b1cdc41e98454790fc717c5853a52262141",
   "server/http/auth-api.ts": "95b504845dcb9c2ae0d5eb6e16a9ca1750a1018f5b0f458697dd4fd025031e6f",
   "server/http/genesis-api.ts": "81c8fd2130d6dda168595eb7efad0cf80b27ecd3d806f2e200e975d92bc89123",
