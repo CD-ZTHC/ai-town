@@ -4,13 +4,13 @@ import * as llm from '../llm.ts';
 import { lethal } from '../kernel/ratings.ts';
 import { testExpr } from '../kernel/rules.ts';
 import { normalizeOutline, normalizeEndings, emptyOutline, hashOutline, LIMITS } from '../kernel/outline-spec.ts';
+import { withSpec } from './outline.ts';
 import { aiReview, rulesResult, blocking } from '../worldai/review-gate.ts';
 import { threatOps, trialApply, applyContent, PlanError } from '../worldai/rerate.ts';
 import type { ContentPlan, Host } from '../worldai/rerate.ts';
 import type { ReviewResult } from '../worldai/review-gate.ts';
 import type { Town } from '../sim.ts';
 import type { Outline, OutlineAct, OutlinePart } from '../types/story.ts';
-import type { WorldSpec } from '../types/spec.ts';
 
 const str = (v: unknown, max: number): string => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
@@ -21,14 +21,6 @@ export class Sequel {
   constructor(town: Town) { this.town = town; }
 
   get baseNum(): number { return this.town.specOps.length * 10000 + this.town.outlineSys.version; }
-
-  /** 在临时换上的规格下求值（判断新结局在应用计划之后是不是立刻就满足） */
-  withSpec<T>(spec: WorldSpec, fn: () => T): T {
-    const town = this.town;
-    const keep = town.spec;
-    town.spec = spec;
-    try { return fn(); } finally { town.spec = keep; }
-  }
 
   async plan({ direction, threats = false, by }: { direction: string; threats?: boolean; by: string }): Promise<{ planId: string | null; draft: Outline; review: ReviewResult; title: string; content: { threats: string[]; dropped: string[] } }> {
     const town = this.town;
@@ -88,7 +80,7 @@ ${sys.formatDoc()}
       review = await aiReview(town, { kind: `第${n}部的计划`, subject: { outline: prepared.parts.at(-1), endings: prepared.endings, newThreats: content.ops.filter((o) => o.op === 'addThreat').map((o) => o.args.id) }, context: sys.facts(), criteria: ['新的一部是否和上一部的结局衔接得上', '新结局是否能在这个世界里达成'] });
       // 新结局在应用计划之后不能立刻满足
       for (const e of prepared.endings) {
-        const now = this.withSpec(after, () => { try { return testExpr(town, e.when); } catch { return false; } });
+        const now = withSpec(town, after, () => { try { return testExpr(town, e.when); } catch { return false; } });
         if (now) { review.issues.unshift({ severity: 'major', where: `结局「${e.title}」`, text: '开启新的一部之后这个条件立刻就满足，故事会马上结束', suggestion: content.ops.length ? '换一个条件' : '换一个条件，或者勾选「补充新的威胁」' }); review.verdict = 'revise'; }
       }
     }

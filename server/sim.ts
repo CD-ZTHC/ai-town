@@ -289,6 +289,7 @@ export class Town extends EventEmitter {
     this.epicChapters = [];
     this.outline = null;
     this.outlineRevisions = [];
+    this.outlineDraft = null;
     this.endState = freshEnd();
     this.epicSys = new EpicSystem(this);
     this.outlineSys = new OutlineSystem(this);

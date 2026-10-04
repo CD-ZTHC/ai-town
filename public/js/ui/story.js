@@ -1,12 +1,12 @@
 // 故事面板：张力曲线、剧情弧、导演笔记、抉择投票、伏笔、人来人往、危机、生物图鉴
 import { $, $$, app, esc, fmtTime, openModal, toast, ui, voice } from './core.js';
-import { renderEpic, renderOutline } from './epic.js';
+import { renderEpic, renderOutline, outlineBusy } from './epic.js';
 let storyPending = null;
 
 export function onStory() {
   if (!ui.storyOpen || storyPending) return;
   // 正在读章节、编辑大纲或看计划时不刷新（会冲掉输入）
-  if ((ui.storyTab === 'epic' && ui.epicView) || (ui.storyTab === 'outline' && (ui.outlineEdit || ui.outlinePanel))) return;
+  if ((ui.storyTab === 'epic' && ui.epicView) || (ui.storyTab === 'outline' && outlineBusy())) return;
   storyPending = setTimeout(() => { storyPending = null; if (ui.storyOpen) renderStory(); }, 600);
 }
 

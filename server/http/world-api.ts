@@ -14,6 +14,7 @@ import { authorize } from '../accounts/authz.ts';
 import { quota, remaining as quotaLeft } from '../accounts/quota.ts';
 import { HttpError } from './util.ts';
 import { storyRoutes } from './story-api.ts';
+import { applyContent } from '../worldai/rerate.ts';
 import { get as setting } from '../settings/index.ts';
 import type { AppEnv, Ctx } from '../types/http.ts';
 import type { Town } from '../sim.ts';
@@ -461,19 +462,34 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
     requireAdmin(c);
     const host = c.get('host');
     if (c.get('body').confirm !== 'RESET') throw new HttpError(400, '需要确认');
+    // 世界的设计跟着世界走（docs/design/epic-outline.md）：分级修改带来的内容（世界登记里的分级不会被重置）与大纲保留下来，
+    // 大纲的进度从头开始；史诗、居民的经历都清空
+    const carry = carryOver(host.town);
     host.town.stop();
     // 不直接删除：旧存档先备份，可手动恢复（数据库和升级前的 save.json 都要移走，否则新小镇会把它读回来）
     const bak = backupSave(host.town.dataDir, 'reset');
     removeSave(host.town.dataDir);
     if (bak) console.log(`[reset] 旧存档已备份为 ${bak}`);
     host.replace(host.makeTown());
-    console.log(`[reset] ${host.id} 已由 ${c.get('ip')} 重置到第一天`);
-    return c.json({ ok: true });
+    const kept = restoreCarry(host.town, carry);
+    console.log(`[reset] ${host.id} 已由 ${c.get('ip')} 重置到第一天${kept.ops ? `（保留了 ${kept.ops} 条分级修改的内容）` : ''}${kept.outline ? '（大纲从头开始）' : ''}`);
+    return c.json({ ok: true, kept });
   });
 
   storyRoutes(api, { reviewer, accounts: deps.accounts });
 
   return api;
+}
+
+/** 重置时要带到新存档里的东西：分级修改写入的世界操作、大纲 */
+function carryOver(t: Town): { ops: Array<{ op: string; args: Record<string, unknown> }>; outline: Town['outline'] } {
+  return { ops: t.specOps.filter((r) => r.cause?.kind === 'rerate').map((r) => ({ op: r.op, args: r.args as Record<string, unknown> })), outline: t.outline ? structuredClone(t.outline) : null };
+}
+function restoreCarry(t: Town, carry: ReturnType<typeof carryOver>): { ops: number; outline: boolean } {
+  let ops = 0;
+  if (carry.ops.length) ops = carry.ops.length - applyContent(t, { ops: carry.ops, hosts: [], dropped: [] }, { kind: 'rerate', carried: true }).length;
+  if (carry.outline) t.outlineSys.restart(carry.outline);
+  return { ops, outline: Boolean(carry.outline) };
 }
 
 function voteGate(c: Ctx): void {

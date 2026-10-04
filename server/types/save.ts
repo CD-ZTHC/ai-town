@@ -98,6 +98,7 @@ export interface SaveV2 {
   epicChapters?: unknown[];
   outline?: unknown;
   outlineRevisions?: unknown[];
+  outlineDraft?: unknown;
   endState?: unknown;
   board: unknown[];
   pairCd: Record<string, number>;
