@@ -49,6 +49,7 @@ function wizard(q, creds = null) {
       <div class="setting"><div class="k">内容分级</div><div class="v"><select id="rating">${q.quota.ratings.map((r) => `<option value="${r}" ${r === 'adventure' ? 'selected' : ''}>${RATING[r] || r}</option>`).join('')}</select></div></div>
       <div class="setting"><div class="k">叙事者</div><div class="v"><select id="storyteller"><option value="voyage" selected>远航：每 7 天一个完整的故事</option><option value="gentle">静水：以日常为主</option><option value="chaos">掷骰：出人意料的小事频繁发生</option><option value="horror">恐怖：平静 → 征兆 → 受害者 → 恐慌 → 对抗</option></select></div></div>
       <div class="setting"><div class="k">生成按规律行事的威胁<div class="help">它们按各自的规律伤人，居民要靠线索、禁忌和对抗活下去（黑暗、悲剧分级默认开启）</div></div><div class="v"><label class="row"><input type="checkbox" id="threats"> 开启</label></div></div>
+      <div class="setting"><div class="k">战斗冒险<div class="help">一支队伍从这里出发，一片土地接一片土地地往外推：野怪、首领、升级、营地休整，地图越打越大</div></div><div class="v"><label class="row"><input type="checkbox" id="adventure"> 开启</label></div></div>
       <div class="setting"><div class="k">主角数量<div class="help">主角有完整的思考与反思，其余是配角</div></div><div class="v"><input id="leads" type="number" min="1" max="8" value="4"></div></div>
       <div class="setting"><div class="k">允许这个世界自主进化<div class="help">AI 可以为这个世界长出新功能（上线前由你终审）</div></div><div class="v"><label class="row"><input type="checkbox" id="evo"> 开启</label></div></div>
       ${creds ? `<div class="setting"><div class="k">用哪套模型<div class="help">用自己的模型服务时，创世和之后世界里的所有模型调用都用它，不扣创世额度；内容审核仍由站点完成。模型服务在<a href="mine.html">我的世界</a>里管理</div></div>
@@ -97,7 +98,7 @@ function wizard(q, creds = null) {
         id: $('#wid').value.trim(), sourceId, declaration: $('#decl').checked, ai: readAi(),
         options: {
           description: $('#desc')?.value || '', start: $('#start').value, fidelity: $('#fidelity').value, rating: $('#rating').value, leads: Number($('#leads').value), evolution: $('#evo').checked,
-          storyteller: $('#storyteller').value, threats: $('#threats').checked,
+          storyteller: $('#storyteller').value, threats: $('#threats').checked, adventure: $('#adventure').checked,
           ...(state.source === 'inspire' ? { mode: 'inspire', inspiration: $('#inspiration').value, avoid: $('#avoid').value } : {}),
         },
       });

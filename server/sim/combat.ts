@@ -6,6 +6,8 @@ import { addMemory } from '../memory.ts';
 import { posOf, runEffects } from '../kernel/effects.ts';
 import { findAbility } from '../kernel/abilities.ts';
 import { lethal } from '../kernel/ratings.ts';
+import { equipped, expWorth, levelGains } from './growth.ts';
+import type { Xp } from './growth.ts';
 import { clamp } from './util.ts';
 import {
   BEAT, MAX_BEATS, MAX_FIGHTS, STEP, INTERRUPT, STRIKE, DODGE, DODGE_CELLS, DODGE_BEATS,
@@ -23,7 +25,6 @@ import type { Creature } from '../story/creatures.ts';
 const HATE = -40; // 好感低于它才会动手
 const CAPTIVE_MINUTES = 360;
 const LEAVE_DIST = 12; // 离最近的敌人超过这么远就算脱离战斗
-const AVATAR_HP = 100;
 
 // ---------- 规则（只依赖显式输入） ----------
 type Rand = () => number;
@@ -31,14 +32,14 @@ type Rand = () => number;
 type FighterLike = Pick<LiveAgent, 'name' | 'body' | 'inventory' | 'combat'>;
 export interface Stats { atk: number; def: number; tags: string[] }
 
-/** 属性：基础值 + 人设里的 combat + 装备 */
-export function computeStats(a: FighterLike, items: WorldSpec['items']): Stats {
-  let atk = 4 + (a.combat?.atk || 0) + Math.round((a.body.courage - 50) / 25);
-  let def = 1 + (a.combat?.def || 0);
+/** 属性：基础值 + 人设里的 combat + 装备（每个槽位只算加成最高的一件）+ 成长（冒险 §3.1） */
+export function computeStats(a: FighterLike, items: WorldSpec['items'], growth?: WorldSpec['growth'], xp?: Xp | null): Stats {
+  const g = levelGains(growth, xp);
+  let atk = 4 + (a.combat?.atk || 0) + Math.round((a.body.courage - 50) / 25) + g.atk;
+  let def = 1 + (a.combat?.def || 0) + g.def;
   const tags: string[] = [];
-  for (const [k, n] of Object.entries(a.inventory)) {
-    const it = items[k];
-    if (!it?.equip || n < 1) continue;
+  for (const k of equipped(a.inventory, items)) {
+    const it = items[k]!;
     atk += it.mods?.atk || 0;
     def += it.mods?.def || 0;
     tags.push(...(it.tags || []));
@@ -102,7 +103,7 @@ interface BeatEvents {
 const refOf = (kind: UnitKind, id: string): UnitRef => ({ kind, id });
 
 export class Combat {
-  combatStats(this: Town, a: LiveAgent) { return computeStats(a, this.spec.items); }
+  combatStats(this: Town, a: LiveAgent) { return computeStats(a, this.spec.items, this.spec.growth, this.spec.growth ? this.xpOf(a) : null); }
 
   /** a 能不能对 b 动手（规则见 harmVerdict） */
   mayHarm(this: Town, a: LiveAgent, b: LiveAgent, intent = 'subdue') {
@@ -126,12 +127,15 @@ export class Combat {
         if (!a || !this.agents.includes(a)) return null;
         const s = this.combatStats(a);
         const p = posOf(this, a)!;
-        return { ref, name: a.name, x: p.x, y: p.y, region: p.region || 'town', hp: a.body.hp, maxHp: 100, courage: a.body.courage, base: { ...s, spd: 1 + (a.combat?.spd || 0) }, agent: a };
+        return { ref, name: a.name, x: p.x, y: p.y, region: p.region || 'town', hp: a.body.hp, maxHp: this.maxHp(a), courage: a.body.courage, base: { ...s, spd: 1 + (a.combat?.spd || 0) }, agent: a };
       }
       case 'avatar': {
         const v = this.avatars.list.find((x) => x.id === ref.id);
         if (!v || (v.downUntil || 0) > this.now()) return null;
-        return { ref, name: v.name, x: v.x, y: v.y, region: v.region, hp: v.hp ?? AVATAR_HP, maxHp: AVATAR_HP, courage: 100, base: { atk: 7, def: 2, spd: 1.2, tags: [] }, avatar: v };
+        // 化身和居民用同一套成长（冒险 §3.9）：等级加成、生命上限
+        const max = this.avatarMaxHp(v);
+        const g = levelGains(this.spec.growth, this.spec.growth ? this.avatarXp(v) : null);
+        return { ref, name: v.name, x: v.x, y: v.y, region: v.region, hp: Math.min(v.hp ?? max, max), maxHp: max, courage: 100, base: { atk: 7 + g.atk, def: 2 + g.def, spd: 1.2, tags: [] }, avatar: v };
       }
       case 'threat': {
         const inst = this.threats.live().find((x) => x.id === ref.id);
@@ -153,8 +157,8 @@ export class Combat {
 
   setUnitHp(this: Town, u: Unit, hp: number): void {
     hp = Math.max(0, Math.round(hp));
-    if (u.agent) { u.agent.body.hp = Math.min(100, hp); this.emit('agent', u.agent.id); }
-    else if (u.avatar) u.avatar.hp = Math.min(AVATAR_HP, hp);
+    if (u.agent) { u.agent.body.hp = Math.min(this.maxHp(u.agent), hp); this.emit('agent', u.agent.id); }
+    else if (u.avatar) u.avatar.hp = Math.min(this.avatarMaxHp(u.avatar), hp);
     else if (u.threat) u.threat.hp = hp;
     else if (u.creature) u.creature.hp = hp;
     u.hp = hp;
@@ -180,12 +184,23 @@ export class Combat {
     const kit: Skill[] = [];
     const u = this.unit(f);
     if (!u || u.base.atk > 0) kit.push(STRIKE);
-    const ids = f.kind === 'agent' ? this.byId[f.id]?.abilities || [] : f.kind === 'avatar' ? this.spec.combat?.avatarKit || [] : f.kind === 'threat' ? this.threatSkills(f.id) : [];
+    const ids = f.kind === 'agent' ? this.byId[f.id]?.abilities || [] : f.kind === 'avatar' ? this.avatarKitOf(this.avatars.list.find((x) => x.id === f.id) || null) : f.kind === 'threat' ? this.threatSkills(f.id) : [];
     if (f.kind === 'avatar') kit.push(DODGE);
     for (const id of ids) {
       const ab = findAbility(this.spec, id);
       const s = ab && abilitySkill(ab);
       if (s) kit.push(s);
+    }
+    // 战斗中自动使用的回复道具（冒险 §3.2）：当成一个只治自己的招式，用掉一件
+    if (f.kind === 'agent') {
+      const a = this.byId[f.id];
+      for (const [k, n] of Object.entries(a?.inventory || {})) {
+        const it = this.spec.items[k];
+        if (!it?.combatUse || !it.use?.length || n < 1) continue;
+        const ab = { id: `item_${k}`, name: it.name, emoji: it.emoji, target: 'self', desc: it.desc || '', effects: it.use, cost: { items: { [k]: 1 } }, combat: { windup: 1, recover: 2, cd: 40 } };
+        const s = abilitySkill(ab);
+        if (s) kit.push({ ...s, role: 'heal', selfOnly: true });
+      }
     }
     return kit;
   }
@@ -216,6 +231,19 @@ export class Combat {
         runEffects(this, { self: null, target: null, at: { x: inst.x, y: inst.y, inside: null, region: inst.region || 'town' }, source: `threat:${inst.type}`, threat: inst, combat: { fight: F, fighter: h, hits, events: ev } satisfies CombatCtx }, ph.effects);
       }
     }
+  }
+
+  /** 6 格内伤得最重的同伴（血量比例最低、而且比自己低）；没有时为 null */
+  hurtAlly(this: Town, F: Fight, f: Fighter, u: Unit): Unit | null {
+    let best: Unit | null = null, br = u.hp / Math.max(1, u.maxHp);
+    for (const x of F.fighters) {
+      if (x.out || x.side !== f.side || sameUnit(x, f)) continue;
+      const p = this.unit(x);
+      if (!p || dist(p, u) > 6) continue;
+      const r = p.hp / Math.max(1, p.maxHp);
+      if (r < br) { br = r; best = p; }
+    }
+    return best;
   }
 
   /** 招式此刻能不能用：冷却、居民的体力与物品 */
@@ -322,7 +350,7 @@ export class Combat {
     this.rt.aggroAcc = (this.rt.aggroAcc || 0) + dtReal;
     if (this.rt.aggroAcc < 1) return;
     this.rt.aggroAcc = 0;
-    if (this.fights?.length) this.bystanderTick();
+    if (this.fights?.length) { this.bystanderTick(); this.partyAssist(); }
     // 世界包里写了 aggro 的怪物：主动扑向身边的居民
     for (const t of this.threats.live()) {
       const def = this.threats.def(t);
@@ -398,7 +426,8 @@ export class Combat {
         continue;
       }
       const foes = enemies.map((x) => this.unit(x)).filter((x): x is Unit => Boolean(x));
-      const s = chooseSkill(kit, { me: u, foe: tgt, foes, statuses: f.statuses, beat, tactic: f.tactic }, this.rng);
+      const ally = this.hurtAlly(F, f, u);
+      const s = chooseSkill(kit, { me: u, foe: tgt, foes, statuses: f.statuses, beat, tactic: f.tactic, ally }, this.rng);
       if (!s) continue;
       const self = s.role === 'heal' || s.role === 'guard';
       const reach = s.shape === 'circle' ? Math.max(s.radius, 1) : s.range;
@@ -469,8 +498,10 @@ export class Combat {
       for (const h of hits) this.strikeOne(F, f, u, h, { power: s.power || 1 }, ev);
       return;
     }
+    // 治疗招式的「目标」是伤得最重的同伴（冒险 §3.2），只治自己的道具就是自己
+    const healTo = s.role === 'heal' ? (s.selfOnly ? null : this.hurtAlly(F, f, u)) : null;
     const ctx: EffectCtx = {
-      self: u.agent || null, target: tu?.agent || this.unit(hits[0])?.agent || null, at: { x: u.x, y: u.y, inside: null, region: u.region }, source: `ability:${s.id}`,
+      self: u.agent || null, target: s.role === 'heal' ? (healTo?.agent || u.agent || null) : tu?.agent || this.unit(hits[0])?.agent || null, at: { x: u.x, y: u.y, inside: null, region: u.region }, source: `ability:${s.id}`,
       combat: { fight: F, fighter: f, hits, events: ev } satisfies CombatCtx,
     };
     runEffects(this, ctx, s.ability!.effects);
@@ -602,7 +633,11 @@ export class Combat {
       ev.hits.push({ to: refOf(h.kind, h.id), by: refOf(f.kind, f.id), dmg, crit, x: tu.x, y: tu.y });
       this.afterHit(F, h, tu, dmg, ev);
       this.threatPhase(F, h, tu.threat, ev);
-      if ((tu.threat.hp ?? 0) <= 0 || tu.threat.state === 'gone') { h.out = 'down'; if (!u.agent) this.log('threat', `⚔️ ${u.name}消灭了${tu.name}`, { threat: tu.threat.id }); }
+      if ((tu.threat.hp ?? 0) <= 0 || tu.threat.state === 'gone') {
+        h.out = 'down';
+        if (!u.agent) this.log('threat', `⚔️ ${u.name}消灭了${tu.name}`, { threat: tu.threat.id });
+        if ((tu.threat.hp ?? 0) <= 0) this.awardKill(F, refOf(f.kind, f.id), this.threatWorth(tu.threat.type), tu.region, tu.name);
+      }
       return;
     }
     const them = effectiveStats(tu.base, h, F.beat);
@@ -707,12 +742,16 @@ export class Combat {
     }
     if (tu.threat) {
       // 流血等不经过 threats.hit 的伤害打死了威胁：照常结束事件（掉落交给打死它的居民）
-      if (tu.threat.state !== 'gone') this.threats.end(tu.threat, 'slain', `${by?.name || '有人'}消灭了${tu.name}`, by?.agent || null);
+      if (tu.threat.state !== 'gone') {
+        this.threats.end(tu.threat, 'slain', `${by?.name || '有人'}消灭了${tu.name}`, by?.agent || null);
+        this.awardKill(F, byF ? refOf(byF.kind, byF.id) : null, this.threatWorth(tu.threat.type), tu.region, tu.name);
+      }
       return;
     }
     if (tu.creature) {
       tu.creature.hp = 0;
       this.log('combat', `💨 ${tu.name}被${by?.name || '人'}打散了`, { agents: by?.agent ? [by.agent.id] : [] });
+      this.awardKill(F, byF ? refOf(byF.kind, byF.id) : null, expWorth(tu.maxHp), tu.region, tu.name);
     }
   }
 
@@ -947,6 +986,8 @@ export class Combat {
         const s = f.act && this.skillsOf(f).find((x) => x.id === f.act!.skill);
         return {
           kind: f.kind, id: f.id, side: f.side, hp: Math.round(u?.hp ?? 0), maxHp: u?.maxHp ?? 100, ...(f.tactic ? { tactic: f.tactic } : {}),
+          // 正在打谁（前端画目标线，冒险 §4.3）
+          ...(f.act?.phase === 'windup' && f.act.target ? { tg: `${f.act.target.kind}:${f.act.target.id}` } : f.target ? { tg: `${f.target.kind}:${f.target.id}` } : {}),
           ...(f.act && s ? { act: { skill: s.id, name: s.name, emoji: s.emoji, phase: f.act.phase, p: f.act.phase === 'windup' && f.act.until > f.act.from ? +((F.beat - f.act.from) / (f.act.until - f.act.from)).toFixed(2) : 1, big: s.windup >= 3 } } : {}),
           ...(f.statuses.length ? { st: [...new Set(f.statuses.filter((x) => x.until > F.beat).map((x) => x.id))] } : {}),
           ...(f.kind === 'threat' ? this.bossView(f.id) : {}),

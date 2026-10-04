@@ -1,5 +1,5 @@
 // 自动审核上架（多世界设计 §10.1）：依次执行，任一步失败即退回预览并附原因
-//   1 结构  世界包通过结构校验与内核规格校验；人物数、区域数在配额之内
+//   1 结构  世界包通过结构校验与内核规格校验；人物数在配额之内（区域不限数量，靠休眠控制开销，见 docs/design/adventure.md §3.5）
 //   2 文本  所有对外可见的文本先过关键词，再抽样送审核模型
 //   3 试跑  子进程无头试跑 1 个游戏日（不调用模型），居民不能卡住
 //   4 分级  世界声明的分级必须在创世者被授予的范围内（平台底线不可覆盖）
@@ -15,7 +15,6 @@ import type { ShadowResult } from '../genesis/pipeline.ts';
 import type { Pack } from '../types/world.ts';
 
 const MAX_PERSONAS = 16;
-const MAX_REGIONS = 6;
 
 /** 抽几段文本给审核模型看：返回被拒的文本列表（模型不可用时返回 null，只靠关键词） */
 export async function modelScreen(texts: string[], { label = '发布审核', world = '' }: { label?: string; world?: string } = {}): Promise<{ rejected: string[]; reason: string } | null> {
@@ -48,7 +47,6 @@ export async function publishReview({ packDir, allowedRatings = null, shadow = s
   const errs = checkPack(pack.world, pack.map);
   if (errs.length) reasons.push(`世界包不合法：${errs.slice(0, 3).join('；')}`);
   if (pack.world.personas.length > MAX_PERSONAS) reasons.push(`居民最多 ${MAX_PERSONAS} 位`);
-  if (pack.map.regions.length > MAX_REGIONS) reasons.push(`区域最多 ${MAX_REGIONS} 个`);
   if (reasons.length) return { ok: false, reasons, report };
   // 4 分级（先做：便宜）
   const rating = pack.world.meta.rating;

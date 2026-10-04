@@ -24,6 +24,8 @@ import type { Fight } from './fight-rules.ts';
 import type { EndState, EpicChapter, EpicNote, EpicState, Outline, OutlineDraft, OutlineRevision, Proposal, Vote } from '../types/story.ts';
 import { freshEpic } from '../story/epic.ts';
 import { freshEnd } from '../story/endings.ts';
+import { freshAdventure } from './adventure-state.ts';
+import type { AdventureState, RegionStates } from './adventure-state.ts';
 
 const isObj = (v: unknown): boolean => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const arr = <T>() => z.custom<T[]>((v) => Array.isArray(v));
@@ -98,6 +100,9 @@ export const STATE = {
   outlineRevisions: field(arr<OutlineRevision>(), { load: orDefault, fallback: () => [] }),
   outlineDraft: field(nul(obj<OutlineDraft>()), { load: orDefault, fallback: () => null }),
   endState: field(obj<EndState>(), { load: (v) => (v ? { ...freshEnd(), ...(v as object) } : undefined), fallback: () => freshEnd() }),
+  // 冒险（docs/design/adventure.md）：远征进度、化身的等级、战绩、预告；区域的激活与休眠
+  adventure: field(obj<AdventureState>(), { load: (v) => (v ? { ...freshAdventure(), ...(v as object) } : undefined), fallback: () => freshAdventure() }),
+  regionState: field(obj<RegionStates>(), { load: orDefault, fallback: () => ({}) }),
 };
 
 export type StateKey = keyof typeof STATE;

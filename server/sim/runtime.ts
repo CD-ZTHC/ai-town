@@ -20,6 +20,8 @@ export interface TownRuntime {
   stageAt?: number;
   /** 延迟补偿（sim/combat）：单位 → 最近 1 秒的 [真实毫秒, x, y] */
   posHist?: Map<string, Array<[number, number, number]>>;
+  /** 冒险循环（sim/adventure）上次运行的游戏分钟 */
+  advMinute?: number;
 }
 
 export const freshRuntime = (): TownRuntime => ({ agents: {} });

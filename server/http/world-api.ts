@@ -103,6 +103,15 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
     const d = town(c).agentDetail(c.req.param('id'), c.get('vid') || '-');
     return d ? c.json(d) : c.json({ error: '不存在' }, 404);
   });
+  // 区域地图（冒险 §3.5）：休眠的区域不随初始数据下发，前端切过去时来取；取的同时唤醒它
+  api.get('/region', (c) => {
+    const t = town(c);
+    const id = String(c.req.query('id') || '');
+    if (!t.regions[id]) throw new HttpError(404, '没有这个区域');
+    if (id !== 'town' && !t.regionOpen(id)) throw new HttpError(403, '这个区域还没有开放');
+    t.watchRegion(id);
+    return c.json({ id, world: t.regions[id], regionsOpen: t.regionsView() });
+  });
   api.get('/relations', (c) => c.json(town(c).relationsGraph()));
   api.get('/usage', (c) => c.json(town(c).usageView()));
   api.get('/metrics', (c) => c.json(town(c).metricsView()));

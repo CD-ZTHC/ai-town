@@ -15,6 +15,9 @@ export class CombatLayer {
     const key = (u) => `${u.kind}:${u.id}`;
     // 出招预警（无锁定，realtime.md §5.3）：敌人蓄力时在地上画出攻击范围
     for (const c of ev.casts || []) if (c.from && c.aim && c.ms) this.telegraph({ ...c, mine: this.myRef && c.by.kind === this.myRef.kind && c.by.id === this.myRef.id });
+    // 出招姿势（冒险 §4.2）：蓄力时把武器举起来，出手时挥 / 刺 / 转 / 施法
+    for (const c of ev.casts || []) if (c.windup >= 2) this.notePose?.(key(c.by), 'charge');
+    for (const f of ev.fx || []) if (!f.end && f.skill !== 'dodge') this.notePose?.(key(f.by), this.poseOf?.(f) || 'slash');
     for (const f of ev.fx || []) {
       // 弹道：开始飞 / 消失
       if (f.shape === 'projectile') {
@@ -40,6 +43,17 @@ export class CombatLayer {
       if (h.absorbed) this.sfx?.('shield', h);
       this.cfx.push({ kind: 'spark', from: { x: h.x, y: h.y }, color: h.crit ? '#ffd166' : '#ffffff', born: t, life: 0.25 });
       if (h.dmg > 0) this.floats.push({ x: h.x, y: h.y, text: h.crit ? `${h.dmg}!` : String(h.dmg), color: h.crit ? '#ffd166' : '#ff6b6b', size: h.crit ? 22 : 15, born: t, dx: (Math.random() - 0.5) * 0.6 });
+      // 连击：同一个人 2 秒内接连打中，显示「N 连击」
+      if (h.by && h.dmg > 0) {
+        const c = ((this.combos ||= {})[key(h.by)] ||= { n: 0, at: 0 });
+        c.n = t - c.at < 2 ? c.n + 1 : 1; c.at = t;
+        // 每个人只有一行连击字：还在飘的就改字、重新计时，不再叠一行
+        if (c.n >= 3) {
+          const p = this.unitPos(this.S || {}, h.by.kind, h.by.id);
+          if (c.float && t - c.float.born < 1.1) Object.assign(c.float, { text: `${c.n} 连击`, size: 12 + Math.min(8, c.n), born: t, x: p?.x ?? c.float.x, y: (p?.y ?? c.float.y + 0.9) - 0.9 });
+          else if (p) this.floats.push(c.float = { x: p.x, y: p.y - 0.9, text: `${c.n} 连击`, color: '#ffb86b', size: 12 + Math.min(8, c.n), born: t });
+        }
+      }
       if (h.absorbed) this.floats.push({ x: h.x, y: h.y - 0.4, text: `🛡️${h.absorbed}`, color: '#bfe3ff', size: 12, born: t });
       this.flashes ||= {};
       this.flashes[`${h.to.kind}:${h.to.id}`] = t;

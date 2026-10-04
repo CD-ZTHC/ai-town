@@ -13,6 +13,7 @@ import { packErrors, packSpec, hashPack } from '../worlds/pack.ts';
 import { validateSpec } from '../kernel/spec.ts';
 import { layoutProblems, BUILDING_KINDS, OUTDOOR_KINDS, BIOME_IDS } from '../worldgen/layout.ts';
 import { reviewRating, lethal } from '../kernel/ratings.ts';
+import { promptAdventure, assembleAdventure } from './adventure.ts';
 import { promptThreats, assembleThreats, mergeThreats } from './threats.ts';
 import { promptOutline, assembleOutline } from './outline.ts';
 import { normalizeOutline, outlineTexts } from '../kernel/outline-spec.ts';
@@ -170,6 +171,24 @@ ${material}
     const errs2 = checkPack(candidate, map);
     if (!errs2.length && Object.keys(r.add.threats).length) world = candidate;
     else job.log.push({ at: new Date().toISOString(), stage: 'G4', note: `威胁没有生成成功，这个世界先不带威胁：${[...r.errors, ...errs2].slice(0, 3).join('；')}` });
+  }
+  // ---------- G4b2 冒险（docs/design/adventure.md §3.8）：队伍、成长、一片片要征服的土地；失败时不带，不影响创世 ----------
+  if (opt.adventure) {
+    try {
+      stage('G4', '设计冒险：队伍、成长与要征服的土地');
+      const ap = promptAdventure({ title: book.title, summary: world.lore.summary, personas: world.personas });
+      let r = assembleAdventure(await call('冒险', `${ap}${ORIGINAL}`, { maxTokens: 5000, temperature: 0.7 }), world, map);
+      let errs3 = r.errors.length ? r.errors : checkPack(r.world, r.map);
+      if (errs3.length) {
+        r = assembleAdventure(await call('冒险修正', `${ap}${ORIGINAL}\n\n上一次的输出有这些问题：${errs3.slice(0, 8).join('；')}。请修正后重新输出完整的 JSON。`, { maxTokens: 5000, temperature: 0.5 }), world, map);
+        errs3 = r.errors.length ? r.errors : checkPack(r.world, r.map);
+      }
+      if (!errs3.length) { world = r.world; map = r.map; }
+      else job.log.push({ at: new Date().toISOString(), stage: 'G4', note: `冒险没有生成成功，这个世界先不带冒险：${errs3.slice(0, 3).join('；')}` });
+    } catch (e) {
+      if (e instanceof GenesisBudgetError) throw e;
+      job.log.push({ at: new Date().toISOString(), stage: 'G4', note: `冒险没有生成成功：${(e as Error).message}` });
+    }
   }
   // ---------- G4c 大纲与结局（docs/design/epic-outline.md §3.2）：失败时不带大纲，不影响创世 ----------
   try {

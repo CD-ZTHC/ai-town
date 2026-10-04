@@ -111,6 +111,8 @@ export interface Skill {
   /** 普攻的倍率（能力的伤害写在效果里） */
   power?: number;
   ability?: Ability;
+  /** 只能治自己（战斗里自动使用的回复道具，冒险 §3.2） */
+  selfOnly?: boolean;
 }
 
 export const SHAPES = ['single', 'circle', 'line', 'cone'] as const;
@@ -247,6 +249,8 @@ export interface Situation {
   statuses: Status[];
   beat: number;
   tactic?: Tactic;
+  /** 伤得最重的同伴（治疗招式用来决定要不要奶人） */
+  ally?: { hp: number; maxHp: number } | null;
 }
 
 /** 给一个可用的招式打分（越高越想用）；不想用返回 -Infinity */
@@ -255,7 +259,11 @@ export function scoreSkill(s: Skill, sit: Situation, rng: () => number): number 
   const d = dist(sit.me, sit.foe);
   let score: number;
   switch (s.role) {
-    case 'heal': score = hpRatio < 0.5 ? 4 - hpRatio * 2 : -Infinity; break;
+    case 'heal': {
+      const r = s.selfOnly || !sit.ally ? hpRatio : Math.min(hpRatio, sit.ally.hp / Math.max(1, sit.ally.maxHp));
+      score = r < 0.5 ? 4 - r * 2 : -Infinity;
+      break;
+    }
     case 'guard': score = hpRatio < 0.7 && !sit.statuses.some((x) => x.until > sit.beat && (x.id === 'shield' || x.id === 'guard')) ? 2.5 : 0.5; break;
     case 'move': score = -Infinity; break;
     case 'control': score = 2.6; break;

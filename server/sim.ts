@@ -19,6 +19,7 @@ import { MigrationSystem } from './story/migration.ts';
 import { EpicSystem, freshEpic } from './story/epic.ts';
 import { OutlineSystem } from './story/outline.ts';
 import { EndingSystem, freshEnd } from './story/endings.ts';
+import { freshAdventure } from './sim/adventure-state.ts';
 import { Sequel } from './story/sequel.ts';
 import { Rerate } from './worldai/rerate.ts';
 import { AiJobs } from './worldai/review-gate.ts';
@@ -56,6 +57,12 @@ import { Dark } from './sim/dark.ts';
 import { Combat } from './sim/combat.ts';
 import { CombatMind } from './sim/combat-mind.ts';
 import { Stage } from './sim/stage.ts';
+import { Growth } from './sim/growth.ts';
+import { Recovery } from './sim/recovery.ts';
+import { Party } from './sim/party.ts';
+import { Expedition } from './sim/expedition.ts';
+import { Dormancy } from './sim/dormancy.ts';
+import { Adventure } from './sim/adventure.ts';
 import { get as setting } from './settings/index.ts';
 import type { Embedder } from './embeddings.ts';
 import type { WorldSpec, Params, Persona } from './types/spec.ts';
@@ -85,7 +92,7 @@ const MAX_STRUCTURES = 30;
 const MAP_OPS = new Set(['expandMap', 'addBuilding', 'setBuildingState', 'renovateBuilding', 'removeBuilding', 'restoreBuilding', 'addPath', 'addBridge', 'clearArea', 'plantGrove', 'addOutdoorPlace']);
 
 // 各职责模块（server/sim/）的方法经文件末尾的 mixin 挂到 Town.prototype 上；这里用声明合并让类型也知道它们
-export interface Town extends Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, CombatMind, Stage, TownState {}
+export interface Town extends Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, CombatMind, Stage, Growth, Recovery, Party, Expedition, Dormancy, Adventure, TownState {}
 
 export class Town extends EventEmitter {
   // 字段只做类型声明（declare）：类型剥离后不生成任何代码，初始化仍在构造函数与各模块里，运行行为不变
@@ -291,6 +298,9 @@ export class Town extends EventEmitter {
     this.outlineRevisions = [];
     this.outlineDraft = null;
     this.endState = freshEnd();
+    // 冒险（docs/design/adventure.md）：远征进度、化身等级、战绩；区域的激活状态
+    this.adventure = freshAdventure();
+    this.regionState = {};
     this.epicSys = new EpicSystem(this);
     this.outlineSys = new OutlineSystem(this);
     this.endings = new EndingSystem(this);
@@ -311,6 +321,8 @@ export class Town extends EventEmitter {
     this.syncAgents(false);
     this.threats.init();
     this.outlineSys.init();
+    // 远征的第一段：开局就打开它的区域（之后由征服解锁）
+    for (const x of this.expeditions()) this.expState(x);
   }
 
   get day() { return Math.floor(this.t / 1440) + 1; }
@@ -454,6 +466,7 @@ export class Town extends EventEmitter {
       this.creatures.tick(dtGame);
       this.threats.tick(dtGame);
       this.combatTick(dtReal);
+      this.adventureTick();
       this.darkHourly();
       this.scenes.tick();
       this.votes.tick();
@@ -677,6 +690,8 @@ export class Town extends EventEmitter {
   }
 
   sendToClinic(a: LiveAgent): void {
+    // 有回复点的世界（冒险 §3.2）：送去最近的回复点，被打倒时有人搀扶
+    if (this.spec.recovery) { this.sendToRest(a, 'downed'); return; }
     const m = Math.floor(this.minute) + 1;
     if (m >= 22 * 60) return;
     // 有诊所就去诊所（医生会记住这件事），没有就回家休息
@@ -878,7 +893,7 @@ export class Town extends EventEmitter {
 // 把各职责模块的方法挂到 Town 上；重名直接报错，避免悄悄覆盖
 // 世界状态字段（sim/state.ts 的表）：Town 上读写 this.dark、this.logs 等都转发到 this.state
 defineStateAccessors(Town.prototype);
-for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, CombatMind, Stage]) {
+for (const part of [Regions, Movement, Planning, Actions, Cognition, Social, Views, Persistence, Metrics, Dark, Combat, CombatMind, Stage, Growth, Recovery, Party, Expedition, Dormancy, Adventure]) {
   for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) {
     if (name === 'constructor') continue;
     if (Object.hasOwn(Town.prototype, name)) throw new Error(`Town.${name} 重复定义（${part.name}）`);

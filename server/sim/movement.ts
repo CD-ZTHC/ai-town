@@ -42,10 +42,11 @@ export function bodyTick(b: LiveAgent['body'], status: string, dt: number): void
   const rate = status === 'sleeping' ? 0.2 : status === 'walking' ? -0.05 : -0.025;
   b.stamina = clamp(b.stamina + rate * dt, 0, 100);
   b.courage = clamp(b.courage + (50 - b.courage) * 0.002 * dt, 0, 100);
-  // 伤势慢慢恢复（睡觉时快一些），恢复到一半就不再是重伤
-  if (b.hp < 100) {
-    b.hp = clamp(b.hp + (status === 'sleeping' ? 0.02 : 0.008) * dt, 0, 100);
-    if (b.hp >= 50 && b.conditions.includes('重伤')) b.conditions = b.conditions.filter((c) => c !== '重伤');
+  // 伤势慢慢恢复（睡觉时快一些），恢复到一半就不再是重伤；上限是生命上限（冒险 §3.2，旧存档为 100）
+  const max = b.maxHp ?? 100;
+  if (b.hp < max) {
+    b.hp = clamp(b.hp + (status === 'sleeping' ? 0.02 : 0.008) * dt * (max / 100), 0, max);
+    if (b.hp >= 0.5 * max && b.conditions.includes('重伤')) b.conditions = b.conditions.filter((c) => c !== '重伤');
   }
   const tired = b.conditions.includes('疲惫');
   if (!tired && b.stamina < 20) b.conditions = [...b.conditions, '疲惫'];
@@ -63,6 +64,9 @@ export class Movement {
       const p = this.spec.personas.find((x) => x.id === a.id);
       return { key: `guard-${a.work}`, location: a.work, activity: p?.idle || '静静地守着', emoji: '🌑' };
     }
+    // 冒险（docs/design/adventure.md）：休整中的人去回复点；队员跟着队长
+    if (a.resting) { const r = this.restEntry(a); if (r) return r; }
+    if (this.spec.parties) { const c = this.campEntry(a); if (c) return c; const p = this.partyEntry(a); if (p) return p; }
     return scheduleEntryAt({ day: this.day, minute: this.minute, planAt: this.rhythm.plan, dayEnd: this.dayEnd, home: a.home, schedule: a.schedule, scheduleDay: a.scheduleDay });
   }
 
@@ -91,7 +95,7 @@ export class Movement {
   }
 
   /** 体力随活动消耗、睡觉恢复；勇气缓慢回归平常 */
-  updateBody(this: Town, a: LiveAgent, dt: number) { bodyTick(a.body, a.status, dt); }
+  updateBody(this: Town, a: LiveAgent, dt: number) { bodyTick(a.body, a.status, dt); this.restHealTick(a, dt); }
 
   settle(this: Town, a: LiveAgent, e: CurEntry) {
     a.moving = false;
@@ -101,8 +105,10 @@ export class Movement {
     // 保持「不开门」的人不进屋，在门口熬一夜
     if (e.sleep && !this.hasPosture(a, 'noOpen')) {
       // 家可能在别的地图上（例如新长出来的区域）：按家所在的地图找房子；没有房子的人就地睡
-      const home = this.findLocation(a.home);
-      const b = home?.indoor ? this.worldOf(this.locRegion(a.home)).buildings.find((x) => x.id === home.indoor) : null;
+      // 在回复点过夜的人（冒险 §3.2）睡在回复点：是建筑就进屋，户外就地睡
+      const bed = typeof e.sleepAt === 'string' ? e.sleepAt : a.home;
+      const home = this.findLocation(bed);
+      const b = home?.indoor ? this.worldOf(this.locRegion(bed)).buildings.find((x) => x.id === home.indoor) : null;
       if (b) { a.inside = b.id; a.x = b.entrance.x; a.y = b.entrance.y; }
     }
   }

@@ -14,6 +14,8 @@ const HOT_LOGS = {
   scene: [100, 60000], vote: [100, 60000], arc: [100, 45000], portal: [95, 45000],
   encounter: [90, 30000], creature: [90, 30000], mischief: [80, 30000], arrival: [85, 45000],
   thought: [20, 20000], reflect: [30, 20000], gift: [40, 25000], learn: [35, 25000],
+  // 冒险（docs/design/adventure.md §4.8）：撤退、倒下、升级、征服
+  retreat: [95, 25000], downed: [95, 30000], levelup: [70, 15000], frontier: [90, 30000], party: [80, 25000],
 };
 const NARRATE = new Set(['arc', 'portal', 'vote', 'arrival', 'depart', 'weather', 'omen']);
 const PHASE = { omen: '🔮 伏笔', breach: '🌀 爆发', struggle: '⚔️ 发展', climax: '🌕 高潮', aftermath: '🌅 余波' };
@@ -106,7 +108,7 @@ function agentPos(id) {
   if (!a) return null;
   const r = regionOf(a);
   if (a.inside) {
-    const b = app.regionWorlds[r]?.buildings.find((q) => q.id === a.inside);
+    const b = app.regionWorlds[r]?.buildings?.find((q) => q.id === a.inside);
     if (b) return { region: r, x: (b.x + b.w / 2) * TS, y: (b.y + b.h / 2) * TS, inside: true };
   }
   return { region: r, x: a.x * TS + TS / 2, y: a.y * TS + TS / 2 };
@@ -126,6 +128,12 @@ function fitZoom(p, min = 1.1, max = 2) {
 }
 const zoomScale = () => Math.max(0.65, Math.min(1.1, innerWidth / 1300));
 const watched = (ids) => (ids || []).some((id) => app.watch.has(id));
+
+/** 战斗单位此刻的位置（像素）：居民、化身、威胁、生物 */
+function unitAt(s, f) {
+  const p = f.kind === 'agent' ? s.agents.find((q) => q.id === f.id) : f.kind === 'avatar' ? (s.avatars || []).find((q) => q.id === f.id) : f.kind === 'threat' ? (s.dark?.threats || []).find((q) => q.id === f.id) : (s.creatures || []).find((q) => q.id === f.id);
+  return p && !p.inside ? { x: p.x * TS + TS / 2, y: p.y * TS + TS / 2 } : null;
+}
 
 function candidates() {
   const s = app.snap;
@@ -152,6 +160,29 @@ function candidates() {
     if (!p) continue;
     out.push({ key: `convo:${c.id}`, score: 60 + ids.length * 5 + (watched(ids) ? 25 : 0) + (p.inside ? -15 : 0), agents: ids, ...p, zoom: fitZoom(p, 1.5, 2.1), label: `💬 ${ids.map((id) => app.meta[id].name).join(' × ')}` });
   }
+  // 冒险（§4.8）：进行中的战斗（Boss 战锁定镜头）、篝火夜谈、焦点队伍在野外行军
+  const spot = new Set(s.adv?.spotlight || []);
+  const party = new Set(Object.values(s.adv?.parties || {}).flatMap((p) => p.members));
+  for (const F of s.fights || []) {
+    if (F.solo || F.fighters.length < 2) continue;
+    const ps = F.fighters.map((f) => unitAt(s, f)).filter(Boolean);
+    if (!ps.length) continue;
+    const xs = ps.map((p) => p.x), ys = ps.map((p) => p.y);
+    const p = { region: F.region || 'town', x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2, w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+    const boss = F.fighters.some((f) => f.boss);
+    const ids = F.fighters.filter((f) => f.kind === 'agent' && app.meta[f.id]).map((f) => f.id);
+    const hasSpot = ids.some((id) => spot.has(id));
+    out.push({ key: `fight:${F.id}`, score: boss ? 120 : 85 + F.fighters.length * 5 + (hasSpot ? 25 : 0) + (watched(ids) ? 25 : 0), agents: ids, ...p, zoom: boss ? 1.25 : fitZoom(p, 1.4, 2.2), lock: boss, label: boss ? `👑 ${F.fighters.find((f) => f.boss)?.boss?.name || 'Boss'} 战` : `⚔️ ${ids.map((id) => app.meta[id].name).join('、') || '战斗'}` });
+  }
+  const mm = s.t % 1440;
+  if (mm >= 19 * 60 || mm < 60) for (const c of s.convos || []) {
+    const ids = [c.a, c.b].filter((id) => app.meta[id] && party.has(id));
+    const rest = ids.filter((id) => s.agents.find((a) => a.id === id)?.rest || /营|篝火/.test(s.agents.find((a) => a.id === id)?.action || ''));
+    if (ids.length < 2 || !rest.length) continue;
+    const p = groupPos(ids);
+    if (p) out.push({ key: `campfire:${c.id}`, score: 75, agents: ids, ...p, zoom: 1.9, label: `🔥 篝火夜谈：${ids.map((id) => app.meta[id].name).join(' × ')}` });
+  }
+  for (const a of awake) if (party.has(a.id) && a.status === 'walking' && !a.inside && regionOf(a) !== 'town') { const p = groupPos([...party].filter((id) => s.agents.find((q) => q.id === id && regionOf(q) === regionOf(a)))); if (p) { out.push({ key: `march:${regionOf(a)}`, score: 40 + (spot.has(a.id) ? 10 : 0), agents: [a.id], follow: a.id, ...p, zoom: fitZoom(p, 1.3, 1.8), label: `🚶 远征的队伍：${app.regionsOpen?.[regionOf(a)]?.name || ''}` }); break; } }
   // 节日灯会（夜晚的镜湖）
   const m = s.t % 1440;
   const pier = app.regionWorlds.town?.locations?.pier?.rect;
@@ -214,6 +245,7 @@ function pick() {
   const cur = st.cur && all.find((c) => c.key === st.cur.key);
   if (cur) Object.assign(st.cur, cur); // 刷新位置与分数
   if (st.locked && st.cur) return;
+  if (cur?.lock) return; // Boss 战期间不切走
   const t = now(), stay = t - st.since;
   const rest = all.filter((c) => c.key !== st.cur?.key).sort((a, b) => b.score - a.score);
   const top = rest[0];

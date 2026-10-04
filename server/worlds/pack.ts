@@ -65,7 +65,7 @@ export const MapSchema = z.object({
   regions: z.array(z.object({
     id: z.string().regex(/^[a-z][a-z0-9_]{1,23}$/), generator: z.string().min(1).max(32), name: text(16),
     areas: z.array(AreaSchema).max(9).optional(), links: z.array(z.object({ from: z.string(), to: z.string(), via: z.enum(['path', 'trail', 'bridge']).optional() })).max(16).optional(),
-  }).passthrough()).min(1).max(12)
+  }).passthrough()).min(1)
     .refine((rs) => rs[0].id === 'town', { message: '第一个区域是主地图，id 必须是 town' })
     .refine((rs) => new Set(rs.map((r) => r.id)).size === rs.length, { message: '区域 id 重复' }),
 });

@@ -31,6 +31,8 @@ export const OP_DOCS: Record<string, string> = {
   setAvatarKit: '{"ids":["带 combat 块的能力id"]（最多4个）} —— 旅人（玩家）在游戏模式里能用的技能栏，整体替换',
   addRule: '{"id","name":"≤16字","when":{"every":10~1440} 或 {"at":"HH:MM"} 或 {"weather":"天气id"} 或 {"enter":"地点id"},"forEach":"agent"(可选),"if":"表达式(可选)","then":[效果]}',
   addCanon: '{"text":"写进小镇历史的事实（≤100字）","tags":["标签"]}',
+  addMonster: '{"id":"英文小写id","name":"≤12字","emoji","hp":10~400,"atk":1~30,"def":0~15,"speed":0.5~4,"haunt":["常出没的地点id"]（1~4个）,"aggro":1~6,"exp":1~200,"skills":["带 combat 块的能力id"]（≤3）,"loot":[{"item":"物品id","p":0~1}],"look":{"bodyPlan":"blob/beast/bird/insect/humanoid/treant/golem/skeleton/serpent/eye/wisp/hound/warden","scale":0.6~3,"palette":{"body":"#rrggbb","accent":"#rrggbb","eyes":"#rrggbb"},"pattern":"plain/spots/stripes/crystal/bone/ember","aura":"none/smoke/fire/frost/shadow/holy"}} —— 新的野怪（会被打倒、不开事件）；配合远征阶段的 spawns 或规则的 spawnThreat 出现',
+  addStage: '{"id":"英文小写id","after":"接在哪个阶段后面","region":"区域id","title":"≤12字","intro":"≤60字","wild":["野外地点id"],"spawns":[{"threat":"怪的id","every":10~1440,"max":1~8}],"boss":{"threat":"Boss的id","after":"表达式，如 kills(\'区域id\') >= 10"},"levelHint":1~99} —— 给远征加一段新的前线（大改）；区域要先用 addAdjacentRegion / addRegion 建好',
 };
 
 export function effectsText(skip: readonly string[] = []): string {

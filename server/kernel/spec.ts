@@ -8,6 +8,7 @@ import { officialPack, packSpec } from '../worlds/pack.ts';
 import { RATINGS } from './ratings.ts';
 import { validateDark } from './threat-spec.ts';
 import { specStoryErrors } from './outline-spec.ts';
+import { validateAdventure, MONSTER_PLANS } from './adventure-spec.ts';
 import type { Params, WorldSpec, CalendarEvent } from '../types/spec.ts';
 
 /** 未经校验的规格数据：validateSpec 逐字段检查，所以静态上不约束字段 */
@@ -17,7 +18,8 @@ export const SPEC_VERSION = 2;
 export { RATINGS } from './ratings.ts';
 export const STORYTELLERS: readonly string[] = ['gentle', 'voyage', 'chaos', 'horror'];
 export const PERSONA_KINDS: readonly string[] = ['resident', 'traveller', 'creature'];
-export const BODY_PLANS: readonly string[] = ['wisp', 'hound', 'warden'];
+/** 异界生物与怪物的体型（冒险 §4.1 扩充了怪物外观） */
+export const BODY_PLANS: readonly string[] = MONSTER_PLANS;
 const RATING_LIST: readonly string[] = RATINGS;
 export const MAX_PERSONAS = 24; // 在世的角色（含离开的人与剧情角色，不含死者）；世界包发布时另有 16 位的上限，余量留给人员流动
 export const MAX_PERSONAS_TOTAL = 48; // 连同死者在内的上限，防止规格无限膨胀；满了之后最早的死者从名册上划去（prunePersona）
@@ -183,6 +185,7 @@ export function validateSpec(spec: unknown): string[] {
 
   for (const [path, msg] of validateDark(s)) err(path, msg);
   for (const [path, msg] of specStoryErrors(s)) err(path, msg);
+  for (const [path, msg] of validateAdventure(s)) err(path, msg);
 
   for (const [k, v] of Object.entries<Raw>(s.params || {})) {
     const b = Object.hasOwn(PARAM_BOUNDS, k) && PARAM_BOUNDS[k as keyof Params];
@@ -241,7 +244,12 @@ export function publicSpec(spec: WorldSpec) {
     combat: { avatarKit: spec.combat?.avatarKit || [] },
     rules: spec.rules.map(({ id, name }) => ({ id, name })),
     // 威胁只下发名字和外观：规律、线索、对抗方式都不给前端（真相由引擎掌握）
-    threats: Object.fromEntries(Object.entries(spec.threats || {}).map(([id, t]) => [id, { name: t.name, emoji: t.emoji, kind: t.kind || null, mortal: t.mortal, look: t.look || null }])),
+    threats: Object.fromEntries(Object.entries(spec.threats || {}).map(([id, t]) => [id, { name: t.name, emoji: t.emoji, kind: t.kind || null, mortal: t.mortal, look: t.look || null, ...(t.boss || t.phases?.length ? { boss: true } : {}) }])),
     burdens: Object.fromEntries(Object.entries(spec.burdens || {}).map(([id, b]) => [id, { name: b.name, max: b.max ?? 100 }])),
+    // 冒险（docs/design/adventure.md）：成长路线的名字、队伍、远征阶段（只给标题与区域）、焦点角色、迷雾
+    ...(spec.growth ? { growth: { maxLevel: spec.growth.maxLevel ?? 40, tracks: Object.fromEntries(Object.entries(spec.growth.tracks).map(([id, t]) => [id, { name: t.name || id }])) } } : {}),
+    ...(spec.parties ? { parties: spec.parties } : {}),
+    ...(spec.spotlight?.length ? { spotlight: spec.spotlight } : {}),
+    ...(spec.fog ? { fog: true } : {}),
   };
 }

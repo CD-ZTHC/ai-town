@@ -214,6 +214,7 @@ export class Atmosphere {
     if (on) for (const e of S.entities || []) {
       if (e.light && !e.inside) out.push({ x: e.x * TS + 16, y: e.y * TS + 16, r: e.light.r * 1.6, i: 0.95, c: e.light.color });
     }
+    if (on) out.push(...this.adventureLights(S));
     if (S.festival && on) {
       for (const l of this.particles.lanterns) out.push({ x: l.x, y: l.y, r: l.water ? 46 : 36, i: 0.9, c: '255,160,70' });
       if (this.balloonLight) out.push({ x: this.balloonLight.x, y: this.balloonLight.y + 20, r: 110, i: 0.9, c: '255,170,80' });

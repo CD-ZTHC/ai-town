@@ -5,6 +5,7 @@ import path from 'node:path';
 import * as llm from '../llm.ts';
 import { fmtTime, fmtStamp } from '../memory.ts';
 import { publicSpec } from '../kernel/spec.ts';
+import { equipped, expToNext } from './growth.ts';
 import { findAbility } from '../kernel/abilities.ts';
 import { threadList } from '../story/threads.ts';
 import { renderRefs, ref } from '../accounts/refs.ts';
@@ -24,7 +25,9 @@ export function agentFrame(a: LiveAgent, now: number) {
     id: a.id, x: +a.x.toFixed(3), y: +a.y.toFixed(3), dir: a.dir, moving: a.moving, status: a.status, region: a.region || 'town',
     inside: a.inside, emoji: a.action.emoji, action: a.action.text, loc: a.locId, mood: a.mood.emoji,
     thinking: a.thinking > 0 ? a.thinkingLabel : '', convo: a.convoId,
-    ...(a.body.hp < 100 ? { hp: Math.round(a.body.hp) } : {}), ...(a.marks?.length ? { marked: true } : {}), ...(a.hosted?.length ? { hosted: true } : {}),
+    ...(a.body.hp < (a.body.maxHp ?? 100) ? { hp: Math.round(a.body.hp) } : {}), ...(a.marks?.length ? { marked: true } : {}), ...(a.hosted?.length ? { hosted: true } : {}),
+    // 冒险（docs/design/adventure.md）：生命上限不是 100 时下发、等级、休整中
+    ...(a.body.maxHp != null && a.body.maxHp !== 100 ? { maxHp: a.body.maxHp } : {}), ...(a.xp ? { lv: a.xp.level } : {}), ...(a.resting ? { rest: a.resting.why } : {}),
     bubble: a.bubble && a.bubble.until > now ? { id: a.bubble.id, text: a.bubble.text, kind: a.bubble.kind } : null,
   };
 }
@@ -34,7 +37,7 @@ export class Views {
     const now = this.now();
     return {
       t: this.t, speed: this.speed, paced: this.paced < 1 ? +this.paced.toFixed(2) : null, paused: this.paused, idle: !!this.idle, halted: this.halted || null, weather: this.weather, nightSkip: !!this.nightSkip,
-      agents: this.agents.map((a) => agentFrame(a, now)),
+      agents: this.hasAdventure() ? this.agents.map((a) => ({ ...agentFrame(a, now), ...this.gearView(a) })) : this.agents.map((a) => agentFrame(a, now)),
       convos: [...this.convos.values()].map((c) => ({ id: c.id, a: c.a, b: c.b, state: c.state })),
       entities: [
         ...this.entities.map((e) => ({ id: e.id, kind: 'structure', type: e.type, emoji: e.emoji, name: e.name, x: +e.x.toFixed(2), y: +e.y.toFixed(2), inside: e.inside, light: e.light || null, region: e.region || 'town' })),
@@ -44,6 +47,7 @@ export class Views {
       ...(this.threats.enabled || this.dark.graves.length ? { dark: this.threats.view() } : {}),
       avatars: this.avatars.view(),
       ...(this.fights?.length ? { fights: this.fightsView() } : {}),
+      ...(this.hasAdventure() ? { adv: this.adventureView() } : {}),
       overlay: this.evolved.snapshotExtra(),
       story: { tension: this.story?.now?.value ?? null, arc: this.arcs.active()?.phase || null, vote: this.votes.list.some((v) => v.status !== 'closed') },
     };
@@ -78,15 +82,56 @@ export class Views {
       marked: Boolean(a.marks?.length),
       alignment: a.alignment || null,
       captive: a.captive ? this.byId[a.captive.by]?.name || true : null,
+      // 冒险：成长、装备、队伍、休整（检视面板的「成长」页）
+      ...this.growthDetail(a),
     };
   }
 
+  /** 角色手里拿的东西（前端画武器图层，冒险 §4.2）：武器、盾 */
+  gearView(this: Town, a: LiveAgent) {
+    let wp: { w: string; c?: string; g?: string } | null = null, sh: { c?: string } | null = null;
+    for (const k of equipped(a.inventory, this.spec.items)) {
+      const lk = this.spec.items[k]?.look;
+      if (!lk?.weapon) continue;
+      if (lk.weapon === 'shield') sh = { ...(lk.color ? { c: lk.color } : {}) };
+      else if (!wp) wp = { w: lk.weapon, ...(lk.color ? { c: lk.color } : {}), ...(lk.glow ? { g: lk.glow } : {}) };
+    }
+    return { ...(wp ? { wp } : {}), ...(sh ? { sh } : {}) };
+  }
+
+  /** 冒险的静态信息（随初始数据下发）：回复点、各区域在世界全图上的位置 */
+  adventureMeta(this: Town) {
+    if (!this.hasAdventure()) return null;
+    return { rests: Object.keys(this.spec.locations).filter((id) => this.restOf(id)) };
+  }
+
+  /** 检视面板的「成长」页：等级、经验、属性、装备栏、队伍 */
+  growthDetail(this: Town, a: LiveAgent) {
+    const xp = this.spec.growth ? this.xpOf(a) : null;
+    const st = this.combatStats(a);
+    const eq = equipped(a.inventory, this.spec.items).map((k) => ({ id: k, slot: this.spec.items[k]!.equip, name: this.spec.items[k]!.name, emoji: this.spec.items[k]!.emoji, mods: this.spec.items[k]!.mods || {}, ...(this.spec.items[k]!.look ? { look: this.spec.items[k]!.look } : {}) }));
+    const party = this.spec.parties ? this.partyOf(a) : null;
+    if (!xp && !eq.length && !party && !a.resting) return {};
+    return {
+      adventure: {
+        ...(xp ? { level: xp.level, exp: xp.exp, next: expToNext(this.spec.growth, xp.level), track: this.spec.growth!.tracks[xp.track]?.name || xp.track } : {}),
+        atk: st.atk, def: st.def, maxHp: this.maxHp(a), equipped: eq,
+        ...(party ? { party: { id: party, name: this.spec.parties![party]?.name || party, leader: this.spec.parties![party]?.leader } } : {}),
+        ...(a.resting ? { resting: { why: a.resting.why, at: this.locName(a.resting.at) } } : {}),
+      },
+    };
+  }
+
+  /**
+   * 首次推送：激活的区域带完整地图；休眠的区域只给名字与尺寸（stub），前端切过去时再请求（冒险 §3.5）
+   */
   initPayload(this: Town) {
     return {
       world: this.world,
-      regions: Object.fromEntries(Object.entries(this.regions).filter(([id]) => id !== 'town')),
+      regions: Object.fromEntries(Object.entries(this.regions).filter(([id]) => id !== 'town').map(([id, w]) => [id, this.regionActive(id) ? w : { id, name: w.name, W: w.W, H: w.H, stub: true }])),
       worldId: this.worldId,
       regionsOpen: this.regionsView(),
+      adventure: this.adventureMeta(),
       // 地图之间的路口（游戏模式的低延迟移动用来预判过图，docs/design/realtime.md §4）
       links: this.linksView(),
       weathers: this.spec.weather,

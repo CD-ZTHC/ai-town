@@ -83,6 +83,7 @@ export class WorldHost {
     t.on('vfx', b('vfx'));
     t.on('combat', b('combat'));
     t.on('stage', b('stage'));
+    t.on('adv', b('adv'));
     t.on('agents', b('agents'));
     t.on('worldmap', b('worldmap'));
     t.on('regions', b('regions'));

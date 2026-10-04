@@ -28,7 +28,9 @@ export class DarkLayer {
   }
 
   /** 威胁：一团影子上浮着它的符号；被压住时是灰色的，还带一圈锁链；会死的威胁有血条 */
-  drawThreat(ctx, th) {
+  drawThreat(ctx, th, S) {
+    // 有外观的威胁画成像素怪物（冒险 §4.1）；没有的仍是浮着的符号
+    if (th.look?.bodyPlan) return this.drawMonster(ctx, th, th.look, S || this.S);
     const X = th.dx * TS + TS / 2, fy = th.dy * TS + TS - 2, t = this.time;
     const held = th.state === 'suppressed';
     const flick = held ? 0.5 : 0.75 + Math.sin(t * 7 + th.dx * 3) * 0.12 + (Math.random() < 0.03 ? -0.4 : 0);
