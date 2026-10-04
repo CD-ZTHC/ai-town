@@ -109,14 +109,33 @@ export function bodyHTML(d) {
     ...(d.hosted || []).map((h) => `<span class="dk host">${esc(h.emoji)} 寄宿：${esc(h.name)}</span>`),
     ...(d.posture || []).map((p) => `<span class="dk">🤐 ${esc(POSTURE[p] || p)}</span>`),
   ].join('');
+  const max = d.body.maxHp || 100;
   return `<div class="ibody">
-    ${d.body.hp < 100 ? bar('伤势', Math.round(d.body.hp), 'hp') : ''}${(d.burdens || []).map((b) => bar(b.name, Math.round((b.value / b.max) * 100), 'bu')).join('')}
+    ${advHTML(d)}
+    ${d.body.hp < max ? bar(`生命 ${Math.round(d.body.hp)}/${max}`, Math.round((d.body.hp / max) * 100), 'hp') : ''}${(d.burdens || []).map((b) => bar(b.name, Math.round((b.value / b.max) * 100), 'bu')).join('')}
     ${bar('体力', d.body.stamina, 'st')}${bar('勇气', d.body.courage, 'co')}
     ${dark ? `<div class="conds dark">${dark}</div>` : ''}
     ${d.body.conditions.length ? `<div class="conds">${d.body.conditions.map((c) => `<span>${esc(c)}</span>`).join('')}</div>` : ''}
     ${d.researching ? `<div class="goal"><b>研究中</b> ${esc(d.researching)}</div>` : ''}
     ${abs ? `<div class="chips"><b>能力</b>${abs}</div>` : ''}
     ${inv ? `<div class="chips"><b>物品</b>${inv}</div>` : ''}
+  </div>`;
+}
+
+// 冒险（docs/design/adventure.md §4.4）：等级与经验、路线、属性、装备栏、队伍、休整
+const SLOT = { weapon: '武器', armor: '护甲', trinket: '饰品' };
+const REST = { retreat: '撤退休整中', downed: '倒下了，被送去休养', night: '在营地过夜' };
+function advHTML(d) {
+  const a = d.adventure;
+  if (!a) return '';
+  const p = a.next ? Math.round((a.exp / a.next) * 100) : 0;
+  const eq = (a.equipped || []).map((x) => `<span class="chip-item" title="${esc(Object.entries(x.mods || {}).map(([k, v]) => `${{ atk: '攻', def: '防', hp: '血' }[k] || k}+${v}`).join(' '))}">${esc(x.emoji)} ${esc(SLOT[x.slot] || x.slot)}：${esc(x.name)}</span>`).join('');
+  return `<div class="adv-insp">
+    ${a.level ? `<div class="adv-lv"><b>Lv ${a.level}</b><span>${esc(a.track || '')}</span><i><em style="width:${p}%"></em></i><small>${a.exp}/${a.next} EXP</small></div>` : ''}
+    <div class="adv-stats"><span>⚔ 攻 ${a.atk}</span><span>🛡 防 ${a.def}</span><span>❤ 血 ${a.maxHp}</span></div>
+    ${a.party ? `<div class="goal"><b>队伍</b> 🤝 ${esc(a.party.name)}${a.party.leader === d.id ? '（队长）' : ''}</div>` : ''}
+    ${a.resting ? `<div class="goal"><b>休整</b> 🏕️ ${esc(REST[a.resting.why] || '休整中')} · ${esc(a.resting.at)}</div>` : ''}
+    ${eq ? `<div class="chips"><b>装备</b>${eq}</div>` : ''}
   </div>`;
 }
 

@@ -147,5 +147,7 @@ export interface ThreatInstance {
   confined?: boolean;
   patrol?: string[] | number;
   target?: string | null;
+  /** 野怪（冒险 §3.4）：不开事件、不划封锁区，被打倒时不写设定集 */
+  wild?: boolean;
   [k: string]: unknown;
 }

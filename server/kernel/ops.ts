@@ -32,6 +32,8 @@ export interface OpDef {
   describe?(a: Args, spec?: WorldSpec): string;
 }
 
+import { checkLook, expeditionsOf, validateAdventure } from './adventure-spec.ts';
+
 const str = (v: unknown, max: number): string => String(v ?? '').trim().slice(0, max);
 const ID_RE = /^[a-z][a-z0-9_]{1,23}$/;
 // 与 JS 对象原型重名的 id（constructor、toString……）一律不允许，避免查表时混淆
@@ -103,6 +105,18 @@ function areasProblem(spec: WorldSpec, a: Args): string | null {
   }
   return null;
 }
+/** 远征加一段（addStage）：写进唯一的那支远征，after 指定的阶段征服后解锁它 */
+function stageApply(spec: WorldSpec, a: Args): void {
+  const x = spec.expedition || spec.expeditions?.[0];
+  if (!x) return;
+  const st = { id: a.id, region: a.region, title: str(a.title, 12), ...(a.intro ? { intro: str(a.intro, 60) } : {}), ...(a.wild ? { wild: [...a.wild] } : {}),
+    ...(a.spawns ? { spawns: structuredClone(a.spawns) } : {}), ...(a.boss ? { boss: structuredClone(a.boss) } : {}), ...(a.clear ? { clear: String(a.clear) } : {}),
+    ...(a.levelHint ? { levelHint: a.levelHint } : {}) };
+  x.stages.push(st);
+  const prev = a.after ? x.stages.find((s) => s.id === a.after) : null;
+  if (prev) prev.unlock = [...new Set([...(prev.unlock || []), a.id])];
+}
+
 function adjacentApply(spec: WorldSpec, a: Args): void {
   const from = spec.regions.find((r) => r.id === (a.from || 'town'))!;
   const [FW, FH] = mapSize(from);
@@ -449,7 +463,7 @@ export const OPS: Record<string, OpDef> = {
       return null;
     },
     apply(spec, a) {
-      spec.locations[a.id] = { name: str(a.name, 16), emoji: str(a.emoji, 4) || '📍', desc: str(a.desc, 60) || str(a.name, 16), public: a.public !== false };
+      spec.locations[a.id] = { name: str(a.name, 16), emoji: str(a.emoji, 4) || '📍', desc: str(a.desc, 60) || str(a.name, 16), public: a.public !== false, kind: a.kind };
       pushEdit(spec, { kind: 'place', id: a.id, placeKind: a.kind, rect: { ...a.rect }, seed: Number(a.seed) || 1 });
     },
     describe: (a) => `多了一个新去处：${str(a.emoji, 4)}「${str(a.name, 16)}」`,
@@ -515,7 +529,6 @@ export const OPS: Record<string, OpDef> = {
     check(spec, a) {
       if (!validId(a.id) || a.id === 'town') return 'id 不合法';
       if (spec.regions.some((r) => r.id === a.id)) return `区域已存在：${a.id}`;
-      if (spec.regions.length >= 6) return '区域已达上限（6 个）';
       const e = areasProblem(spec, a);
       if (e) return e;
       const problems = layoutProblems(regionOf(a), spec);
@@ -554,7 +567,6 @@ export const OPS: Record<string, OpDef> = {
     check(spec, a) {
       if (!validId(a.id) || a.id === 'town') return 'id 不合法';
       if (spec.regions.some((r) => r.id === a.id)) return `区域已存在：${a.id}`;
-      if (spec.regions.length >= 6) return '区域已达上限（6 个）';
       const from = spec.regions.find((r) => r.id === (a.from || 'town'));
       if (!from) return `未知区域：${a.from}`;
       if (!SIDES.includes(a.side)) return `side 只能是 ${SIDES.join('/')}`;
@@ -665,6 +677,50 @@ export const OPS: Record<string, OpDef> = {
     },
     apply(spec, a) { spec.combat = { ...spec.combat, avatarKit: [...a.ids] }; },
     describe: (a, spec) => `旅人们学会了新的招式：${(a.ids as string[]).map((id) => spec?.abilities.find((x) => x.id === id)?.name || id).join('、')}`,
+  },
+  // ---------- 冒险（docs/design/adventure.md §3.8）----------
+  // 普通战斗怪（野怪）：会死、没有规律、不开事件，属性有上限
+  addMonster: {
+    level: 'minor',
+    check(spec, a) {
+      if (!validId(a.id)) return 'id 不合法';
+      if (Object.hasOwn(spec.threats || {}, a.id)) return `已经有这种怪了：${a.id}`;
+      if (!str(a.name, 12) || !str(a.emoji, 8)) return 'name（≤12字）/ emoji 缺失';
+      const num = (v: unknown, lo: number, hi: number) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+      if (!num(a.hp, 10, 400) || !num(a.atk, 1, 30) || !num(a.def ?? 0, 0, 15) || !num(a.speed ?? 1.4, 0.5, 4)) return 'hp 10~400、atk 1~30、def 0~15、speed 0.5~4';
+      if (a.aggro != null && !num(a.aggro, 1, 6)) return 'aggro 应在 1~6（格）';
+      if (a.exp != null && !num(a.exp, 1, 200)) return 'exp 应在 1~200';
+      if (!Array.isArray(a.haunt) || !a.haunt.length || a.haunt.length > 4 || a.haunt.some((l: unknown) => !Object.hasOwn(spec.locations, String(l)))) return 'haunt 应为 1~4 个现有地点 id';
+      for (const id of a.skills || []) { const ab = spec.abilities.find((x) => x.id === id); if (!ab?.combat || ab.power) return `skills 里的 ${id} 不存在、没有 combat 块或是创世级的`; }
+      if ((a.skills || []).length > 3) return 'skills 最多 3 个';
+      for (const l of a.loot || []) if (!Object.hasOwn(spec.items, l?.item) || !num(l?.p, 0, 1)) return 'loot 应为 [{item, p: 0~1}]';
+      return checkLook(a.look);
+    },
+    apply(spec, a) {
+      (spec.threats ||= {})[a.id] = {
+        name: str(a.name, 12), emoji: str(a.emoji, 8), kind: str(a.kind, 12) || '野怪', mortal: true, hp: a.hp, atk: a.atk, def: a.def ?? 0, speed: a.speed ?? 1.4,
+        haunt: [...a.haunt], movement: 'wander', ...(a.aggro ? { aggro: a.aggro } : { aggro: 3 }), ...(a.exp ? { exp: a.exp } : {}),
+        ...(a.skills?.length ? { skills: [...a.skills] } : {}), ...(a.loot?.length ? { loot: a.loot.map((l: Args) => ({ item: l.item, p: l.p })) } : {}),
+        ...(a.look ? { look: structuredClone(a.look) } : {}), incident: false, clues: [],
+      };
+    },
+    describe: (a) => `野外出现了一种新的怪物：${str(a.emoji, 8)}${str(a.name, 12)}`,
+  },
+  // 远征的新阶段：接在某个现有阶段后面（它征服后解锁），区域必须已经存在
+  addStage: {
+    level: 'major',
+    check(spec, a) {
+      const x = expeditionsOf(spec)[0];
+      if (!x) return '这个世界没有远征';
+      if (!validId(a.id) || x.stages.some((s) => s.id === a.id)) return 'id 不合法或已存在';
+      if (a.after != null && !x.stages.some((s) => s.id === a.after)) return `after 未知阶段：${a.after}`;
+      const next = structuredClone(spec);
+      stageApply(next, a);
+      const e = validateAdventure(next).find(([p]) => p.includes(`stages.${a.id}`) || p.startsWith('expeditions'));
+      return e ? `${e[0]}：${e[1]}` : null;
+    },
+    apply(spec, a) { stageApply(spec, a); },
+    describe: (a) => `远征有了新的目标：「${str(a.title, 12)}」`,
   },
   addRule: {
     level: 'major',

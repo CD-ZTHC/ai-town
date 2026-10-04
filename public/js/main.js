@@ -9,6 +9,7 @@ import * as Immerse from './immerse.js';
 import * as Play from './play.js';
 import { requireLogin } from './ui/auth.js';
 import * as Version from './version.js';
+import * as Adventure from './adventure.js';
 
 export const storage = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -82,6 +83,8 @@ export const app = {
   setView(id, { center = true } = {}) {
     const w = app.regionWorlds[id];
     if (!w || app.view === id) return;
+    // 休眠的区域只有名字和尺寸（docs/design/adventure.md §3.5）：先取地图（同时唤醒它），取到再切
+    if (w.stub) { app.loadRegion(id).then(() => app.setView(id, { center })).catch(() => {}); return; }
     app.view = id;
     Realtime.view(id); // 战斗通道只推看着的这张地图
     app.world = w;
@@ -89,6 +92,15 @@ export const app = {
     app.disp = {}; app.cdisp = {}; app.vdisp = {};
     if (center && w.gate) { app.cam.x = w.gate.x * TS; app.cam.y = w.gate.y * TS; }
     UI.onRegions?.();
+  },
+  /** 取一张区域的完整地图（休眠的区域不随初始数据下发） */
+  async loadRegion(id) {
+    if (app.regionLoading?.[id]) return app.regionLoading[id];
+    (app.regionLoading ||= {})[id] = app.api(`/api/region?id=${encodeURIComponent(id)}`).then((r) => {
+      app.regionWorlds[id] = r.world;
+      if (r.regionsOpen) app.regionsOpen = r.regionsOpen;
+    }).finally(() => { delete app.regionLoading[id]; });
+    return app.regionLoading[id];
   },
   agentWorldPos(id) {
     const a = app.snap?.agents.find((x) => x.id === id);
@@ -160,10 +172,17 @@ function connect() {
     const d = JSON.parse(e.data);
     Version.seen(d.build);
     const first = !app.world;
-    app.regionWorlds = { town: d.world, ...(d.regions || {}) };
+    // 休眠区域只给了 stub：之前取到过完整地图的接着用（地图本身不会因为休眠改变）
+    const prevWorlds = app.regionWorlds || {};
+    app.regionWorlds = { town: d.world, ...Object.fromEntries(Object.entries(d.regions || {}).map(([id, w]) => [id, w.stub && prevWorlds[id] && !prevWorlds[id].stub ? prevWorlds[id] : w])) };
+    app.adventureMeta = d.adventure || null;
     app.links = d.links || []; // 地图之间的路口（游戏模式预判过图）
     app.regionsOpen = d.regionsOpen || {};
-    if (!app.regionWorlds[app.view] || (app.view !== 'town' && !app.regionsOpen[app.view]?.open)) app.view = 'town';
+    if (!app.regionWorlds[app.view] || app.regionWorlds[app.view].stub || (app.view !== 'town' && !app.regionsOpen[app.view]?.open)) {
+      const want = app.view;
+      app.view = 'town';
+      if (app.regionWorlds[want]?.stub && app.regionsOpen[want]?.open) app.loadRegion(want).then(() => app.setView(want, { center: false })).catch(() => {});
+    }
     const viewChanged = app.world && app.world.id !== app.view;
     app.world = app.regionWorlds[app.view];
     app.weathers = d.weathers;
@@ -179,6 +198,8 @@ function connect() {
     if (first || viewChanged || app.view === 'town') renderer.setWorld(app.world);
     renderer.setAgents(d.agents);
     renderer.setCreatureTypes(d.spec?.creatures);
+    renderer.creatureLooks = Object.fromEntries(Object.entries(d.spec?.creatures || {}).map(([id, c]) => [id, c.look]));
+    renderer.abilityOf = (id) => app.spec?.abilities?.find((x) => x.id === id) || null;
     for (const a of d.agents) a.portrait = renderer.portraits[a.id];
     UI.init(app, first);
     showHalt(d.state?.halted || null);
@@ -215,6 +236,8 @@ function connect() {
   });
   // 演出（docs/design/presentation.md）：排队播放
   es.addEventListener('stage', (e) => Stage.enqueue(JSON.parse(e.data)));
+  // 冒险（docs/design/adventure.md）：升级、经验、掉落、撤退、预告、征服……
+  es.addEventListener('adv', (e) => Adventure.onAdv(JSON.parse(e.data)));
   es.addEventListener('combat', (e) => { const v = JSON.parse(e.data); if ((v.region || 'town') === app.view) renderer.addCombat(v); Play.onCombat?.(v); });
   // 画面里的音效（命中、挥动、低吼……）：只播当前看着的地图里的，按与镜头的距离衰减
   renderer.sfx = (kind, at) => Sfx.play(app.sound, kind, { at, cam: app.cam });
@@ -455,7 +478,8 @@ function loop(now) {
         const k = 1 - Math.exp(-dt * 8);
         d.dx += (th.x - d.dx) * k; d.dy += (th.y - d.dy) * k;
         const o = renderer.offsetOf(`threat:${th.id}`);
-        return { ...th, dx: d.dx + o.x, dy: d.dy + o.y };
+        const def = app.spec?.threats?.[th.type];
+        return { ...th, dx: d.dx + o.x, dy: d.dy + o.y, ...(def?.look ? { look: def.look } : {}), ...(def?.boss ? { boss: true } : {}) };
       }),
       zones: (dk.zones || []).filter(here), graves: (dk.graves || []).filter(here), crowd: app.view === 'town' ? dk.crowd || null : null,
     } : null;
@@ -510,12 +534,24 @@ function loop(now) {
       play: app.mode === 'play' ? Play.state() : null,
       // 即时战斗：这个区域里进行中的战斗（血条、读条由 render/combat 画）
       fights: (s.fights || []).filter(here),
+      // 冒险：快照的 adv（队伍、远征、预告）+ 回复点；这个区域的地貌与氛围；焦点
+      adv: s.adv ? { ...s.adv, rests: app.adventureMeta?.rests || [], party: new Set(Object.values(s.adv.parties || {}).flatMap((p) => p.members)) } : null,
+      regionInfo: app.regionsOpen?.[app.view] || null, fog: Boolean(app.spec?.fog), worldId: app.perms?.world || '',
+      focusKey: Adventure.focusOf(),
     };
+    S.lookOf = (id) => S.dark?.threats.find((x) => x.id === id)?.look || null;
+    {
+      const fk = S.focusKey;
+      const u = fk && (fk.startsWith('avatar:') ? avatars.find((v) => `avatar:${v.id}` === fk) : agentMap[fk.slice(6)]);
+      S.focusHp = u && u.hp != null ? u.hp / (u.maxHp || 100) : null;
+    }
     S.fightKeys = new Set(S.fights.flatMap((F) => F.fighters.map((f) => `${f.kind}:${f.id}`)));
     if (now - (app.safeT || 0) > 300) { app.safeT = now; renderer.safe = safeInsets(); }
     if (now - (app.tintT || 0) > 1000) { app.tintT = now; document.body.style.setProperty('--tint', uiTint(minute)); }
     renderer.frame(S, dt);
     UI.frame(S, dt);
+    Adventure.frame(S);
+    Adventure.music(S);
     if (app.mode === 'immerse') Immerse.frame(S, dt);
     if (app.mode === 'play') Play.frame(S, dt);
     Sound.update(S);
@@ -591,4 +627,5 @@ app.storage = storage;
 // 模式、界面外壳与按键（依赖上面的 app.sound / app.storage）
 Modes.init(app);
 Stage.init(app);
+Adventure.init(app);
 app.stageMode = Stage.cycleMode;

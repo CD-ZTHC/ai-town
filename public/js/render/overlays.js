@@ -85,6 +85,13 @@ export class Overlays {
         roundRect(ctx, x - tw / 2, fy + 5, tw, 16, 8); ctx.fill();
         ctx.fillStyle = S.selected === a.id ? '#2a1a00' : '#fff';
         ctx.fillText(m.name, x, fy + 13.5);
+        // 等级徽章（冒险 §4.4）：名牌左边一枚金色小牌
+        if (a.lv) {
+          ctx.font = '800 9px "PingFang SC","Microsoft YaHei",sans-serif';
+          const lw = ctx.measureText(`Lv${a.lv}`).width + 8;
+          ctx.fillStyle = 'rgba(255,209,102,.95)'; roundRect(ctx, x - tw / 2 - lw + 3, fy + 6, lw, 14, 7); ctx.fill();
+          ctx.fillStyle = '#3a2400'; ctx.fillText(`Lv${a.lv}`, x - tw / 2 - lw / 2 + 3, fy + 13.5);
+        }
       }
       // 表情徽章
       const by = headY - 12 + Math.sin(this.time * 2 + a.id.length) * 2;

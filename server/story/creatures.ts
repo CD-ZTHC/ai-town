@@ -140,7 +140,8 @@ export class CreatureSystem {
   // ---------- 每次推进 ----------
   tick(dt: number): void {
     if (!this.list.length) return;
-    for (const c of this.list) this.update(c, dt);
+    // 休眠的区域（冒险 §3.5）里的生物不动
+    for (const c of this.list) if (this.town.regionActive?.(c.region || 'town') !== false) this.update(c, dt);
     this.encounters();
     if (this.list.some((c) => c.hp <= 0)) this.town.creatureList = this.list.filter((c) => c.hp > 0);
     this.swarmMind();

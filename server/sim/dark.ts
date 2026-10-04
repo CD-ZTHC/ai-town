@@ -145,8 +145,9 @@ export class Dark {
   woundAgent(this: Town, a: LiveAgent, amount: number, { cause = '' }: { cause?: string } = {}) {
     if (!a || !this.agents.includes(a)) return;
     const b = a.body;
-    b.hp = clamp(Math.round(b.hp - amount), 1, 100);
-    if (b.hp < 30 && !b.conditions.includes('重伤')) {
+    const max = this.maxHp(a);
+    b.hp = clamp(Math.round(b.hp - amount), 1, max);
+    if (b.hp < 0.3 * max && !b.conditions.includes('重伤')) {
       b.conditions = [...new Set([...b.conditions, '重伤'])].slice(-5);
       addMemory(a, { t: this.t, type: 'obs', text: '受了很重的伤，得好好躺一阵子', importance: 7 });
       this.log('wound', `🩸 ${a.name}受了重伤`, { agents: [a.id], cause });
@@ -157,8 +158,9 @@ export class Dark {
 
   healAgent(this: Town, a: LiveAgent, amount: number) {
     const b = a.body;
-    b.hp = clamp(Math.round(b.hp + amount), 0, 100);
-    if (b.hp >= 50) b.conditions = b.conditions.filter((c) => c !== '重伤');
+    const max = this.maxHp(a);
+    b.hp = clamp(Math.round(b.hp + amount), 0, max);
+    if (b.hp >= 0.5 * max) b.conditions = b.conditions.filter((c) => c !== '重伤');
     this.emit('agent', a.id);
   }
 

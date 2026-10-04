@@ -52,7 +52,7 @@ export class ThreatSystem {
 
   // ---------- 出现 ----------
   /** 在某处出现一个威胁。at：坐标（可带 region）；loc：地点 id；都没有时在它常出没的地点。返回实例或 null */
-  spawn(type: string, { at = null, loc = null, cause = '', incident = null, quiet = false }: { at?: (Cell & { region?: string }) | null; loc?: string | null; cause?: string; incident?: string | null; quiet?: boolean } = {}): ThreatInstance | null {
+  spawn(type: string, { at = null, loc = null, cause = '', incident = null, quiet = false, wild = false }: { at?: (Cell & { region?: string }) | null; loc?: string | null; cause?: string; incident?: string | null; quiet?: boolean; wild?: boolean } = {}): ThreatInstance | null {
     const town = this.town;
     const def = town.spec.threats?.[type];
     if (!def || this.st.threats.filter((x) => !['contained', 'gone'].includes(x.state)).length >= MAX_THREATS) return null;
@@ -66,7 +66,10 @@ export class ThreatSystem {
       id: `th${++this.st.seq}`, type, name: def.name, x: p.x, y: p.y, region: at?.region || town.locRegion(home) || 'town',
       path: [], state: 'roam', hp: def.mortal ? def.hp! : null, born: Math.floor(town.t), restUntil: 0, dwellUntil: 0, suppressedUntil: 0, sounds: {}, crowdAt: town.t,
     };
+    // 野怪（冒险 §3.4）：远征刷出来的、或者世界包写明 incident: false 的，不开事件、不划封锁区
+    if (wild || def.incident === false) inst.wild = true;
     this.st.threats.push(inst);
+    if (inst.wild) { town.emit('story'); return inst; }
     if (def.zone) this.st.zones.push({ id: `z${inst.id}`, threat: inst.id, x: p.x, y: p.y, r: def.zone.radius, region: inst.region, tint: def.zone.tint || '#5a2340', replay: def.zone.replay || null, born: Math.floor(town.t) });
     inst.incident = incident || this.openIncident(inst, home, cause).id;
     if (!quiet) town.log('threat', `${def.emoji} ${town.locName(home)}一带出现了异样……`, { threat: inst.id });
@@ -83,7 +86,8 @@ export class ThreatSystem {
   tick(dt: number): void {
     if (!this.enabled) return;
     const st = this.st;
-    for (const inst of this.live()) this.move(inst, dt);
+    // 休眠的区域（冒险 §3.5）里的威胁不动，唤醒时按流逝的时间推算
+    for (const inst of this.live()) if (this.town.regionActive(inst.region)) this.move(inst, dt);
     const minute = Math.floor(this.town.t);
     if (minute === st.lastMinute) return;
     st.lastMinute = minute;
@@ -107,6 +111,7 @@ export class ThreatSystem {
     for (const inst of this.live()) {
       const def = this.def(inst);
       if (!def) { inst.state = 'gone'; continue; }
+      if (!town.regionActive(inst.region)) continue;
       if (inst.state === 'suppressed' && town.t >= inst.suppressedUntil) { inst.state = 'roam'; town.log('threat', `${def.emoji} 被压住的${def.name}又动了起来`, { threat: inst.id }); }
       const awake = this.active(def);
       if (inst.state === 'roam' && !awake) inst.state = 'dormant';
@@ -507,7 +512,14 @@ export class ThreatSystem {
     inst.hp! -= dmg;
     this.touch(inst);
     if (inst.hp! <= 0) {
-      for (const l of def.loot || []) if (by && this.random() < l.p) by.inventory[l.item] = Math.min(99, (by.inventory[l.item] || 0) + 1);
+      const drops: string[] = [];
+      for (const l of def.loot || []) if (by && this.random() < l.p) { by.inventory[l.item] = Math.min(99, (by.inventory[l.item] || 0) + 1); drops.push(l.item); }
+      if (drops.length && by) {
+        town.adventureToday().loot += drops.length;
+        town.emit('adv', { type: 'loot', unit: { kind: 'agent', id: by.id }, name: by.name, x: inst.x, y: inst.y, region: inst.region || 'town', items: drops.map((k) => ({ id: k, name: town.spec.items[k]?.name || k, emoji: town.spec.items[k]?.emoji || '📦' })) });
+      }
+      // 战斗外打死的（例如能力的 strike、damage）：经验全给出手的人；战斗里的由战斗结算
+      if (by && !town.engaged?.('agent', by.id)) town.awardKill(null, { kind: 'agent', id: by.id }, town.threatWorth(inst.type), inst.region || 'town', def.name);
       this.end(inst, 'slain', `${by?.name || '有人'}消灭了${def.name}`, by);
     }
     return dmg;
@@ -567,7 +579,10 @@ export class ThreatSystem {
     const inc = this.incidentOf(inst);
     if (inc) { inc.outcome = how; this.stage(inc, 'handled'); }
     const emoji = { contained: '📦', resolved: '✨', slain: '⚔️' }[how] || '•';
-    town.log('threat', `${emoji} ${text}`, { agents: by ? [by.id] : [], threat: inst.id, result: how });
+    const def0 = this.def(inst);
+    const boss = Boolean(def0?.boss || def0?.phases?.length);
+    if (how === 'slain') town.expeditionKill(inst);
+    town.log('threat', `${emoji} ${text}`, { agents: by ? [by.id] : [], threat: inst.id, result: how, ...(boss && how === 'slain' ? { milestone: 'boss' } : {}) });
     const firstResolve = how === 'resolved' && !this.isResolved(inst.type);
     if (how === 'resolved') town.worldFlags[`resolved_${inst.type}`] = true;
     if (by) addMemory(by, { t: town.t, type: 'obs', text, importance: 8 });
@@ -576,7 +591,8 @@ export class ThreatSystem {
     const at = { x: inst.x, y: inst.y, inside: null, region: inst.region || 'town' };
     if (how === 'slain' && def && (def.boss || def.phases?.length)) town.stage(def.stage?.slain || { template: 'moment', target: 'at', text: `${def.emoji} ${def.name}倒下了`, priority: 'major' }, { self: by, at, threat: inst }, { source: `threat:${inst.type}` });
     if (how === 'slain' && def?.onSlain?.length) runEffects(town, { self: by, target: null, e: by, at: { x: inst.x, y: inst.y, inside: null, region: inst.region || 'town' }, source: `threat:${inst.type}`, threat: inst }, def.onSlain);
-    try { town.applyWorldOp({ op: 'addCanon', args: { text: `第${town.day}天，${text}。`, tags: ['事件'] } }, { by: 'threat' }, { quiet: true }); } catch { /* 正典满了也不影响 */ }
+    // 野怪被打倒是家常便饭，不写进设定集（Boss 除外）
+    if (!inst.wild || boss) { try { town.applyWorldOp({ op: 'addCanon', args: { text: `第${town.day}天，${text}。`, tags: ['事件'] } }, { by: 'threat' }, { quiet: true }); } catch { /* 正典满了也不影响 */ } }
     if (firstResolve) this.purgeType(inst.type);
     town.emit('story');
   }

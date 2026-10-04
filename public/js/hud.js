@@ -95,7 +95,7 @@ function commands() {
     list.push({ icon: `<img src="${a.portrait}" alt="">`, label: a.name, hint: `${a.role}${s ? ` · ${s.emoji} ${s.action}` : ''}`, keys: `${a.name} ${a.role} ${a.id}`, run: () => { if (app.mode !== 'observe') app.setMode('observe'); app.select(a.id); } });
   }
   const locs = { ...(app.regionWorlds.town?.locations || {}) };
-  for (const [rid, w] of Object.entries(app.regionWorlds)) if (rid !== 'town' && app.regionsOpen[rid]?.open) for (const [k, l] of Object.entries(w.locations)) locs[k] = { ...l, region: rid };
+  for (const [rid, w] of Object.entries(app.regionWorlds)) if (rid !== 'town' && app.regionsOpen[rid]?.open) for (const [k, l] of Object.entries(w.locations || {})) locs[k] = { ...l, region: rid };
   for (const l of Object.values(locs)) {
     if (!l.rect) continue;
     list.push({ icon: esc(l.emoji || '📍'), label: l.name, hint: l.region ? '异界 · 镜头飞过去' : '地点 · 镜头飞过去', keys: `${l.name} ${l.id}`, run: flyTo(l) });

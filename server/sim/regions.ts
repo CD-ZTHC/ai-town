@@ -152,7 +152,9 @@ export class Regions {
   regionsView(this: Town) {
     return Object.fromEntries(Object.values(this.regions).map((w) => {
       const r = this.spec.regions.find((x) => x.id === w.id) || ({} as Partial<Region>);
-      return [w.id, { name: w.name || '小镇', open: this.regionOpen(w.id), ...(r.adjacent ? { adjacent: r.adjacent } : {}), theme: w.generator === 'moonrealm-v1' ? 'moon' : null }];
+      return [w.id, { name: w.name || '小镇', open: this.regionOpen(w.id), ...(r.adjacent ? { adjacent: r.adjacent } : {}), theme: w.generator === 'moonrealm-v1' ? 'moon' : null,
+        // 冒险（docs/design/adventure.md）：休眠、世界全图的位置与尺寸、氛围、地貌
+        ...(this.regionActive(w.id) ? {} : { dormant: true }), W: w.W, H: w.H, ...(r.atlas ? { atlas: r.atlas } : {}), ...(r.ambience ? { ambience: r.ambience } : {}), ...(r.biome ? { biome: r.biome } : {}) }];
     }));
   }
 

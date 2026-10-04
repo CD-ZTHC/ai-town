@@ -244,7 +244,9 @@ test('区域：导演不能开区域，剧情弧可以；存档保留开放状�
   const again = new Town({ dataDir: dir });
   assert.ok(again.regionOpen('moonrealm'));
   assert.equal(again.initPayload().regionsOpen.moonrealm.open, true);
-  assert.ok(again.initPayload().regions.moonrealm.tiles.length);
+  // 激活的区域带完整地图（休眠的只给 stub，冒险 §3.5）
+  const moon = again.initPayload().regions.moonrealm;
+  assert.ok('tiles' in moon && moon.tiles.length);
   again.stop();
 });
 

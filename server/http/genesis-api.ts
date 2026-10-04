@@ -136,6 +136,8 @@ export function genesisApi(deps: {
       inspiration: String(o.inspiration || '').slice(0, 200),
       avoid: (Array.isArray(o.avoid) ? o.avoid : String(o.avoid || '').split(/[，,、\s|]+/)).map((x: unknown) => String(x).trim().slice(0, 16)).filter(Boolean).slice(0, 40),
       threats: o.threats === undefined ? ['dark', 'tragic'].includes(rating) : Boolean(o.threats),
+      // 战斗冒险（docs/design/adventure.md §3.8）：队伍、成长、一片片要征服的土地
+      adventure: Boolean(o.adventure),
     };
     registry.create({ id, ownerId: user.id, title: String(b.title || id).slice(0, 40), status: 'drafting', rating, evolution: options.evolution, settings: ai ? { ai } : {} });
     const job = jobs.create({ ownerId: user.id, worldId: id, options, sourceId });

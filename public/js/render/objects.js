@@ -233,6 +233,8 @@ export class Objects {
   drawCreature(ctx, c) {
     const spr = this.creatureSprites[c.type];
     if (!spr) return;
+    // 怪物体型的异界生物：和威胁一样画（冒险 §4.1）
+    if (spr.palette) return this.drawMonster(ctx, { ...c, type: `c_${c.type}`, maxHp: null }, this.creatureLooks?.[c.type] || { bodyPlan: 'blob' }, this.S);
     const cx = c.dx * TS + TS / 2, fy = c.dy * TS + TS - 2;
     const fi = c.moving ? [1, 0, 2, 0][Math.floor(this.time * 6) % 4] : Math.floor(this.time * 2) % 2;
     const float = Math.sin(this.time * 3 + c.dx) * 2;
@@ -478,8 +480,11 @@ export class Objects {
     }
     const img = spr[a.dir]?.[fi] || spr.down[0];
     const draw = () => ctx.drawImage(img, Math.round(cx - (SPR_W * SCALE) / 2), Math.round(fy - SPR_H * SCALE + 4 + bob), SPR_W * SCALE, SPR_H * SCALE);
+    // 武器与盾（冒险 §4.2）：朝上时在身后
+    if (a.dir === 'up') this.drawGear(ctx, `agent:${a.id}`, cx, fy + bob, a.dir, a.wp, a.sh);
     draw();
     if (this.flashing(`agent:${a.id}`)) this.flashOver(ctx, draw);
+    if (a.dir !== 'up') this.drawGear(ctx, `agent:${a.id}`, cx, fy + bob, a.dir, a.wp, a.sh);
     this.drawAgentStatus(ctx, a);
   }
 }

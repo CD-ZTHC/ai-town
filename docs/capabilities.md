@@ -35,6 +35,8 @@
 | `prunePersona` | major | — | 仅管理员 / 剧情弧使用 |
 | `settlePersona` | major | — | 仅管理员 / 剧情弧使用 |
 | `setAvatarKit` | minor | ✅ | {"ids":["带 combat 块的能力id"]（最多4个）} —— 旅人（玩家）在游戏模式里能用的技能栏，整体替换 |
+| `addMonster` | minor | ✅ | {"id":"英文小写id","name":"≤12字","emoji","hp":10~400,"atk":1~30,"def":0~15,"speed":0.5~4,"haunt":["常出没的地点id"]（1~4个）,"aggro":1~6,"exp":1~200,"skills":["带 combat 块的能力id"]（≤3）,"loot":[{"item":"物品id","p":0~1}],"look":{"bodyPlan":"blob/beast/bird/insect/humanoid/treant/golem/skeleton/serpent/eye/wisp/hound/warden","scale":0.6~3,"palette":{"body":"#rrggbb","accent":"#rrggbb","eyes":"#rrggbb"},"pattern":"plain/spots/stripes/crystal/bone/ember","aura":"none/smoke/fire/frost/shadow/holy"}} —— 新的野怪（会被打倒、不开事件）；配合远征阶段的 spawns 或规则的 spawnThreat 出现 |
+| `addStage` | major | ✅ | {"id":"英文小写id","after":"接在哪个阶段后面","region":"区域id","title":"≤12字","intro":"≤60字","wild":["野外地点id"],"spawns":[{"threat":"怪的id","every":10~1440,"max":1~8}],"boss":{"threat":"Boss的id","after":"表达式，如 kills('区域id') >= 10"},"levelHint":1~99} —— 给远征加一段新的前线（大改）；区域要先用 addAdjacentRegion / addRegion 建好 |
 | `addRule` | major | ✅ | {"id","name":"≤16字","when":{"every":10~1440} 或 {"at":"HH:MM"} 或 {"weather":"天气id"} 或 {"enter":"地点id"},"forEach":"agent"(可选),"if":"表达式(可选)","then":[效果]} |
 | `setLore` | major | — | 仅管理员 / 剧情弧使用 |
 | `addBurden` | major | — | 仅管理员 / 剧情弧使用 |
@@ -79,6 +81,8 @@
 | `strike` | 内核 | {"op":"strike","power":0.2~5,"add":0~80,"tags":["弱点标签"]} 战斗招式：对命中的敌人造成伤害（攻击力×power+add）；不在战斗中时打身边会死的威胁 |
 | `status` | 内核 | {"op":"status","status":"stun/root/shield/haste/slow/bleed/weaken/guard","beats":1~40,"amount":0~100,"target":"self/target"} 战斗招式：给自己或命中的敌人挂状态（拍数；护盾、流血、架势用 amount） |
 | `knockback` | 内核 | {"op":"knockback","cells":1~4} 战斗招式：把命中的敌人击退几格 |
+| `exp` | 内核 | {"op":"exp","amount":1~500,"target":"self/target/e/nearby/all"} 获得经验（世界有成长时；够了就升级） |
+| `party` | 内核 | {"op":"party","join":"队伍id" 或 "leave":true,"target":"self/target/e"} 加入 / 离开队伍（结伴同行：队员跟着队长走、一起打） |
 | `goTo` | 扩展 | {"op":"goTo","location":"地点id","activity":"≤14字","minutes":30~180,"target":"self/target/e/nearby/all","radius":1~6} 让对象立刻动身前往某地（插入一段即时日程；睡着或正在交谈的人不受影响） |
 
 ## 表达式函数
@@ -118,11 +122,15 @@
 - `namedDeaths`：namedDeaths() 累计死去的具名角色数
 - `aliveIn`：aliveIn('阵营id', 'hosted'?) 阵营里还活着的成员数（第二个参数为 'hosted' 时只算身上寄宿着威胁的人）
 - `chapters`：chapters() 史诗已经写了多少章（本部）
+- `level`：level(e) e 的等级（世界没有成长时为 1）
+- `kills`：kills('区域id'?) 在某个区域（不写时为全世界）累计打倒了多少只
+- `stage`：stage('阶段id', '远征id'?) 远征阶段的状态：locked / open / front / cleared（没有时为 none）
+- `slain`：slain('威胁id') 这种威胁累计被打倒了几次
 
 ## 其他可用资源
 
 - 特效预设：glow_ring、sparkle、heal、notes、burst、ripple、split、quake
-- 生物体型：wisp、hound、warden
+- 生物体型：wisp、hound、warden、blob、beast、bird、insect、humanoid、treant、golem、skeleton、serpent、eye
 - 可调参数：`walkSpeed`（2~5）、`maxConvos`（1~6）、`convoBaseProb`（0.05~0.6）、`reflectThreshold`（20~80）、`dayEnd`（1260~1500）、`deathNamed`（0~20）、`deathDays`（1~14）
 - 地点：`cafe` 星光咖啡馆、`library` 云溪图书馆、`tavern` 月光酒馆、`clinic` 云溪诊所、`workshop` 铁柱工坊、`square` 中央广场、`market` 广场集市、`park` 樱花公园、`farm` 陈家农场、`pier` 镜湖码头
 - 异界地点（不能建房）：`moon_gate` 月之渡口·彼岸（moonrealm）、`moon_plaza` 暗月广场（moonrealm）、`moon_garden` 月光花园（moonrealm）、`moon_lookout` 星坠崖（moonrealm）

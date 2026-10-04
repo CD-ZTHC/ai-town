@@ -48,6 +48,11 @@ const SOUNDS = {
   quake: (c, o, t) => { tone(c, o, t, { wave: 'sine', freq: 50, to: 30, peak: 0.4, attack: 0.05, decay: 1.2 }); burst(c, o, t, { type: 'lowpass', freq: 250, peak: 0.3, attack: 0.05, decay: 1 }); },
   split: (c, o, t) => { burst(c, o, t, { type: 'highpass', freq: 4000, to: 300, peak: 0.35, attack: 0.01, decay: 0.6 }); tone(c, o, t + 0.05, { wave: 'sawtooth', freq: 60, to: 30, peak: 0.3, decay: 1.4 }); tone(c, o, t + 0.3, { freq: 660, peak: 0.1, attack: 0.2, decay: 1.5 }); },
   chime: (c, o, t) => { for (const [i, f] of [523, 659, 784, 1047].entries()) tone(c, o, t + i * 0.09, { freq: f, peak: 0.07, decay: 0.9 }); },
+  // 冒险（docs/design/adventure.md §4）：升级的上行音阶、拾取的叮当、危险时的心跳、怪物消散
+  levelup: (c, o, t) => { for (const [i, f] of [392, 523, 659, 784, 1047, 1319].entries()) tone(c, o, t + i * 0.07, { wave: i % 2 ? 'triangle' : 'square', freq: f, peak: 0.06, decay: 0.5 }); tone(c, o, t + 0.45, { freq: 1568, peak: 0.05, attack: 0.02, decay: 1.2 }); },
+  loot: (c, o, t) => { tone(c, o, t, { wave: 'square', freq: 988, peak: 0.05, decay: 0.08 }); tone(c, o, t + 0.07, { wave: 'square', freq: 1319, peak: 0.05, decay: 0.2 }); },
+  heart: (c, o, t) => { tone(c, o, t, { freq: 62, to: 40, peak: 0.35, attack: 0.01, decay: 0.16 }); tone(c, o, t + 0.22, { freq: 58, to: 38, peak: 0.25, attack: 0.01, decay: 0.18 }); },
+  poof: (c, o, t) => { burst(c, o, t, { type: 'bandpass', freq: 1600, to: 300, q: 0.7, peak: 0.12, attack: 0.01, decay: 0.3 }); tone(c, o, t, { wave: 'triangle', freq: 700, to: 200, peak: 0.05, decay: 0.25 }); },
 };
 export const SFX = Object.keys(SOUNDS);
 

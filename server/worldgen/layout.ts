@@ -77,6 +77,11 @@ export const BIOMES: Record<string, Biome> = {
   sky: { grass: ['#cfe3f5', '#e8f2fb'], blade: ['#b8d3ec', '#ffffff'], trees: {}, tree: 0, flower: 0, rock: 0, bush: 0.01 },
   // 山地：灰绿的岩坡与松树
   mountain: { grass: ['#6e7a5e', '#83907a'], blade: ['#5c6850', '#99a68c'], trees: { pine: 0.85, oak: 0.15 }, tree: 0.14, flower: 0.01, rock: 0.12, bush: 0.04 },
+  // 冒险（docs/design/adventure.md §4.9）：洞窟（前端整张地图压暗，只有人和火光周围亮）、废墟、城堡、火山
+  cave: { grass: ['#3a3631', '#47423b'], blade: ['#2e2a26', '#57514a'], trees: {}, tree: 0, flower: 0, rock: 0.13, bush: 0 },
+  ruins: { grass: ['#cdb98c', '#d9c79c'], blade: ['#b8a476', '#e6d6ad'], trees: {}, tree: 0, flower: 0, rock: 0.08, bush: 0.03 },
+  castle: { grass: ['#5b5866', '#696676'], blade: ['#4d4a57', '#7a7787'], trees: {}, tree: 0, flower: 0, rock: 0.02, bush: 0 },
+  volcano: { grass: ['#3b2f2c', '#4a3a35'], blade: ['#2c2220', '#6a4a3a'], trees: {}, tree: 0, flower: 0, rock: 0.1, bush: 0 },
 };
 export const BIOME_IDS = Object.keys(BIOMES);
 
@@ -158,7 +163,8 @@ export function solveLayout(region: Region): { W: number; H: number; buildings: 
       const rect = { x, y, w, h };
       const outdoor = Object.hasOwn(OUTDOOR_KINDS, p.kind) || (!Object.hasOwn(BUILDING_KINDS, p.kind) && p.outdoor === true);
       places[p.id] = { rect, kind: p.kind, outdoor, area: a.id };
-      const info = { name: String(p.name || p.id).slice(0, 16), emoji: p.emoji || (outdoor ? '📍' : '🏠'), desc: String(p.desc || p.name || '').slice(0, 120), public: p.public !== false, ...(region.id !== 'town' ? { region: region.id } : {}) };
+      // kind：地点的类型（冒险 §3.2 按它认回复点；建筑的类型另外记在建筑上）
+      const info = { name: String(p.name || p.id).slice(0, 16), emoji: p.emoji || (outdoor ? '📍' : '🏠'), desc: String(p.desc || p.name || '').slice(0, 120), public: p.public !== false, ...(region.id !== 'town' ? { region: region.id } : {}), ...(outdoor ? { kind: p.kind } : {}) };
       locations[p.id] = info;
       if (!outdoor) {
         const s = p.style || {};

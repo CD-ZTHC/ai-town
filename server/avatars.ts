@@ -5,6 +5,7 @@ import { findPath } from './world.ts';
 import { get as setting } from './settings/index.ts';
 import type { Town } from './sim.ts';
 import type { LiveAgent } from './types/agent.ts';
+import { expToNext } from './sim/growth.ts';
 
 /** 一位访客的化身（只在内存里） */
 export interface Avatar {
@@ -215,13 +216,21 @@ export class AvatarSystem {
     this.forced(v);
   }
 
-  /** 战斗中被打倒：回到出生点，缓几秒，血量回满 */
+  /** 战斗中被打倒：在最近的回复点醒来（世界有回复点时，冒险 §3.9；否则回到出生点），缓几秒，血量回满 */
   knockout(v: Avatar) {
-    const { spawn, s } = this.spawnPoint();
+    const town = this.town;
+    const rest = town.nearestRest?.({ x: v.x, y: v.y, region: v.region });
+    const loc = rest && town.findLocation(rest);
+    const at = loc ? (loc.spots[0] || town.locCenter(rest!)) : null;
+    const { spawn, s } = at ? { spawn: rest!, s: at } : this.spawnPoint();
     this.forced(v);
-    Object.assign(v, { region: 'town', x: s.x, y: s.y, path: [], hop: null, target: null, locId: spawn, moving: false, hp: 100, downUntil: this.now() + DOWN_MS });
-    this.town.emit('avatars');
+    Object.assign(v, { region: at ? town.locRegion(rest!) : 'town', x: s.x, y: s.y, path: [], hop: null, target: null, locId: spawn, moving: false, hp: this.maxHp(v), downUntil: this.now() + DOWN_MS });
+    if (at) town.emit('adv', { type: 'revive', unit: { kind: 'avatar', id: v.id }, name: v.name, at: rest, atName: town.locName(rest!) });
+    town.emit('avatars');
   }
+
+  /** 化身的生命上限：和居民同一个算法（只算成长，化身没有背包） */
+  maxHp(v: Avatar): number { return this.town.avatarMaxHp ? this.town.avatarMaxHp(v) : 100; }
 
   move(uid: string, locId: string) {
     const town = this.town;
@@ -291,7 +300,8 @@ export class AvatarSystem {
     const now = this.now();
     for (const v of [...this.list]) {
       if (now - v.seen > IDLE_MS) { this.remove(v, true); continue; }
-      if ((v.hp ?? 100) < 100 && !this.town.engaged?.('avatar', v.id)) v.hp = Math.min(100, (v.hp ?? 100) + REGEN * dtReal);
+      const max = this.maxHp(v);
+      if ((v.hp ?? max) < max && !this.town.engaged?.('avatar', v.id)) v.hp = Math.min(max, (v.hp ?? max) + REGEN * (max / 100) * dtReal);
       if ((v.downUntil || 0) > now) continue;
       // 客户端上报位置的化身：一段时间没有新上报就算停下了
       if (v.reportAt && !v.path.length) { if (now - v.reportAt > 300) v.moving = false; continue; }
@@ -340,8 +350,11 @@ export class AvatarSystem {
 
   view() {
     const now = this.now();
+    const g = Boolean(this.town.spec.growth);
     return this.list.map((v) => ({ id: v.id, name: v.name, color: v.color, look: v.look, x: +v.x.toFixed(2), y: +v.y.toFixed(2), dir: v.dir, moving: v.moving, region: v.region,
-      ...((v.hp ?? 100) < 100 ? { hp: Math.round(v.hp!) } : {}), ...((v.downUntil || 0) > now ? { down: true } : {}),
+      ...((v.hp ?? this.maxHp(v)) < this.maxHp(v) ? { hp: Math.round(v.hp!) } : {}), ...((v.downUntil || 0) > now ? { down: true } : {}),
+      // 成长（冒险 §3.9）：等级、经验、生命上限、技能栏
+      ...(g ? (() => { const xp = this.town.avatarXp(v)!; return { level: xp.level, exp: xp.exp, next: expToNext(this.town.spec.growth, xp.level), maxHp: this.maxHp(v), kit: this.town.avatarKitOf(v) }; })() : {}),
       ...(v.pv ? { pv: v.pv } : {}), ...(v.serverMove ? { serverMove: true } : {}),
       // 接下来要走的几格与终点：前端据此预览路线、平滑插值
       ...(v.path.length ? { next: v.path.slice(0, 3), to: v.path[v.path.length - 1] } : {}) }));

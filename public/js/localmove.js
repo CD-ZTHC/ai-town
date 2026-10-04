@@ -99,7 +99,7 @@ function landed() {
  */
 function cross(ox, oy) {
   if (st.crossing || landed()) return;
-  const l = (app.links || []).find((k) => k.from === st.region && app.regionWorlds?.[k.to] && app.regionsOpen?.[k.to]?.open !== false
+  const l = (app.links || []).find((k) => k.from === st.region && app.regionWorlds?.[k.to] && !app.regionWorlds[k.to].stub && app.regionsOpen?.[k.to]?.open !== false
     && Math.hypot(k.a.x - st.x, k.a.y - st.y) <= 1 && Math.hypot(k.a.x - st.x, k.a.y - st.y) < Math.hypot(k.a.x - ox, k.a.y - oy));
   if (!l) return;
   Object.assign(st, { region: l.to, x: l.b.x, y: l.b.y, path: [], landing: { x: l.b.x, y: l.b.y, region: l.to }, crossing: performance.now() + CROSS_WAIT_MS });

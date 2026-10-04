@@ -53,7 +53,9 @@ export const EXPR_FNS = new Set(['has', 'count', 'knows', 'hasCondition', 'nearS
   'seen', 'near', 'heard', 'opened', 'entered', 'speaking', 'named', 'alone', 'asleep', 'night', 'marked', 'inZone', 'posture',
   'burden', 'anchors', 'believes', 'flag', 'hosts',
   // 结局与大纲（docs/design/epic-outline.md §4）：世界层面的计数
-  'unresolvedThreats', 'liveThreats', 'containedThreats', 'crowdDead', 'namedDeaths', 'aliveIn', 'chapters']);
+  'unresolvedThreats', 'liveThreats', 'containedThreats', 'crowdDead', 'namedDeaths', 'aliveIn', 'chapters',
+  // 冒险（docs/design/adventure.md）：等级、战绩、远征阶段
+  'level', 'kills', 'stage', 'slain']);
 // 表达式函数的说明（用于自动生成能力清单）
 export const EXPR_FN_DOCS: Record<string, string> = {
   has: "has(e, '物品id', 数量=1) 身上是否有某物品", count: "count(e, '物品id') 物品数量", knows: "knows(e, '能力id') 是否会某能力",
@@ -70,6 +72,8 @@ export const EXPR_FN_DOCS: Record<string, string> = {
   unresolvedThreats: 'unresolvedThreats() 世界包里还没有被永久化解的威胁种类数', liveThreats: 'liveThreats() 此刻在外作祟的威胁数',
   containedThreats: 'containedThreats() 收容中的威胁数', crowdDead: 'crowdDead() 累计遇害的群众人数', namedDeaths: 'namedDeaths() 累计死去的具名角色数',
   aliveIn: "aliveIn('阵营id', 'hosted'?) 阵营里还活着的成员数（第二个参数为 'hosted' 时只算身上寄宿着威胁的人）", chapters: 'chapters() 史诗已经写了多少章（本部）',
+  level: 'level(e) e 的等级（世界没有成长时为 1）', kills: "kills('区域id'?) 在某个区域（不写时为全世界）累计打倒了多少只",
+  stage: "stage('阶段id', '远征id'?) 远征阶段的状态：locked / open / front / cleared（没有时为 none）", slain: "slain('威胁id') 这种威胁累计被打倒了几次",
 };
 // 扩展目录（server/ext/）注册的表达式函数实现：name → (helpers, ...args) => value
 export const EXT_FNS: Record<string, (helpers: unknown, ...args: any[]) => unknown> = {}; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -355,6 +359,9 @@ export const EFFECTS: Record<string, EffectDef> = {
       const who = (a.target ?? 'self') === 'target' ? ctx.target : ctx.self;
       if (a.from === 'host') { if (who) town.threats?.releaseHosted(who); return; }
       const at = posOf(town, who) || ctx.at;
+      // 带预告的威胁（冒险 §3.7）：先发预告，到点再出现
+      const lead = town.spec.threats?.[a.threat]?.foreshadow?.lead;
+      if (at && lead) { town.queueSpawn(a.threat, at, lead); return; }
       if (at) town.threats?.spawn(a.threat, { at, cause: ctx.source || '' });
     },
   },
@@ -457,6 +464,21 @@ export const EFFECTS: Record<string, EffectDef> = {
     doc: '{"op":"knockback","cells":1~4} 战斗招式：把命中的敌人击退几格',
     check(a) { return inRange(a.cells, 1, 4) ? null : 'cells 应在 1~4'; },
     apply(town, ctx, a) { town.combatEffect('knockback', ctx, a); },
+  },
+  // ---------- 冒险（docs/design/adventure.md）----------
+  exp: {
+    doc: '{"op":"exp","amount":1~500,"target":"self/target/e/nearby/all"} 获得经验（世界有成长时；够了就升级）',
+    check(a) { return !inRange(a.amount, 1, 500) ? 'amount 应在 1~500' : checkTarget(a); },
+    apply(town, ctx, a) { for (const x of resolveTargets(town, ctx, a)) town.grantExp({ kind: 'agent', agent: x }, a.amount, str(ctx.source, 20)); },
+  },
+  party: {
+    doc: '{"op":"party","join":"队伍id" 或 "leave":true,"target":"self/target/e"} 加入 / 离开队伍（结伴同行：队员跟着队长走、一起打）',
+    check(a, spec) {
+      if (a.leave === true) return checkTarget(a, ['self', 'target', 'e']);
+      if (!Object.hasOwn(spec.parties || {}, a.join)) return `未知队伍：${a.join}`;
+      return checkTarget(a, ['self', 'target', 'e']);
+    },
+    apply(town, ctx, a) { for (const x of resolveTargets(town, ctx, a)) town.setParty(x, a.leave === true ? null : a.join); },
   },
 };
 

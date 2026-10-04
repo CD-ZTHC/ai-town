@@ -27,7 +27,7 @@ export function agentView(a: AgentLike | null | undefined) {
   if (!a) return null;
   return {
     id: a.id, name: a.name, kind: a.kind, role: a.role, loc: a.locId || '', region: a.region || 'town', status: a.status, inside: Boolean(a.inside),
-    hp: a.body.hp, stamina: a.body.stamina, courage: a.body.courage, mood: a.mood.text,
+    hp: a.body.hp, maxHp: a.body.maxHp ?? 100, stamina: a.body.stamina, courage: a.body.courage, mood: a.mood.text,
   };
 }
 
@@ -87,6 +87,10 @@ export function exprEnv(town: TownLike, { self = null, target = null, e = null, 
       return [...town.agents, ...(town.away || [])].filter((a) => a.status !== 'dead' && f.members.includes(a.id) && (filter !== 'hosted' || (a.hosted || []).length > 0)).length;
     },
     chapters: () => (town.epicChapters || []).filter((c) => c.part === (town.epic?.part || 1)).length,
+    level: (v: Arg) => real(v)?.xp?.level || 1,
+    kills: (region?: string) => { const k = town.adventure?.kills || {}; return region ? k[region] || 0 : Object.values(k).reduce((s, n) => s + n, 0); },
+    stage: (id: string, exp?: string) => town.stageStatus(id, exp),
+    slain: (type: string) => town.adventure?.slain?.[type] || 0,
   };
   // 扩展函数：拿到小镇与「快照 → 真实居民」的换算，返回普通值
   for (const [name, impl] of Object.entries(EXT_FNS)) fns[name] = (...args: unknown[]) => impl({ town, real }, ...args);

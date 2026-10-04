@@ -9,6 +9,8 @@ import { Overlays } from './render/overlays.js';
 import { DarkLayer } from './render/dark.js';
 import { CombatLayer } from './render/combat.js';
 import { StageLayer } from './render/stage.js';
+import { AdventureLayer, MONSTER_PLANS } from './render/adventure.js';
+import { buildMonster } from './monsters.js';
 
 // 其他模块与测试从这里导入
 export { TS, skyAt, h2, vnoise, hexToRgb, mix, lerp, clamp01 } from './render/util.js';
@@ -35,7 +37,8 @@ export class Renderer {
 
   /** 世界规格里的异界生物图鉴 → 预生成像素精灵 */
   setCreatureTypes(types = {}) {
-    for (const [id, c] of Object.entries(types)) if (!this.creatureSprites[id] && c.look?.bodyPlan) this.creatureSprites[id] = buildSprites(c.look);
+    // 冒险的怪物体型（docs/design/adventure.md §4.1）用怪物生成器，原有的三种沿用角色精灵管线
+    for (const [id, c] of Object.entries(types)) if (!this.creatureSprites[id] && c.look?.bodyPlan) this.creatureSprites[id] = MONSTER_PLANS.includes(c.look.bodyPlan) ? buildMonster(c.look) : buildSprites(c.look);
   }
 
   /** 能力等产生的一次性特效（世界坐标，单位：格） */
@@ -103,6 +106,7 @@ export class Renderer {
     let sky = skyAt(minute, S.weather);
     // 暗月界：永远是紫色的黄昏
     if (this.moon) sky = { dark: Math.max(0.5, sky.dark * 0.4 + 0.45), warm: 0, pink: 0, night: true, moon: true };
+    sky = this.biomeSky(sky, S); // 洞窟、城堡等地貌更暗
     this.sky = sky;
     const festival = S.festival;
     this.S = S;
@@ -128,6 +132,7 @@ export class Renderer {
 
     this.drawWater(ctx, vx0, vy0, vx1, vy1);
     this.drawZones(ctx, S);
+    this.drawAdventureGround(ctx, S);
 
     // y 排序
     const items = [];
@@ -151,12 +156,15 @@ export class Renderer {
     for (const g of S.dark?.graves || []) items.push({ y: g.y * TS + TS * 0.9, g });
     for (const p of this.crowdFigures(S)) items.push({ y: p.y * TS + TS * 0.9, p });
     items.sort((p, q) => p.y - q.y);
-    for (const it of items) it.th ? this.drawThreat(ctx, it.th) : it.g ? this.drawGrave(ctx, it.g) : it.p ? this.drawPasserby(ctx, it.p) : it.v ? this.drawAvatar(ctx, it.v, S) : it.o ? this.drawObject(ctx, it.o, S) : it.e ? (it.e.kind === 'portal' ? this.drawPortal(ctx, it.e) : this.drawEntity(ctx, it.e)) : it.c ? this.drawCreature(ctx, it.c) : this.drawAgent(ctx, it.a, S);
+    for (const it of items) it.th ? this.drawThreat(ctx, it.th, S) : it.g ? this.drawGrave(ctx, it.g) : it.p ? this.drawPasserby(ctx, it.p) : it.v ? this.drawAvatar(ctx, it.v, S) : it.o ? this.drawObject(ctx, it.o, S) : it.e ? (it.e.kind === 'portal' ? this.drawPortal(ctx, it.e) : this.drawEntity(ctx, it.e)) : it.c ? this.drawCreature(ctx, it.c) : this.drawAgent(ctx, it.a, S);
+    this.monsterDissolve(S);
     this.drawVfx(ctx);
     this.drawTelegraphs(ctx, S);
     this.drawCombatFx(ctx);
+    this.drawAdventureFx(ctx, S, dt);
     this.drawPluginOverlay(ctx, S);
 
+    this.drawFog(ctx, S); // 区域内迷雾（冒险 §4.5）
     this.updateParticles(dt, S, sky);
     this.drawWorldParticles(ctx, S, sky);
     this.drawCloudShadows(ctx, S);
@@ -166,6 +174,7 @@ export class Renderer {
     this.drawLighting(S, sky, ox, oy, z);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawWeather(ctx, S, dt);
+    this.drawAdventureScreen(ctx, S, dt);
     // UI 叠加层（屏幕坐标）
     this.hits = [];
     this.drawOverlays(ctx, S, ox, oy, z);
@@ -184,7 +193,7 @@ export class Renderer {
 }
 
 // 把各部分的方法挂到 Renderer 上；重名直接报错，避免悄悄覆盖
-for (const part of [Terrain, Objects, Atmosphere, Overlays, DarkLayer, CombatLayer, StageLayer]) {
+for (const part of [Terrain, Objects, Atmosphere, Overlays, DarkLayer, CombatLayer, StageLayer, AdventureLayer]) {
   for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) {
     if (name === 'constructor') continue;
     if (Object.hasOwn(Renderer.prototype, name)) throw new Error(`Renderer.${name} 重复定义（${part.name}）`);

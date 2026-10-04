@@ -143,7 +143,7 @@ ${await this.recall(a, `今天 计划 约定 ${a.goal}`, 12)}
 ${keepCommits.length ? `今天已有的约定（必须保留）：${keepCommits.map((c) => `${fmtTime(c.start)} 在${this.locName(this.resolveLoc(a, c.location))}${c.activity}`).join('；')}\n` : ''}
 可去的地点（location 字段只能填这些 id）：
 ${this.locListText()}
-${this.moonHint(a)}${this.actionBlock(a)}
+${this.moonHint(a)}${this.expeditionHint(a)}${this.actionBlock(a)}
 请为${a.name}安排今天的日程（从起床到22:30），8~13项，时间连续不重叠，符合职业与性格，并包含推进目标、与特定的人见面的安排（写进 activity）。输出 JSON：
 {"mood":"两字心情","moodEmoji":"一个emoji","goal":"今天最想做成的一件事（≤30字）","schedule":[{"start":"06:30","end":"07:15","location":"home","activity":"≤14字具体活动","emoji":"一个emoji"}]}`,
         },
@@ -154,6 +154,7 @@ ${this.moonHint(a)}${this.actionBlock(a)}
       a.schedule = sched;
       a.scheduleDay = day;
       for (const c of keepCommits) this.insertEntry(a, c);
+      this.ensureExpedition(a);
       a.mood = { text: clampStr(res.mood, 6) || a.mood.text, emoji: clampStr(res.moodEmoji, 4) || a.mood.emoji };
       if (res.goal) a.todayGoal = clampStr(res.goal, 40);
       this.noteRun('plan', false);
@@ -161,7 +162,7 @@ ${this.moonHint(a)}${this.actionBlock(a)}
       this.log('plan', `${a.name} 制定了今天的计划：${a.todayGoal || sched.map((e) => e.activity).slice(0, 3).join('、')}`, { agents: [a.id] });
     } catch (err) {
       console.warn(`[plan] ${a.name} 失败：`, (err as Error).message);
-      if (a.scheduleDay !== day) { a.schedule = this.fallbackSchedule(a); a.scheduleDay = day; this.noteRun('plan', true); }
+      if (a.scheduleDay !== day) { a.schedule = this.fallbackSchedule(a); a.scheduleDay = day; this.noteRun('plan', true); this.ensureExpedition(a); }
     }
     a.curKey = null;
     this.emit('agent', a.id);

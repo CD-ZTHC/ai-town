@@ -1,0 +1,115 @@
+{
+ "regions": [
+  {
+   "id": "town", "generator": "layout-v1", "name": "晨风村", "seed": 3301, "size": [48, 36], "biome": "village", "gate": "village_square",
+   "atlas": { "x": 18, "y": 62 },
+   "entries": [ { "side": "east", "at": 18, "to": "meadow", "key": "meadow_0" } ],
+   "areas": [
+    { "id": "village", "name": "村子", "biome": "village", "size": "large", "places": [
+      { "id": "church", "kind": "temple", "name": "晨光教会", "emoji": "⛪", "desc": "村里的小教会，受伤的人都会被送到这里，老神官总守着一盏不灭的灯",
+        "style": { "roof": "#6a7fb0", "wall": "#efe8d8", "roofShape": "spire", "material": "stone", "decor": ["bell", "flowers"] } },
+      { "id": "inn", "kind": "inn", "name": "麦穗旅店", "emoji": "🍺", "desc": "村里唯一的旅店，炖菜和床铺都很暖，冒险的消息在这里传得最快",
+        "style": { "roof": "#b5653a", "wall": "#f1e2c2", "roofShape": "gable", "material": "wood", "decor": ["sign", "lantern", "chimney"] } },
+      { "id": "smithy", "kind": "workshop", "name": "老钢铁匠铺", "emoji": "⚒️", "desc": "叮叮当当响个不停的铁匠铺，墙上挂满了刀剑和盾牌",
+        "style": { "roof": "#4a4a52", "wall": "#cfc6b8", "roofShape": "flat", "material": "stone", "decor": ["chimney", "sign"] } },
+      { "id": "lan_home", "kind": "cottage", "name": "岚家", "emoji": "🏠", "desc": "岚和早逝的父母留下的小屋，门口挂着一把木剑", "public": false },
+      { "id": "tiezhen_home", "kind": "house", "name": "铁砧家", "emoji": "🏠", "desc": "退役佣兵铁砧的家，院子里立着练武用的木桩", "public": false },
+      { "id": "village_square", "kind": "square", "name": "村口广场", "emoji": "⛲", "desc": "村子中央的小广场，告示板上贴着讨伐的悬赏" }
+    ] },
+    { "id": "outskirts", "name": "村外", "biome": "meadow", "size": "medium", "places": [
+      { "id": "east_gate", "kind": "gate", "name": "东村口", "emoji": "🚩", "desc": "往东走就是苍风草原，最近夜雾总从那边漫过来" },
+      { "id": "old_altar", "kind": "shrine", "name": "古祭坛", "emoji": "🗿", "desc": "村外长满青苔的古祭坛，传说三百年前封印永夜之主的勇者在这里出发" },
+      { "id": "wheat_field", "kind": "field", "name": "麦田", "emoji": "🌾", "desc": "村子的麦田，风一吹就是一片金色的浪" }
+    ] }
+   ],
+   "links": [ { "from": "village", "to": "outskirts", "via": "path" } ]
+  },
+  {
+   "id": "meadow", "generator": "layout-v1", "name": "苍风草原", "seed": 3302, "size": [44, 36], "biome": "meadow", "open": false,
+   "adjacent": { "to": "town", "side": "east" }, "atlas": { "x": 40, "y": 62 },
+   "ambience": { "particles": "motes", "sound": "wind" },
+   "firstVisit": "风从很远的地方吹过来，草浪一直翻到天边",
+   "entries": [ { "side": "west", "at": 18, "to": "town", "key": "meadow_0" }, { "side": "north", "at": 22, "to": "forest", "key": "forest_0" } ],
+   "areas": [
+    { "id": "plain", "name": "风语原", "biome": "meadow", "size": "large", "places": [
+      { "id": "wind_plain", "kind": "meadow", "name": "风语原", "emoji": "🌬️", "desc": "一望无际的草原，露团在草尖上滚来滚去" },
+      { "id": "stone_ring", "kind": "clearing", "name": "石环", "emoji": "🪨", "desc": "一圈古老的立石，草狼常在附近打转" },
+      { "id": "traveler_camp", "kind": "camp", "name": "旅人营地", "emoji": "🏕️", "desc": "路边的营地，篝火总有人添柴，受了伤的人可以在这里歇一歇" }
+    ] },
+    { "id": "slope", "name": "狼王坡", "biome": "meadow", "size": "medium", "places": [
+      { "id": "wolf_den", "kind": "clearing", "name": "狼王坡", "emoji": "🐺", "desc": "草原尽头的高坡，夜里能听见狼王的长嚎" }
+    ] }
+   ],
+   "links": [ { "from": "plain", "to": "slope", "via": "trail" } ]
+  },
+  {
+   "id": "forest", "generator": "layout-v1", "name": "幽影森林", "seed": 3303, "size": [44, 32], "biome": "dark_forest", "open": false,
+   "adjacent": { "to": "meadow", "side": "north" }, "atlas": { "x": 40, "y": 34 },
+   "ambience": { "tint": "#1f3a2a", "tintAlpha": 0.18, "particles": "leaves", "sound": "birds" },
+   "firstVisit": "树冠遮住了天，林子里的光是绿的，脚下的落叶软得像苔",
+   "entries": [ { "side": "south", "at": 22, "to": "meadow", "key": "forest_0" }, { "side": "east", "at": 16, "to": "mountain", "key": "mountain_0" } ],
+   "areas": [
+    { "id": "glade", "name": "毒菇林地", "biome": "dark_forest", "size": "large", "places": [
+      { "id": "mushroom_glade", "kind": "clearing", "name": "毒菇林地", "emoji": "🍄", "desc": "长满发光蘑菇的林间空地，空气里飘着孢子" },
+      { "id": "forest_camp", "kind": "camp", "name": "林间营地", "emoji": "🏕️", "desc": "猎人们留下的营地，可以生火、包扎" },
+      { "id": "ying_hut", "kind": "cabin", "name": "萤的小屋", "emoji": "🛖", "desc": "森林里一间歪歪扭扭的小木屋，窗台上摆满了冒着烟的药瓶", "public": false }
+    ] },
+    { "id": "heart", "name": "古树之心", "biome": "dark_forest", "size": "medium", "places": [
+      { "id": "ancient_tree", "kind": "grove", "name": "古树之心", "emoji": "🌳", "desc": "森林最深处的巨树，树皮上似乎有一张脸" },
+      { "id": "vine_hollow", "kind": "clearing", "name": "藤蔓洼地", "emoji": "🌿", "desc": "藤蔓缠成网的低地，一不小心就会被缠住脚" }
+    ] }
+   ],
+   "links": [ { "from": "glade", "to": "heart", "via": "trail" } ]
+  },
+  {
+   "id": "mountain", "generator": "layout-v1", "name": "赤岩山脉", "seed": 3304, "size": [40, 32], "biome": "volcano", "open": false,
+   "adjacent": { "to": "forest", "side": "east" }, "atlas": { "x": 64, "y": 30 },
+   "ambience": { "tint": "#5a1e10", "tintAlpha": 0.14, "particles": "embers", "sound": "fire" },
+   "firstVisit": "脚下的岩石是温的，裂缝里透出暗红的光",
+   "entries": [ { "side": "west", "at": 16, "to": "forest", "key": "mountain_0" }, { "side": "south", "at": 20, "to": "ruins", "key": "ruins_0" } ],
+   "areas": [
+    { "id": "lava", "name": "熔岩原", "biome": "volcano", "size": "medium", "places": [
+      { "id": "lava_field", "kind": "clearing", "name": "熔岩原", "emoji": "🌋", "desc": "到处是冷却的熔岩，岩甲虫在石缝里钻进钻出" },
+      { "id": "mountain_camp", "kind": "camp", "name": "山脚营地", "emoji": "🏕️", "desc": "背风的岩壁下，有人搭了个简陋的营地" }
+    ] },
+    { "id": "mine", "name": "巨像矿坑", "biome": "cave", "size": "large", "places": [
+      { "id": "mine_mouth", "kind": "clearing", "name": "矿坑口", "emoji": "⛏️", "desc": "废弃的矿坑口，山贼把这里当成了窝" },
+      { "id": "golem_hall", "kind": "clearing", "name": "巨像大厅", "emoji": "🗿", "desc": "矿坑深处的大厅，熔岩巨像在这里沉睡" }
+    ] }
+   ],
+   "links": [ { "from": "lava", "to": "mine", "via": "trail" } ]
+  },
+  {
+   "id": "ruins", "generator": "layout-v1", "name": "沉沙废都", "seed": 3305, "size": [40, 30], "biome": "ruins", "open": false,
+   "adjacent": { "to": "mountain", "side": "south" }, "atlas": { "x": 66, "y": 62 },
+   "ambience": { "tint": "#c8a060", "tintAlpha": 0.12, "particles": "sand", "sound": "wind" },
+   "firstVisit": "黄沙埋到了屋檐，断掉的石柱一根根立在沙里",
+   "entries": [ { "side": "north", "at": 20, "to": "mountain", "key": "ruins_0" } ],
+   "areas": [
+    { "id": "street", "name": "沙埋长街", "biome": "ruins", "size": "large", "places": [
+      { "id": "sand_street", "kind": "clearing", "name": "沙埋长街", "emoji": "🏛️", "desc": "曾经繁华的长街，如今只剩沙骸在游荡" },
+      { "id": "oasis_camp", "kind": "camp", "name": "绿洲营地", "emoji": "🏕️", "desc": "废都边上的一小片绿洲，泉水还没干" }
+    ] },
+    { "id": "court", "name": "女王庭", "biome": "desert", "size": "medium", "places": [
+      { "id": "queen_court", "kind": "clearing", "name": "女王庭", "emoji": "👑", "desc": "废都中心的王庭，沙之女王坐在倒塌的王座上" }
+    ] }
+   ],
+   "links": [ { "from": "street", "to": "court", "via": "trail" } ]
+  },
+  {
+   "id": "castle", "generator": "layout-v1", "name": "黑曜城", "seed": 3306, "size": [40, 30], "biome": "castle", "open": false,
+   "entry": "old_altar", "gateName": "古祭坛的光门", "atlas": { "x": 50, "y": 8 },
+   "ambience": { "tint": "#2a1440", "tintAlpha": 0.28, "particles": "fog", "sound": "hum" },
+   "firstVisit": "光门的那一头是一座黑色的城，城里没有风，只有心跳一样的低鸣",
+   "openText": "🔆 古祭坛上亮起了一道光门，通往北方的黑曜城",
+   "areas": [
+    { "id": "hall", "name": "黑曜城", "biome": "castle", "size": "large", "places": [
+      { "id": "castle_gate", "kind": "gate", "name": "黑曜城门", "emoji": "🏰", "desc": "黑曜石砌成的城门，夜雾骑士在城门口来回巡逻" },
+      { "id": "last_bonfire", "kind": "camp", "name": "最后的篝火", "emoji": "🔥", "desc": "城门外不知谁留下的一堆篝火，是最后能喘口气的地方" },
+      { "id": "dark_hall", "kind": "clearing", "name": "暗廊", "emoji": "🕯️", "desc": "两侧点着幽蓝烛火的长廊" },
+      { "id": "throne", "kind": "clearing", "name": "王座之间", "emoji": "🖤", "desc": "永夜之主的王座，四周的黑暗像潮水一样起伏" }
+    ] }
+   ]
+  }
+ ]
+}

@@ -51,7 +51,7 @@ export function validateThreat(id: string, t: Raw, spec: WorldSpec): string | nu
   if (!isStr(t.name, 12) || !isStr(t.emoji, 8)) return 'name（≤12字）/ emoji 缺失';
   if (t.kind != null && !isStr(t.kind, 12)) return 'kind 过长（≤12字）';
   if (typeof t.mortal !== 'boolean') return 'mortal 必须是布尔值';
-  if (t.mortal && !inRange(t.hp, 1, 500)) return '会死的威胁需要 hp（1~500）';
+  if (t.mortal && !inRange(t.hp, 1, 3000)) return '会死的威胁需要 hp（1~3000）';
   for (const k of ['atk', 'def']) if (t[k] != null && !inRange(t[k], 0, 60)) return `${k} 应在 0~60`;
   if (t.speed != null && !inRange(t.speed, 0.2, 6)) return 'speed 应在 0.2~6';
   if (t.origin != null && !isStr(t.origin, 80)) return 'origin 过长（≤80字）';

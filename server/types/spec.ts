@@ -110,6 +110,10 @@ export interface Persona {
   idle?: string;
   /** 这个角色是某种异界生物的首领（图鉴里默认可见） */
   creature?: string;
+  /** 成长（docs/design/adventure.md §3.1）：走哪条路线、初始等级 */
+  growth?: { track?: string; level?: number };
+  /** 结伴同行（§3.3）：所在队伍的 id */
+  party?: string;
 }
 
 export interface Item {
@@ -123,6 +127,10 @@ export interface Item {
   tags?: string[];
   /** 使用物品的效果 */
   use?: Effect[];
+  /** 战斗中血少时自动使用（冒险 §3.2） */
+  combatUse?: boolean;
+  /** 装备后的外观（冒险 §4.2）：武器图层 */
+  look?: { weapon?: string; color?: string; glow?: string };
   [k: string]: unknown;
 }
 
@@ -241,6 +249,10 @@ export interface Region {
   belief?: string;
   rumors?: string[];
   friends?: Array<{ type: string; name: string; near: string }>;
+  /** 世界全图上的位置（0~100）；不写时按相邻关系自动排 */
+  atlas?: { x: number; y: number };
+  /** 区域氛围（冒险 §4.9）：色调、粒子、环境音 */
+  ambience?: { tint?: string; tintAlpha?: number; particles?: string; sound?: string };
   [k: string]: unknown;
 }
 
@@ -332,7 +344,69 @@ export interface ThreatType {
   /** 群众伤亡：每隔多少分钟、杀几个 */
   crowd?: { every: number; kills: [number, number] };
   look?: unknown;
+  /** 被打倒时给的经验（冒险 §3.1）；不写时按 hp / 5 */
+  exp?: number;
+  /** 出现前的预告（冒险 §3.7） */
+  foreshadow?: { lead: number; text?: string };
+  /** false：野怪，出现时不开事件、不划封锁区，被打倒时不写设定集（Boss 除外） */
+  incident?: boolean;
   [k: string]: unknown;
+}
+
+// ---------- 冒险（docs/design/adventure.md）----------
+export interface GrowthTrack {
+  name?: string;
+  perLevel?: { atk?: number; def?: number; maxHp?: number };
+  learn?: Array<{ level: number; ability: string }>;
+}
+export interface GrowthDef {
+  /** personas：人设里写了 growth 的角色；all：所有居民 */
+  who?: 'personas' | 'all';
+  maxLevel?: number;
+  curve?: { base?: number; mult?: number };
+  tracks: Record<string, GrowthTrack>;
+  /** participants：活着的我方参战者平分（最后一击另加 20%）；killer：全给最后一击 */
+  share?: 'participants' | 'killer';
+  /** 旅人化身：路线、等级上限 */
+  avatar?: { track?: string; maxLevel?: number };
+}
+export interface RecoveryDef {
+  /** 算作回复点的地点类型（建筑 kind / 户外地点 kind） */
+  kinds?: string[];
+  /** 额外指定的回复点：地点 id → 回复速率（每游戏分钟回复 maxHp 的百分之几，可省略） */
+  places?: Record<string, { rate?: number; text?: string }>;
+  rate?: number;
+  /** 血量低于 maxHp 的这个比例时撤退；0 表示不主动撤退 */
+  retreatAt?: number;
+  /** 回到这个比例后恢复原来的日程 */
+  resumeAt?: number;
+  /** 被打倒：carry 有人搀扶 / warp 直接在回复点醒来 */
+  downed?: 'carry' | 'warp';
+}
+export interface PartyDef { leader: string; name: string; formation?: 'loose' | 'line' }
+export interface ExpeditionStage {
+  id: string;
+  region: string;
+  title: string;
+  intro?: string;
+  /** 刷野怪的地点（不写时用区域里的户外地点） */
+  wild?: string[];
+  spawns?: Array<{ threat: string; every: number; max: number; when?: string }>;
+  boss?: { threat: string; after?: string; foreshadow?: number; at?: string };
+  /** 征服条件（表达式）；不写时为打倒 Boss */
+  clear?: string;
+  reward?: Effect[];
+  unlock?: string[];
+  /** 建议等级：刷出来的怪按它缩放 */
+  levelHint?: number;
+  /** 世界全图上的位置（0~100，可选） */
+  atlas?: { x: number; y: number };
+}
+export interface ExpeditionDef {
+  id?: string;
+  party: string;
+  stages: ExpeditionStage[];
+  tokens?: { name: string; emoji: string; total: number };
 }
 
 export interface Faction {
@@ -405,4 +479,14 @@ export interface WorldSpec {
   outline?: Partial<Outline>;
   /** 终局分支（§4）：没有大纲时单独写在这里 */
   endings?: EndingDef[];
+  // ---------- 冒险（docs/design/adventure.md）----------
+  growth?: GrowthDef;
+  recovery?: RecoveryDef;
+  parties?: Record<string, PartyDef>;
+  expedition?: ExpeditionDef;
+  expeditions?: ExpeditionDef[];
+  /** 焦点角色（观众默认关注的人） */
+  spotlight?: string[];
+  /** 野外区域的迷雾 */
+  fog?: boolean;
 }

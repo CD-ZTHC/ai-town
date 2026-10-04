@@ -35,6 +35,8 @@ export interface Belief {
 
 export interface Body {
   hp: number;
+  /** 生命上限（冒险 §3.2）：100 + 装备 + 成长；旧存档没有时按 100 */
+  maxHp?: number;
   stamina: number;
   courage: number;
   conditions: string[];
@@ -186,6 +188,14 @@ export interface Agent {
   pressure?: Record<string, number>;
   /** 去过的其他区域 */
   visited?: string[];
+
+  // ---------- 冒险（docs/design/adventure.md）----------
+  /** 成长：等级、经验、路线（基础人设里的 growth 是起点） */
+  xp?: { level: number; exp: number; track: string };
+  /** 所在队伍（结伴同行） */
+  party?: string | null;
+  /** 正在撤退去回复点 / 在回复点休整（只用于显示和避免重复安排） */
+  resting?: { at: string; since: number; why: 'retreat' | 'downed' | 'night' } | null;
 }
 
 /** 只在运行时存在的字段（save() 里排除，读档时重置） */

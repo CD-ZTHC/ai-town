@@ -68,6 +68,12 @@ export const SCHEMAS = {
     areas: z.array(obj({ biome: str.optional(), size: str.optional(), places: z.array(obj({ id: str, kind: str, name: str, emoji: str, desc: str })) })).optional(),
     places: z.array(obj({ id: str, kind: str, name: str, emoji: str, desc: str })).optional(),
   })),
+  // 区域唤醒时的推演（sim/dormancy，docs/design/adventure.md §3.5）
+  regionWake: outputSchema('region_wake', obj({
+    summary: str,
+    changes: z.array(obj({ op: str, args: z.record(str, z.unknown()) })).optional(),
+    spawns: z.array(obj({ threat: str, at: str })).optional(),
+  })),
   // AI 裁决官：有选项时给 option，否则给 decision
   arbiter: outputSchema('arbiter', obj({ option: str.optional(), decision: str.optional(), confidence: z.number(), reasons: z.array(str) })),
 };
