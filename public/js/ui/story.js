@@ -1,9 +1,12 @@
 // 故事面板：张力曲线、剧情弧、导演笔记、抉择投票、伏笔、人来人往、危机、生物图鉴
 import { $, $$, app, esc, fmtTime, openModal, toast, ui, voice } from './core.js';
+import { renderEpic, renderOutline } from './epic.js';
 let storyPending = null;
 
 export function onStory() {
   if (!ui.storyOpen || storyPending) return;
+  // 正在读章节、编辑大纲或看计划时不刷新（会冲掉输入）
+  if ((ui.storyTab === 'epic' && ui.epicView) || (ui.storyTab === 'outline' && (ui.outlineEdit || ui.outlinePanel))) return;
   storyPending = setTimeout(() => { storyPending = null; if (ui.storyOpen) renderStory(); }, 600);
 }
 
@@ -15,10 +18,11 @@ export function storyModal(tab) {
   ui.storyTab = tab || ui.storyTab || 'story';
   const card = openModal(`<h2>🎭 ${esc(voice().place || '小镇')}的故事</h2>
     <div class="sub">叙事导演根据小镇的「张力」安排伏笔、冲突与喘息；剧情弧在关键时刻交给小镇（和你）来抉择。</div>
-    <div class="tabs stabs">${[['story', '📖 剧情'], ...(app.spec?.threats && Object.keys(app.spec.threats).length ? [['incidents', '🕯️ 事件']] : []), ['vote', '🗳️ 抉择'], ['threads', '🧵 伏笔'], ['people', '🧳 人来人往'], ['crisis', '⚔️ 危机'], ['bestiary', '👾 图鉴']].map(([k, l]) => `<button data-t="${k}" class="${ui.storyTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div class="tabs stabs">${[['story', '📖 剧情'], ['epic', '📜 史诗'], ['outline', '🗺️ 大纲'], ...(app.spec?.threats && Object.keys(app.spec.threats).length ? [['incidents', '🕯️ 事件']] : []), ['vote', '🗳️ 抉择'], ['threads', '🧵 伏笔'], ['people', '🧳 人来人往'], ['crisis', '⚔️ 危机'], ['bestiary', '👾 图鉴']].map(([k, l]) => `<button data-t="${k}" class="${ui.storyTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div id="story-body" class="story-body"><div class="empty">正在翻开故事书……</div></div>`, 'story-wrap');
   card.style.width = 'min(760px, 94vw)';
   $$('.stabs button', card).forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.t !== ui.storyTab && b.dataset.t !== 'epic') ui.epicView = null;
     ui.storyTab = b.dataset.t;
     $$('.stabs button', card).forEach((x) => x.classList.toggle('on', x === b));
     renderStory();
@@ -42,6 +46,8 @@ export function sparkline(history) {
 async function renderStory() {
   const body = $('#story-body');
   if (!body) { ui.storyOpen = false; return; }
+  if (ui.storyTab === 'epic') return renderEpic(body);
+  if (ui.storyTab === 'outline') return renderOutline(body);
   let d;
   try { d = await app.api('/api/story'); } catch (e) { body.innerHTML = `<div class="empty">⚠️ ${esc(e.message)}</div>`; return; }
   if (!$('#story-body')) return;

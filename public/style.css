@@ -368,6 +368,64 @@ body.no-minimap #minimap-wrap { display: none; }
 .arc .phases span.now { background: var(--violet); color: #1d1838; font-weight: 700; }
 .arc .phases i { color: var(--muted); font-style: normal; }
 .dec { font-size: 12.5px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+/* 史诗与大纲（docs/design/epic-outline.md §8） */
+.mini-link { font-size: 11.5px; color: var(--accent); text-decoration: none; }
+.ep-syn { margin: 6px 0 10px; font-size: 12.5px; color: var(--muted); }
+.ep-syn p { line-height: 1.7; margin: 6px 0 0; }
+.ep-vol { margin-bottom: 10px; }
+.ep-vt { font-size: 11.5px; color: var(--violet); letter-spacing: 0.08em; margin: 8px 0 4px; }
+.ep-ch { display: block; width: 100%; text-align: left; padding: 8px 10px; margin-bottom: 4px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+.ep-ch:hover { background: rgba(255, 255, 255, 0.09); }
+.ep-ch b { display: block; font-size: 13px; }
+.ep-ch small { color: var(--muted); font-size: 11.5px; }
+.ep-ch.end { box-shadow: inset 2px 0 0 var(--accent); }
+.ep-nav { display: flex; gap: 6px; position: sticky; top: 0; padding: 4px 0 8px; background: var(--glass-2); z-index: 1; }
+.ep-read h2 { font-size: 18px; margin: 4px 0 14px; }
+.ep-read h2 small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+.ep-read p { line-height: 1.95; text-indent: 2em; margin: 0 0 10px; font-size: 14px; }
+.ep-beats { margin-top: 14px; font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ep-beats span { padding: 1px 8px; border-radius: 8px; background: rgba(167, 139, 250, 0.12); color: var(--text); }
+.ol-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 8px; }
+.ol-bar b { margin-right: 6px; }
+.mini-check { display: inline-flex; flex: none; gap: 4px; align-items: center; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.ol-row .mini-check input, .mini-check input { flex: none; width: auto; }
+.ol-end { padding: 10px 12px; border-radius: 12px; margin-bottom: 10px; background: rgba(255, 184, 107, 0.12); font-weight: 700; }
+.ol-end.bad { background: rgba(255, 122, 122, 0.12); }
+.ol-end small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.ol-premise { padding: 8px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); font-size: 13px; line-height: 1.6; }
+.ol-premise small { display: block; color: var(--muted); margin-top: 2px; }
+.ol-act { padding: 8px 10px; border-radius: 10px; margin-bottom: 6px; border-left: 3px solid var(--muted); background: rgba(255, 255, 255, 0.03); font-size: 12.5px; }
+.ol-act.active { border-color: var(--accent); background: rgba(255, 184, 107, 0.07); }
+.ol-act.done { border-color: var(--good); }
+.ol-act.dropped { opacity: 0.55; }
+.ol-act p { margin: 4px 0; color: var(--muted); line-height: 1.6; }
+.ol-act .badge, .story-body h3 .badge { font-size: 11px; padding: 0 7px; border-radius: 8px; background: rgba(255, 255, 255, 0.08); font-weight: 400; }
+.ol-beat { font-size: 12px; padding: 2px 0 2px 8px; }
+.ol-beat.done, .ol-beat.transformed { color: var(--text); }
+.ol-beat.planned { color: var(--muted); }
+.ol-beat.skipped { color: var(--muted); text-decoration: line-through; }
+.ol-beat code, .dec code { font-size: 10.5px; color: var(--teal); }
+.ol-revs { margin-top: 12px; font-size: 12.5px; }
+.ol-revs summary { cursor: pointer; color: var(--muted); }
+.ol-ask { margin-bottom: 8px; }
+.ol-ask textarea, .story-body textarea { width: 100%; }
+.ol-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; font-size: 12px; color: var(--muted); }
+.ol-row input, .ol-row select { flex: 1 1 140px; padding: 5px 8px; border-radius: 8px; font-size: 12.5px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--line); color: var(--text); font-family: inherit; outline: none; }
+.ol-row input:focus, .story-body textarea:focus { border-color: var(--accent); }
+.ol-row input:disabled { opacity: 0.6; }
+.ol-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+.ol-row input.num { flex: 0 0 64px; }
+.ol-row input.code, textarea.code { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+.ol-ed-part { padding: 6px 0 10px; border-bottom: 1px solid var(--line); }
+.ol-ed-act { padding: 8px 10px; margin: 6px 0; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+.ol-ed-beat input:first-child { flex: 3 1 200px; }
+.ol-review { padding: 8px 10px; border-radius: 10px; margin: 6px 0; font-size: 12.5px; background: rgba(125, 220, 138, 0.1); }
+.ol-review.bad { background: rgba(255, 122, 122, 0.1); }
+.ol-issue { padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.ol-issue.major .badge { background: rgba(255, 122, 122, 0.3); }
+.ol-plan { margin-top: 10px; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.03); }
+.ol-plan p { font-size: 12.5px; line-height: 1.6; }
+b.good { color: var(--good); }
 button.mini { font-size: 11.5px; padding: 2px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.1); }
 button.mini:hover { background: rgba(255, 255, 255, 0.2); }
 button.mini.adm { background: rgba(255, 184, 107, 0.2); color: var(--accent); }

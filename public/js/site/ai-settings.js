@@ -216,10 +216,12 @@ export function worldSettingsDialog(w, { admin = false, onSaved = null } = {}) {
       <label>简介${w.official && o.summary ? ' <span class="small muted">（已覆盖世界包的值）</span>' : ''}</label><textarea name="summary" rows="3" maxlength="300">${esc(w.summary || '')}</textarea>
       ${w.official && (o.title || o.summary) ? '<label class="row"><input type="checkbox" name="reset"> 恢复为世界包里的标题与简介（下次启动时生效）</label>' : ''}
       <label>叙事者</label><select name="storyteller">${Object.entries(STORYTELLERS).map(([k, v]) => `<option value="${k}" ${(s.storyteller || 'voyage') === k ? 'selected' : ''}>${v}（${k}）</option>`).join('')}</select>
-      ${admin ? `<label>内容分级</label><select name="rating">${Object.entries(RATINGS).map(([k, v]) => `<option value="${k}" ${(s.rating || w.rating) === k ? 'selected' : ''}>${v}（${k}）</option>`).join('')}</select>
+      ${admin ? `<label>内容分级 <span class="small muted">（这里直接切换，不调整内容；要让 AI 适配设定与威胁，请在世界里的「大纲」页修改分级）</span></label><select name="rating">${Object.entries(RATINGS).map(([k, v]) => `<option value="${k}" ${(s.rating || w.rating) === k ? 'selected' : ''}>${v}（${k}）</option>`).join('')}</select>
       <label>加载的 Mod（逗号分隔）</label><input name="mods" value="${esc((s.mods || []).join(','))}">` : ''}
       <label>死亡预算（每 3 天最多几名具名角色死亡）</label><input name="deathNamed" type="number" min="0" max="20" value="${Number.isInteger(s.deathNamed) ? s.deathNamed : ''}" placeholder="默认">
       <label class="row"><input type="checkbox" name="migration" ${s.migration !== false ? 'checked' : ''}> 人员流动</label>
+      <label class="row"><input type="checkbox" name="epic" ${s.epic !== false ? 'checked' : ''}> 世界史诗（把发生的事续写成分章节的小说）</label>
+      ${admin ? '' : `<div class="muted small">内容分级：${RATINGS[s.rating || w.rating] || esc(w.rating)}。修改分级请进入世界 → 🎭 故事 → 🗺️ 大纲 → ⚖️ 修改分级（AI 会按新分级调整设定、反派与威胁，评审后应用）。</div>`}
       <label class="row"><input type="checkbox" name="evolution" ${w.evolution ? 'checked' : ''}> 自主进化${w.official ? '（官方世界由设置里的 EVOLVE 决定）' : ''}</label>
       <div class="muted small">叙事者、分级、Mod 与进化开关要重新加载世界才生效，保存后会自动重新加载。</div>
       <div class="bad small" id="wf-msg" style="margin-top:8px"></div>
@@ -230,7 +232,7 @@ export function worldSettingsDialog(w, { admin = false, onSaved = null } = {}) {
   $('#wf', d.el).onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
-    const body = { migration: f.get('migration') === 'on' };
+    const body = { migration: f.get('migration') === 'on', epic: f.get('epic') === 'on' };
     if (f.get('storyteller') !== (s.storyteller || 'voyage')) body.storyteller = f.get('storyteller'); // 改了才发：叙事者变了要重新加载世界
     if (f.get('title') !== w.title) body.title = f.get('title');
     if (f.get('summary') !== (w.summary || '')) body.summary = f.get('summary');

@@ -75,6 +75,18 @@ export function exprEnv(town: TownLike, { self = null, target = null, e = null, 
     believes: (v: Arg, about: string) => real(v)?.beliefs.find((b) => b.about === about)?.confidence || 0,
     flag: (name: string) => Boolean(town.worldFlags[name]),
     hosts: (v: Arg, id: string) => (real(v)?.hosted || []).some((h) => h.threat === id),
+    // 结局与大纲用的世界计数
+    unresolvedThreats: () => Object.keys(town.spec.threats || {}).filter((k) => !town.worldFlags[`resolved_${k}`]).length,
+    liveThreats: () => (town.dark?.threats || []).filter((x) => !['contained', 'gone'].includes(x.state)).length,
+    containedThreats: () => (town.dark?.contained || []).length,
+    crowdDead: () => Object.values(town.dark?.population || {}).reduce((s, p) => s + (p.dead || 0), 0),
+    namedDeaths: () => (town.dark?.deaths || []).length,
+    aliveIn: (faction: string, filter?: string) => {
+      const f = (town.spec.factions || []).find((x) => x.id === faction);
+      if (!f) return 0;
+      return [...town.agents, ...(town.away || [])].filter((a) => a.status !== 'dead' && f.members.includes(a.id) && (filter !== 'hosted' || (a.hosted || []).length > 0)).length;
+    },
+    chapters: () => (town.epicChapters || []).filter((c) => c.part === (town.epic?.part || 1)).length,
   };
   // 扩展函数：拿到小镇与「快照 → 真实居民」的换算，返回普通值
   for (const [name, impl] of Object.entries(EXT_FNS)) fns[name] = (...args: unknown[]) => impl({ town, real }, ...args);

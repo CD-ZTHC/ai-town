@@ -35,7 +35,7 @@ const STYLE: Record<string, string> = {
   chaos: '掷骰：出人意料、跨题材的小事件频繁发生。',
   horror: '恐怖：平静 → 征兆 → 第一个受害者 → 恐慌蔓延 → 对抗 → 短暂的喘息，然后循环；平静期要足够长，让恐惧慢慢累积。',
 };
-const RATING: Record<string, string> = {
+export const RATING: Record<string, string> = {
   cozy: '温馨：只允许误会、小麻烦、小惊喜，没有危险。',
   adventure: '冒险：允许奇幻冒险、异界生物、紧张的对抗，但没有死亡、血腥与残酷。',
   epic: '史诗：允许重大挑战与损失（依然没有死亡与血腥描写）。',
@@ -113,7 +113,7 @@ export class Director {
 叙事风格：${STYLE[town.spec.meta.storyteller] || STYLE.gentle}
 内容分级：${RATING[town.spec.meta.rating] || RATING.cozy}
 当前张力 ${now.value}/100，目标 ${now.target}（威胁${(now.parts?.threat ?? 0).toFixed(2)} 冲突${(now.parts?.conflict ?? 0).toFixed(2)} 悬念${(now.parts?.mystery ?? 0).toFixed(2)}）；距离上一个剧情节拍 ${Math.round((town.t - st.lastBeatT) / 60)} 小时。
-${town.storyContext() || '目前没有进行中的剧情弧。'}${fateBlock(town)}
+${town.storyContext() || '目前没有进行中的剧情弧。'}${fateBlock(town)}${town.outlineSys?.directorBlock() || ''}${town.endings?.directorBlock() || ''}
 居民：
 ${people}
 剧情线程（伏笔看板）：

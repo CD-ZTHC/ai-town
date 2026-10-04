@@ -100,3 +100,112 @@ export interface Vote {
   result: { option: string; by: string; t: number } | null;
 }
 export type VoteTally = Record<string, { residents: number; visitors: number; total: number }>;
+
+// ---------- 世界史诗、世界大纲与结局（docs/design/epic-outline.md） ----------
+export type OutlineStatus = 'done' | 'active' | 'planned' | 'dropped';
+export type BeatStatus = 'planned' | 'done' | 'transformed' | 'skipped';
+/** 大纲节点：一件计划中要发生的事；done 是可选的完成条件表达式 */
+export interface OutlineBeat {
+  id: string;
+  text: string;
+  status: BeatStatus;
+  done?: string;
+  links?: { thread?: string; threat?: string; arc?: string; persona?: string };
+  /** 推进或完成这个节点的史诗章节编号（第几部第几章：`${part}:${n}`） */
+  chapters: string[];
+  locked?: boolean;
+  tags?: string[];
+  /** 规则判定完成的时刻（之后写成的第一章挂上链接） */
+  doneT?: number;
+  note?: string;
+}
+/** 大纲的一幕（= 史诗的一卷） */
+export interface OutlineAct {
+  id: string;
+  title: string;
+  plan: string;
+  recap?: string;
+  status: OutlineStatus;
+  endingRef?: string;
+  locked?: boolean;
+  beats: OutlineBeat[];
+}
+/** 大纲的一部（= 史诗的一部） */
+export interface OutlinePart { id: string; title: string; status: OutlineStatus; acts: OutlineAct[] }
+/** 终局分支：when 连续满足 for 天后触发 */
+export interface EndingDef {
+  id: string;
+  title: string;
+  kind: 'good' | 'bad' | 'neutral';
+  when: string;
+  for?: number;
+  hint?: string;
+  finale?: { hours?: number; text?: string };
+}
+export interface Outline {
+  version: number;
+  premise: string;
+  theme: string;
+  autoAdjust: boolean;
+  parts: OutlinePart[];
+  endings: EndingDef[];
+}
+/** 大纲的一次修订（只追加） */
+export interface OutlineRevision {
+  v: number;
+  t: number;
+  day: number;
+  by: string;
+  kind: 'genesis' | 'seed' | 'keeper' | 'owner-ai' | 'owner-manual' | 'part' | 'rerate';
+  note: string;
+  review?: { verdict: string; issues: number; forced?: boolean } | null;
+  snapshot: Outline;
+}
+/** 世界包里的史诗配置 */
+export interface EpicConfig {
+  title?: string;
+  narrator?: string;
+  chapter?: { everyDays?: number; minDays?: number; weight?: number; words?: [number, number] };
+  volumeEveryChapters?: number;
+}
+/** 史料账本的一条 */
+export interface EpicNote { seq: number; t: number; day: number; kind: string; text: string; w: number }
+/** 史诗的一章 */
+export interface EpicChapter {
+  part: number;
+  partTitle?: string;
+  volume: string;
+  volumeTitle: string;
+  n: number;
+  title: string;
+  body: string;
+  summary: string;
+  from: number;
+  to: number;
+  beats: string[];
+  t: number;
+  ending?: { id: string; title: string; kind: string } | null;
+}
+/** 史诗的进度（存档 epic） */
+export interface EpicState {
+  cursor: number;
+  noteSeq: number;
+  lastDay: number;
+  checkedDay: number;
+  synopsis: string;
+  cast: Array<{ name: string; note: string }>;
+  part: number;
+  partTitle: string;
+  failures: number;
+  /** 正在等待写的大结局 */
+  finalePending?: boolean;
+}
+/** 结局进度（存档 endState） */
+export interface EndState {
+  /** 结局 id → 条件开始连续满足的那一天 */
+  held: Record<string, number>;
+  triggered: { id: string; title: string; kind: string; t: number; day: number; until: number } | null;
+  ended: { id: string; title: string; kind: string; t: number; day: number } | null;
+  part: number;
+  history: Array<{ part: number; id: string; title: string; kind: string; day: number }>;
+}

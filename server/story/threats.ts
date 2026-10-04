@@ -56,6 +56,8 @@ export class ThreatSystem {
     const town = this.town;
     const def = town.spec.threats?.[type];
     if (!def || this.st.threats.filter((x) => !['contained', 'gone'].includes(x.state)).length >= MAX_THREATS) return null;
+    // 被永久化解的种类不会再出现（自动出现、泄漏、宿主死亡脱出都走这里）
+    if (this.isResolved(type)) return null;
     if (def.minRating && !ratingAtLeast(town.spec.meta.rating, def.minRating)) return null;
     const home = loc || this.pick(def.haunt);
     const p = at || this.spotOf(home) || town.locCenter(home);
@@ -120,21 +122,69 @@ export class ThreatSystem {
 
   hourTick(): void {
     const town = this.town;
-    // 化解：条件满足的威胁永久消散
-    for (const inst of this.live()) {
-      const c = (this.def(inst)?.counters || []).find((x) => x.type === 'resolve');
-      if (!c) continue;
+    // 化解（按种类，docs/design/epic-outline.md §6）：条件满足时这一种威胁永久消散——在外作祟的、收容着的、寄宿在人身上的都算
+    for (const [type, def] of Object.entries(town.spec.threats || {})) {
+      // 标记是从别处设上的（剧情效果、管理员）：在外的同种威胁也一起消散
+      if (this.isResolved(type)) { for (const inst of this.live().filter((x) => x.type === type)) this.end(inst, 'resolved', `${def.name}消散了`); continue; }
+      const c = (def.counters || []).find((x) => x.type === 'resolve');
+      if (!c?.when) continue;
+      const insts = this.live().filter((x) => x.type === type);
       let ok = false;
-      try { ok = testExpr(town, c.when, { threat: inst }); } catch (e) { console.warn(`[threat] ${inst.type} 的化解条件出错：`, (e as Error).message); }
-      if (ok) this.end(inst, 'resolved', c.text || `${inst.name}消散了`);
+      try { ok = (insts.length ? insts : [null]).some((inst) => testExpr(town, c.when, { threat: inst })); } catch (e) { console.warn(`[threat] ${type} 的化解条件出错：`, (e as Error).message); }
+      if (ok) this.resolveType(type, c.text || `${def.name}消散了`);
     }
+  }
+
+  /** 这一种威胁是否已经被永久化解 */
+  isResolved(type: string): boolean { return Boolean(this.town.worldFlags[`resolved_${type}`]); }
+
+  /** 永久化解一种威胁：在外的结束、镇匣里的安静下来、宿主身上的散去（宿主负担回落、失去它给的能力） */
+  resolveType(type: string, text: string): void {
+    const town = this.town;
+    const def = town.spec.threats?.[type];
+    if (!def || this.isResolved(type)) return;
+    const insts = this.live().filter((x) => x.type === type);
+    for (const inst of insts) this.end(inst, 'resolved', text);
+    if (!insts.length) {
+      town.worldFlags[`resolved_${type}`] = true;
+      town.log('threat', `✨ ${text}`, { result: 'resolved', type });
+      try { town.applyWorldOp({ op: 'addCanon', args: { text: `第${town.day}天，${text}。`, tags: ['事件'] } }, { by: 'threat' }, { quiet: true }); } catch { /* 正典满了也不影响 */ }
+      this.purgeType(type);
+    }
+  }
+
+  /** 一种威胁被化解后：镇匣里收容的安静下来、寄宿在人身上的散去 */
+  purgeType(type: string): void {
+    const town = this.town;
+    const def = town.spec.threats?.[type];
+    if (!def) return;
+    for (const c of this.st.contained.filter((x) => x.type === type)) {
+      this.st.contained = this.st.contained.filter((x) => x !== c);
+      const holder = town.byId[c.holder];
+      if (holder && c.item && (holder.inventory[c.item] || 0) > 0) { holder.inventory[c.item]!--; if (!holder.inventory[c.item]) delete holder.inventory[c.item]; }
+      town.log('threat', `📦 ${holder ? `${holder.name}保管的` : ''}容器里的${def.name}也安静了下来`, { agents: holder ? [holder.id] : [], result: 'resolved', type });
+    }
+    const h = def.hostable;
+    for (const a of [...town.agents]) {
+      if (!(a.hosted || []).some((x) => x.threat === type)) continue;
+      a.hosted = a.hosted!.filter((x) => x.threat !== type);
+      if (h) {
+        const others = new Set(a.hosted.flatMap((x) => town.spec.threats?.[x.threat]?.hostable?.grants || []));
+        a.abilities = a.abilities.filter((id) => !h.grants.includes(id) || others.has(id));
+        if (a.burdens?.[h.burden] != null) a.burdens[h.burden] = Math.max(0, a.burdens[h.burden]! - 30);
+      }
+      addMemory(a, { t: town.t, type: 'obs', text: `${def.name}从我身体里安静地散去了。它借给我的力量没了，压在身上的东西也轻了`, importance: 9 });
+      town.log('threat', `✨ ${a.name}身上的${def.name}散去了`, { agents: [a.id], result: 'resolved', type });
+      town.emit('agent', a.id);
+    }
+    town.emit('story');
   }
 
   dayTick(): void {
     const town = this.town;
     // 收容的威胁每天有一定概率泄漏
     for (const c of [...this.st.contained]) {
-      if (this.random() >= (c.leak || 0)) continue;
+      if (this.isResolved(c.type) || this.random() >= (c.leak || 0)) continue;
       this.st.contained = this.st.contained.filter((x) => x !== c);
       const holder = town.byId[c.holder];
       const at = holder && town.agents.includes(holder) ? posOf(town, holder) : null;
@@ -147,7 +197,7 @@ export class ThreatSystem {
     if (open) this.st.quietSince = town.day;
     else if (every && town.day - (this.st.quietSince ?? town.day) >= every) {
       const live = new Set(this.live().map((x) => x.type));
-      const pool = Object.keys(town.spec.threats!).filter((k) => !live.has(k));
+      const pool = Object.keys(town.spec.threats!).filter((k) => !live.has(k) && !this.isResolved(k));
       if (pool.length) { this.spawn(this.pick(pool), { cause: 'auto' }); this.st.quietSince = town.day; }
     }
     // 事件放着不管就升级：区域变大、群众伤亡加快
@@ -518,6 +568,7 @@ export class ThreatSystem {
     if (inc) { inc.outcome = how; this.stage(inc, 'handled'); }
     const emoji = { contained: '📦', resolved: '✨', slain: '⚔️' }[how] || '•';
     town.log('threat', `${emoji} ${text}`, { agents: by ? [by.id] : [], threat: inst.id, result: how });
+    const firstResolve = how === 'resolved' && !this.isResolved(inst.type);
     if (how === 'resolved') town.worldFlags[`resolved_${inst.type}`] = true;
     if (by) addMemory(by, { t: town.t, type: 'obs', text, importance: 8 });
     // 被打死时的效果（世界包写的剧情：例如 Boss 倒下后天地开裂）
@@ -526,6 +577,7 @@ export class ThreatSystem {
     if (how === 'slain' && def && (def.boss || def.phases?.length)) town.stage(def.stage?.slain || { template: 'moment', target: 'at', text: `${def.emoji} ${def.name}倒下了`, priority: 'major' }, { self: by, at, threat: inst }, { source: `threat:${inst.type}` });
     if (how === 'slain' && def?.onSlain?.length) runEffects(town, { self: by, target: null, e: by, at: { x: inst.x, y: inst.y, inside: null, region: inst.region || 'town' }, source: `threat:${inst.type}`, threat: inst }, def.onSlain);
     try { town.applyWorldOp({ op: 'addCanon', args: { text: `第${town.day}天，${text}。`, tags: ['事件'] } }, { by: 'threat' }, { quiet: true }); } catch { /* 正典满了也不影响 */ }
+    if (firstResolve) this.purgeType(inst.type);
     town.emit('story');
   }
 

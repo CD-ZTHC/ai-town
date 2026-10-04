@@ -21,7 +21,9 @@ import type { ArchitectItem, ArchitectUsage, Gap } from '../../plugins/builtin/a
 import type { PressureState } from '../worldai/pressure.ts';
 import type { Scene } from '../story/scene.ts';
 import type { Fight } from './fight-rules.ts';
-import type { Proposal, Vote } from '../types/story.ts';
+import type { EndState, EpicChapter, EpicNote, EpicState, Outline, OutlineRevision, Proposal, Vote } from '../types/story.ts';
+import { freshEpic } from '../story/epic.ts';
+import { freshEnd } from '../story/endings.ts';
 
 const isObj = (v: unknown): boolean => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const arr = <T>() => z.custom<T[]>((v) => Array.isArray(v));
@@ -88,6 +90,13 @@ export const STATE = {
   gaps: field(arr<Gap>(), { load: orDefault, fallback: () => [] }),
   architectUsage: field(opt(obj<ArchitectUsage>()), { load: orDefault }),
   metricsState: field(obj<{ days: Record<string, MetricsDay> }>(), { load: orDefault, fallback: () => ({ days: {} }) }),
+  // 世界史诗、大纲与结局（docs/design/epic-outline.md）：账本、章节、修订是只追加的列表（world-store 的 LIST_FIELDS）
+  epic: field(obj<EpicState>(), { load: (v) => (v ? { ...freshEpic(), ...(v as object) } : undefined), fallback: () => freshEpic() }),
+  epicNotes: field(arr<EpicNote>(), { load: orDefault, fallback: () => [] }),
+  epicChapters: field(arr<EpicChapter>(), { load: orDefault, fallback: () => [] }),
+  outline: field(nul(obj<Outline>()), { load: orDefault, fallback: () => null }),
+  outlineRevisions: field(arr<OutlineRevision>(), { load: orDefault, fallback: () => [] }),
+  endState: field(obj<EndState>(), { load: (v) => (v ? { ...freshEnd(), ...(v as object) } : undefined), fallback: () => freshEnd() }),
 };
 
 export type StateKey = keyof typeof STATE;

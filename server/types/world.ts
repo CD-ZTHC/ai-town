@@ -13,6 +13,10 @@ export interface WorldSettings {
   ai?: any; // eslint-disable-line @typescript-eslint/no-explicit-any -- 用户提交的原始配置，由 normalizeAi 逐项裁剪
   aiPaused?: boolean;
   migration?: boolean;
+  /** 世界史诗（docs/design/epic-outline.md）：false 时这个世界不写史诗 */
+  epic?: boolean;
+  /** 故事完结时记下的结局（大厅的徽章）；开启下一部时清空 */
+  ended?: { title: string; kind: string; day: number; part: number } | null;
   /** 管理员改过的标题 / 简介：之后不再被世界包覆盖 */
   overrides?: { title?: boolean; summary?: boolean };
   [k: string]: unknown;

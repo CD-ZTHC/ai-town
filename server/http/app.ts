@@ -120,9 +120,10 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
     app.use(p, async (c, next) => {
       const r = limits.api.check(c.get('ip'));
       if (!r.ok) throw new HttpError(429, '请求太频繁了', { retryAfter: r.retryAfter });
-      // 原文上传是 text/plain 的流，由创世接口自己读（有自己的大小上限）；其余写接口一律 JSON、≤8KB
+      // 原文上传是 text/plain 的流，由创世接口自己读（有自己的大小上限）；其余写接口一律 JSON、≤8KB（大纲 ≤96KB）
       if (['POST', 'PUT', 'PATCH'].includes(c.req.method)) {
-        if (!c.req.path.endsWith('/api/genesis/source')) c.set('body', await readJson(c.req));
+        // 大纲的评审与保存要带上整份大纲（≤96KB）
+        if (!c.req.path.endsWith('/api/genesis/source')) c.set('body', await readJson(c.req, /\/outline\/(review|save|assist)$/.test(c.req.path) ? 96 * 1024 : undefined));
       } else if (!['GET', 'HEAD', 'DELETE'].includes(c.req.method)) throw new HttpError(405, '不支持的方法');
       await next();
     });

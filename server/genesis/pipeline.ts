@@ -14,6 +14,8 @@ import { validateSpec } from '../kernel/spec.ts';
 import { layoutProblems, BUILDING_KINDS, OUTDOOR_KINDS, BIOME_IDS } from '../worldgen/layout.ts';
 import { reviewRating, lethal } from '../kernel/ratings.ts';
 import { promptThreats, assembleThreats, mergeThreats } from './threats.ts';
+import { promptOutline, assembleOutline } from './outline.ts';
+import { normalizeOutline, outlineTexts } from '../kernel/outline-spec.ts';
 import type { ModelJSON } from '../llm.ts';
 import type { Pack, PackWorld } from '../types/world.ts';
 import type { Region } from '../types/spec.ts';
@@ -169,6 +171,20 @@ ${material}
     if (!errs2.length && Object.keys(r.add.threats).length) world = candidate;
     else job.log.push({ at: new Date().toISOString(), stage: 'G4', note: `威胁没有生成成功，这个世界先不带威胁：${[...r.errors, ...errs2].slice(0, 3).join('；')}` });
   }
+  // ---------- G4c 大纲与结局（docs/design/epic-outline.md §3.2）：失败时不带大纲，不影响创世 ----------
+  try {
+    stage('G4', '写故事大纲与结局');
+    const ospec = packSpec({ world, map, arcs: [] });
+    let o = assembleOutline(await call('大纲', promptOutline(ospec), { maxTokens: 6000, temperature: 0.6 }), ospec);
+    if (o.errors.length) o = assembleOutline(await call('大纲修正', `${promptOutline(ospec)}\n\n上一次的输出有这些问题：${o.errors.slice(0, 8).join('；')}。请修正后重新输出完整的 JSON。`, { maxTokens: 6000, temperature: 0.4 }), ospec);
+    if (!o.errors.length && (o.outline.parts.length || o.outline.endings.length)) {
+      const { version, autoAdjust, ...rest } = o.outline; // eslint-disable-line @typescript-eslint/no-unused-vars
+      world.outline = rest;
+    } else job.log.push({ at: new Date().toISOString(), stage: 'G4', note: `大纲没有生成成功，这个世界先不带大纲：${o.errors.slice(0, 3).join('；')}` });
+  } catch (e) {
+    if (e instanceof GenesisBudgetError) throw e;
+    job.log.push({ at: new Date().toISOString(), stage: 'G4', note: `大纲没有生成成功：${(e as Error).message}` });
+  }
   const pack: GenPack = { world, map, arcs: [], bible: { ...bible, book: { title: str(book.title, 16), summary: str(book.summary, 400), genre: str(book.genre, 12), tone: str(book.tone, 20) } }, digests, chunks };
 
   // ---------- G5 验证 ----------
@@ -225,6 +241,7 @@ export function visibleTexts(world: PackWorld, map: GenMap | Pack['map']): strin
     ...(map.regions[0]!.areas as GenMap['regions'][number]['areas']).flatMap((a) => [a.name, ...a.places.flatMap((p) => [p.name, p.desc])]),
     ...world.threads.flatMap((t: ModelJSON) => [t.title, t.hook]), ...Object.values<ModelJSON>(world.items).map((i) => `${i.name} ${i.desc}`),
     ...Object.values<ModelJSON>(world.threats || {}).flatMap((t) => [t.name, t.origin, t.rule?.mark?.sign, ...(t.clues || []), ...(t.decoys || [])]),
+    ...(world.outline ? outlineTexts(normalizeOutline(world.outline)) : []),
     ...Object.values<ModelJSON>(world.burdens || {}).map((b) => b.name), ...(world.abilities || []).flatMap((a: ModelJSON) => [a.name, a.desc]),
   ].filter(Boolean);
 }

@@ -15,7 +15,7 @@ import type { StatementSync } from 'node:sqlite';
 export const DB_FILE = 'world.db';
 const SCHEMA_VERSION = 1;
 /** 存档里按列表增量写入的字段（其余字段写进 kv） */
-export const LIST_FIELDS = ['logs', 'convoLog', 'newspapers'] as const;
+export const LIST_FIELDS = ['logs', 'convoLog', 'newspapers', 'epicNotes', 'epicChapters', 'outlineRevisions'] as const;
 
 type Json = Record<string, unknown>;
 /** 读出 / 写入的完整存档：结构与 save.json（SaveV2）相同 */

@@ -16,6 +16,12 @@ import { VoteSystem } from './story/votes.ts';
 import { CreatureSystem } from './story/creatures.ts';
 import { ThreatSystem, freshDark } from './story/threats.ts';
 import { MigrationSystem } from './story/migration.ts';
+import { EpicSystem, freshEpic } from './story/epic.ts';
+import { OutlineSystem } from './story/outline.ts';
+import { EndingSystem, freshEnd } from './story/endings.ts';
+import { Sequel } from './story/sequel.ts';
+import { Rerate } from './worldai/rerate.ts';
+import { AiJobs } from './worldai/review-gate.ts';
 import { AvatarSystem } from './avatars.ts';
 import { ProposalSystem } from './worldai/proposals.ts';
 import { Council } from './worldai/council.ts';
@@ -142,6 +148,13 @@ export class Town extends EventEmitter {
   declare creatures: CreatureSystem;
   declare threats: ThreatSystem;
   declare migration: MigrationSystem;
+  /** 世界史诗、大纲、结局、第二部、分级修改（docs/design/epic-outline.md）；状态在 epic / outline / endState 里 */
+  declare epicSys: EpicSystem;
+  declare outlineSys: OutlineSystem;
+  declare endings: EndingSystem;
+  declare sequel: Sequel;
+  declare rerate: Rerate;
+  declare aiJobs: AiJobs;
   declare avatars: AvatarSystem;
   declare proposalSystem: ProposalSystem;
   declare council: Council;
@@ -223,7 +236,7 @@ export class Town extends EventEmitter {
     for (const o of this.overlays) withPlugins = replay(withPlugins, o.ops.map((x, i) => ({ seq: i + 1, ...x }))).spec;
     const { spec, skipped } = replay(withPlugins, this.specOps);
     for (const k of skipped) console.warn(`[spec] 跳过无法重放的操作 #${k.seq} ${k.op}：${k.error}`);
-    this.spec = spec;
+    this.spec = this.withWorldRating(spec);
     // 区域：主地图（id 为 town）+ 其他区域（例如暗月界，口袋地图，默认关闭，由剧情或管理员打开）
     this.regions = buildRegions(this.spec);
     this.world = this.regions.town;
@@ -271,6 +284,18 @@ export class Town extends EventEmitter {
     this.fights = [];
     this.threats = new ThreatSystem(this, { random: opts.random || this.rng });
     this.migration = new MigrationSystem(this, { random: opts.random || this.rng });
+    this.epic = freshEpic();
+    this.epicNotes = [];
+    this.epicChapters = [];
+    this.outline = null;
+    this.outlineRevisions = [];
+    this.endState = freshEnd();
+    this.epicSys = new EpicSystem(this);
+    this.outlineSys = new OutlineSystem(this);
+    this.endings = new EndingSystem(this);
+    this.sequel = new Sequel(this);
+    this.rerate = new Rerate(this);
+    this.aiJobs = new AiJobs(() => this.now());
     this.avatars = new AvatarSystem(this);
     // P4：建设提案（世界架构师、施工等功能由 plugins/builtin/ 下的插件提供）
     this.proposalSystem = new ProposalSystem(this);
@@ -284,6 +309,7 @@ export class Town extends EventEmitter {
     this.load(saved);
     this.syncAgents(false);
     this.threats.init();
+    this.outlineSys.init();
   }
 
   get day() { return Math.floor(this.t / 1440) + 1; }
@@ -349,6 +375,7 @@ export class Town extends EventEmitter {
     this.logs.push(item);
     if (this.logs.length > 400) this.logs.shift();
     this.emit('log', item);
+    this.epicSys?.onLog(item);
     return item;
   }
 
@@ -398,7 +425,9 @@ export class Town extends EventEmitter {
   advance(dtReal: number): void {
     const acc = (this.acc ||= { convo: 0, snapshot: 0, save: 0 });
     // halted：世界自带的模型服务出了致命错误，世界暂停（{ code, text }，见 world-llm.js），和休眠一样停在原地
-    if (!this.paused && !this.idle && !this.halted) {
+    // 故事完结（docs/design/epic-outline.md §4）：世界冻结，只等史诗写完大结局
+    if (this.endState.ended && !this.halted) this.epicSys.finaleTick();
+    if (!this.paused && !this.idle && !this.halted && !this.endState.ended) {
       // 深夜全员熟睡时自动快进，避免漫长的空白夜晚
       this.nightSkip = this.convos.size === 0 && this.agents.every((a) => a.status === 'sleeping');
       // 随 AI 负载放慢：模型排队太长时时间流速按比例降低，避免游戏时间跑在思考前面（最低 1/4）
@@ -428,8 +457,8 @@ export class Town extends EventEmitter {
       this.scenes.tick();
       this.votes.tick();
       this.arcs.tick();
-      this.director.tick();
-      this.migration.tick();
+      // 终幕期间导演与人员流动停下，让居民自己反应
+      if (!this.endings.finale) { this.director.tick(); this.migration.tick(); }
       this.proposalSystem.tick();
       this.council.tick();
       this.decisions.tick();
@@ -438,6 +467,9 @@ export class Town extends EventEmitter {
       this.hourHooks();
       this.crisisTick();
       this.dailyHooks();
+      this.outlineSys.tick();
+      this.endings.tick();
+      this.epicSys.tick();
       this.autoWeather();
       acc.convo += dtReal;
       if (acc.convo > 0.8) { acc.convo = 0; this.checkConversations(); }
@@ -477,6 +509,12 @@ export class Town extends EventEmitter {
     if (!this.opts?.embedder) this.embedder?.close();
     this.store?.close();
     this.store = null;
+  }
+
+  /** 世界登记里的分级说了算（docs/design/epic-outline.md §5.3）：操作历史里的 setMeta 重放之后，再以世界设置的分级为准 */
+  withWorldRating(spec: WorldSpec): WorldSpec {
+    const r = this.worldSettings?.rating;
+    return r && spec.meta.rating !== r ? { ...spec, meta: { ...spec.meta, rating: r } } : spec;
   }
 
   /** 世界作息（world.json 的 rhythm）：规划、日记、编年的时刻，单位为分钟 */
@@ -717,7 +755,7 @@ export class Town extends EventEmitter {
     const r = replay(spec, this.specOps);
     const hadBuildings = JSON.stringify(this.spec.buildings);
     const hadRegions = JSON.stringify(this.spec.regions);
-    this.spec = r.spec;
+    this.spec = this.withWorldRating(r.spec);
     const moved = this.shiftByOffsets({ regions: JSON.parse(hadRegions) });
     if (JSON.stringify(this.spec.regions) !== hadRegions) { this.rebuildRegions(); if (moved) this.syncMap(null, moved); }
     else if (JSON.stringify(this.spec.buildings) !== hadBuildings) this.syncMap(null);

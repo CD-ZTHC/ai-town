@@ -51,7 +51,9 @@ export interface EffectDef {
 export const EXPR_FNS = new Set(['has', 'count', 'knows', 'hasCondition', 'nearStructure', 'nearAgents', 'min', 'max', 'abs', 'rand',
   // 黑暗叙事（设计 §4.1 行为原语、§4.4 负担值、§4.2 信念）：没有威胁的世界里也能用，只是多数时候为假
   'seen', 'near', 'heard', 'opened', 'entered', 'speaking', 'named', 'alone', 'asleep', 'night', 'marked', 'inZone', 'posture',
-  'burden', 'anchors', 'believes', 'flag', 'hosts']);
+  'burden', 'anchors', 'believes', 'flag', 'hosts',
+  // 结局与大纲（docs/design/epic-outline.md §4）：世界层面的计数
+  'unresolvedThreats', 'liveThreats', 'containedThreats', 'crowdDead', 'namedDeaths', 'aliveIn', 'chapters']);
 // 表达式函数的说明（用于自动生成能力清单）
 export const EXPR_FN_DOCS: Record<string, string> = {
   has: "has(e, '物品id', 数量=1) 身上是否有某物品", count: "count(e, '物品id') 物品数量", knows: "knows(e, '能力id') 是否会某能力",
@@ -65,6 +67,9 @@ export const EXPR_FN_DOCS: Record<string, string> = {
   posture: "posture(e, 'eyesClosed/silent/noOpen/stayLit/notAlone') e 正保持着某种禁忌姿态",
   burden: "burden(e, '负担id') e 的负担值", anchors: 'anchors(e, 好感阈值=50) e 身边好感达到阈值、还活着的人数',
   believes: "believes(e, '话题') e 对某个话题的确信度（0~1，没有这个看法时为 0）", flag: "flag('标记名') 世界标记是否为真", hosts: "hosts(e, '威胁id') e 身上寄宿着某个威胁",
+  unresolvedThreats: 'unresolvedThreats() 世界包里还没有被永久化解的威胁种类数', liveThreats: 'liveThreats() 此刻在外作祟的威胁数',
+  containedThreats: 'containedThreats() 收容中的威胁数', crowdDead: 'crowdDead() 累计遇害的群众人数', namedDeaths: 'namedDeaths() 累计死去的具名角色数',
+  aliveIn: "aliveIn('阵营id', 'hosted'?) 阵营里还活着的成员数（第二个参数为 'hosted' 时只算身上寄宿着威胁的人）", chapters: 'chapters() 史诗已经写了多少章（本部）',
 };
 // 扩展目录（server/ext/）注册的表达式函数实现：name → (helpers, ...args) => value
 export const EXT_FNS: Record<string, (helpers: unknown, ...args: any[]) => unknown> = {}; // eslint-disable-line @typescript-eslint/no-explicit-any
