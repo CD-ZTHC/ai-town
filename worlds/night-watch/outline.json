@@ -1,0 +1,65 @@
+{
+ "premise": "临川的祟一只接一只地出现，夜巡司的人在祟蚀里撑着，直到有人想明白：祟不是要被关起来的东西，而是要被了结的执念。",
+ "theme": "被遗忘的人，和记得他们的人",
+ "parts": [
+  {
+   "id": "part1", "title": "长夜", "status": "active",
+   "acts": [
+    {
+     "id": "fire_lane_act", "title": "槐荫巷的火", "status": "active",
+     "plan": "槐荫巷的路灯一盏盏熄灭，有人在巷子里被叫了名字就再也没有出来。夜巡司只能用长明灯和镇匣压住等门的人；钱伯和何敏各自握着二十年前那场火的一半真相，直到有人把那个没回家的孩子找出来。",
+     "beats": [
+      { "id": "lane_first_death", "text": "槐荫巷有人被叫了名字，再也没有走出来", "status": "planned", "links": { "threat": "waiting_mother" } },
+      { "id": "qian_tells", "text": "钱伯把火灾那晚的事告诉了一个信得过的人", "status": "planned", "links": { "thread": "fire_truth", "persona": "qian" } },
+      { "id": "mother_origin", "text": "有人查清了等门的人生前的来历", "status": "planned", "links": { "threat": "waiting_mother" } },
+      { "id": "mother_resolved", "text": "那个孩子被找到，等门的人终于等到了", "status": "planned", "done": "flag('resolved_waiting_mother')", "links": { "threat": "waiting_mother" } }
+     ]
+    },
+    {
+     "id": "ledger_act", "title": "名册上的名字", "status": "planned",
+     "plan": "报丧簿开始写出一个又一个名字，医院五楼的电话在半夜响起。唐棠想救下名册上的下一个人，萧九借着身上的铃声游走在夜巡司之外。查清那个夜班接线员的往事，替她回那通电话。",
+     "beats": [
+      { "id": "ledger_read", "text": "有人翻开报丧簿，读到了下一个会出事的人", "status": "planned" },
+      { "id": "tang_saves", "text": "唐棠在规律应验之前救下了名册上的一个人", "status": "planned", "links": { "persona": "tang" } },
+      { "id": "ring_resolved", "text": "那通迟到的求救电话终于有人接起", "status": "planned", "done": "flag('resolved_phone_ring')", "links": { "threat": "phone_ring" } }
+     ]
+    },
+    {
+     "id": "bearers_act", "title": "负祟人", "status": "planned",
+     "plan": "沈砚和顾南星的祟蚀越来越深。沈知终于知道哥哥每晚去了哪里；顾南星想用别人的命换自己的命。他们发现：了结自己身上那只祟的执念，祟蚀就会退去——可那意味着要先弄清它们是怎么死的。",
+     "beats": [
+      { "id": "zhi_learns", "text": "沈知知道了哥哥是负祟人", "status": "planned", "links": { "thread": "shen_erosion", "persona": "zhi" } },
+      { "id": "gu_choice", "text": "顾南星在别人的命和自己的祟蚀之间做了选择", "status": "planned", "links": { "persona": "gu" } },
+      { "id": "back_resolved", "text": "背对你的人看清了推他的人，从沈砚身上散去", "status": "planned", "done": "flag('resolved_back_turned')", "links": { "threat": "back_turned" } },
+      { "id": "child_resolved", "text": "影子里的孩子被牵回了家", "status": "planned", "done": "flag('resolved_shadow_child')", "links": { "threat": "shadow_child" } }
+     ]
+    },
+    {
+     "id": "boxes_act", "title": "镇匣开裂", "status": "planned",
+     "plan": "萧九对夜巡司地下室里的镇匣下了手，被关着的祟逃了出来。二号线的末班车之后又停了一班车，土地庙的纸扎走上了街。陆承不得不在压下祟案和了结它们之间做出选择。",
+     "beats": [
+      { "id": "xiao_strikes", "text": "萧九打开了夜巡司地下室里的镇匣", "status": "planned", "links": { "thread": "xiao_boxes", "persona": "xiao" } },
+      { "id": "train_resolved", "text": "那位检修工的名字被补进了名册", "status": "planned", "done": "flag('resolved_last_train')", "links": { "threat": "last_train" } },
+      { "id": "paper_resolved", "text": "纸扎被烧还给了老师傅", "status": "planned", "done": "flag('resolved_paper_man')", "links": { "threat": "paper_man" } }
+     ]
+    },
+    {
+     "id": "dawn_act", "title": "长夜尽头", "status": "planned", "endingRef": "dawn",
+     "plan": "只剩下江堤下那双水里的手。临川的人把历年汛期失踪的名字一个个刻上碑，最后一只祟沉入江底。天亮了，长明灯熄灭了，夜巡司的人回到了各自的生活里——如果他们还活着的话。",
+     "beats": [
+      { "id": "river_resolved", "text": "江堤上立起了刻满名字的碑", "status": "planned", "done": "flag('resolved_river_hand')", "links": { "threat": "river_hand" } },
+      { "id": "last_lamp", "text": "临川的最后一盏长明灯熄灭了", "status": "planned", "done": "unresolvedThreats() == 0" }
+     ]
+    }
+   ]
+  }
+ ],
+ "endings": [
+  { "id": "dawn", "title": "长夜尽头", "kind": "good", "when": "unresolvedThreats() == 0",
+    "hint": "所有的祟都被化解（收容不算），世界上不再有祟", "finale": { "hours": 18, "text": "临川的最后一盏长明灯熄灭了，再也不需要它了" } },
+  { "id": "nobody_left", "title": "长夜无人", "kind": "bad", "when": "aliveIn('watch') == 0", "for": 3,
+    "hint": "夜巡司的人全部死去，三天之内也没有人接过他们的灯", "finale": { "hours": 12, "text": "夜巡司的灯一盏也没有再亮起来" } },
+  { "id": "city_lost", "title": "临川沦陷", "kind": "bad", "when": "crowdDead() >= 1500 || liveThreats() >= 5", "for": 2,
+    "hint": "祟案失控：遇害的市民超过一千五百人，或者同时作祟的祟多到压不住", "finale": { "hours": 12, "text": "临川的夜晚再也没有人敢出门" } }
+ ]
+}

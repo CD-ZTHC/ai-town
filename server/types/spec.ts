@@ -2,6 +2,7 @@
 // 默认规格来自世界包（worlds/<id>/world.json + map.json + bible.json + arcs/），之后的改动都以 WorldOp 叠加（见 ops.ts）。
 // 结构复杂、仍在演进的部分（剧情弧、威胁、事件）先给出主要字段，其余用索引签名放行。
 import type { Look } from './agent.ts';
+import type { EndingDef, EpicConfig, Outline } from './story.ts';
 
 export type Rating = 'cozy' | 'drama' | 'tragic' | 'dark' | (string & {});
 export type Storyteller = 'gentle' | 'voyage' | 'chaos' | 'horror';
@@ -398,4 +399,10 @@ export interface WorldSpec {
   listed?: boolean;
   /** 即时战斗：游戏模式里旅人化身的技能（1~4 键，能力 id） */
   combat?: { avatarKit?: string[] };
+  /** 世界史诗的配置（docs/design/epic-outline.md §2）；不写时用默认值 */
+  epic?: EpicConfig;
+  /** 初始大纲（§3）：运行时复制进存档，之后以存档为准；不进 publicSpec */
+  outline?: Partial<Outline>;
+  /** 终局分支（§4）：没有大纲时单独写在这里 */
+  endings?: EndingDef[];
 }

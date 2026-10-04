@@ -10,7 +10,8 @@ import { stripOf, packStrip, SIDES, MAX_SIZE } from '../worldgen/extend.ts';
 import { buildRegion } from '../worldgen/index.ts';
 import { validateAbility } from './abilities.ts';
 import { validateRule } from './rules.ts';
-import { touchesGenesis } from './effects.ts';
+import { touchesGenesis, checkEffects, checkExpr } from './effects.ts';
+import { validateThreat, validateBurden, ALIGNMENTS } from './threat-spec.ts';
 import { solveLayout, layoutProblems, regionSize, mapSize, BIOME_IDS, BUILDING_KINDS, OUTDOOR_KINDS } from '../worldgen/layout.ts';
 import type { OpLevel } from '../types/ops.ts';
 import type { Ability, Building, Region, RegionEdit, Rule, Side, WorldSpec } from '../types/spec.ts';
@@ -238,9 +239,10 @@ export const OPS: Record<string, OpDef> = {
       if (!validId(a.id)) return 'id 不合法';
       if (Object.hasOwn(spec.items, a.id)) return `物品已存在：${a.id}`;
       if (!str(a.name, 8) || !str(a.emoji, 4)) return 'name / emoji 不能为空';
+      if (a.use != null) { if (!Array.isArray(a.use)) return 'use 应为效果列表'; if (touchesGenesis(a.use, spec)) return 'use 里不能有创世效果'; const e = checkEffects(a.use, spec); if (e) return `use ${e}`; }
       return null;
     },
-    apply(spec, a) { spec.items[a.id] = { name: str(a.name, 8), emoji: str(a.emoji, 4), desc: str(a.desc, 40) }; },
+    apply(spec, a) { spec.items[a.id] = { name: str(a.name, 8), emoji: str(a.emoji, 4), desc: str(a.desc, 40), ...(Array.isArray(a.use) && a.use.length ? { use: structuredClone(a.use.slice(0, 4)) } : {}) }; },
     describe: (a) => `小镇上出现了新东西：${str(a.emoji, 4)} ${str(a.name, 8)}`,
   },
   addStructure: {
@@ -677,6 +679,74 @@ export const OPS: Record<string, OpDef> = {
       spec.rules.push(Object.fromEntries(Object.entries({ id, name, when, forEach, if: cond, then }).filter(([, v]) => v !== undefined)) as unknown as Rule);
     },
     describe: (a) => `新的世界法则生效了：「${str(a.name, 16)}」`,
+  },
+  // ---------- 分级修改（docs/design/epic-outline.md §5）：AI 生成的分级适配计划落成这些操作 ----------
+  setLore: {
+    level: 'major',
+    check(spec, a) {
+      if (a.pillars == null && a.summary == null) return '没有要修改的字段';
+      if (a.pillars != null && !(Array.isArray(a.pillars) && a.pillars.length >= 1 && a.pillars.length <= 12 && a.pillars.every((x: unknown) => typeof x === 'string' && x.trim() && x.length <= 80))) return 'pillars 应为 1~12 条、每条 ≤80 字';
+      if (a.summary != null && !(typeof a.summary === 'string' && a.summary.trim() && a.summary.length <= 2000)) return 'summary 应为 ≤2000 字';
+      return null;
+    },
+    apply(spec, a) {
+      if (a.pillars != null) spec.lore.pillars = a.pillars.map((x: string) => str(x, 80));
+      if (a.summary != null) spec.lore.summary = str(a.summary, 2000);
+    },
+    describe: () => '世界的底色变了',
+  },
+  addBurden: {
+    level: 'major',
+    check(spec, a) {
+      if (!validId(a.id)) return 'id 不合法';
+      if (Object.hasOwn(spec.burdens || {}, a.id)) return `负担值已存在：${a.id}`;
+      return validateBurden(a.id, a.def, spec);
+    },
+    apply(spec, a) { (spec.burdens ||= {})[a.id] = structuredClone(a.def); },
+    describe: (a) => `人们开始背负「${str(a.def?.name, 8)}」`,
+  },
+  addThreat: {
+    level: 'major',
+    check(spec, a) {
+      if (!validId(a.id)) return 'id 不合法';
+      if (Object.hasOwn(spec.threats || {}, a.id)) return `威胁已存在：${a.id}`;
+      if (Object.keys(spec.threats || {}).length >= 16) return '威胁种类已达上限';
+      return validateThreat(a.id, a.def, spec);
+    },
+    apply(spec, a) { (spec.threats ||= {})[a.id] = structuredClone(a.def); },
+    describe: (a) => `${str(a.def?.emoji, 4)} 世界上出现了一种说不清的东西：${str(a.def?.name, 12)}`,
+  },
+  setIncidents: {
+    level: 'major',
+    check(spec, a) {
+      for (const x of Array.isArray(a.start) ? a.start : []) if (!Object.hasOwn(spec.threats || {}, x?.threat)) return `未知威胁：${x?.threat}`;
+      if (a.start != null && !Array.isArray(a.start)) return 'start 应为数组';
+      if (a.autoEveryDays != null && !(Number.isInteger(a.autoEveryDays) && a.autoEveryDays >= 1 && a.autoEveryDays <= 14)) return 'autoEveryDays 应为 1~14 的整数';
+      return null;
+    },
+    apply(spec, a) {
+      spec.incidents = { ...(spec.incidents || {}), ...(a.start ? { start: a.start.slice(0, 3).map((x: Args) => ({ threat: x.threat, ...(x.at ? { at: str(x.at, 32) } : {}) })) } : {}), ...(a.autoEveryDays != null ? { autoEveryDays: a.autoEveryDays } : {}) };
+    },
+    describe: () => '世界开始不太平了',
+  },
+  setPersonaTraits: {
+    level: 'major',
+    check(spec, a) {
+      const p = spec.personas.find((x) => x.id === a.id);
+      if (!p) return `未知角色：${a.id}`;
+      if (a.alignment != null && !ALIGNMENTS.includes(a.alignment)) return `alignment 只能是 ${ALIGNMENTS.join('/')}`;
+      if (a.drives != null && !(Array.isArray(a.drives) && a.drives.length <= 3 && a.drives.every((d: Args) => typeof d?.text === 'string' && d.text.trim() && d.text.length <= 40 && (d.perDay == null || (d.perDay >= 0 && d.perDay <= 100))))) return 'drives 应为 ≤3 条 {text: ≤40字, perDay: 0~100}';
+      if (a.redemption != null && a.redemption !== '') { const e = checkExpr(a.redemption); if (e) return `redemption ${e}`; }
+      if (a.alignment == null && a.drives == null && a.redemption == null) return '没有要修改的字段';
+      return null;
+    },
+    apply(spec, a) {
+      const p = spec.personas.find((x) => x.id === a.id)!;
+      if (a.alignment != null) p.alignment = a.alignment;
+      if (a.drives != null) p.drives = a.drives.map((d: Args) => ({ text: str(d.text, 40), perDay: d.perDay ?? 25 }));
+      if (a.redemption === '') delete p.redemption; else if (a.redemption != null) p.redemption = a.redemption;
+    },
+    describe: (a, spec) => `${pName(spec, a.id)}的心思变了`,
   },
 };
 

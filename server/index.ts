@@ -117,7 +117,7 @@ function makeTown(world: World, root: string): Town {
     dataDir: activeDir(root),
     worldId: world.id,
     pack,
-    worldSettings: { rating: s.rating, storyteller: s.storyteller, mods: s.mods || [], migration: s.migration !== false, ...(Number.isInteger(s.deathNamed) ? { deathNamed: s.deathNamed } : {}) },
+    worldSettings: { rating: s.rating, storyteller: s.storyteller, mods: s.mods || [], migration: s.migration !== false, epic: s.epic !== false, ...(Number.isInteger(s.deathNamed) ? { deathNamed: s.deathNamed } : {}) },
     // 每个世界的 AI 插件只在自己的目录里（为 A 世界生成的插件不会被 B 世界加载）；
     // 官方世界的进化开关是 EVOLVE，用户世界是创世时（或之后在设置里）打开的开关，超时交给 AI 裁决官
     evolution: { dir: path.join(root, 'evolution'), pluginsDir: path.join(root, 'plugins'), config: { publicMode: config.publicMode, mode: evolutionMode(world) } },
@@ -133,6 +133,14 @@ manager = new WorldManager({
     const human = !world.official ? Boolean(world.ownerId) : config.publicMode && Boolean(config.adminToken);
     t.votes.requireAdmin = human;
     t.proposalSystem.requireAdmin = human;
+    // 故事完结 / 开启下一部、分级修改（docs/design/epic-outline.md）：写进世界登记（大厅的徽章、下次加载时的分级）
+    t.on('ended', (e: { title: string; kind: string; day: number; part: number } | null) => {
+      try { registry.update(world.id, { settings: { ended: e ? { title: e.title, kind: e.kind, day: e.day, part: e.part } : null } }); } catch (err) { console.warn('[worlds] 记录完结失败：', (err as Error).message); }
+    });
+    t.on('rating', (r: string) => {
+      t.worldSettings.rating = r;
+      try { registry.update(world.id, { rating: r, settings: { rating: r } }); } catch (err) { console.warn('[worlds] 记录分级失败：', (err as Error).message); }
+    });
   },
   ownerGrant: (w) => (w.ownerId ? accounts.grant(w.ownerId, 'genesis') : null),
 });

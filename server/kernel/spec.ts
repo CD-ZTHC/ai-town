@@ -7,6 +7,7 @@ import { validateRule } from './rules.ts';
 import { officialPack, packSpec } from '../worlds/pack.ts';
 import { RATINGS } from './ratings.ts';
 import { validateDark } from './threat-spec.ts';
+import { specStoryErrors } from './outline-spec.ts';
 import type { Params, WorldSpec, CalendarEvent } from '../types/spec.ts';
 
 /** 未经校验的规格数据：validateSpec 逐字段检查，所以静态上不约束字段 */
@@ -181,6 +182,7 @@ export function validateSpec(spec: unknown): string[] {
   }
 
   for (const [path, msg] of validateDark(s)) err(path, msg);
+  for (const [path, msg] of specStoryErrors(s)) err(path, msg);
 
   for (const [k, v] of Object.entries<Raw>(s.params || {})) {
     const b = Object.hasOwn(PARAM_BOUNDS, k) && PARAM_BOUNDS[k as keyof Params];

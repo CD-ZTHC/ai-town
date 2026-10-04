@@ -93,6 +93,12 @@ export interface SaveV2 {
   logs: LogItem[];
   convoLog: ConvoRecord[];
   newspapers: Newspaper[];
+  epic?: unknown;
+  epicNotes?: unknown[];
+  epicChapters?: unknown[];
+  outline?: unknown;
+  outlineRevisions?: unknown[];
+  endState?: unknown;
   board: unknown[];
   pairCd: Record<string, number>;
   flags: Record<string, unknown>;

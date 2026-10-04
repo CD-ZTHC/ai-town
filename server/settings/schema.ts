@@ -147,6 +147,7 @@ export const SETTINGS = {
   WORLD_UNLOAD_SEC: { group: 'worlds', ...int(10, 864000), default: 600, apply: 'live', label: '休眠多久后存盘卸载（秒）' },
   WORLD_DISK_MB: { group: 'worlds', ...int(1, 1e6), default: 200, apply: 'live', label: '每个用户世界的默认磁盘上限（MB）' },
   MIGRATION: { group: 'worlds', ...bool(), default: true, apply: 'live', label: '人员流动', help: '世界会自己来新人、有人出门远行再回来；每个世界还可以在世界设置里单独关闭' },
+  EPIC: { group: 'worlds', ...oneOf(['on', 'off']), default: 'on', apply: 'live', label: '世界史诗', help: '每个世界把发生的事续写成分章节的小说（每章一次 smart 调用，另有一次大纲维护）；每个世界还可以在世界设置里单独关闭' },
   MIGRATION_DAYS: { group: 'worlds', ...num(1, 365), default: 4, apply: 'live', label: '人员流动的平均间隔（游戏日）', help: '两次变动至少间隔它的 3/4' },
   MIGRATION_CAP: { group: 'worlds', ...num(1, 3), default: 1.5, apply: 'live', label: '人数上限倍数', help: '在场人数最多为世界初始人数的这个倍数' },
   WORLDS_DISK_TOTAL_GB: { group: 'worlds', ...num(0, 1e6), default: 0, apply: 'live', label: '用户世界磁盘总量上限（GB）', help: '0 = 不限；超过后暂停接受新的创世' },

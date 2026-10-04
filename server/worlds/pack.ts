@@ -3,6 +3,7 @@
 //   map.json    区域：每个区域用哪个生成器、生成参数（语义布局）
 //   arcs/*.json 剧情弧
 //   bible.json  世界圣经（人物、地点、物件、规则、时间线、文风；每条事实带出处）——创世生成的世界才有完整内容
+//   outline.json 故事大纲与结局（可选；也可以写在 world.json 的 outline 字段，docs/design/epic-outline.md）
 //   source/     原文分块与索引（只给创世与运行时检索用，不对外提供，不参与哈希）
 // 官方世界在仓库的 worlds/<id>/；用户创世生成的在 data/worlds/<id>/pack/。
 import crypto from 'node:crypto';
@@ -105,6 +106,8 @@ export function loadPack(dir: string): Pack {
   const arcDir = path.join(dir, 'arcs');
   const arcs = fs.existsSync(arcDir) ? fs.readdirSync(arcDir).filter((f) => f.endsWith('.json')).sort().map((f) => readJSON(path.join(arcDir, f))) : [];
   const bible = fs.existsSync(path.join(dir, 'bible.json')) ? readJSON(path.join(dir, 'bible.json')) : null;
+  // 大纲可以单独放在 outline.json（手写的官方世界）；world.json 里写了 outline 时以 world.json 为准
+  if (!world.outline && fs.existsSync(path.join(dir, 'outline.json'))) world.outline = readJSON(path.join(dir, 'outline.json'));
   const pack = { dir, world, map, arcs, bible } as Pack;
   const errs = packErrors(pack);
   if (errs.length) throw new PackError(errs);

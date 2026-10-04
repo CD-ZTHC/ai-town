@@ -240,6 +240,13 @@ await step('18b-people', async () => {
   await click('[data-prec="hunter"]');
   await waitFor(() => evaluate(`Boolean(document.querySelector('[data-pdep="hunter"]'))`), 8000, '召回');
 }, { wait: 800 });
+await step('18e-epic-outline', async () => {
+  // 史诗与大纲（docs/design/epic-outline.md）：还没有章节、还没有大纲时，管理者看到「生成大纲」
+  await click('.stabs [data-t="epic"]');
+  await waitFor(() => evaluate(`document.querySelector('#story-body').textContent.includes('史诗还没有开篇')`), 8000, '史诗目录');
+  await click('.stabs [data-t="outline"]');
+  await waitFor(() => evaluate(`Boolean(document.querySelector('#ol-gen')) && Boolean(document.querySelector('#ol-rate'))`), 8000, '大纲（可以生成、可以修改分级）');
+}, { wait: 600 });
 await step('18c-buildings', async () => {
   // 地图演变：停业、受损、废墟的画面（本地模式即管理员，直接应用世界操作）
   await closeModal();
@@ -279,6 +286,34 @@ await step('18e-adjacent', async () => {
   await waitFor(() => evaluate(`app.view === 'chengdong'`), 5000, '切到城东');
   await evaluate(`(() => { const p = app.world.passages[0]; app.cam.x = (p.x + 8) * 32; app.cam.y = p.y * 32; return true; })()`);
 }, { wait: 1200 });
+await step('31-night-watch-outline', async () => {
+  // 《夜巡》的完整大纲：结局与进度、编辑器（表单 / JSON）、修改分级的面板
+  await send('Page.navigate', { url: `${base}/w/night-watch/?mode=observe` });
+  await waitFor(() => evaluate(`document.querySelectorAll('#roster .rcard').length >= 5 && document.title.includes('夜巡')`), 15000, '夜巡世界');
+  await sleep(1000); // 名册先渲染出来，顶栏的按钮稍后才接上事件
+  await click('#story-chip');
+  await waitFor(() => evaluate(`Boolean(document.querySelector('.stabs [data-t="outline"]'))`), 8000, '故事面板');
+  await click('.stabs [data-t="outline"]');
+  await waitFor(() => evaluate(`document.querySelector('#story-body').textContent.includes('长夜无人') && Boolean(document.querySelector('#ol-edit'))`), 8000, '完整大纲');
+}, { wait: 600 });
+await step('31b-outline-editor', async () => {
+  await click('#ol-edit');
+  await waitFor(() => evaluate(`document.querySelectorAll('.ol-ed-act').length >= 7`), 8000, '大纲编辑器');
+  await click('#ol-json');
+  await waitFor(() => evaluate(`Boolean(document.querySelector('#ol-json-text'))`), 4000, 'JSON 编辑');
+  await click('#ol-json');
+  await waitFor(() => evaluate(`document.querySelectorAll('.ol-ed-act').length >= 7`), 4000, '回到表单');
+  // 改一幕的计划 → 提交评审（没有模型时只有规则校验）→ 保存
+  await evaluate(`(() => { const t = document.querySelector('textarea[data-k$=".plan"]'); t.value += '（浏览器检查）'; t.dispatchEvent(new Event('input')); return true; })()`);
+  await click('#ol-review');
+  await waitFor(() => evaluate(`Boolean(document.querySelector('.ol-review')) && !document.querySelector('#ol-save').disabled`), 10000, '评审结果');
+  await click('#ol-save');
+  await waitFor(() => evaluate(`Boolean(document.querySelector('#ol-edit')) && document.querySelector('#story-body').textContent.includes('浏览器检查')`), 8000, '保存后的大纲');
+}, { wait: 600 });
+await step('31c-rating', async () => {
+  await click('#ol-rate');
+  await waitFor(() => evaluate(`Boolean(document.querySelector('#rt-to'))`), 8000, '修改分级');
+}, { wait: 800 });
 await step('19-genesis', async () => {
   await send('Page.navigate', { url: `${base}/genesis.html` });
   await waitFor(() => evaluate(`Boolean(document.querySelector('#go'))`), 10000, '创世向导');

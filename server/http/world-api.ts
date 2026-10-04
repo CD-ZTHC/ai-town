@@ -13,6 +13,7 @@ import { config, sanitize, moderate, targetsResident } from '../guard.ts';
 import { authorize } from '../accounts/authz.ts';
 import { quota, remaining as quotaLeft } from '../accounts/quota.ts';
 import { HttpError } from './util.ts';
+import { storyRoutes } from './story-api.ts';
 import { get as setting } from '../settings/index.ts';
 import type { AppEnv, Ctx } from '../types/http.ts';
 import type { Town } from '../sim.ts';
@@ -39,6 +40,8 @@ function requireReviewer(c: Ctx): void {
 /** 互动（现身、聊天、心声、事件、天气、投票、举报）：只有登录的用户；游客返回 401，页面弹出登录框后自动继续 */
 function requireUser(c: Ctx): void {
   if (!config.allowInteraction && !c.get('admin')) throw new HttpError(403, '当前为只读观赏模式');
+  // 故事完结之后世界冻结（docs/design/epic-outline.md §4）：可以浏览、读史诗，不能再互动
+  if (c.get('host')?.town?.endState?.ended) throw new HttpError(409, '这个故事已经完结了，可以去读读它的史诗 📜', { ended: true });
   if (c.get('admin')) return;
   const ok = authorize(c.get('who'), 'interact');
   if (ok !== true) throw new HttpError(401, ok, { login: true });
@@ -443,6 +446,7 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
     const t = town(c);
     if (!llm.enabled()) throw new HttpError(503, llm.blocked() || 'AI 尚未配置');
     if (t.director.deciding) throw new HttpError(409, '导演正在思考');
+    if (t.endState.ended) throw new HttpError(409, '这个故事已经完结了');
     const r = await t.director.decide();
     return c.json({ ok: true, ...r });
   });
@@ -466,6 +470,8 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
     console.log(`[reset] ${host.id} 已由 ${c.get('ip')} 重置到第一天`);
     return c.json({ ok: true });
   });
+
+  storyRoutes(api, { reviewer, accounts: deps.accounts });
 
   return api;
 }

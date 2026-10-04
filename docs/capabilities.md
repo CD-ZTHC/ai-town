@@ -36,6 +36,11 @@
 | `settlePersona` | major | — | 仅管理员 / 剧情弧使用 |
 | `setAvatarKit` | minor | ✅ | {"ids":["带 combat 块的能力id"]（最多4个）} —— 旅人（玩家）在游戏模式里能用的技能栏，整体替换 |
 | `addRule` | major | ✅ | {"id","name":"≤16字","when":{"every":10~1440} 或 {"at":"HH:MM"} 或 {"weather":"天气id"} 或 {"enter":"地点id"},"forEach":"agent"(可选),"if":"表达式(可选)","then":[效果]} |
+| `setLore` | major | — | 仅管理员 / 剧情弧使用 |
+| `addBurden` | major | — | 仅管理员 / 剧情弧使用 |
+| `addThreat` | major | — | 仅管理员 / 剧情弧使用 |
+| `setIncidents` | major | — | 仅管理员 / 剧情弧使用 |
+| `setPersonaTraits` | major | — | 仅管理员 / 剧情弧使用 |
 
 ## 效果原语
 
@@ -106,6 +111,13 @@
 - `believes`：believes(e, '话题') e 对某个话题的确信度（0~1，没有这个看法时为 0）
 - `flag`：flag('标记名') 世界标记是否为真
 - `hosts`：hosts(e, '威胁id') e 身上寄宿着某个威胁
+- `unresolvedThreats`：unresolvedThreats() 世界包里还没有被永久化解的威胁种类数
+- `liveThreats`：liveThreats() 此刻在外作祟的威胁数
+- `containedThreats`：containedThreats() 收容中的威胁数
+- `crowdDead`：crowdDead() 累计遇害的群众人数
+- `namedDeaths`：namedDeaths() 累计死去的具名角色数
+- `aliveIn`：aliveIn('阵营id', 'hosted'?) 阵营里还活着的成员数（第二个参数为 'hosted' 时只算身上寄宿着威胁的人）
+- `chapters`：chapters() 史诗已经写了多少章（本部）
 
 ## 其他可用资源
 

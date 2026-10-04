@@ -60,6 +60,9 @@ export function worldsApi(deps: WorldsDeps): Hono<AppEnv> {
       id: w.id, title: w.title, summary: w.summary, sourceTitle: w.sourceTitle, rating: w.rating, official: w.official, status: w.status,
       owner: w.ownerId ? accounts?.get(w.ownerId)?.nickname || null : null, viewers: h ? h.clients.size : 0, running: Boolean(h && !h.town.idle), day: h?.town.day ?? null,
       publishedAt: w.publishedAt, halted: Boolean(w.settings?.ai?.halt),
+      // 故事完结（docs/design/epic-outline.md §4）：运行中的以世界为准，没加载的看登记
+      ended: h ? (h.town.endState.ended ? { title: h.town.endState.ended.title, kind: h.town.endState.ended.kind } : null) : (w.settings?.ended as { title: string; kind: string } | null) || null,
+      part: h ? h.town.endState.part : (w.settings?.ended as { part?: number } | null)?.part || 1,
     };
   };
 
@@ -216,6 +219,7 @@ export function worldsApi(deps: WorldsDeps): Hono<AppEnv> {
     const settings: WorldSettings = {};
     // 世界级设置（§14.8）：叙事者、Mod；分级改动要在授予范围内（管理员可以改任何世界）
     if (b.migration !== undefined) settings.migration = Boolean(b.migration);
+    if (b.epic !== undefined) settings.epic = Boolean(b.epic);
     if (b.storyteller !== undefined) { if (!STORYTELLERS.includes(b.storyteller)) throw new HttpError(400, '未知叙事者'); settings.storyteller = b.storyteller; }
     if (b.rating !== undefined && c.get('admin')) {
       if (!['cozy', 'adventure', 'epic', 'dark', 'tragic'].includes(String(b.rating))) throw new HttpError(400, '未知分级');
@@ -248,8 +252,9 @@ export function worldsApi(deps: WorldsDeps): Hono<AppEnv> {
     // 叙事者、Mod、进化开关要重新加载世界才生效；人员流动开关直接生效
     const running = manager.get(w.id);
     if (running && settings.migration !== undefined) running.town.worldSettings.migration = settings.migration;
+    if (running && settings.epic !== undefined) running.town.worldSettings.epic = settings.epic;
     if (running && settings.deathNamed !== undefined) running.town.worldSettings.deathNamed = settings.deathNamed;
-    const reload = Object.keys(settings).some((k) => !['migration', 'deathNamed'].includes(k));
+    const reload = Object.keys(settings).some((k) => !['migration', 'deathNamed', 'epic'].includes(k));
     if (reload || patch.evolution !== undefined) manager.close(w.id, '世界设置已修改');
     return c.json({ ok: true, world: next });
   });

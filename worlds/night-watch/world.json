@@ -18,6 +18,7 @@
   }
  },
  "rhythm": { "plan": "06:00", "diary": "22:30", "chronicle": "23:00" },
+ "epic": { "title": "夜巡录", "narrator": "冷峻克制的第三人称都市怪谈：只写发生了什么，细节真实，偶尔留一句让人背后发凉的话", "chapter": { "everyDays": 5, "minDays": 1, "weight": 12, "words": [1500, 2500] } },
  "era": { "tech": "现代都市", "forbidden": ["魔法", "飞剑", "修仙"] },
  "source": { "title": "原创（题材参考规律怪谈）", "author": "", "license": "原创" },
  "calendar": {
@@ -101,7 +102,8 @@
    "counters": [
     { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 20, "leak": 0.03 },
     { "type": "suppress", "power": 2 },
-    { "type": "exploit", "hint": "它只在铃声响着的时候找说话的人" }
+    { "type": "exploit", "hint": "它只在铃声响着的时候找说话的人" },
+    { "type": "resolve", "when": "flag('ring_answered')", "text": "那通迟到了二十年的求救电话终于有人接起，医院的铃声再也没有响过" }
    ],
    "hostable": { "grants": ["dial"], "burden": "erosion", "rate": 1.1 },
    "clues": ["听见铃声的时候开口说了话", "铃声响的时候闭嘴的人都没事"],
@@ -122,7 +124,8 @@
    "counters": [
     { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 30, "leak": 0.02 },
     { "type": "suppress", "power": 3 },
-    { "type": "delay" }
+    { "type": "delay" },
+    { "type": "resolve", "when": "flag('pusher_named')", "text": "背对你的人终于转过身，看清了推他的人，然后散在了站台的风里" }
    ],
    "hostable": {
     "grants": ["look_back"], "burden": "erosion", "rate": 1.0, "offsets": { "shadow_child": -0.4 },
@@ -145,7 +148,8 @@
    },
    "counters": [
     { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 35, "leak": 0.01 },
-    { "type": "ward", "with": "lamp_ward", "radius": 4 }
+    { "type": "ward", "with": "lamp_ward", "radius": 4 },
+    { "type": "resolve", "when": "flag('worker_recorded')", "text": "那位检修工的名字被补进了名册，末班车之后再也没有车停靠" }
    ],
    "clues": ["出事的人都是一个人进的站", "结伴进站的人都平安回来了"],
    "decoys": ["出事的人都穿着深色衣服", "出事的人都坐的是二号线"],
@@ -164,7 +168,8 @@
    },
    "counters": [
     { "type": "suppress", "power": 2 },
-    { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 25, "leak": 0.03 }
+    { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 25, "leak": 0.03 },
+    { "type": "resolve", "when": "flag('child_led_home')", "text": "有人牵起了影子里的那只小手，把他送回了家" }
    ],
    "hostable": {
     "grants": ["shadow_bind", "shadow_sense"], "burden": "erosion", "rate": 1.2, "offsets": { "back_turned": -0.4 }
@@ -186,7 +191,8 @@
    "counters": [
     { "type": "delay" },
     { "type": "ward", "with": "lamp_ward", "radius": 3 },
-    { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 30, "leak": 0.02 }
+    { "type": "contain", "with": "seal_box", "yields": "sealed_box", "time": 30, "leak": 0.02 },
+    { "type": "resolve", "when": "flag('river_named')", "text": "江堤上立起了一块刻满名字的碑，水里的手慢慢沉了下去" }
    ],
    "clues": ["没有灯的水边会被拖下去", "有灯照着的地方它不上来"],
    "decoys": ["只有穿红衣服的人会被拖"],
@@ -203,7 +209,8 @@
     "outcome": [{ "op": "wound", "amount": 25, "target": "self" }],
     "reach": 3, "rest": 30
    },
-   "counters": [{ "type": "slay" }, { "type": "delay" }],
+   "counters": [{ "type": "slay" }, { "type": "delay" },
+    { "type": "resolve", "when": "flag('paper_returned')", "text": "纸扎被一件件烧还给了老师傅，土地庙的供桌空了下来" }],
    "loot": [{ "item": "cinnabar_lead", "p": 0.5 }],
    "clues": ["纸扎人怕火"],
    "decoys": ["纸扎人只在下雨天出来"],
@@ -244,6 +251,30 @@
    "requires": "believes(self, '等门的人来历') >= 0.6", "cost": { "stamina": 20 }, "cooldown": 1440,
    "effects": [{ "op": "flag", "name": "mother_child_found", "value": true }, { "op": "memory", "text": "我找到了那个孩子——他还活着，就住在城东", "importance": 8 }],
    "learn": { "teach": true, "research": { "location": "archive", "keywords": ["寻亲", "户籍", "失踪", "那个孩子"] } } },
+  { "id": "answer_call", "name": "回电", "emoji": "☎️", "target": "self", "desc": "找到当年那个夜班接线员的家人，替她把那通没接到的电话回过去", "aiHint": "在医院或档案馆、已经知道半夜的铃声的来历时",
+   "requires": "believes(self, '半夜的铃声来历') >= 0.6", "cost": { "stamina": 20 }, "cooldown": 1440,
+   "effects": [{ "op": "flag", "name": "ring_answered", "value": true }, { "op": "memory", "text": "我替她回了那通电话。电话那头很久没有声音，然后有人轻轻说了一声：谢谢", "importance": 8 }],
+   "learn": { "teach": true, "research": { "location": "hospital", "keywords": ["接线员", "求救电话", "回电", "夜班"] } } },
+  { "id": "name_pusher", "name": "指认", "emoji": "🫵", "target": "self", "desc": "翻出当年的监控和证词，找出把他推下站台的人", "aiHint": "在档案馆、已经知道背对你的人的来历时",
+   "requires": "believes(self, '背对你的人来历') >= 0.6", "cost": { "stamina": 20 }, "cooldown": 1440,
+   "effects": [{ "op": "flag", "name": "pusher_named", "value": true }, { "op": "memory", "text": "我找到了当年推他下站台的人的名字，把它说了出来", "importance": 8 }],
+   "learn": { "teach": true, "research": { "location": "archive", "keywords": ["推下站台", "监控", "目击者", "指认"] } } },
+  { "id": "record_name", "name": "补录", "emoji": "📋", "target": "self", "desc": "把那个没有被记录的检修工补进二号线的名册", "aiHint": "在档案馆、已经知道末班车的来历时",
+   "requires": "believes(self, '末班车来历') >= 0.6", "cost": { "stamina": 20 }, "cooldown": 1440,
+   "effects": [{ "op": "flag", "name": "worker_recorded", "value": true }, { "op": "memory", "text": "我把那个检修工的名字补进了名册。他终于是有人记得的人了", "importance": 8 }],
+   "learn": { "teach": true, "research": { "location": "archive", "keywords": ["检修工", "名册", "试运行", "补录"] } } },
+  { "id": "lead_home", "name": "带他回家", "emoji": "🤝", "target": "self", "desc": "查清那个走失的孩子的家在哪里，牵着他的影子走回去", "aiHint": "在学校、已经知道影子里的孩子的来历时",
+   "requires": "believes(self, '影子里的孩子来历') >= 0.6", "cost": { "stamina": 20 }, "cooldown": 1440,
+   "effects": [{ "op": "flag", "name": "child_led_home", "value": true }, { "op": "memory", "text": "我牵着那只看不见的小手走了很远的路，把他送到了家门口", "importance": 8 }],
+   "learn": { "teach": true, "research": { "location": "school", "keywords": ["走失", "江边", "孩子的家", "带他回家"] } } },
+  { "id": "river_rite", "name": "江祭", "emoji": "🪦", "target": "self", "desc": "查出历年汛期在江堤失踪的人，把名字刻在碑上祭奠", "aiHint": "在档案馆、已经知道水里的手的来历时",
+   "requires": "believes(self, '水里的手来历') >= 0.6", "cost": { "stamina": 20 }, "cooldown": 1440,
+   "effects": [{ "op": "flag", "name": "river_named", "value": true }, { "op": "memory", "text": "我们把那些名字一个个刻在了江堤的碑上", "importance": 8 }],
+   "learn": { "teach": true, "research": { "location": "archive", "keywords": ["汛期", "江堤", "溺亡名单", "江祭"] } } },
+  { "id": "burn_offering", "name": "焚还", "emoji": "🔥", "target": "self", "desc": "把土地庙供桌上的纸扎一件件烧还给扎它们的老师傅", "aiHint": "在土地庙、已经知道纸扎人的来历时",
+   "requires": "believes(self, '纸扎人来历') >= 0.6", "cost": { "stamina": 20 }, "cooldown": 1440,
+   "effects": [{ "op": "flag", "name": "paper_returned", "value": true }, { "op": "memory", "text": "我把那些纸扎一件件烧还给了老师傅", "importance": 8 }],
+   "learn": { "teach": true, "research": { "location": "earth_shrine", "keywords": ["老师傅", "纸扎", "供桌", "焚还"] } } },
   { "id": "first_aid", "name": "急救", "emoji": "🩹", "target": "agent", "desc": "处理伤口", "aiHint": "身边有人受伤时",
    "cost": { "stamina": 10 }, "cooldown": 30, "effects": [{ "op": "heal", "amount": 30, "target": "target" }], "learn": { "teach": true } }
  ],

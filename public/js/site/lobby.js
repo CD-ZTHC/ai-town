@@ -27,7 +27,7 @@ async function list() {
   const r = await api(`api/worlds?q=${q}&rating=${$('#rating').value}`);
   $('#list').innerHTML = r.list.map((w) => `
     <a class="card world-card" href="w/${encodeURIComponent(w.id)}/">
-      <div class="row"><h3 style="margin:0">${esc(w.title)}</h3>${w.official ? '<span class="pill good">官方</span>' : ''}<span class="pill">${RATING[w.rating] || esc(w.rating)}</span></div>
+      <div class="row"><h3 style="margin:0">${esc(w.title)}</h3>${w.official ? '<span class="pill good">官方</span>' : ''}<span class="pill">${RATING[w.rating] || esc(w.rating)}</span>${w.ended ? `<span class="pill" title="${esc(w.ended.title)}">📕 已完结</span>` : w.part > 1 ? `<span class="pill">第${w.part}部</span>` : ''}</div>
       ${w.sourceTitle ? `<div class="small muted">改编自《${esc(w.sourceTitle)}》</div>` : ''}
       <p class="small" style="color:var(--text)">${esc(w.summary).slice(0, 120)}${w.summary.length > 120 ? '…' : ''}</p>
       <div class="small muted">${w.halted ? '<span class="pill bad">暂停中</span> ' : ''}${w.running ? `🟢 ${w.viewers} 人在看 · 第 ${w.day} 天` : '💤 休眠中，打开即唤醒'}${w.owner ? ` · 创世者 ${esc(w.owner)}` : ''}</div>
