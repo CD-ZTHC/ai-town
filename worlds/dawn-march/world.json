@@ -273,7 +273,6 @@
   "places": { "church": { "rate": 2.5, "text": "在教会里养伤" }, "last_bonfire": { "rate": 1.2, "text": "在最后的篝火边包扎" } } },
  "parties": { "dawn": { "leader": "lan", "name": "破晓小队", "formation": "loose" } },
  "spotlight": ["lan"],
- "fog": true,
  "expedition": {
   "id": "main", "party": "dawn",
   "tokens": { "name": "破晓碎片", "emoji": "🔆", "total": 4 },

@@ -10,6 +10,7 @@ import * as Play from './play.js';
 import { requireLogin } from './ui/auth.js';
 import * as Version from './version.js';
 import * as Adventure from './adventure.js';
+import { mustLeave, retryAt, camRange } from './regionview.js';
 
 export const storage = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -83,15 +84,31 @@ export const app = {
   setView(id, { center = true } = {}) {
     const w = app.regionWorlds[id];
     if (!w || app.view === id) return;
-    // 休眠的区域只有名字和尺寸（docs/design/adventure.md §3.5）：先取地图（同时唤醒它），取到再切
-    if (w.stub) { app.loadRegion(id).then(() => app.setView(id, { center })).catch(() => {}); return; }
+    // 休眠的区域只有名字和尺寸（docs/design/adventure.md §3.5）：先取地图（同时唤醒它），取到再切；
+    // 取失败了按退避等一阵再试（跟随逻辑每帧都会来问，不能每帧发请求）
+    if (w.stub) {
+      if (performance.now() < retryAt(app.regionFail?.[id])) return;
+      app.loadRegion(id).then(() => app.setView(id, { center })).catch(() => {});
+      return;
+    }
     app.view = id;
     Realtime.view(id); // 战斗通道只推看着的这张地图
     app.world = w;
     renderer.setWorld(w);
     app.disp = {}; app.cdisp = {}; app.vdisp = {};
     if (center && w.gate) { app.cam.x = w.gate.x * TS; app.cam.y = w.gate.y * TS; }
+    // 还没开放的区域（例如跟着住在那边的人过去）：提示一次，免得以为画面卡住了
+    if (id !== 'town' && !app.regionsOpen[id]?.open && !(app.closedHinted ||= new Set()).has(id)) {
+      app.closedHinted.add(id);
+      UI.toast(`🔒 「${app.regionsOpen[id]?.name || id}」还没有开放，现在只是远远看一眼`, 5000);
+    }
     UI.onRegions?.();
+  },
+  /** 这些区域上有观众正在看的人：跟随的、选中的、自己的化身（未开放的区域里有他们时不切回主地图） */
+  watchedRegions() {
+    const at = (id) => app.snap?.agents.find((a) => a.id === id)?.region || null;
+    const mine = (app.snap?.avatars || []).find((v) => v.id === app.perms?.avatar)?.region || null;
+    return [at(app.follow), at(app.selected), mine].filter(Boolean);
   },
   /** 取一张区域的完整地图（休眠的区域不随初始数据下发） */
   async loadRegion(id) {
@@ -99,6 +116,12 @@ export const app = {
     (app.regionLoading ||= {})[id] = app.api(`/api/region?id=${encodeURIComponent(id)}`).then((r) => {
       app.regionWorlds[id] = r.world;
       if (r.regionsOpen) app.regionsOpen = r.regionsOpen;
+      if (app.regionFail) delete app.regionFail[id];
+    }).catch((e) => {
+      const f = ((app.regionFail ||= {})[id] ||= { n: 0, at: 0 });
+      f.n += 1; f.at = performance.now();
+      if (f.n === 1) UI.toast(`🗺 「${app.regionsOpen[id]?.name || id}」的地图${e.status === 403 ? '还没有开放' : '暂时取不到'}`, 4000);
+      throw e;
     }).finally(() => { delete app.regionLoading[id]; });
     return app.regionLoading[id];
   },
@@ -178,10 +201,10 @@ function connect() {
     app.adventureMeta = d.adventure || null;
     app.links = d.links || []; // 地图之间的路口（游戏模式预判过图）
     app.regionsOpen = d.regionsOpen || {};
-    if (!app.regionWorlds[app.view] || app.regionWorlds[app.view].stub || (app.view !== 'town' && !app.regionsOpen[app.view]?.open)) {
+    if (!app.regionWorlds[app.view] || app.regionWorlds[app.view].stub || mustLeave(app.view, app.regionsOpen, app.watchedRegions())) {
       const want = app.view;
       app.view = 'town';
-      if (app.regionWorlds[want]?.stub && app.regionsOpen[want]?.open) app.loadRegion(want).then(() => app.setView(want, { center: false })).catch(() => {});
+      if (app.regionWorlds[want]?.stub && !mustLeave(want, app.regionsOpen, app.watchedRegions())) app.loadRegion(want).then(() => app.setView(want, { center: false })).catch(() => {});
     }
     const viewChanged = app.world && app.world.id !== app.view;
     app.world = app.regionWorlds[app.view];
@@ -244,7 +267,8 @@ function connect() {
   es.addEventListener('links', (e) => { app.links = JSON.parse(e.data); });
   es.addEventListener('regions', (e) => {
     app.regionsOpen = JSON.parse(e.data);
-    if (app.view !== 'town' && !app.regionsOpen[app.view]?.open) app.setView('town');
+    // 正在看的人就在这张未开放的地图上时不切走（否则和跟随逻辑来回切换）
+    if (mustLeave(app.view, app.regionsOpen, app.watchedRegions())) app.setView('town');
     UI.onRegions?.();
   });
   // 角色登场 / 离场：重建精灵与名册
@@ -299,7 +323,10 @@ function clampCam() {
   const c = app.cam;
   const W = app.world.W * TS, H = app.world.H * TS;
   const hw = window.innerWidth / 2 / c.zoom, hh = window.innerHeight / 2 / c.zoom;
-  c.x = hw * 2 > W ? W / 2 : Math.max(hw - 60, Math.min(W - hw + 60, c.x));
+  // 观察模式：按界面遮挡多让出一些，贴着地图边缘的人也能挪到没被左右面板挡住的地方
+  const sf = app.mode === 'observe' ? renderer.safe || { l: 0, r: 0 } : { l: 0, r: 0 };
+  const [x0, x1] = camRange(W, hw, c.zoom, Math.max(0, sf.l - 8), Math.max(0, sf.r - 8), 60, 60);
+  c.x = Math.max(x0, Math.min(x1, c.x));
   c.y = hh * 2 > H ? H / 2 : Math.max(hh - 120, Math.min(H - hh + 60, c.y));
 }
 function zoomAt(sx, sy, factor) {
@@ -536,7 +563,7 @@ function loop(now) {
       fights: (s.fights || []).filter(here),
       // 冒险：快照的 adv（队伍、远征、预告）+ 回复点；这个区域的地貌与氛围；焦点
       adv: s.adv ? { ...s.adv, rests: app.adventureMeta?.rests || [], party: new Set(Object.values(s.adv.parties || {}).flatMap((p) => p.members)) } : null,
-      regionInfo: app.regionsOpen?.[app.view] || null, fog: Boolean(app.spec?.fog), worldId: app.perms?.world || '',
+      regionInfo: app.regionsOpen?.[app.view] || null,
       focusKey: Adventure.focusOf(),
     };
     S.lookOf = (id) => S.dark?.threats.find((x) => x.id === id)?.look || null;

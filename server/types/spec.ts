@@ -487,6 +487,4 @@ export interface WorldSpec {
   expeditions?: ExpeditionDef[];
   /** 焦点角色（观众默认关注的人） */
   spotlight?: string[];
-  /** 野外区域的迷雾 */
-  fog?: boolean;
 }

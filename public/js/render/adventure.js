@@ -332,47 +332,6 @@ export class AdventureLayer {
     ctx.globalAlpha = 1;
   }
 
-  // ---------- 区域内迷雾（§4.5，世界包 fog: true）：野外区域默认压暗，队伍和旅人走过的地方逐渐点亮 ----------
-  /** 每帧：记下焦点队伍、旅人周围 6 格为「探索过」；画出还没探索过的格子（只画视野里的） */
-  drawFog(ctx, S) {
-    if (!S.fog || S.region === 'town' || !this.world?.W) return;
-    const { W, H } = this.world;
-    const key = `${S.worldId || ''}:${S.region}`;
-    const F = (this.fogMem ||= {});
-    let m = F[key];
-    if (!m || m.length !== W * H) {
-      m = F[key] = new Uint8Array(W * H);
-      try { const saved = localStorage.getItem(`town-fog-${key}`); if (saved) { const b = atob(saved); for (let i = 0; i < Math.min(b.length, m.length); i++) m[i] = b.charCodeAt(i); } } catch {}
-    }
-    const R = 6;
-    const reveal = (x, y) => {
-      for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
-        const cx = Math.round(x) + dx, cy = Math.round(y) + dy;
-        if (cx < 0 || cy < 0 || cx >= W || cy >= H || dx * dx + dy * dy > R * R) continue;
-        m[cy * W + cx] = 1;
-      }
-    };
-    const party = S.adv?.party || new Set();
-    let changed = false;
-    for (const a of S.agents) if (party.has(a.id) && !a.inside) { reveal(a.dx, a.dy); changed = true; }
-    for (const v of S.avatars || []) { reveal(v.dx, v.dy); changed = true; }
-    if (changed && performance.now() - (this.fogSaved || 0) > 5000) {
-      this.fogSaved = performance.now();
-      try { let b = ''; for (let i = 0; i < m.length; i++) b += String.fromCharCode(m[i]); localStorage.setItem(`town-fog-${key}`, btoa(b)); } catch {}
-    }
-    const v = this.view;
-    const x0 = Math.max(0, Math.floor(v.x0 / TS)), y0 = Math.max(0, Math.floor(v.y0 / TS)), x1 = Math.min(W - 1, Math.ceil(v.x1 / TS)), y1 = Math.min(H - 1, Math.ceil(v.y1 / TS));
-    ctx.save();
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      if (m[y * W + x]) continue;
-      // 边缘：挨着探索过的格子画得淡一些，过渡更柔和
-      const edge = (x > 0 && m[y * W + x - 1]) || (x < W - 1 && m[y * W + x + 1]) || (y > 0 && m[(y - 1) * W + x]) || (y < H - 1 && m[(y + 1) * W + x]);
-      ctx.fillStyle = edge ? 'rgba(14,12,24,.45)' : 'rgba(14,12,24,.78)';
-      ctx.fillRect(x * TS, y * TS, TS, TS);
-    }
-    ctx.restore();
-  }
-
   // ---------- 屏幕层（光照之后）：地貌氛围、色调、危险暗角 ----------
   drawAdventureScreen(ctx, S, dt) {
     const info = S.regionInfo || {};

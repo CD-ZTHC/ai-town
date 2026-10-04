@@ -190,6 +190,5 @@ export function validateAdventure(s: Raw): Array<[string, string]> {
     }
   }
   for (const id of s.spotlight || []) if (!pIds.has(id)) err('spotlight', `未知角色：${id}`);
-  if (s.fog != null && typeof s.fog !== 'boolean') err('fog', '应为布尔值');
   return out;
 }

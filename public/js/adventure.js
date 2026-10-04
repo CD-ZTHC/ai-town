@@ -11,7 +11,7 @@ const st = { panelT: 0, ticker: [], atlasOpen: false, atlasAnim: null, cards: []
 export function init(a) {
   app = a;
   document.body.insertAdjacentHTML('beforeend', `
-    <aside id="adv-panel" class="panel" hidden>
+    <aside id="adv-panel" class="panel" data-safe="l" hidden>
       <div class="adv-head"><b id="adv-party"></b><button id="adv-atlas-btn" title="世界全图 (M)">🗺</button><button id="adv-fold" title="收起">▾</button></div>
       <div class="adv-front" id="adv-front"></div>
       <div class="adv-cards" id="adv-cards"></div>
@@ -31,7 +31,9 @@ export function init(a) {
   $('#atlas-close').addEventListener('click', closeAtlas);
   $('#atlas').addEventListener('pointerdown', (e) => { if (e.target.id === 'atlas') closeAtlas(); });
   $('#adv-fold').addEventListener('click', () => { const p = $('#adv-panel'); p.classList.toggle('folded'); app.storage.set('town-adv-fold', p.classList.contains('folded') ? '1' : '0'); });
-  if (app.storage.get('town-adv-fold') === '1') $('#adv-panel').classList.add('folded');
+  // 窄屏默认收起（只留头像），用户展开过就按用户的来
+  const fold = app.storage.get('town-adv-fold');
+  if (fold === '1' || (fold == null && innerWidth < 1100)) $('#adv-panel').classList.add('folded');
   addEventListener('keydown', (e) => {
     if (e.target.closest?.('input,textarea')) return;
     if (e.key === 'm' || e.key === 'M') { if (st.atlasOpen) closeAtlas(); else if (app.snap?.adv) openAtlas(); }
@@ -46,6 +48,11 @@ const trailKey = () => `town-trail-${app.perms?.world || 'yunxi'}`;
 /** 每帧调用（内部限频）：焦点队伍的卡片、前线、今日战绩、进度物、预告 */
 export function frame(S) {
   preloadNeighbors();
+  const pt = st.pendingTitle;
+  if (pt && (performance.now() > pt.until || app.view === pt.ev.region)) {
+    st.pendingTitle = null;
+    if (app.view === pt.ev.region) title(pt.ev.title || '', pt.ev.name, pt.ev.intro);
+  }
   const adv = app.snap?.adv;
   const panel = $('#adv-panel');
   panel.hidden = !adv;
@@ -108,7 +115,8 @@ export function onAdv(ev) {
   if (ev.type === 'downed') sub(ev.carrier ? `🤝 ${ev.carrier.name}扶起倒下的${ev.name}，往${ev.toName}走去` : `💫 ${ev.name}倒下了……`, 'bad');
   if (ev.type === 'revive') sub(`✚ ${ev.name}在${ev.atName}醒了过来`);
   if (ev.type === 'party') card(`🤝 ${esc(ev.name)} ${ev.party ? `加入了${esc(ev.partyName)}` : `离开了${esc(ev.partyName)}`}`, '', 'gold');
-  if (ev.type === 'region' && mode !== 'off') title(ev.title || '', ev.name, ev.intro);
+  // 区域标题卡：只在观众正看着那张地图时播放（跟随的镜头会在一两秒内切过去）；2.5 秒内没看过去就不播
+  if (ev.type === 'region' && mode !== 'off') st.pendingTitle = { ev, until: performance.now() + 2500 };
   if (ev.type === 'frontier') {
     card(`🚩 「${esc(ev.title)}」征服了${esc(ev.fromName)}`, ev.to?.length ? `前面的路打开了：${ev.to.map((x) => esc(x.name)).join('、')}` : '', 'gold');
     if (mode === 'all') setTimeout(() => openAtlas({ anim: ev }), 1200);

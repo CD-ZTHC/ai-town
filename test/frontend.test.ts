@@ -95,3 +95,21 @@ test('居民状态卡：体力勇气条夹在 0~100，物品与能力都经过�
   assert.match(html, /冷却 3 分钟/);
   assert.match(html, /<span>疲惫<\/span>/);
 });
+
+test('看哪张地图：未开放的区域里有正在看的人时不切回主地图；取地图失败后退避；镜头按界面遮挡让开', async () => {
+  const { mustLeave, retryAt, camRange } = await import('../public/js/regionview.js');
+  const open = { town: { open: true }, meadow: { open: true }, forest: { open: false } };
+  assert.equal(mustLeave('town', open, []), false);
+  assert.equal(mustLeave('meadow', open, []), false);
+  assert.equal(mustLeave('forest', open, []), true, '没人可看的未开放区域：切回主地图');
+  assert.equal(mustLeave('forest', open, ['town', 'forest']), false, '跟随的人在那边：留下（不和跟随逻辑来回切）');
+  assert.equal(retryAt(null), 0);
+  assert.equal(retryAt({ n: 1, at: 1000 }), 3000);
+  assert.equal(retryAt({ n: 3, at: 1000 }), 9000);
+  assert.equal(retryAt({ n: 20, at: 1000 }), 61000, '最多等 60 秒');
+  // 地图 1000 宽、半屏 300：没有遮挡时边缘只多让 60；左边被挡住 200 像素（缩放 2）时再多让 100
+  assert.deepEqual(camRange(1000, 300, 2, 0, 0, 60, 60), [240, 760]);
+  assert.deepEqual(camRange(1000, 300, 2, 200, 0, 60, 60), [140, 760]);
+  // 地图比屏幕小：居中在没被挡住的地方
+  assert.deepEqual(camRange(400, 300, 2, 200, 0, 60, 60), [150, 150]);
+});

@@ -1,7 +1,10 @@
 /* 冒险（docs/design/adventure.md §4）：冒险者面板、预告滚动条、区域标题卡、升级卡片、字幕、世界全图 */
 
 /* ---------- 冒险者面板：观察模式在名册右边；沉浸模式缩成头像；游戏模式隐藏 ---------- */
-#adv-panel { position: fixed; left: calc(var(--gap) * 2 + 62px); top: var(--hud-top); z-index: 15; width: 228px; border-radius: var(--radius); padding: 8px; display: flex; flex-direction: column; gap: 6px; animation: slidein 0.3s ease-out; }
+#adv-panel { position: fixed; left: calc(var(--gap) * 2 + 62px); top: var(--hud-top); z-index: 15; width: 228px; border-radius: var(--radius); padding: 8px; display: flex; flex-direction: column; gap: 6px; animation: slidein 0.3s ease-out; transition: left 0.2s var(--ease, ease); }
+/* 名册展开（鼠标移上去、点过之后）时：面板让到展开后的名册右边，名册也提到面板之上，两者不重叠 */
+body:has(#roster:hover, #roster:focus-within) #adv-panel { left: calc(var(--gap) * 2 + 232px); }
+#roster:hover, #roster:focus-within { z-index: 17; }
 #adv-panel .adv-head { display: flex; align-items: center; gap: 6px; }
 #adv-panel .adv-head b { flex: 1; font: 15px/1.2 var(--display); letter-spacing: 0.06em; color: #ffe08a; }
 #adv-panel .adv-head button { width: 26px; height: 26px; border-radius: 8px; background: rgba(255, 255, 255, 0.08); }

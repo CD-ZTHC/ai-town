@@ -164,7 +164,6 @@ export class Renderer {
     this.drawAdventureFx(ctx, S, dt);
     this.drawPluginOverlay(ctx, S);
 
-    this.drawFog(ctx, S); // 区域内迷雾（冒险 §4.5）
     this.updateParticles(dt, S, sky);
     this.drawWorldParticles(ctx, S, sky);
     this.drawCloudShadows(ctx, S);
