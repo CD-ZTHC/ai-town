@@ -150,6 +150,8 @@ export const SETTINGS = {
   EPIC: { group: 'worlds', ...oneOf(['on', 'off']), default: 'on', apply: 'live', label: '世界史诗', help: '每个世界把发生的事续写成分章节的小说（每章一次 smart 调用，另有一次大纲维护）；每个世界还可以在世界设置里单独关闭' },
   MIGRATION_DAYS: { group: 'worlds', ...num(1, 365), default: 4, apply: 'live', label: '人员流动的平均间隔（游戏日）', help: '两次变动至少间隔它的 3/4' },
   MIGRATION_CAP: { group: 'worlds', ...num(1, 3), default: 1.5, apply: 'live', label: '人数上限倍数', help: '在场人数最多为世界初始人数的这个倍数' },
+  POPULACE_MIND: { group: 'worlds', ...bool(), default: true, apply: 'live', label: '群众的民意', help: '每个世界每天调用一次模型，推断普通人（群众）的集体倾向：想去哪、在传什么、要不要聚集、希望添点什么（docs/design/populace.md §6）。关闭后群众只按作息与局面的规则走动' },
+  POPULACE_MIND_PER_DAY: { group: 'worlds', ...int(1, 6), default: 2, apply: 'live', label: '民意每天最多几次', help: '每个世界每游戏日：清晨固定一次，节日、怪事、伤亡、新建筑落成时可以再加，总数不超过它' },
   WORLDS_DISK_TOTAL_GB: { group: 'worlds', ...num(0, 1e6), default: 0, apply: 'live', label: '用户世界磁盘总量上限（GB）', help: '0 = 不限；超过后暂停接受新的创世' },
 
   // ---------- 创世 ----------

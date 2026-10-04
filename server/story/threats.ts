@@ -41,10 +41,12 @@ export class ThreatSystem {
   rnd(lo: number, hi: number): number { return lo + this.random() * (hi - lo); }
   pick<T>(list: readonly T[]): T { return list[Math.floor(this.random() * list.length)]; }
 
-  // ---------- 开局：人口（群众只记数字，设计 §4.10）与世界包里的初始事件 ----------
+  // ---------- 开局：世界包里的初始事件（群众由 sim/populace 管，旧的 population 在那边转换） ----------
   init(): void {
-    const pop = this.st.population;
-    for (const [id, n] of Object.entries(this.town.spec.population || {})) if (!pop[id]) pop[id] = { alive: n, dead: 0 };
+    if (!this.town.populaceEnabled?.()) {
+      const pop = this.st.population;
+      for (const [id, n] of Object.entries(this.town.spec.population || {})) if (!pop[id]) pop[id] = { alive: n, dead: 0 };
+    }
     if (!this.enabled || this.st.seeded) return;
     this.st.seeded = true;
     for (const s of this.town.spec.incidents?.start || []) this.spawn(s.threat, { loc: s.at || null, cause: 'start', quiet: true });
@@ -460,7 +462,8 @@ export class ThreatSystem {
     inst.crowdAt = town.t;
     const level = this.escalation(inst);
     const [lo, hi] = def.crowd!.kills;
-    const n = Math.round(this.rnd(lo, hi) * (1 + (level - 1) * 0.5));
+    // 群众已经相信了一条真线索（照着做了）：伤亡减半（docs/design/populace.md §5）
+    const n = Math.round(this.rnd(lo, hi) * (1 + (level - 1) * 0.5) * (town.crowdKnowsTruth?.(inst.type) ? 0.5 : 1));
     if (n > 0) town.casualties?.(inst, n, { cause: `threat:${inst.type}`, text: `${def.name}又带走了人` });
     const inc = this.incidentOf(inst);
     if (inc && n > 0) { inc.crowd = (inc.crowd || 0) + n; if (inc.stage === 'omen') this.stage(inc, 'outbreak'); }
@@ -658,19 +661,19 @@ export class ThreatSystem {
       }),
       zones: this.st.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: +z.r.toFixed(1), region: z.region, tint: z.tint })),
       graves: this.st.graves,
-      // 群众（设计 §4.10）：各地还活着的人数，前端据此画出不接入模型的路人
-      crowd: Object.fromEntries(Object.entries(this.st.population).map(([id, p]) => [id, p.alive])),
     };
   }
 
   panel() {
     const town = this.town;
+    // 群众的人数与伤亡在故事面板的「群众」一节（sim/populace）；这里只留没有群众的旧世界的人口
     const pop = Object.entries(this.st.population).map(([id, p]) => ({ id, name: town.locName(id), alive: p.alive, dead: p.dead }));
+    const crowdDead = pop.reduce((s, p) => s + p.dead, 0) + Object.values(town.populace?.dead || {}).reduce((s, n) => s + n, 0);
     return {
       incidents: this.st.incidents.slice(-20).reverse().map((i) => ({ id: i.id, loc: i.loc, locName: town.locName(i.loc), stage: i.stage, stageName: STAGE_NAMES[i.stage], name: town.spec.threats?.[i.type]?.name || i.type, victims: i.victims || 0, crowd: i.crowd || 0, day: i.day, outcome: i.outcome || null, assigned: i.assigned.map((id) => town.byId[id]?.name || id) })),
       deaths: this.st.deaths.slice(-30).reverse(),
       population: pop,
-      crowdDead: pop.reduce((s, p) => s + p.dead, 0),
+      crowdDead,
       contained: this.st.contained.map((c) => ({ name: town.spec.threats?.[c.type]?.name || c.type, holder: town.byId[c.holder]?.name || c.holder, since: c.since })),
     };
   }

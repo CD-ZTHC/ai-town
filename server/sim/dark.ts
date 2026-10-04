@@ -164,23 +164,33 @@ export class Dark {
     this.emit('agent', a.id);
   }
 
-  /** 群众伤亡（只记数字，设计 §4.10）：at 可以是地点 id 或坐标；记在最近的、有人口的地点上 */
+  /**
+   * 群众伤亡（设计 §4.10；群众见 docs/design/populace.md §4.5）：at 可以是地点 id 或坐标。
+   * 有群众的世界从那个地点此刻的人里扣（附近没人就没有伤亡，躲开的人是安全的）；任何分级都如实扣减，分级只决定措辞。
+   */
   casualties(this: Town, at: Cell & { region?: string } | string | null | undefined, n: number, { cause = '', text = '' }: { cause?: string; text?: string } = {}) {
     if (!(n > 0)) return 0;
     const st = this.darkState;
     let loc: string | null = typeof at === 'string' ? at : null;
-    if (!loc && at) {
-      const cands = Object.keys(st.population).length ? Object.keys(st.population) : this.publicLocs();
-      loc = nearestLoc(cands, at as Placed, (id) => this.locRegion(id), (id) => this.locCenter(id));
+    let k: number;
+    if (this.populaceEnabled()) {
+      if (!loc && at) loc = this.popHarmLoc(at as Cell & { region?: string });
+      k = loc ? this.harmCrowd(loc, n) : 0;
+    } else {
+      if (!loc && at) {
+        const cands = Object.keys(st.population).length ? Object.keys(st.population) : this.publicLocs();
+        loc = nearestLoc(cands, at as Placed, (id) => this.locRegion(id), (id) => this.locCenter(id));
+      }
+      const pop = loc && st.population[loc];
+      k = pop ? Math.min(n, pop.alive) : n;
+      if (pop && k) { pop.alive -= k; pop.dead += k; }
     }
-    const pop = loc && st.population[loc];
-    const k = pop ? Math.min(n, pop.alive) : n;
     if (!k) return 0;
-    if (pop) { pop.alive -= k; pop.dead += k; }
     st.crowd.push({ t: Math.floor(this.t), day: this.day, loc, n: k, cause });
     if (st.crowd.length > 200) st.crowd.shift();
     this.crisis.morale = clamp(this.crisis.morale - Math.min(8, k), 0, 100);
-    for (const a of this.agents) if (a.locId === loc && a.kind !== 'creature') addMemory(a, { t: this.t, type: 'event', text: `${this.locName(loc)}又死了${k}个人，大家都吓坏了`, importance: 6 });
+    const what = lethal(this.spec.meta.rating) ? `又死了${k}个人` : `又有${k}个人出了事，被送走了`;
+    for (const a of this.agents) if (a.locId === loc && a.kind !== 'creature') addMemory(a, { t: this.t, type: 'event', text: `${this.locName(loc)}${what}，大家都吓坏了`, importance: 6 });
     this.log('casualty', `🕯️ ${loc ? this.locName(loc) : '城里'}：${text || '又有人遇害'}（${k} 人）`, { cause, loc, n: k });
     return k;
   }

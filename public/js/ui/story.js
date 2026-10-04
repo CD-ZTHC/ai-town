@@ -14,11 +14,30 @@ const PHASE_ICON = { omen: '🔮', breach: '🌀', struggle: '⚔️', climax: '
 
 const TH_STATUS = { open: ['未展开', 'open'], advanced: ['进行中', 'adv'], resolved: ['已回收', 'done'] };
 
+/** 「群众」页（docs/design/populace.md §7.3）：民意、各类人群的去向与情绪、聚集、人流、街上的传闻、各处人数 */
+function crowdHTML(p) {
+  if (!p) return '<div class="empty">这个世界没有群众。</div>';
+  const meter = (label, v, cls) => `<div class="cmeter ${cls}"><span>${label}</span><i><b style="width:${Math.round(v * 100)}%"></b></i><em>${Math.round(v * 100)}</em></div>`;
+  const CAUSE = { gather: '去凑热闹', flee: '躲开', leave: '搬走', return: '回来', arrive: '来访', depart: '离开' };
+  const out = p.groups.reduce((s, g) => s + g.out, 0);
+  const here = p.groups.reduce((s, g) => s + g.total - g.out, 0);
+  return `<div class="sub">${p.summary ? `🗣️ ${esc(p.summary)}` : '日子照常过。'}</div>
+    <div class="srow"><span>👥 在这里 <b>${here}</b></span><span>🧳 在${esc(p.outside)} <b>${out}</b></span>${p.dead ? `<span>🕯️ 伤亡 <b>${p.dead}</b></span>` : ''}</div>
+    <h3>人群</h3>${p.groups.map((g) => `<div class="dec crowd-g"><b>${esc(g.emoji)} ${esc(g.name)}</b> · ${g.total} 人（在家 ${g.home}${g.out ? ` · ${g.visitor ? '在外地' : '搬走了'} ${g.out}` : ''}${g.moving ? ` · 在路上 ${g.moving}` : ''}）
+      ${g.top.length ? `<div class="sub">人最多的地方：${g.top.map((x) => `${esc(x.name)} ${x.n}`).join('、')}</div>` : ''}
+      ${meter('恐惧', g.mood.fear, 'fe')}${meter('欢乐', g.mood.joy, 'jo')}${meter('不满', g.mood.anger, 'an')}</div>`).join('')}
+    ${p.gatherings.length ? `<h3>聚集</h3>${p.gatherings.map((x) => `<div class="dec">👥 ${esc(x.from)}–${esc(x.until)} · ${esc(x.loc)} · ${esc(x.kind)}：${esc(x.text)}</div>`).join('')}` : ''}
+    ${p.flows.length ? `<h3>人流</h3>${p.flows.map((f) => `<div class="dec">🚶 ${esc(f.group)} ${f.n} 人从${esc(f.from)}到${esc(f.to)}${CAUSE[f.cause] ? `（${CAUSE[f.cause]}）` : ''}</div>`).join('')}` : ''}
+    ${p.beliefs.length ? `<h3>街上在传</h3>${p.beliefs.map((b) => `<div class="dec">💬 <b>${esc(b.about)}</b>：${esc(b.claim)} <small>${Math.round(b.confidence * 100)}%${b.loc ? ` · ${esc(b.loc)}` : ''}</small></div>`).join('')}` : ''}
+    ${p.places.length ? `<h3>各处人数</h3><div class="pops">${p.places.map((x) => `<span>${esc(x.name)} <b>${x.n}</b>${x.dead ? ` <em>−${x.dead}</em>` : ''}</span>`).join('')}</div>` : ''}
+    <div class="sub">群众按作息走动；节日、天气、新建筑、怪事和传闻会让他们聚集或散开，害怕太久的人会搬走。点一下地图上的路人可以搭话。</div>`;
+}
+
 export function storyModal(tab) {
   ui.storyTab = tab || ui.storyTab || 'story';
   const card = openModal(`<h2>🎭 ${esc(voice().place || '小镇')}的故事</h2>
     <div class="sub">叙事导演根据小镇的「张力」安排伏笔、冲突与喘息；剧情弧在关键时刻交给小镇（和你）来抉择。</div>
-    <div class="tabs stabs">${[['story', '📖 剧情'], ['epic', '📜 史诗'], ['outline', '🗺️ 大纲'], ...(app.spec?.threats && Object.keys(app.spec.threats).length ? [['incidents', '🕯️ 事件']] : []), ['vote', '🗳️ 抉择'], ['threads', '🧵 伏笔'], ['people', '🧳 人来人往'], ['crisis', '⚔️ 危机'], ['bestiary', '👾 图鉴']].map(([k, l]) => `<button data-t="${k}" class="${ui.storyTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div class="tabs stabs">${[['story', '📖 剧情'], ['epic', '📜 史诗'], ['outline', '🗺️ 大纲'], ...(app.spec?.threats && Object.keys(app.spec.threats).length ? [['incidents', '🕯️ 事件']] : []), ['vote', '🗳️ 抉择'], ['threads', '🧵 伏笔'], ['people', '🧳 人来人往'], ...(app.populace ? [['crowd', '👥 群众']] : []), ['crisis', '⚔️ 危机'], ['bestiary', '👾 图鉴']].map(([k, l]) => `<button data-t="${k}" class="${ui.storyTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div id="story-body" class="story-body"><div class="empty">正在翻开故事书……</div></div>`, 'story-wrap');
   card.style.width = 'min(760px, 94vw)';
   $$('.stabs button', card).forEach((b) => b.addEventListener('click', () => {
@@ -96,6 +115,8 @@ async function renderStory() {
       ${gone.length ? `<h3>出门在外</h3>${gone.map((p) => { const a = m.away.find((x) => x.id === p.id); return `<div class="dec">🧳 <b>${esc(p.name)}</b> · ${esc(p.role)}${a?.where ? ` · 在${esc(a.where)}` : ''}${a?.returnDay ? ` · 约好第${a.returnDay}天回来` : ''}${d.admin ? ` <button class="mini adm" data-prec="${esc(p.id)}">召回</button>` : ''}</div>`; }).join('')}` : ''}
       ${d.admin ? `<h3>在场的人</h3>${here.map((p) => `<div class="dec">${p.kind === 'traveller' ? '🧳' : '🏠'} <b>${esc(p.name)}</b> · ${esc(p.role)}${p.arrivedDay ? ` · 第${p.arrivedDay}天从${esc(p.from || '远方')}来` : ''} <button class="mini adm" data-pdep="${esc(p.id)}">请离</button></div>`).join('')}
         <div class="sub">「请离」和「召回」互为撤销；剧情弧里的角色由剧情安排，不在这里。</div>` : ''}`;
+  } else if (tab === 'crowd') {
+    html = crowdHTML(d.populace);
   } else if (tab === 'incidents') {
     const k = d.dark || { incidents: [], deaths: [], population: [], contained: [], crowdDead: 0 };
     const STAGE = { omen: 'omen', outbreak: 'hot', spread: 'hot', handled: 'done', abandoned: 'done', aftermath: 'done' };

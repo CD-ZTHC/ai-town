@@ -72,6 +72,8 @@ export const app = {
     }
   },
   select(id, { focus = true } = {}) {
+    // 路人（docs/design/populace.md §9）：不跟随、不打开检查器，弹出搭话的窗口
+    if (UI.isPasserby(id)) { UI.openPasserby(id); return; }
     app.selected = id;
     if (id && focus) app.follow = id;
     UI.openInspector(id);
@@ -199,6 +201,7 @@ function connect() {
     const prevWorlds = app.regionWorlds || {};
     app.regionWorlds = { town: d.world, ...Object.fromEntries(Object.entries(d.regions || {}).map(([id, w]) => [id, w.stub && prevWorlds[id] && !prevWorlds[id].stub ? prevWorlds[id] : w])) };
     app.adventureMeta = d.adventure || null;
+    app.populace = d.populace || null;
     app.links = d.links || []; // 地图之间的路口（游戏模式预判过图）
     app.regionsOpen = d.regionsOpen || {};
     if (!app.regionWorlds[app.view] || app.regionWorlds[app.view].stub || mustLeave(app.view, app.regionsOpen, app.watchedRegions())) {
@@ -261,6 +264,7 @@ function connect() {
   es.addEventListener('stage', (e) => Stage.enqueue(JSON.parse(e.data)));
   // 冒险（docs/design/adventure.md）：升级、经验、掉落、撤退、预告、征服……
   es.addEventListener('adv', (e) => Adventure.onAdv(JSON.parse(e.data)));
+  es.addEventListener('populace', (e) => { app.populace = JSON.parse(e.data); });
   es.addEventListener('combat', (e) => { const v = JSON.parse(e.data); if ((v.region || 'town') === app.view) renderer.addCombat(v); Play.onCombat?.(v); });
   // 画面里的音效（命中、挥动、低吼……）：只播当前看着的地图里的，按与镜头的距离衰减
   renderer.sfx = (kind, at) => Sfx.play(app.sound, kind, { at, cam: app.cam });
@@ -523,7 +527,7 @@ function step(now) {
         const def = app.spec?.threats?.[th.type];
         return { ...th, dx: d.dx + o.x, dy: d.dy + o.y, ...(def?.look ? { look: def.look } : {}), ...(def?.boss ? { boss: true } : {}) };
       }),
-      zones: (dk.zones || []).filter(here), graves: (dk.graves || []).filter(here), crowd: app.view === 'town' ? dk.crowd || null : null,
+      zones: (dk.zones || []).filter(here), graves: (dk.graves || []).filter(here),
     } : null;
     // 访客化身
     const mine = app.perms.avatar;
@@ -571,6 +575,8 @@ function step(now) {
       cam: app.cam, t: tt, day, region: app.view,
       weather: app.view === 'town' ? winfo.render?.base || weatherId : 'sunny', weatherId: app.view === 'town' ? weatherId : 'sunny', weatherTint: app.view === 'town' && winfo.render?.tint ? winfo.render : null,
       overlay: (s.overlay || []).filter((o) => (o.region || 'town') === app.view),
+      // 群众（docs/design/populace.md §7）：各地点的人数（快照）+ 人流与聚集（populace 推送）
+      crowd: s.crowd || null, pop: app.populace || null,
       agents, agentMap, occupancy, convos: s.convos, entities: (s.entities || []).filter((e) => e.kind === 'portal' ? app.view === 'town' : here(e)), creatures, avatars, dark,
       selected: app.selected, hover: app.hover, boardCount: app.board.length,
       festival: app.view === 'town' && ((app.forceFestival && app.spec?.calendar.events?.some((e) => e.vfx === 'festival_lanterns')) || activeEvents(day, minute).some((e) => e.vfx === 'festival_lanterns')),

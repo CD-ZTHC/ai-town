@@ -330,6 +330,7 @@ export function tap(sx, sy, id) {
   const v = me();
   if (!v) return;
   if (!id && combatClick(0)) return; // 战斗姿态：左键是攻击
+  if (id && UI.isPasserby(id)) return UI.openPasserby(id); // 路人：弹出搭话的窗口
   if (id) return talkTo(id);
   if ((v.region || 'town') !== app.view) { app.setView(v.region || 'town'); return; }
   const [wx, wy] = app.renderer.screenToWorld(sx, sy, app.cam);

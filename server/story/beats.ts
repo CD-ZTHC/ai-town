@@ -87,6 +87,8 @@ const KINDS: Record<string, BeatKind> = {
         addMemory(a, { t: town.t, type: 'event', text: `听说：${str(b.text, 80)}`, importance: 6 });
         if (b.about) town.setBelief(a, { about: str(b.about, 12), claim: str(b.claim, 40), confidence: b.confidence ?? 0.6, source: 'news' });
       }
+      // 群众也听说了（docs/design/populace.md §5）
+      town.crowdHear?.({ about: str(b.about, 12) || str(b.text, 12), claim: str(b.claim, 40) || str(b.text, 40), confidence: b.confidence ?? 0.6, source: 'news', loc: b.at !== 'all' ? b.at : null, tone: null });
       town.log('news_spread', `🗞️ ${str(b.text, 80)}`, { agents: who.slice(0, 4).map((a) => a.id) });
     },
   },

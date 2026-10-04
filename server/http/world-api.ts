@@ -145,6 +145,27 @@ export function worldApi(deps: { accounts?: Accounts | null; engineStatus?: (wor
     return c.json({ ...r, remaining: remaining(c) });
   });
 
+  // 路人（docs/design/populace.md §9）：临时身份不调模型；和路人说话占用旅人聊天的次数，内容走同样的审核
+  api.get('/passerby', (c) => {
+    const t = town(c);
+    const p = t.passerby(String(c.req.query('loc') || ''), Number(c.req.query('g')) || 0, Number(c.req.query('i')) || 0);
+    return p ? c.json(p) : c.json({ error: '这里没有这个人' }, 404);
+  });
+  api.post('/passerby/chat', async (c) => {
+    requireInteraction(c);
+    const t = town(c), b = c.get('body');
+    const loc = String(b.loc || ''), gi = Number(b.g) || 0, idx = Number(b.i) || 0;
+    if (!t.passerby(loc, gi, idx)) throw new HttpError(404, '这里没有这个人');
+    const text = sanitize(b.text, 200);
+    if (text.length < 1) throw new HttpError(400, '说点什么吧');
+    take(c, 'chat');
+    const m = await moderate(text, 'chat', t.spec.meta.rating, worldCtx(t));
+    if (!m.ok) throw new HttpError(422, m.reason!);
+    const history = (Array.isArray(b.history) ? b.history : []).slice(-6).map((h: { from?: unknown; text?: unknown }) => ({ from: h?.from === 'user' ? 'user' : 'npc', text: sanitize(h?.text, 200) }));
+    const r = await t.passerbyChat(loc, gi, idx, text, history, visitor(c).name);
+    return c.json({ ...r, remaining: remaining(c) });
+  });
+
   api.post('/event', async (c) => {
     requireInteraction(c);
     const t = town(c), b = c.get('body');

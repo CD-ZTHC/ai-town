@@ -380,10 +380,14 @@ test('视图：快照里有威胁与区域，面板里有事件、群众伤亡�
   town.threats.minuteTick();
   const snap = town.snapshot();
   assert.ok(snap.dark!.threats.length >= 1 && snap.dark!.zones.length === 1);
-  const dead = () => town.storyView().dark!.population.find((p) => p.id === 'metro')!.dead;
+  // 群众（docs/design/populace.md）：伤亡从那个地点此刻的人里扣，没人的地方没有伤亡
+  assert.equal(town.casualties('archive', 3, { text: '没人的地方' }), 0);
+  town.pop.at.metro = { commuter: 10 };
+  const dead = () => town.storyView().populace!.places.find((p) => p.id === 'metro')?.dead || 0;
   const before = dead(), total = town.storyView().dark!.crowdDead;
   town.casualties('metro', 3, { text: '又有人没回来' });
   assert.equal(dead(), before + 3);
+  assert.equal(town.crowdAt('metro'), 7);
   assert.equal(town.storyView().dark!.crowdDead, total + 3);
   const pub = JSON.stringify(town.initPayload());
   assert.ok(!pub.includes("named(e)") && !pub.includes('mother_child_found'), '规律与化解条件不出现在前端数据里');

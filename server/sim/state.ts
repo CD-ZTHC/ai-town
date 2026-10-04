@@ -26,6 +26,8 @@ import { freshEpic } from '../story/epic.ts';
 import { freshEnd } from '../story/endings.ts';
 import { freshAdventure } from './adventure-state.ts';
 import type { AdventureState, RegionStates } from './adventure-state.ts';
+import { freshPopulace } from './populace-rules.ts';
+import type { PopulaceState } from './populace-rules.ts';
 
 const isObj = (v: unknown): boolean => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const arr = <T>() => z.custom<T[]>((v) => Array.isArray(v));
@@ -103,6 +105,8 @@ export const STATE = {
   // 冒险（docs/design/adventure.md）：远征进度、化身的等级、战绩、预告；区域的激活与休眠
   adventure: field(obj<AdventureState>(), { load: (v) => (v ? { ...freshAdventure(), ...(v as object) } : undefined), fallback: () => freshAdventure() }),
   regionState: field(obj<RegionStates>(), { load: orDefault, fallback: () => ({}) }),
+  // 群众（docs/design/populace.md）：人在哪里、路上的人流、情绪、传闻、民意；旧存档缺的字段用初值补齐
+  populace: field(obj<PopulaceState>(), { load: (v) => (v ? { ...freshPopulace(), ...(v as object) } : undefined), fallback: () => freshPopulace() }),
 };
 
 export type StateKey = keyof typeof STATE;

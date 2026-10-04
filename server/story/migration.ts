@@ -183,6 +183,10 @@ export class MigrationSystem {
     const recent = town.logs.filter((l) => ['convo', 'scene', 'news_spread', 'arrival', 'depart', 'thread', 'growth', 'world'].includes(l.type)).slice(-10).map((l) => `- ${l.text}`).join('\n');
     const history = st.history.slice(-6).map((h) => `- 第${h.day}天 ${h.text}`).join('\n');
     const canon = (town.spec.lore.canon || []).slice(-5).map((c) => `- ${c.text}`).join('\n');
+    // 群众里长期议论的话题（docs/design/populace.md §8.6）：新人可以是本地群众里的一员，因为这件事站了出来
+    const topic = town.populaceTopic?.() || null;
+    const groups = town.popCfg?.()?.groups || [];
+    const crowd = topic && groups.length ? `\n${place}的普通人这几天一直在议论「${topic}」。如果安排新人，可以是本地群众里的一员（${groups.map((g) => `${g.id}=${g.name}`).join('、')}）因为这件事站了出来：arrive 里加上 "fromCrowd":"类别id"，from 写「本地的某某」。` : '';
     const O: Record<Change, string> = {
       arrive: `"arrive"：来了一个新人。给出 {"name":"≤6字","age":数字,"role":"身份≤12字","from":"从哪里来≤16字","why":"为什么来≤40字","persona":"性格与说话方式≤120字","goal":"来这里想做的事≤60字","home":"住处 id","work":"平时待的地点 id","at":"登场地点 id","memories":["来之前的经历≤40字",…最多3条],"relations":{"居民姓名":[好感-20~50,"看法≤20字"]},"look":{"skin":"#rrggbb","hair":"#rrggbb","hairStyle":"long/short/messy/buzz/bun/spiky","shirt":"#rrggbb","pants":"#rrggbb","acc":["apron/strawhat/beard/glasses/coat/cap/earring"]}}`,
       leave: `"leave"：有人出门一段时间（探亲、求学、进货、远行……），一定会回来。给出 {"who":"姓名","where":"去哪里≤16字","why":"为什么走≤40字","days":3~10,"farewell":"临走前对大家说的一句话≤40字"}`,
@@ -195,7 +199,7 @@ ${town.spec.era?.tech ? `时代：${town.spec.era.tech}；这里没有：${(town
 现在住在${place}的人（${this.activeCount()} 人，上限 ${this.cap()} 人）：
 ${people}
 ${away ? `出门在外的人：\n${away}\n` : ''}${history ? `最近的人来人往：\n${history}\n` : ''}最近发生的事：
-${recent || '（平静）'}
+${recent || '（平静）'}${crowd}
 住处：${homes || '（没有空房，可以借住在别人家）'}
 公共地点：${town.publicLocs().join(', ')}
 
@@ -260,6 +264,8 @@ ${recent || '（平静）'}
     while (town.spec.personas.some((p) => p.id === id)) id += 'x';
     const home = this.pickHome(raw.home);
     if (!home) return { error: '没有可以住的地方' };
+    // 从群众里转正：那类人少一个
+    if (typeof raw.fromCrowd === 'string' && town.popCfg?.()?.groups.some((g) => g.id === raw.fromCrowd)) town.populaceRecruit(raw.fromCrowd);
     if (!town.makeRoomForPersonas()) return { error: '名册已满（剧情角色占着已故的名额）' };
     const at = this.spawnAt(raw.at);
     const work = town.findLocation(raw.work) ? raw.work : at;

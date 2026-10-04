@@ -60,51 +60,6 @@ export class DarkLayer {
     ctx.restore();
   }
 
-  /**
-   * 群众：有人口的地点周围画几个不接入模型的路人。人数随活着的人口（取对数）变化，夜里少一些；
-   * 每个路人在自己的小范围里慢慢踱步，位置由地点和序号决定（每帧稳定，不需要服务器下发坐标）。
-   */
-  crowdFigures(S) {
-    const crowd = S.dark?.crowd;
-    if (!crowd) return [];
-    const minute = S.t % 1440;
-    const night = minute < 6 * 60 || minute >= 21 * 60;
-    const out = [];
-    const v = this.view;
-    for (const [id, alive] of Object.entries(crowd)) {
-      const l = this.world.locations[id];
-      if (!l || alive <= 0) continue;
-      const n = Math.min(4, Math.round(Math.log10(alive + 1) * 1.3 * (night ? 0.35 : 1)));
-      const r = l.rect;
-      for (let i = 0; i < n; i++) {
-        const seed = (id.length * 31 + i * 17 + id.charCodeAt(0)) % 997;
-        const base = l.spots?.length ? l.spots[(seed + i) % l.spots.length] : { x: r.x + (seed % Math.max(1, r.w)), y: r.y + r.h };
-        const ph = this.time * 0.25 + seed;
-        const x = base.x + Math.sin(ph) * 1.6 + ((seed % 5) - 2) * 0.4, y = base.y + Math.cos(ph * 0.7) * 0.8 + 0.6;
-        if (x * TS < v.x0 - 64 || x * TS > v.x1 + 64 || y * TS < v.y0 - 64 || y * TS > v.y1 + 64) continue;
-        out.push({ x, y, seed, moving: Math.abs(Math.cos(ph)) > 0.3 });
-      }
-    }
-    return out;
-  }
-
-  drawPasserby(ctx, p) {
-    const X = p.x * TS + TS / 2, Y = p.y * TS + TS - 2;
-    const tones = ['#5b6270', '#6d5b52', '#4f5a4f', '#6b6b7b', '#5a4a5a'];
-    const bob = p.moving ? Math.abs(Math.sin(this.time * 6 + p.seed)) * 1.5 : 0;
-    ctx.save();
-    ctx.globalAlpha = 0.8;
-    ctx.fillStyle = 'rgba(0,0,0,.2)';
-    ctx.beginPath(); ctx.ellipse(X, Y, 6, 2.2, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = tones[p.seed % tones.length];
-    ctx.fillRect(X - 4, Y - 16 - bob, 8, 12);
-    ctx.fillStyle = '#d9b99b';
-    ctx.beginPath(); ctx.arc(X, Y - 20 - bob, 4, 0, 7); ctx.fill();
-    ctx.fillStyle = '#2a2a2a';
-    ctx.fillRect(X - 3, Y - 4 - bob, 2, 4); ctx.fillRect(X + 1, Y - 4 - bob, 2, 4);
-    ctx.restore();
-  }
-
   drawGrave(ctx, g) {
     const X = g.x * TS + TS / 2, Y = g.y * TS + TS - 2;
     ctx.save();

@@ -43,7 +43,7 @@ export const RATING: Record<string, string> = {
   tragic: '悲剧：允许离别、牺牲与死亡作为叙事事件（一笔带过，不写细节）。',
 };
 // 注意：不包含 event / visitor（玩家原文），玩家事件只通过带隔离说明的「待处理」区块进入提示词
-const IMPORTANT = new Set(['convo', 'scene', 'omen', 'thread', 'ability', 'learn', 'gift', 'encounter', 'arc', 'portal', 'creature', 'vote', 'arrival', 'depart', 'news_spread', 'mischief', 'reflect',
+const IMPORTANT = new Set(['populace', 'convo', 'scene', 'omen', 'thread', 'ability', 'learn', 'gift', 'encounter', 'arc', 'portal', 'creature', 'vote', 'arrival', 'depart', 'news_spread', 'mischief', 'reflect',
   'threat', 'mark', 'death', 'casualty', 'survive', 'incident', 'clue', 'host', 'burden', 'combat', 'dispatch', 'wound']);
 
 export class Director {
@@ -115,7 +115,7 @@ export class Director {
 当前张力 ${now.value}/100，目标 ${now.target}（威胁${(now.parts?.threat ?? 0).toFixed(2)} 冲突${(now.parts?.conflict ?? 0).toFixed(2)} 悬念${(now.parts?.mystery ?? 0).toFixed(2)}）；距离上一个剧情节拍 ${Math.round((town.t - st.lastBeatT) / 60)} 小时。
 ${town.storyContext() || '目前没有进行中的剧情弧。'}${fateBlock(town)}${town.outlineSys?.directorBlock() || ''}${town.endings?.directorBlock() || ''}
 居民：
-${people}
+${people}${town.populaceBlock?.() || ''}
 剧情线程（伏笔看板）：
 ${threadsBlock(town)}
 最近发生的事：

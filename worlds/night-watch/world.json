@@ -33,10 +33,22 @@
  },
  "locations": {},
  "buildings": [],
- "population": {
-  "fire_lane": 300, "old_apartment": 600, "tea_house": 80, "earth_shrine": 60,
-  "hospital": 500, "metro": 800, "river_view": 1500, "plaza": 400, "store": 60,
-  "school": 1200, "river_flat": 700, "park": 200, "night_street": 600
+ "populace": {
+  "groups": [
+   { "id": "commuter", "name": "上班族", "emoji": "💼", "size": 3000, "homes": ["river_view", "river_flat"],
+    "work": ["hospital", "store", "archive"], "haunts": ["metro", "store", "night_street", "tea_house", "plaza", "park"],
+    "rhythm": "day", "traits": { "timid": 0.5, "curious": 0.3, "social": 0.4 }, "look": { "tones": ["#4a5568", "#5b6270", "#3f4a5a"] } },
+   { "id": "student", "name": "学生", "emoji": "🎒", "size": 1500, "homes": ["river_flat", "old_apartment"],
+    "work": ["school"], "haunts": ["park", "store", "night_street", "plaza"],
+    "rhythm": "day", "traits": { "timid": 0.4, "curious": 0.7, "social": 0.6 }, "look": { "tones": ["#2f4f7f", "#3b5d8f", "#6b7b8f"] } },
+   { "id": "elder", "name": "老街坊", "emoji": "🧓", "size": 1500, "homes": ["old_apartment"],
+    "haunts": ["tea_house", "earth_shrine", "fire_lane", "plaza", "park", "hospital"],
+    "rhythm": "day", "traits": { "timid": 0.6, "curious": 0.3, "social": 0.8 }, "look": { "tones": ["#6d5b52", "#5a4a40", "#7a6a5a"] } },
+   { "id": "nightowl", "name": "夜归人", "emoji": "🌃", "size": 1000, "homes": ["river_view"],
+    "work": ["hospital", "store", "night_street"], "haunts": ["night_street", "metro", "store", "park"],
+    "rhythm": "night", "traits": { "timid": 0.3, "curious": 0.5, "social": 0.5 }, "look": { "tones": ["#3a3348", "#4a3f5c", "#2f3a44"] } }
+  ],
+  "outside": { "name": "外地", "via": ["metro"] }
  },
  "items": {
   "cinnabar_lead": { "name": "朱砂铅", "emoji": "🟥", "desc": "掺了朱砂的铅，夜巡司定期配发，用来浇铸镇匣" },

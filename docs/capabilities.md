@@ -126,6 +126,11 @@
 - `kills`：kills('区域id'?) 在某个区域（不写时为全世界）累计打倒了多少只
 - `stage`：stage('阶段id', '远征id'?) 远征阶段的状态：locked / open / front / cleared（没有时为 none）
 - `slain`：slain('威胁id') 这种威胁累计被打倒了几次
+- `crowd`：crowd('地点id') 此刻在这个地点的群众人数
+- `crowdMood`：crowdMood('fear/joy/anger') 全体群众某种情绪的平均值（0~1）
+- `crowdBelieves`：crowdBelieves('话题') 群众对某个话题的确信度（0~1）
+- `crowdGone`：crowdGone() 害怕得搬走、还没回来的群众人数
+- `deserted`：deserted('地点id') 这个地点几乎没有群众（不到平常的一成；世界没有群众时为假）
 
 ## 其他可用资源
 

@@ -457,6 +457,14 @@ button.mini.adm { background: rgba(255, 184, 107, 0.2); color: var(--accent); }
 .cmeter.mo b { background: linear-gradient(90deg, #ffb86b, #ffd76a); }
 .cmeter.su b { background: linear-gradient(90deg, #7ddc8a, #5ad1c3); }
 .cmeter em { font-style: normal; text-align: right; }
+.cmeter.fe b { background: linear-gradient(90deg, #8a6bd6, #c06bd6); }
+.cmeter.jo b { background: linear-gradient(90deg, #ffd76a, #ffb86b); }
+.cmeter.an b { background: linear-gradient(90deg, #ff8a6b, #e05a5a); }
+.crowd-g .cmeter { margin: 3px 0; }
+.passerby .pb-line { margin: 10px 0; font-size: 14px; color: var(--text); }
+.passerby .pb-chat { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; max-height: 40vh; overflow-y: auto; }
+.passerby .pb-chat div { font-size: 13px; line-height: 1.5; }
+.passerby .pb-chat .me { color: var(--muted); }
 .beasts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .beast { display: flex; gap: 10px; padding: 10px; border-radius: 12px; background: rgba(110, 80, 220, 0.12); font-size: 12px; }
 .beast img { width: 60px; height: 81px; image-rendering: pixelated; }
