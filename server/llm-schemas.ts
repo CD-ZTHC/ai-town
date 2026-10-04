@@ -74,6 +74,15 @@ export const SCHEMAS = {
     changes: z.array(obj({ op: str, args: z.record(str, z.unknown()) })).optional(),
     spawns: z.array(obj({ threat: str, at: str })).optional(),
   })),
+  // 群众（sim/populace，docs/design/populace.md §6、§9）：民意、与路人交谈
+  populace: outputSchema('populace_mind', obj({
+    summary: str,
+    prefer: z.array(obj({ group: str, loc: str, weight: z.number(), hours: z.number(), reason: str })).optional(),
+    rumors: z.array(obj({ about: str, claim: str, confidence: z.number(), loc: nullable(str), tone: nullable(str) })).optional(),
+    gathering: nullable(obj({ loc: str, kind: str, from: str, hours: z.number(), text: str })).optional(),
+    demand: nullable(obj({ text: str })).optional(),
+  })),
+  passerby: outputSchema('passerby_reply', obj({ reply: str, emoji: str })),
   // AI 裁决官：有选项时给 option，否则给 decision
   arbiter: outputSchema('arbiter', obj({ option: str.optional(), decision: str.optional(), confidence: z.number(), reasons: z.array(str) })),
 };

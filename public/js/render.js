@@ -7,6 +7,7 @@ import { Objects } from './render/objects.js';
 import { Atmosphere } from './render/atmosphere.js';
 import { Overlays } from './render/overlays.js';
 import { DarkLayer } from './render/dark.js';
+import { PopulaceLayer } from './render/populace.js';
 import { CombatLayer } from './render/combat.js';
 import { StageLayer } from './render/stage.js';
 import { AdventureLayer, MONSTER_PLANS } from './render/adventure.js';
@@ -176,6 +177,7 @@ export class Renderer {
     this.drawAdventureScreen(ctx, S, dt);
     // UI 叠加层（屏幕坐标）
     this.hits = [];
+    this.hitPassersby(ox, oy, z);
     this.drawOverlays(ctx, S, ox, oy, z);
     this.drawCombatOverlay(ctx, S, ox, oy, z);
     this.drawCinema(ctx, S);
@@ -192,7 +194,7 @@ export class Renderer {
 }
 
 // 把各部分的方法挂到 Renderer 上；重名直接报错，避免悄悄覆盖
-for (const part of [Terrain, Objects, Atmosphere, Overlays, DarkLayer, CombatLayer, StageLayer, AdventureLayer]) {
+for (const part of [Terrain, Objects, Atmosphere, Overlays, DarkLayer, PopulaceLayer, CombatLayer, StageLayer, AdventureLayer]) {
   for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(part.prototype))) {
     if (name === 'constructor') continue;
     if (Object.hasOwn(Renderer.prototype, name)) throw new Error(`Renderer.${name} 重复定义（${part.name}）`);

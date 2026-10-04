@@ -45,6 +45,8 @@ export class Views {
       ],
       creatures: this.creatures.view(),
       ...(this.threats.enabled || this.dark.graves.length ? { dark: this.threats.view() } : {}),
+      // 群众（docs/design/populace.md §7）：各地点各类人的人数；人流与聚集随 populace 事件推送
+      ...(this.populaceEnabled() ? { crowd: this.populaceSnapshot() } : {}),
       avatars: this.avatars.view(),
       ...(this.fights?.length ? { fights: this.fightsView() } : {}),
       ...(this.hasAdventure() ? { adv: this.adventureView() } : {}),
@@ -132,6 +134,7 @@ export class Views {
       worldId: this.worldId,
       regionsOpen: this.regionsView(),
       adventure: this.adventureMeta(),
+      populace: this.populaceView(),
       // 地图之间的路口（游戏模式的低延迟移动用来预判过图，docs/design/realtime.md §4）
       links: this.linksView(),
       weathers: this.spec.weather,
@@ -196,6 +199,7 @@ export class Views {
         ? { id, known: true, name: c.name, emoji: c.emoji, origin: c.origin, lore: c.lore, weakness: c.weakness, temperament: c.temperament, look: c.look }
         : { id, known: false })),
       dark: this.threats.enabled ? this.threats.panel() : null,
+      populace: this.populacePanel(),
       travellers: this.spec.personas.filter((p) => p.kind === 'traveller').map((p) => ({ id: p.id, name: p.name, role: p.role, origin: p.traveller?.origin, status: p.status || 'active' })),
     };
   }

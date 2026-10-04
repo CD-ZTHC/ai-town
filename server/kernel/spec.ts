@@ -9,6 +9,7 @@ import { RATINGS } from './ratings.ts';
 import { validateDark } from './threat-spec.ts';
 import { specStoryErrors } from './outline-spec.ts';
 import { validateAdventure, MONSTER_PLANS } from './adventure-spec.ts';
+import { validatePopulace } from './populace-spec.ts';
 import type { Params, WorldSpec, CalendarEvent } from '../types/spec.ts';
 
 /** 未经校验的规格数据：validateSpec 逐字段检查，所以静态上不约束字段 */
@@ -86,6 +87,7 @@ export function validateSpec(spec: unknown): string[] {
     if (!isStr(w.name, 8) || !isStr(w.emoji, 8)) err(`weather.${id}`, 'name/emoji 缺失');
     if (typeof w.weight !== 'number' || w.weight < 0 || w.weight > 100) err(`weather.${id}`, 'weight 应在 0~100');
     if (w.avoid && !Object.hasOwn(s.weather, w.avoid.fallback)) err(`weather.${id}`, `fallback 不存在：${w.avoid.fallback}`);
+    if (w.outdoor != null && !(typeof w.outdoor === 'number' && w.outdoor >= -1 && w.outdoor <= 1)) err(`weather.${id}`, 'outdoor 应在 -1~1（对户外活动的影响，群众用）');
   }
 
   const bIds = new Set();
@@ -186,6 +188,7 @@ export function validateSpec(spec: unknown): string[] {
   for (const [path, msg] of validateDark(s)) err(path, msg);
   for (const [path, msg] of specStoryErrors(s)) err(path, msg);
   for (const [path, msg] of validateAdventure(s)) err(path, msg);
+  for (const [path, msg] of validatePopulace(s)) err(path, msg);
 
   for (const [k, v] of Object.entries<Raw>(s.params || {})) {
     const b = Object.hasOwn(PARAM_BOUNDS, k) && PARAM_BOUNDS[k as keyof Params];

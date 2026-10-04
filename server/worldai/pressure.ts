@@ -20,6 +20,9 @@ export interface PressureNow {
   decay: Array<{ id: string; name: string; state?: string; days: number }>;
   walk: number | null;
   walkRatio: number | null;
+  /** 群众（docs/design/populace.md §8.5）：最近几天总是挤满人的地点、一直没有群众去的公开地点 */
+  crowded?: Array<{ id: string; name: string; peak: number; cap: number }>;
+  quiet?: Array<{ id: string; name: string }>;
 }
 /** 存档 mapState.pressure */
 export interface PressureState {
@@ -95,6 +98,18 @@ export class MapPressure {
     for (let d = day - IDLE_DAYS; d <= day; d++) for (const k of Object.keys(st.visits[d] || {})) visited.add(k);
     const used = new Set(people.flatMap((p) => [p.home, p.work]));
     const trackedSince = Math.min(...Object.keys(st.visits).map(Number), day);
+    // 群众：最近 3 天的人数高峰（有群众去的建筑不算闲置）
+    const crowded: NonNullable<PressureNow['crowded']> = [], quiet: NonNullable<PressureNow['quiet']> = [];
+    if (town.populaceEnabled()) {
+      const peaks = [day - 1, day - 2, day - 3].map((d) => town.pop.peaks[d]).filter((x): x is Record<string, number> => Boolean(x));
+      for (const p of town.popPlaces()) {
+        const hits = peaks.filter((x) => (x[p.id] || 0) >= p.cap * 0.9).length;
+        const top = Math.max(0, ...peaks.map((x) => x[p.id] || 0));
+        if (top > 0) { const b = town.findLocation(p.id)?.indoor; if (b) used.add(b); used.add(p.id); }
+        if (hits >= 2 && p.state === 'open') crowded.push({ id: p.id, name: town.locName(p.id), peak: top, cap: p.cap });
+        else if (peaks.length >= 3 && top === 0 && p.state === 'open') quiet.push({ id: p.id, name: town.locName(p.id) });
+      }
+    }
     const idle = day - trackedSince >= IDLE_DAYS
       ? w.buildings.filter((b) => !used.has(b.id) && !visited.has(b.id) && b.state !== 'ruin').map((b) => ({ id: b.id, name: b.name }))
       : [];
@@ -110,7 +125,7 @@ export class MapPressure {
     const base = st.walkBaseDay != null ? avg([st.walkBaseDay]) : null;
     const walkRatio = recent && base ? recent / base : null;
     const size = `${w.W}×${w.H}`;
-    st.now = { day, size, freeRatio: Math.round(freeRatio * 100) / 100, fails, perHome: Math.round(perHome * 10) / 10, full, idle, decay, walk: recent ? Math.round(recent) : null, walkRatio: walkRatio ? Math.round(walkRatio * 100) / 100 : null };
+    st.now = { day, size, freeRatio: Math.round(freeRatio * 100) / 100, fails, perHome: Math.round(perHome * 10) / 10, full, idle, decay, walk: recent ? Math.round(recent) : null, walkRatio: walkRatio ? Math.round(walkRatio * 100) / 100 : null, ...(crowded.length ? { crowded } : {}), ...(quiet.length ? { quiet } : {}) };
     st.day = day;
     return st.now;
   }
@@ -123,6 +138,7 @@ export class MapPressure {
     if (p.fails >= 2 || p.freeRatio < 0.05) return { key: 'space', text: `${place}的空地快用完了（最近 ${p.fails} 次找不到地方建房），考虑清理树丛腾地方、向外扩展地图，或者在已经到头的一侧开辟相邻的地图` };
     const longDecay = p.decay.find((d) => d.days >= 3);
     if (longDecay) return { key: 'decay', text: `「${longDecay.name}」${longDecay.state === 'ruin' ? '成了废墟' : '受损'}已经 ${longDecay.days} 天了，修好它，或者清走另作他用` };
+    if (p.crowded?.length) return { key: 'crowded', text: `「${p.crowded[0]!.name}」这几天总是挤满了人（高峰 ${p.crowded[0]!.peak} 人），扩建它，或者在附近再添一处同类的地方` };
     if (p.idle.length) return { key: 'idle', text: `「${p.idle[0]!.name}」好几天没人去了，考虑改建成大家用得上的地方` };
     if (p.walkRatio && p.walkRatio >= 1.3) return { key: 'walk', text: `居民每天走的路比以前远了不少（平均 ${p.walk} 格），修一条近路或者架座桥` };
     return null;
@@ -148,6 +164,8 @@ export class MapPressure {
       `每处住处平均住 ${p.perHome} 人${p.full ? `，最近有 ${p.full} 次新来的人找不到空房` : ''}`];
     if (p.idle.length) lines.push(`好几天没人去的建筑：${p.idle.slice(0, 4).map((x) => x.name).join('、')}`);
     if (p.decay.length) lines.push(`受损 / 废墟：${p.decay.map((x) => `${x.name}（${x.days} 天）`).join('、')}`);
+    if (p.crowded?.length) lines.push(`总是挤满人的地方：${p.crowded.slice(0, 3).map((x) => `${x.name}（高峰 ${x.peak} 人）`).join('、')}`);
+    if (p.quiet?.length) lines.push(`一直没什么人去的地方：${p.quiet.slice(0, 4).map((x) => x.name).join('、')}`);
     if (p.walk) lines.push(`居民一趟路平均 ${p.walk} 格${p.walkRatio ? `（是最初的 ${p.walkRatio} 倍）` : ''}`);
     return `地图现状：\n${lines.map((l) => `- ${l}`).join('\n')}`;
   }

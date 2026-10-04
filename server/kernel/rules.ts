@@ -79,7 +79,7 @@ export function exprEnv(town: TownLike, { self = null, target = null, e = null, 
     unresolvedThreats: () => Object.keys(town.spec.threats || {}).filter((k) => !town.worldFlags[`resolved_${k}`]).length,
     liveThreats: () => (town.dark?.threats || []).filter((x) => !['contained', 'gone'].includes(x.state)).length,
     containedThreats: () => (town.dark?.contained || []).length,
-    crowdDead: () => Object.values(town.dark?.population || {}).reduce((s, p) => s + (p.dead || 0), 0),
+    crowdDead: () => Object.values(town.populace?.dead || {}).reduce((s, n) => s + n, 0) + Object.values(town.dark?.population || {}).reduce((s, p) => s + (p.dead || 0), 0),
     namedDeaths: () => (town.dark?.deaths || []).length,
     aliveIn: (faction: string, filter?: string) => {
       const f = (town.spec.factions || []).find((x) => x.id === faction);
@@ -91,6 +91,11 @@ export function exprEnv(town: TownLike, { self = null, target = null, e = null, 
     kills: (region?: string) => { const k = town.adventure?.kills || {}; return region ? k[region] || 0 : Object.values(k).reduce((s, n) => s + n, 0); },
     stage: (id: string, exp?: string) => town.stageStatus(id, exp),
     slain: (type: string) => town.adventure?.slain?.[type] || 0,
+    crowd: (loc: string) => town.crowdAt?.(String(loc)) || 0,
+    crowdMood: (kind: string) => town.crowdMood?.(String(kind)) || 0,
+    crowdBelieves: (about: string) => town.crowdBelieves?.(String(about)) || 0,
+    crowdGone: () => town.crowdGone?.() || 0,
+    deserted: (loc: string) => Boolean(town.deserted?.(String(loc))),
   };
   // 扩展函数：拿到小镇与「快照 → 真实居民」的换算，返回普通值
   for (const [name, impl] of Object.entries(EXT_FNS)) fns[name] = (...args: unknown[]) => impl({ town, real }, ...args);

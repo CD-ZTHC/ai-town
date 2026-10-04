@@ -4,6 +4,7 @@ import { setApp, $, $$, closeModal, openModal, esc, fmtTime, guarded, name, toas
 import { renderFeed } from './ui/feed.js';
 import { closeInspector, loadDetail, openInspector } from './ui/inspector.js';
 import { storyModal } from './ui/story.js';
+import { isPasserby, passerbyTip } from './ui/passerby.js';
 
 export { esc, fmtTime, weekday, face, name, toast, openModal, closeModal } from './ui/core.js';
 export { onLog } from './ui/feed.js';
@@ -13,6 +14,7 @@ export { onProposals, buildModal } from './ui/build.js';
 export { onEvolution, evolveModal } from './ui/evolve.js';
 export { avatarModal, eventModal, newsModal, graphModal, helpModal, adminModal } from './ui/modals.js';
 export { accountModal, requireLogin } from './ui/auth.js';
+export { openPasserby, isPasserby } from './ui/passerby.js';
 
 const where = (ev) => (ev.location && app.spec?.locations?.[ev.location]?.name) || '';
 
@@ -144,7 +146,14 @@ export function refreshRoster() {
 export function tooltip(id, x, y) {
   const t = $('#tooltip');
   if (!id) { t.hidden = true; return; }
+  if (isPasserby(id)) {
+    t.hidden = false;
+    t.innerHTML = passerbyTip(id);
+    t.style.left = `${x + 16}px`; t.style.top = `${y + 12}px`;
+    return;
+  }
   const a = app.snap.agents.find((q) => q.id === id);
+  if (!a) { t.hidden = true; return; }
   t.hidden = false;
   t.innerHTML = `<b>${esc(name(id))}</b> <span style="color:var(--muted)">${esc(app.meta[id]?.role || '')}</span><br>${esc(a.emoji)} ${esc(a.action)}${a.thinking ? `<br><span style="color:#c4b5fd">✦ ${esc(a.thinking)}…</span>` : ''}`;
   t.style.left = `${x + 16}px`; t.style.top = `${y + 12}px`;

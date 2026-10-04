@@ -55,7 +55,9 @@ export const EXPR_FNS = new Set(['has', 'count', 'knows', 'hasCondition', 'nearS
   // 结局与大纲（docs/design/epic-outline.md §4）：世界层面的计数
   'unresolvedThreats', 'liveThreats', 'containedThreats', 'crowdDead', 'namedDeaths', 'aliveIn', 'chapters',
   // 冒险（docs/design/adventure.md）：等级、战绩、远征阶段
-  'level', 'kills', 'stage', 'slain']);
+  'level', 'kills', 'stage', 'slain',
+  // 群众（docs/design/populace.md §8.3）
+  'crowd', 'crowdMood', 'crowdBelieves', 'crowdGone', 'deserted']);
 // 表达式函数的说明（用于自动生成能力清单）
 export const EXPR_FN_DOCS: Record<string, string> = {
   has: "has(e, '物品id', 数量=1) 身上是否有某物品", count: "count(e, '物品id') 物品数量", knows: "knows(e, '能力id') 是否会某能力",
@@ -74,6 +76,9 @@ export const EXPR_FN_DOCS: Record<string, string> = {
   aliveIn: "aliveIn('阵营id', 'hosted'?) 阵营里还活着的成员数（第二个参数为 'hosted' 时只算身上寄宿着威胁的人）", chapters: 'chapters() 史诗已经写了多少章（本部）',
   level: 'level(e) e 的等级（世界没有成长时为 1）', kills: "kills('区域id'?) 在某个区域（不写时为全世界）累计打倒了多少只",
   stage: "stage('阶段id', '远征id'?) 远征阶段的状态：locked / open / front / cleared（没有时为 none）", slain: "slain('威胁id') 这种威胁累计被打倒了几次",
+  crowd: "crowd('地点id') 此刻在这个地点的群众人数", crowdMood: "crowdMood('fear/joy/anger') 全体群众某种情绪的平均值（0~1）",
+  crowdBelieves: "crowdBelieves('话题') 群众对某个话题的确信度（0~1）", crowdGone: 'crowdGone() 害怕得搬走、还没回来的群众人数',
+  deserted: "deserted('地点id') 这个地点几乎没有群众（不到平常的一成；世界没有群众时为假）",
 };
 // 扩展目录（server/ext/）注册的表达式函数实现：name → (helpers, ...args) => value
 export const EXT_FNS: Record<string, (helpers: unknown, ...args: any[]) => unknown> = {}; // eslint-disable-line @typescript-eslint/no-explicit-any

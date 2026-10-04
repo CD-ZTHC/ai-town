@@ -50,7 +50,7 @@ export const ARCHITECT_SCHEMA = {
 };
 const MAX_QUEUE = 5;
 // 每个游戏日各来源最多交给架构师的意图数（管理员不限）
-const DAILY: Record<string, number> = { agent: 1, director: 3, visitor: 4, planner: 1 }; // planner：地图压力表
+const DAILY: Record<string, number> = { agent: 1, director: 3, visitor: 4, planner: 1, populace: 1 }; // planner：地图压力表；populace：群众的呼声
 
 export class Architect {
   declare town: Town;
@@ -95,7 +95,7 @@ export class Architect {
 
   prompt(item: ArchitectItem): string {
     const town = this.town;
-    const from = ({ director: '叙事导演（为了推进剧情）', visitor: '一位访客的建议', admin: '小镇管理员', planner: '地图压力表（镇子的实际需要）' } as Record<string, string>)[item.origin]
+    const from = ({ director: '叙事导演（为了推进剧情）', visitor: '一位访客的建议', admin: '小镇管理员', planner: '地图压力表（镇子的实际需要）', populace: '群众的呼声（普通人的愿望）' } as Record<string, string>)[item.origin]
       || `居民${town.byId[item.origin.slice(6)]?.name || ''}在聊天中想到的点子`;
     return `${town.timeBlock()}
 ${town.storyContext()}

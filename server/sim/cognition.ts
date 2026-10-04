@@ -195,7 +195,7 @@ ${recent}
 
   async makeNewspaper(this: Town) {
     const start = this.t - 1440;
-    const items = this.logs.filter((l) => l.t >= start && ['convo', 'scene', 'event', 'reflect', 'commit', 'visitor', 'weather', 'plan', 'omen', 'thread', 'arc', 'portal', 'creature', 'encounter', 'arrival', 'depart', 'vote', 'learn', 'gift', 'ability', 'news_spread', 'growth'].includes(l.type));
+    const items = this.logs.filter((l) => l.t >= start && ['convo', 'scene', 'event', 'reflect', 'commit', 'visitor', 'weather', 'plan', 'omen', 'thread', 'arc', 'portal', 'creature', 'encounter', 'arrival', 'depart', 'vote', 'learn', 'gift', 'ability', 'news_spread', 'growth', 'populace'].includes(l.type));
     const convoTexts = this.convoLog.filter((c) => c.t >= start).map((c) => `[${fmtTime(c.t)} ${c.where}] ${this.byId[c.a].name}×${this.byId[c.b].name}：${c.summary}｜${c.lines.slice(0, 4).map((l) => `${this.byId[l.speaker].name}：${l.text}`).join(' ')}`);
     const other = items.filter((l) => l.type !== 'convo').map((l) => `[${fmtTime(l.t)}] ${l.text}`);
     const ch = this.chronicle;
@@ -208,7 +208,7 @@ ${this.storyContext()}
 今天镇上的对话：
 ${convoTexts.slice(-25).join('\n') || '（无）'}
 其他动态：
-${other.slice(-30).join('\n') || '（无）'}
+${other.slice(-30).join('\n') || '（无）'}${this.populaceBlock() ? `\n街头巷尾（普通人的动向，可以写进 gossip）：${this.populaceBlock().trim()}` : ''}
 
 请写一期《${ch.name}》。输出 JSON：
 {"headline":"头条标题（≤20字）","subhead":"副标题（≤30字）","lead":"头条正文（120~200字）","articles":[{"title":"≤16字","body":"60~110字"}],"gossip":"街头巷尾的小道消息（≤60字）","quote":{"who":"居民姓名","text":"今日语录"},"forecast":"明日预告（≤40字）"}

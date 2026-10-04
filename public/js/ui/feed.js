@@ -2,7 +2,7 @@
 import { $, $$, app, esc, face, fmtTime, name, toast, ui } from './core.js';
 import { scheduleDetail } from './inspector.js';
 import { newsModal } from './modals.js';
-const STORY_TYPES = ['proposal', 'idea', 'arc', 'omen', 'thread', 'portal', 'creature', 'encounter', 'mischief', 'arrival', 'depart', 'vote', 'vote_cast', 'scene', 'scene_plan', 'news_spread', 'growth'];
+const STORY_TYPES = ['proposal', 'idea', 'arc', 'omen', 'thread', 'portal', 'creature', 'encounter', 'mischief', 'arrival', 'depart', 'vote', 'vote_cast', 'scene', 'scene_plan', 'news_spread', 'growth', 'populace'];
 
 const FEED_GROUPS = { convo: ['convo', 'scene'], thought: ['thought'], event: ['event', 'reflect', 'commit', 'visitor', 'reaction', 'plan', 'news', 'diary', 'world', 'ability', 'learn', 'gift', 'effect'], story: STORY_TYPES };
 

@@ -50,6 +50,8 @@ export interface Weather {
   weight: number;
   avoid?: { fallback: string; [k: string]: unknown };
   render?: { base?: string; tint?: string; tintAlpha?: number };
+  /** 对户外活动的影响（-1 都躲在屋里 ~ +1 都想出门），群众用；不写时按天气 id 推断 */
+  outdoor?: number;
 }
 
 export interface Location {
@@ -464,8 +466,10 @@ export interface WorldSpec {
   threats?: Record<string, ThreatType>;
   /** 事件：开局就有的威胁、自动出现的间隔 */
   incidents?: { start?: Array<{ threat: string; at?: string }>; autoEveryDays?: number };
-  /** 地点 → 当地的群众人数 */
+  /** 地点 → 当地的群众人数（旧写法，读入时转成一类「市民」，新世界包写 populace） */
   population?: Record<string, number>;
+  /** 群众（docs/design/populace.md）：人群类别、出入口、比例尺、地点容量；groups 为空表示没有群众 */
+  populace?: import('../kernel/populace-spec.ts').PopulaceSpec;
   params: Params;
   regions: Region[];
   arcs?: Arc[];

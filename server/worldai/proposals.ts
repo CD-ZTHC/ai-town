@@ -178,7 +178,7 @@ export class ProposalSystem {
 
   originText(origin: string) {
     if (origin.startsWith('agent:')) return `${this.town.byId[origin.slice(6)]?.name || '居民'}的点子`;
-    return { director: '叙事导演', visitor: '访客的建议', admin: '管理员', architect: '世界架构师', planner: '地图压力表' }[origin] || origin;
+    return { director: '叙事导演', visitor: '访客的建议', admin: '管理员', architect: '世界架构师', planner: '地图压力表', populace: '群众的呼声' }[origin] || origin;
   }
 
   route(p: Proposal) {

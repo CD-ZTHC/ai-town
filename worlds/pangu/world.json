@@ -17,6 +17,7 @@
  },
  "locations": {},
  "buildings": [],
+ "populace": { "groups": [] },
  "personas": [
   {
    "id": "pangu", "name": "盘古", "age": 18, "role": "混沌中醒来的巨人", "home": "chaos_egg", "work": "murk_field", "tier": "primordial",
