@@ -132,7 +132,7 @@ export const app = {
     if ((a.region || 'town') !== app.view) { app.setView(a.region || 'town', { center: false }); return null; }
     if (a.inside) {
       const b = app.world.buildings.find((b) => b.id === a.inside);
-      return [(b.x + b.w / 2) * TS, (b.y + b.h / 2) * TS];
+      if (b) return [(b.x + b.w / 2) * TS, (b.y + b.h / 2) * TS];
     }
     const d = app.disp[id] || a;
     return [(d.dx ?? a.x) * TS + TS / 2, (d.dy ?? a.y) * TS + TS / 2];
@@ -447,11 +447,26 @@ function uiTint(minute) {
 
 // ---------- 主循环 ----------
 let last = performance.now();
+/**
+ * 主循环：一帧出错时记下来（同一个错误只记一次）并继续下一帧——绘制里的任何异常都不能让画面永久停住
+ * （以前一次异常之后 requestAnimationFrame 不再排队：地图卡住、小地图空白、点别人也定位不过去）
+ */
+const loopErrors = new Set();
 function loop(now) {
+  try { step(now); } catch (e) {
+    const k = String(e?.message || e);
+    if (!loopErrors.has(k)) { loopErrors.add(k); console.error('[frame] 这一帧画不出来，已跳过：', e); }
+  }
+  requestAnimationFrame(loop);
+}
+
+function step(now) {
   // 打击停顿：画面里的一切停住几十毫秒；慢镜：显示时间按比例放慢（都只影响画面，见 render/combat.js）
   const dt = renderer.hitstopUntil > now ? 0 : Math.min(0.1, (now - last) / 1000) * (renderer.timeScale ?? 1);
   last = now;
   if (app.ready && app.snap) {
+    // 这一帧开始时看的地图：下面按它筛出要画的人；镜头跟随可能在这一帧中途切到别的地图
+    const view0 = app.view;
     const s = app.snap;
     // 键盘平移（仅观察模式；游戏模式下方向键用来走路）
     const pan = app.mode === 'observe' ? 600 * dt / app.cam.zoom : 0;
@@ -542,6 +557,8 @@ function loop(now) {
         app.cam.y += (p[1] - app.cam.y) * k;
       }
     }
+    // 镜头跟着人换了地图：这一帧筛出来的还是旧地图上的人，不能画在新地图上（屋里的人会找不到屋子），下一帧再画
+    if (app.view !== view0) return;
     clampCam();
     const tt = app.debugT ?? s.t; // 调试：可在控制台设置 app.debugT / app.debugWeather 预览
     const day = Math.floor(tt / 1440) + 1;
@@ -583,7 +600,6 @@ function loop(now) {
     if (app.mode === 'play') Play.frame(S, dt);
     Sound.update(S);
   }
-  requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 

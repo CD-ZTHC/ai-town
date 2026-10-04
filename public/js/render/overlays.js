@@ -276,7 +276,12 @@ export class Overlays {
     if (sky.dark > 0.05) { g.fillStyle = `rgba(10,14,42,${sky.dark * 0.7})`; g.fillRect(0, 0, this.mini.width, this.mini.height); }
     for (const a of S.agents) {
       let x, y;
-      if (a.inside) { const b = this.world.buildings.find((b) => b.id === a.inside); x = (b.x + b.w / 2) * TS; y = (b.y + b.h / 2) * TS; }
+      if (a.inside) {
+        // 屋子不在这张地图上（数据和地图不同步的那一帧）：不画这个人，别让整帧出错
+        const b = this.world.buildings.find((b) => b.id === a.inside);
+        if (!b) continue;
+        x = (b.x + b.w / 2) * TS; y = (b.y + b.h / 2) * TS;
+      }
       else { x = a.dx * TS + 16; y = a.dy * TS + 16; }
       g.fillStyle = '#1a1a22'; g.beginPath(); g.arc(x * s, y * s, 4, 0, 7); g.fill();
       g.fillStyle = this.meta[a.id].look.shirt; g.beginPath(); g.arc(x * s, y * s, 3, 0, 7); g.fill();
