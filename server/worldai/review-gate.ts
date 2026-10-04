@@ -98,6 +98,8 @@ export class ReviewDesk {
   }
 
   drop(id: string): void { this.items.delete(id); }
+
+  has(id: string | null | undefined): boolean { const r = id ? this.items.get(id) : null; return Boolean(r && this.now() - r.at <= ReviewDesk.TTL); }
 }
 
 // ---------- 后台 AI 任务 ----------

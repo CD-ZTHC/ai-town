@@ -21,7 +21,7 @@ import type { ArchitectItem, ArchitectUsage, Gap } from '../../plugins/builtin/a
 import type { PressureState } from '../worldai/pressure.ts';
 import type { Scene } from '../story/scene.ts';
 import type { Fight } from './fight-rules.ts';
-import type { EndState, EpicChapter, EpicNote, EpicState, Outline, OutlineRevision, Proposal, Vote } from '../types/story.ts';
+import type { EndState, EpicChapter, EpicNote, EpicState, Outline, OutlineDraft, OutlineRevision, Proposal, Vote } from '../types/story.ts';
 import { freshEpic } from '../story/epic.ts';
 import { freshEnd } from '../story/endings.ts';
 
@@ -96,6 +96,7 @@ export const STATE = {
   epicChapters: field(arr<EpicChapter>(), { load: orDefault, fallback: () => [] }),
   outline: field(nul(obj<Outline>()), { load: orDefault, fallback: () => null }),
   outlineRevisions: field(arr<OutlineRevision>(), { load: orDefault, fallback: () => [] }),
+  outlineDraft: field(nul(obj<OutlineDraft>()), { load: orDefault, fallback: () => null }),
   endState: field(obj<EndState>(), { load: (v) => (v ? { ...freshEnd(), ...(v as object) } : undefined), fallback: () => freshEnd() }),
 };
 

@@ -123,7 +123,7 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
       // 原文上传是 text/plain 的流，由创世接口自己读（有自己的大小上限）；其余写接口一律 JSON、≤8KB（大纲 ≤96KB）
       if (['POST', 'PUT', 'PATCH'].includes(c.req.method)) {
         // 大纲的评审与保存要带上整份大纲（≤96KB）
-        if (!c.req.path.endsWith('/api/genesis/source')) c.set('body', await readJson(c.req, /\/outline\/(review|save|assist)$/.test(c.req.path) ? 96 * 1024 : undefined));
+        if (!c.req.path.endsWith('/api/genesis/source')) c.set('body', await readJson(c.req, /\/outline\/(review|save|assist|draft)$/.test(c.req.path) ? 96 * 1024 : undefined));
       } else if (!['GET', 'HEAD', 'DELETE'].includes(c.req.method)) throw new HttpError(405, '不支持的方法');
       await next();
     });

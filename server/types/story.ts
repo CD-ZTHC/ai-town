@@ -161,6 +161,21 @@ export interface OutlineRevision {
   review?: { verdict: string; issues: number; forced?: boolean } | null;
   snapshot: Outline;
 }
+/** 管理者正在编辑、还没有保存的大纲草稿（存档 outlineDraft；一个世界一份，所有管理者共用） */
+export interface OutlineDraft {
+  draft: Outline;
+  /** 草稿基于的大纲版本 */
+  base: number;
+  by: string;
+  t: number;
+  /** generate：AI 生成；assist：AI 修改；manual：手动编辑；revision：从修订记录载入 */
+  source: 'generate' | 'assist' | 'manual' | 'revision';
+  summary: string;
+  errors: string[];
+  /** 最近一次评审（草稿改动后清空）；reviewId 只在内存里有效，服务重启后需要重新评审 */
+  review: { verdict: string; summary: string; issues: Array<{ severity: string; where: string; text: string; suggestion?: string }>; by: string } | null;
+  reviewId: string | null;
+}
 /** 世界包里的史诗配置 */
 export interface EpicConfig {
   title?: string;

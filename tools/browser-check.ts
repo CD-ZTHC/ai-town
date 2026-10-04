@@ -246,6 +246,22 @@ await step('18e-epic-outline', async () => {
   await waitFor(() => evaluate(`document.querySelector('#story-body').textContent.includes('史诗还没有开篇')`), 8000, '史诗目录');
   await click('.stabs [data-t="outline"]');
   await waitFor(() => evaluate(`Boolean(document.querySelector('#ol-gen')) && Boolean(document.querySelector('#ol-rate'))`), 8000, '大纲（可以生成、可以修改分级）');
+  // 后台任务：没有模型时任务失败，进度条消失、给出提示，按钮恢复
+  await click('#ol-gen');
+  await waitFor(() => evaluate(`[...document.querySelectorAll('#toasts > *')].some((x) => x.textContent.includes('AI'))`), 10000, '任务失败的提示');
+  await waitFor(() => evaluate(`!document.querySelector('.ol-job') && Boolean(document.querySelector('#ol-gen')) && !document.querySelector('#ol-gen').disabled`), 8000, '按钮恢复');
+}, { wait: 600 });
+await step('18f-outline-draft', async () => {
+  // 服务端草稿：页面上显示「未保存的草稿」，继续编辑 → 评审 → 保存为正式大纲
+  await evaluate(`app.api('/api/outline/draft', { draft: { premise: '浏览器检查的大纲', parts: [{ title: '森林', status: 'active', acts: [{ title: '出发', status: 'active', plan: '妈妈叮嘱小红帽', beats: [{ text: '小红帽带上篮子', status: 'planned' }] }] }], endings: [] }, baseVersion: 0, source: 'generate', summary: '浏览器检查的草稿' }).then(() => true)`);
+  await click('.stabs [data-t="outline"]');
+  await waitFor(() => evaluate(`Boolean(document.querySelector('#ol-resume')) && document.querySelector('.ol-draft').textContent.includes('AI 生成')`), 8000, '草稿横幅');
+  await click('#ol-resume');
+  await waitFor(() => evaluate(`document.querySelector('#story-body').textContent.includes('大纲草稿 · 未保存')`), 8000, '草稿编辑器');
+  await click('#ol-review');
+  await waitFor(() => evaluate(`Boolean(document.querySelector('.ol-review')) && !document.querySelector('#ol-save').disabled`), 10000, '评审结果');
+  await click('#ol-save');
+  await waitFor(() => evaluate(`document.querySelector('#story-body').textContent.includes('浏览器检查的大纲') && !document.querySelector('#ol-resume') && Boolean(document.querySelector('#ol-edit'))`), 8000, '保存后的大纲');
 }, { wait: 600 });
 await step('18c-buildings', async () => {
   // 地图演变：停业、受损、废墟的画面（本地模式即管理员，直接应用世界操作）

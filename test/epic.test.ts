@@ -341,8 +341,15 @@ test('分级修改：冒险级的小红帽 → 黑暗级；AI 适配支柱、反
       : { pillars: ['森林在夜里会吃人', '大灰狼是真正的猎食者，不会被一次善意感化', '小红帽勇敢，但勇敢要付出代价'], summary: null, personas: [{ id: 'wolf', alignment: 'villain', drives: [{ text: '把外婆的小屋变成自己的窝', perDay: 30 }], redemption: '' }], storyteller: 'horror', story: '森林变得危险' }),
     设定评审: () => ({ verdict: 'pass', summary: '符合黑暗分级', issues: [] }),
     大纲维护: () => ({ future: null, note: '' }),
+    // 没有大纲的世界：按改动之后的世界（新的支柱、新的威胁）生成大纲
+    生成大纲: (m) => {
+      assert.ok(lastUser(m).includes('howl') && lastUser(m).includes('森林在夜里会吃人'), '按改动之后的世界来写');
+      return { outline: { premise: '森林在夜里会吃人', parts: [{ title: '黑森林', status: 'active', acts: [{ title: '失踪', status: 'active', plan: '有人在林子里没有回来', beats: [{ text: '猎人发现了狼的踪迹' }] }] }], endings: [{ id: 'old_wolf_rests', title: '老狼安息', kind: 'good', when: "flag('old_wolf_buried')" }, { id: 'forest_wins', title: '森林吞没村庄', kind: 'bad', when: 'namedDeaths() >= 3', for: 1 }] }, summary: '黑暗的小红帽' };
+    },
   });
   const p = await town.rerate.plan({ to: 'dark', by: 'u1' });
+  assert.equal(p.summary.outline.created, true);
+  assert.deepEqual(p.summary.outline.endings.map((e: { title: string }) => e.title), ['老狼安息', '森林吞没村庄']);
   assert.ok(p.planId);
   assert.equal(p.summary.toName, '黑暗');
   assert.equal(p.summary.threats[0].name, '夜嚎');
@@ -350,6 +357,9 @@ test('分级修改：冒险级的小红帽 → 黑暗级；AI 适配支柱、反
   assert.equal(town.spec.meta.rating, 'adventure', '应用之前世界不变');
   const r = town.rerate.apply(p.planId, { by: 'u1' });
   assert.deepEqual(r.failed, []);
+  assert.equal(r.outline, 'saved', '大纲跟着分级一起保存');
+  assert.equal(town.outline!.endings.length, 2);
+  assert.equal(town.outlineRevisions.at(-1)!.kind, 'rerate');
   assert.equal(town.spec.meta.rating, 'dark');
   assert.equal(town.spec.meta.storyteller, 'horror');
   assert.ok(town.spec.lore.pillars!.includes('森林在夜里会吃人'));
@@ -418,4 +428,85 @@ test('接口：大纲按身份裁剪；没有令牌不能修改大纲、生成�
   assert.equal(chat.status, 409);
   assert.equal((await chat.json()).ended, true);
   assert.equal((await app.request('/api/epic')).status, 200);
+});
+
+test('AI 生成大纲：结果存为草稿并自动评审（刷新页面也在）；当场就满足的结局会让模型重写；保存后草稿清空', async (t) => {
+  t.after(() => llm.setMock(null));
+  const town = mk(LR, 'little-red');
+  let n = 0;
+  mock({
+    生成大纲: (m) => {
+      n++;
+      const outline = { premise: '小红帽去外婆家', parts: [{ title: '森林', status: 'active', acts: [{ title: '出发', status: 'active', plan: '妈妈叮嘱小红帽', beats: [{ text: '小红帽带上篮子' }] }] }], endings: [{ id: 'safe', title: '平安到家', kind: 'good', when: n === 1 ? 'unresolvedThreats() == 0' : "flag('home_safe')" }] };
+      if (n === 2) assert.ok(lastUser(m).includes('现在就已经满足'), '把问题告诉了模型');
+      return { outline, summary: '温馨的冒险' };
+    },
+    设定评审: () => ({ verdict: 'pass', summary: '可以', issues: [] }),
+  });
+  const r = await town.outlineSys.draftJob('generate', { baseVersion: 0, by: 'u1' });
+  assert.equal(n, 2, '没有威胁的世界里 unresolvedThreats() == 0 当场成立，重写了一次');
+  assert.deepEqual(r.errors, []);
+  assert.ok(r.reviewId);
+  assert.equal(town.outline, null, '还没有保存');
+  const v = town.outlineSys.view(true) as { draft: { reviewId: string; source: string; draft: { endings: Array<{ when: string }> } } };
+  assert.equal(v.draft.source, 'generate');
+  assert.equal(v.draft.reviewId, r.reviewId);
+  assert.equal(v.draft.draft.endings[0]!.when, "flag('home_safe')");
+  assert.ok(!JSON.stringify(town.outlineSys.view(false)).includes('平安到家'), '草稿不给其他人看');
+  // 服务重启后评审登记没了：草稿还在，但需要重新评审
+  town.outlineSys.desk.items.clear();
+  assert.equal((town.outlineSys.view(true) as { draft: { reviewId: string | null } }).draft.reviewId, null);
+  const rv = await town.outlineSys.review(v.draft.draft, 0, 'u1');
+  town.outlineSys.save(v.draft.draft, { baseVersion: 0, reviewId: rv.reviewId, by: 'u1', kind: 'owner-ai' });
+  assert.equal(town.outline!.version, 1);
+  assert.equal(town.outlineDraft, null, '保存后草稿清空');
+});
+
+test('重置到第一天：分级修改带来的内容与大纲保留（大纲从头开始），史诗清空', async (t) => {
+  const { WorldHost } = await import('../server/worlds/host.ts');
+  const { createApp } = await import('../server/http/app.ts');
+  const dir = tmp();
+  const host = new WorldHost({ id: 'little-red', makeTown: () => mk(LR, 'little-red', dir) });
+  host.dataRoot = dir;
+  const app = createApp({ hostFor: () => host, publicDir: 'public' });
+  t.after(() => host.close({ save: false }));
+  const town = host.town;
+  const { applyContent } = await import('../server/worldai/rerate.ts');
+  applyContent(town, { ops: [{ op: 'setMeta', args: { rating: 'dark' } }, { op: 'setLore', args: { pillars: ['森林在夜里会吃人'] } }], hosts: [], dropped: [] }, { kind: 'rerate' });
+  town.outlineSys.commit(normalizeOutline({ premise: 'p', parts: [{ title: '一', status: 'active', acts: [{ title: 'a', status: 'done', recap: '过去了', plan: 'x', beats: [{ text: 'b', status: 'done', chapters: ['1:1'] }] }, { title: 'b', status: 'active', plan: 'y', beats: [] }] }], endings: [] }), { kind: 'owner-manual', by: 'u1' });
+  town.epicChapters.push({ part: 1, volume: 'v1', volumeTitle: '第1卷', n: 1, title: 't', body: 'b', summary: 's', from: 0, to: 0, beats: [], t: 0 });
+  const r = await app.request('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: 'RESET' }) });
+  assert.equal(r.status, 200);
+  assert.deepEqual((await r.json()).kept, { ops: 2, outline: true });
+  const nt = host.town;
+  assert.notEqual(nt, town);
+  assert.equal(nt.spec.meta.rating, 'dark');
+  assert.deepEqual(nt.spec.lore.pillars, ['森林在夜里会吃人']);
+  assert.equal(nt.epicChapters.length, 0);
+  const o = nt.outline!;
+  assert.equal(o.parts[0]!.acts[0]!.status, 'active', '从第一幕重新开始');
+  assert.equal(o.parts[0]!.acts[0]!.recap, undefined);
+  assert.deepEqual(o.parts[0]!.acts[0]!.beats[0]!.chapters, []);
+  assert.equal(o.parts[0]!.acts[1]!.status, 'planned');
+  // 再重置一次：内容仍然保留（不会越叠越多）
+  await app.request('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: 'RESET' }) });
+  assert.equal(host.town.specOps.filter((x) => x.cause?.kind === 'rerate').length, 2);
+});
+
+test('取出模型给的大纲：各种包法都认；AI 写成空大纲时让它重写', async (t) => {
+  t.after(() => llm.setMock(null));
+  const { pickOutline } = await import('../server/story/outline.ts');
+  const o = { parts: [{ title: 'p', acts: [] }] };
+  assert.deepEqual(pickOutline({ outline: o }), o);
+  assert.deepEqual(pickOutline({ outline: JSON.stringify(o) }), o);
+  assert.deepEqual(pickOutline(o), o);
+  assert.deepEqual(pickOutline({ result: o }), o);
+  assert.equal(pickOutline({ summary: 'x' }), null);
+  const town = mk(LR, 'little-red');
+  let n = 0;
+  mock({ 生成大纲: (m) => { n++; if (n === 1) return { summary: '忘了写大纲' }; assert.ok(lastUser(m).includes('大纲是空的')); return { 大纲: { parts: [{ title: '森林', status: 'active', acts: [{ title: '出发', status: 'active', plan: 'p', beats: [{ text: '带上篮子' }] }] }] }, summary: 's' }; } });
+  const r = await town.outlineSys.generate(0);
+  assert.equal(n, 2);
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.draft.parts[0]!.acts[0]!.title, '出发');
 });

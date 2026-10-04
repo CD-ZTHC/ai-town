@@ -426,6 +426,12 @@ body.no-minimap #minimap-wrap { display: none; }
 .ol-plan { margin-top: 10px; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.03); }
 .ol-plan p { font-size: 12.5px; line-height: 1.6; }
 b.good { color: var(--good); }
+.ol-job { padding: 8px 12px; border-radius: 10px; margin: 6px 0 10px; background: rgba(167, 139, 250, 0.14); font-size: 12.5px; }
+.ol-job small { display: block; color: var(--muted); margin-top: 2px; }
+.ol-job .spin { display: inline-block; animation: olspin 1.6s linear infinite; }
+@keyframes olspin { to { transform: rotate(360deg); } }
+.ol-draft { padding: 8px 12px; border-radius: 10px; margin: 6px 0 10px; background: rgba(255, 184, 107, 0.12); border-left: 3px solid var(--accent); font-size: 12.5px; }
+.ol-draft small { display: block; color: var(--muted); margin-top: 2px; }
 button.mini { font-size: 11.5px; padding: 2px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.1); }
 button.mini:hover { background: rgba(255, 255, 255, 0.2); }
 button.mini.adm { background: rgba(255, 184, 107, 0.2); color: var(--accent); }

@@ -12,6 +12,7 @@ import type { ReviewResult } from './review-gate.ts';
 import type { ThreatAdd } from '../genesis/threats.ts';
 import type { Town } from '../sim.ts';
 import type { WorldSpec } from '../types/spec.ts';
+import type { Outline } from '../types/story.ts';
 import type { PackWorld } from '../types/world.ts';
 import type { GenMap } from '../genesis/assemble.ts';
 
@@ -19,6 +20,9 @@ type Op = { op: string; args: Record<string, unknown> };
 type Raw = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- 模型的输出，逐项校验
 export interface Host { id: string; threat: string; burden: string; value: number }
 export interface ContentPlan { ops: Op[]; hosts: Host[]; dropped: string[] }
+/** 分级修改附带的大纲草稿（与世界内容一起评审） */
+export interface RerateOutline { draft: Outline; base: number; summary: string; created: boolean }
+type RerateWithOutline = ContentPlan & { to: string; from: string; outline: RerateOutline | null };
 
 const str = (v: unknown, max: number): string => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 export const RATING_NAMES: Record<string, string> = { cozy: '温馨', adventure: '冒险', epic: '史诗', dark: '黑暗', tragic: '悲剧' };
@@ -150,16 +154,36 @@ ${people}
     if (lethal(to) && spec.params.deathNamed == null) ops.push({ op: 'setParam', args: { name: 'deathNamed', value: 2 } });
     const trial = trialApply(spec, ops);
     notes.push(...trial.dropped.map((d) => `丢掉了不能应用的操作：${d}`));
+    // 大纲跟着分级走（docs/design/epic-outline.md §5.2）：没有大纲时按改动之后的世界生成一份；已有时调整未来与结局
+    const outline = await this.outlinePlan(trial.spec, { from, to, direction, notes });
     const summary = this.summarize(trial.ops, hosts, { from, to, story, notes });
+    if (outline) summary.outline = { created: outline.created, summary: outline.summary, acts: outline.draft.parts.flatMap((p) => p.acts.filter((a) => a.status !== 'done' && a.status !== 'dropped').map((a) => ({ title: a.title, plan: a.plan }))), endings: outline.draft.endings.map((e) => ({ title: e.title, kind: e.kind, hint: e.hint || '' })) };
     const newPillars = (trial.ops.find((o) => o.op === 'setLore')?.args.pillars as string[] | undefined) || null;
     const review = await aiReview(town, {
       kind: '分级适配计划', subject: summary, rating: to, pillars: newPillars,
       context: `这是一份内容分级修改计划：世界将从「${RATING_NAMES[from]}」改成「${RATING_NAMES[to]}」，旧的设定支柱（${(spec.lore.pillars || []).join('；')}）会被上面「改动之后的设定支柱」替换。请以新的分级与新的支柱为准评审；与旧支柱、旧分级的差异正是这次修改的目的，不算问题。\n居民：${town.agents.map((a) => a.name).join('、')}`,
-      criteria: [`改完之后是否符合「${RATING_NAMES[to]}」分级`, '新的设定支柱是否保留了这个世界的身份', '新增的威胁是否都有对抗或化解的办法'],
+      criteria: [`改完之后是否符合「${RATING_NAMES[to]}」分级`, '新的设定支柱是否保留了这个世界的身份', '新增的威胁是否都有对抗或化解的办法', '附带的大纲（outline）与结局是否符合新的分级，结局能不能达成'],
     });
-    const payload: ContentPlan & { to: string; from: string } = { ops: trial.ops, hosts, dropped: trial.dropped, to, from };
+    const payload: RerateWithOutline = { ops: trial.ops, hosts, dropped: trial.dropped, to, from, outline };
     const planId = town.outlineSys.desk.register('rerate', hashOf(payload), this.base, review, { by, payload });
     return { planId, summary, review };
+  }
+
+  /** 分级修改附带的大纲：没有大纲时生成，已有时按新分级调整；失败不影响计划（记一条说明） */
+  async outlinePlan(after: WorldSpec, { from, to, direction, notes }: { from: string; to: string; direction: string; notes: string[] }): Promise<RerateOutline | null> {
+    const sys = this.town.outlineSys;
+    if (!llm.enabled()) return null;
+    const why = `这个世界的内容分级正在从「${RATING_NAMES[from]}」改成「${RATING_NAMES[to]}」${direction ? `，管理者希望：「${str(direction, 200)}」` : ''}；设定支柱、威胁都已经按新的分级调整（见上面的世界信息）。`;
+    try {
+      const r = sys.o
+        ? await sys.assist(`${why}请按新的分级调整还没发生的幕和节点，并重写结局（好结局与坏结局都要符合新的分级）；已经发生的部分保留。`, sys.version, null, { spec: after })
+        : await sys.generate(sys.version, { spec: after, note: why });
+      if (r.errors.length) { notes.push(`大纲没有生成成功，应用后请在大纲页手动生成：${r.errors.slice(0, 2).join('；')}`); return null; }
+      return { draft: r.draft, base: sys.version, summary: r.summary, created: !sys.o };
+    } catch (e) {
+      notes.push(`大纲没有生成成功：${(e as Error).message}`);
+      return null;
+    }
   }
 
   /** 给管理者看的计划摘要 */
@@ -184,19 +208,33 @@ ${people}
   }
 
   /** 应用评审过的计划；force 只有全站管理员可以用（跳过评审里的 major 问题） */
-  apply(planId: string, { by, force = false, admin = false }: { by: string; force?: boolean; admin?: boolean }): { rating: string; failed: string[] } {
+  apply(planId: string, { by, force = false, admin = false }: { by: string; force?: boolean; admin?: boolean }): { rating: string; failed: string[]; outline: 'saved' | 'adjusting' | 'none' } {
     const town = this.town;
     const e = town.outlineSys.desk.entry(planId, 'rerate');
     if (!e) throw new PlanError(409, '计划不存在或已过期，请重新生成');
     if (e.base !== this.base) throw new PlanError(409, '世界在计划生成之后又发生了变化，请重新生成');
     if (blocking(e.result) && !force) throw new PlanError(422, '评审发现了需要先处理的问题', { review: e.result });
     if (force && !admin) throw new PlanError(403, '只有管理员可以跳过评审');
-    const plan = e.payload as ContentPlan & { to: string; from: string };
+    const plan = e.payload as RerateWithOutline;
     const failed = applyContent(town, plan, { user: by, kind: 'rerate' });
     town.outlineSys.desk.drop(planId);
     town.log('world', `⚖️ 世界的内容分级从「${RATING_NAMES[plan.from]}」改成了「${RATING_NAMES[plan.to]}」`, { rating: plan.to });
     town.emit('rating', plan.to);
-    town.outlineSys.adjust(`世界的内容分级刚从「${RATING_NAMES[plan.from]}」改成了「${RATING_NAMES[plan.to]}」，故事要跟着变`).catch((err) => console.warn('[outline] 分级调整：', (err as Error).message));
-    return { rating: plan.to, failed };
+    // 计划里的大纲与世界内容一起评审过：大纲没有在这期间被改动时直接保存；否则交给大纲维护按新分级调整
+    let outline: 'saved' | 'adjusting' | 'none' = 'none';
+    const sys = town.outlineSys;
+    if (plan.outline && plan.outline.base === sys.version) {
+      const draft = sys.prepare(plan.outline.draft);
+      const errs = sys.ruleErrors(draft);
+      if (!errs.length) {
+        sys.commit(draft, { kind: 'rerate', by, note: `分级改为「${RATING_NAMES[plan.to]}」${plan.outline.created ? '，生成大纲' : '，调整大纲'}`, review: { verdict: e.result.verdict, issues: e.result.issues.length, ...(force ? { forced: true } : {}) } });
+        outline = 'saved';
+      } else failed.push(`大纲：${errs[0]}`);
+    }
+    if (outline === 'none' && sys.o) {
+      outline = 'adjusting';
+      sys.adjust(`世界的内容分级刚从「${RATING_NAMES[plan.from]}」改成了「${RATING_NAMES[plan.to]}」，故事要跟着变`).catch((err) => console.warn('[outline] 分级调整：', (err as Error).message));
+    }
+    return { rating: plan.to, failed, outline };
   }
 }

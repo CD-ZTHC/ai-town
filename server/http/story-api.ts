@@ -67,21 +67,44 @@ export function storyRoutes(api: Hono<AppEnv>, { reviewer, accounts }: { reviewe
     if (!r) throw new HttpError(404, '没有这个版本');
     return c.json(r);
   });
+  // AI 生成 / 修改：结果存为草稿（刷新页面、换一台设备都还在），并自动提交评审
   api.post('/outline/assist', (c) => {
     const t = town(c), b = c.get('body');
-    const instruction = String(b.instruction || '').trim().slice(0, 400);
+    const instruction = String(b.instruction || '').trim().slice(0, 600);
     if (!instruction) throw new HttpError(400, '请描述想怎么修改');
-    return job(c, 'outline', () => t.outlineSys.assist(instruction, num(b.baseVersion), b.draft && typeof b.draft === 'object' ? b.draft : null));
+    const by = manager(c);
+    return job(c, 'outline', () => t.outlineSys.draftJob('assist', { instruction, baseVersion: num(b.baseVersion), from: b.draft && typeof b.draft === 'object' ? b.draft : null, by }));
   });
   api.post('/outline/generate', (c) => {
     const t = town(c), b = c.get('body');
-    return job(c, 'outline', () => t.outlineSys.generate(num(b.baseVersion)));
+    const by = manager(c);
+    return job(c, 'outline', () => t.outlineSys.draftJob('generate', { baseVersion: num(b.baseVersion), by }));
   });
   api.post('/outline/review', (c) => {
     const t = town(c), b = c.get('body');
     if (!b.draft || typeof b.draft !== 'object') throw new HttpError(400, '缺少草稿');
     const by = manager(c);
-    return job(c, 'outline-review', () => t.outlineSys.review(b.draft, num(b.baseVersion), by));
+    return job(c, 'outline', async () => {
+      const r = await t.outlineSys.review(b.draft, num(b.baseVersion), by);
+      const cur = t.outlineDraft;
+      t.outlineSys.putDraft(r.draft, { base: num(b.baseVersion), by, source: cur?.source || 'manual', summary: cur?.summary || '', review: r.result, reviewId: r.reviewId });
+      return r;
+    });
+  });
+  // 手动编辑的草稿：边改边暂存（评审结果随之失效）
+  api.post('/outline/draft', (c) => {
+    const t = town(c), b = c.get('body');
+    const by = manager(c);
+    if (!b.draft || typeof b.draft !== 'object') throw new HttpError(400, '缺少草稿');
+    const cur = t.outlineDraft;
+    const source = ['generate', 'assist', 'manual', 'revision'].includes(b.source) ? b.source : cur?.source || 'manual';
+    t.outlineSys.putDraft(b.draft, { base: num(b.baseVersion), by, source, summary: typeof b.summary === 'string' ? b.summary : cur?.summary || '' });
+    return c.json({ ok: true });
+  });
+  api.post('/outline/draft/discard', (c) => {
+    manager(c);
+    town(c).outlineSys.discardDraft();
+    return c.json({ ok: true });
   });
   api.post('/outline/save', (c) => {
     const t = town(c), b = c.get('body');

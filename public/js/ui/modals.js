@@ -258,7 +258,7 @@ export function adminModal() {
   });
   $('#help-reset')?.addEventListener('click', guarded(async (e) => {
     const b = e.currentTarget;
-    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '⚠️ 再点一次：重新开始（旧存档会自动备份）'; return; }
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '⚠️ 再点一次：重新开始（旧存档会自动备份；史诗与居民的经历会清空，大纲保留但从头开始）'; return; }
     await app.api('/api/reset', { confirm: 'RESET' });
     closeModal();
     closeInspector();
