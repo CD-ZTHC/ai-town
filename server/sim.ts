@@ -7,7 +7,7 @@ import { buildRegions, buildRegion } from './worldgen/index.ts';
 import * as llm from './llm.ts';
 import { addMemory, parseHM } from './memory.ts';
 import { officialPack, packSpec } from './worlds/pack.ts';
-import { defaultSpec, validateSpec, weekdayOf, calendarHint, pickWeather, publicSpec, PARAM_BOUNDS } from './kernel/spec.ts';
+import { defaultSpec, validateSpec, weekdayOf, calendarHint, pickWeather, publicSpec, PARAM_BOUNDS, MAX_PERSONAS_TOTAL } from './kernel/spec.ts';
 import { RuleEngine } from './kernel/rules.ts';
 import { Director } from './story/director.ts';
 import { ArcEngine } from './story/arcs.ts';
@@ -576,9 +576,32 @@ export class Town extends EventEmitter {
     return changed;
   }
 
+  /**
+   * 规格的总名额（MAX_PERSONAS_TOTAL，含死者）不够再添 n 个角色时，按死亡先后把最早的死者从名册上划去；返回名额是否够了。
+   * 死者不占在世名额（MAX_PERSONAS），这里只防止长期运行的 dark 世界规格无限膨胀。
+   */
+  makeRoomForPersonas(n = 1): boolean {
+    const over = () => this.spec.personas.length + n - MAX_PERSONAS_TOTAL;
+    if (over() <= 0) return true;
+    const order = new Map(this.darkState.deaths.map((d, i) => [d.id, i]));
+    const dead = this.spec.personas.filter((p) => p.status === 'dead').sort((a, b) => (order.get(a.id) ?? -1) - (order.get(b.id) ?? -1));
+    for (const p of dead) {
+      if (over() <= 0) break;
+      try { this.applyWorldOp({ op: 'prunePersona', args: { id: p.id } }, { by: 'prune' }, { quiet: true }); } catch { continue; }
+      // 运行时也忘掉这个人：不再存档，别人的关系里也不再有他
+      const a = this.byId[p.id];
+      delete this.byId[p.id];
+      this.away = this.away.filter((x) => x !== a);
+      for (const o of [...this.agents, ...this.away]) delete o.relations?.[p.id];
+      if (this.migrationState) { delete this.migrationState.arrived[p.id]; delete this.migrationState.away[p.id]; }
+    }
+    return over() <= 0;
+  }
+
   /** 剧情角色登场：写入世界规格（或恢复在场），出现在指定地点 */
   enterStage(cast: Persona, at: string, source = 'arc'): LiveAgent {
     const p = this.spec.personas.find((x) => x.id === cast.id);
+    if (!p) this.makeRoomForPersonas();
     if (!p) this.applyWorldOp({ op: 'addPersona', args: cast }, { by: source }, { quiet: true });
     else if (p.status === 'departed') this.applyWorldOp({ op: 'setPersonaStatus', args: { id: cast.id, status: 'active' } }, { by: source }, { quiet: true });
     else if (this.agents.includes(this.byId[cast.id]!)) return this.byId[cast.id]!;

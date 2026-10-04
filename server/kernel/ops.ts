@@ -612,6 +612,26 @@ export const OPS: Record<string, OpDef> = {
     apply(spec, a) { spec.personas.find((x) => x.id === a.id)!.status = a.status; },
     describe: (a, spec) => { const n = pName(spec, a.id); const place = spec?.voice?.place || '小镇'; return a.status === 'dead' ? `${n}死了` : a.status === 'departed' ? `${n}离开了${place}` : `${n}回到了${place}`; },
   },
+  // 已故的角色从名册上划去，腾出规格的总名额（长期运行的 dark 世界）；死讯仍留在 darkState.deaths、墓碑与正典里
+  prunePersona: {
+    level: 'major',
+    check(spec, a) {
+      const p = spec.personas.find((x) => x.id === a.id);
+      if (!p) return `未知角色：${a.id}`;
+      if (p.status !== 'dead') return '只能划去已故的角色';
+      if ((spec.arcs || []).some((arc) => Object.hasOwn(arc.cast || {}, a.id))) return `${p.name} 由剧情安排`;
+      return null;
+    },
+    apply(spec, a) {
+      spec.personas = spec.personas.filter((x) => x.id !== a.id);
+      for (const p of spec.personas) if (p.relations) delete p.relations[a.id];
+      for (const f of spec.factions || []) {
+        if (f.members) f.members = f.members.filter((m) => m !== a.id);
+        if (f.head === a.id) delete f.head;
+      }
+    },
+    describe: (a, spec) => `${pName(spec, a.id)}的名字从名册上划去了`,
+  },
   // 外来者定居，成为常住居民（人员流动）；来历保留在 origin
   settlePersona: {
     level: 'major',

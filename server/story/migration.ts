@@ -8,7 +8,7 @@ import { keywordCheck } from '../guard.ts';
 import { ruleCheck } from '../worldai/canon.ts';
 import { normalizeLook } from '../genesis/assemble.ts';
 import { get as setting } from '../settings/index.ts';
-import { MAX_PERSONAS } from '../kernel/spec.ts';
+import { MAX_PERSONAS, livingCount } from '../kernel/spec.ts';
 import { reviewRating } from '../kernel/ratings.ts';
 import type { Town } from '../sim.ts';
 import type { ModelJSON } from '../llm.ts';
@@ -35,7 +35,7 @@ export interface MigrationState {
 }
 
 const str = (v: unknown, max: number): string => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
-const RESIDENTIAL = new Set(['hut', 'cabin', 'cottage', 'house', 'farmhouse', 'inn', 'tavern']);
+const RESIDENTIAL = new Set(['hut', 'cabin', 'cottage', 'house', 'farmhouse', 'apartment', 'inn', 'tavern']);
 const HOME_CAP = 3; // 一处住处最多住几个人
 const SETTLE_DAYS = 5; // 新人至少住这么多天才考虑定居
 const MIN_STAY_DAYS = 3; // 新来的人至少待这么多天才可能离开
@@ -96,7 +96,7 @@ export class MigrationSystem {
   /** 这一次允许的变动 */
   options(): Change[] {
     const out: Change[] = [];
-    if (this.activeCount() < this.cap() && this.town.spec.personas.length < MAX_PERSONAS) out.push('arrive');
+    if (this.activeCount() < this.cap() && livingCount(this.town.spec.personas) < MAX_PERSONAS) out.push('arrive');
     if (this.awayCount() < this.maxAway() && this.activeCount() > 2 && this.leaveCandidates().length) out.push('leave');
     if (this.awayCount()) out.push('return');
     return out;
@@ -138,13 +138,14 @@ export class MigrationSystem {
     return n;
   }
 
-  /** 可以住人的地方：室内地点；住宅类建筑优先 */
+  /** 可以住人的地方：室内地点里的住宅类建筑，以及有人住过的地方（住过的人死了、走了也算，空城里新人照样有地方住） */
   homes(): Array<{ id: string; name: string; residential: boolean; n: number }> {
     const w = this.town.world;
     const occ = this.occupancy();
+    const lived = new Set(this.town.spec.personas.map((p) => p.home));
     return Object.values(w.locations).filter((l) => l.indoor && !l.closed).map((l) => {
       const b = w.buildings.find((x) => x.id === l.indoor);
-      return { id: l.id, name: l.name, residential: RESIDENTIAL.has(b?.kind as string) || Boolean(occ[l.id]), n: occ[l.id] || 0 };
+      return { id: l.id, name: l.name, residential: RESIDENTIAL.has(b?.kind as string) || lived.has(l.id), n: occ[l.id] || 0 };
     }).filter((h) => h.residential);
   }
 
@@ -239,7 +240,8 @@ ${recent || '（平静）'}
   arrive(raw: Raw, { reason = '' }: { reason?: string } = {}): Result {
     const town = this.town;
     const st = this.st;
-    if (this.activeCount() >= this.cap() || town.spec.personas.length >= MAX_PERSONAS) return { error: `人数已达上限 ${this.cap()}` };
+    if (this.activeCount() >= this.cap()) return { error: `在场人数已达上限 ${this.cap()}` };
+    if (livingCount(town.spec.personas) >= MAX_PERSONAS) return { error: `在世的角色已达上限 ${MAX_PERSONAS}` };
     const name = str(raw.name, 6);
     if (!name) return { error: '没有名字' };
     const card = {
@@ -258,6 +260,7 @@ ${recent || '（平静）'}
     while (town.spec.personas.some((p) => p.id === id)) id += 'x';
     const home = this.pickHome(raw.home);
     if (!home) return { error: '没有可以住的地方' };
+    if (!town.makeRoomForPersonas()) return { error: '名册已满（剧情角色占着已故的名额）' };
     const at = this.spawnAt(raw.at);
     const work = town.findLocation(raw.work) ? raw.work : at;
     town.applyWorldOp({ op: 'addPersona', args: {
