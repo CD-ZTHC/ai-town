@@ -18,7 +18,10 @@ export const STORYTELLERS: readonly string[] = ['gentle', 'voyage', 'chaos', 'ho
 export const PERSONA_KINDS: readonly string[] = ['resident', 'traveller', 'creature'];
 export const BODY_PLANS: readonly string[] = ['wisp', 'hound', 'warden'];
 const RATING_LIST: readonly string[] = RATINGS;
-export const MAX_PERSONAS = 24; // 含离开的人与剧情角色；世界包发布时另有 16 位的上限，余量留给人员流动
+export const MAX_PERSONAS = 24; // 在世的角色（含离开的人与剧情角色，不含死者）；世界包发布时另有 16 位的上限，余量留给人员流动
+export const MAX_PERSONAS_TOTAL = 48; // 连同死者在内的上限，防止规格无限膨胀；满了之后最早的死者从名册上划去（prunePersona）
+/** 在世的角色数（死者不占 MAX_PERSONAS 的名额） */
+export const livingCount = (personas: ReadonlyArray<{ status?: string }>): number => personas.filter((p) => p.status !== 'dead').length;
 
 // 内核参数：AI 只能在上下限之内调节（见设计文档 4.6）
 export const PARAM_BOUNDS: Record<keyof Params, [number, number]> = {
@@ -171,7 +174,8 @@ export function validateSpec(spec: unknown): string[] {
     }
     for (const id of Object.keys(p.start?.inventory || {})) if (!Object.hasOwn(items, id)) err(path, `初始物品不存在：${id}`);
   }
-  if ((s.personas || []).length > MAX_PERSONAS) err('personas', `角色最多 ${MAX_PERSONAS} 位`);
+  if (livingCount(s.personas || []) > MAX_PERSONAS) err('personas', `在世的角色最多 ${MAX_PERSONAS} 位`);
+  if ((s.personas || []).length > MAX_PERSONAS_TOTAL) err('personas', `角色（含已故）最多 ${MAX_PERSONAS_TOTAL} 位`);
   for (const p of s.personas || []) {
     for (const rid of Object.keys(p.relations || {})) if (!pIds.has(rid)) err(`personas.${p.id}.relations`, `未知居民：${rid}`);
   }

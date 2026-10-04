@@ -173,3 +173,49 @@ test('世界设置里关掉人员流动后不再发生', (t) => {
   town.migration.tick();
   assert.equal(town.migration.st.dueAt ?? null, null);
 });
+
+test('死者不占在世名额：dark 世界全员死亡、名册满 24 人之后仍会来新人；名册总数满了划去最早的死者', async (t) => {
+  t.after(() => llm.setMock(null));
+  const dir = tmp();
+  const nw = loadPack(path.resolve('worlds/night-watch'));
+  const nwTown = () => new Town({ dataDir: dir, worldId: 'night-watch', pack: nw, instantTalk: true, mods: [] });
+  const town = nwTown();
+  const look = town.spec.personas[0].look;
+  let seq = 0;
+  /** 来一个外来者然后让他死去 */
+  const addDead = () => {
+    const id = `ghost${++seq}`;
+    town.applyWorldOp({ op: 'addPersona', args: { id, name: `过客${seq}`, role: '过客', persona: '沉默寡言', home: 'old_apartment', work: 'watch_office', look } }, { by: 'test' }, { quiet: true });
+    town.applyWorldOp({ op: 'setPersonaStatus', args: { id, status: 'dead' } }, { by: 'test' }, { quiet: true });
+  };
+  for (const p of [...town.spec.personas]) town.applyWorldOp({ op: 'setPersonaStatus', args: { id: p.id, status: 'dead' } }, { by: 'test' }, { quiet: true });
+  while (town.spec.personas.length < 24) addDead();
+  town.syncAgents();
+  assert.equal(town.migration.activeCount(), 0);
+  assert.ok(town.migration.options().includes('arrive'), '以前 personas.length 达到 24 后 arrive 被永久排除');
+  const card = { ...NEWCOMER.arrive, name: '守夜人', role: '外地来的更夫', from: '邻县', persona: '寡言、胆大，总提着一盏灯。', home: 'old_apartment', work: 'watch_office', at: 'plaza', relations: {} };
+  answer({ change: 'arrive', reason: '城里没人了', arrive: card });
+  const r1 = await town.migration.decide('arrive');
+  assert.equal(r1.change, 'arrive', JSON.stringify(r1));
+  assert.equal(town.spec.personas.length, 25);
+
+  // 名册（含已故）满了：最早的死者（初始居民 lu）被划去，规格里别人对他的关系也一起清掉
+  while (town.spec.personas.length < 48) addDead();
+  assert.ok(town.spec.personas.some((p) => p.relations?.lu), '初始居民之间有关系');
+  answer({ change: 'arrive', reason: '又来了一个', arrive: { ...card, name: '卖灯人' } });
+  const r2 = await town.migration.decide('arrive');
+  assert.equal(r2.change, 'arrive', JSON.stringify(r2));
+  assert.equal(town.spec.personas.length, 48);
+  assert.ok(!town.spec.personas.some((p) => p.id === 'lu'));
+  assert.ok(!town.byId.lu && !town.away.some((a) => a.id === 'lu'));
+  assert.ok(!town.spec.personas.some((p) => p.relations?.lu));
+  assert.ok(town.specOps.some((o) => o.op === 'prunePersona' && o.args.id === 'lu'), '可重放');
+  assert.throws(() => town.applyWorldOp({ op: 'prunePersona', args: { id: r2.id } }), /已故/, '只能划去死者');
+
+  town.save();
+  town.stop();
+  const again = nwTown();
+  t.after(() => again.stop());
+  assert.equal(again.spec.personas.length, 48);
+  assert.ok(again.byId[r2.id!] && !again.byId.lu, '读档后名册一致');
+});

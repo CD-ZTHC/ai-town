@@ -33,6 +33,7 @@ export interface OpArgs {
   addPersona: Record<string, unknown>;
   setPersonaStatus: { id: string; status: string; [k: string]: unknown };
   settlePersona: { id: string; [k: string]: unknown };
+  prunePersona: { id: string; [k: string]: unknown };
   addRule: Rule & { then: Effect[] };
 }
 

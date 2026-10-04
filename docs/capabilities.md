@@ -32,6 +32,7 @@
 | `addAdjacentRegion` | major | ✅ | {"id":"英文小写id","name":"如 城东","from":"相邻的哪张地图（默认 town）","side":"north/south/east/west","length":32~96,"fromName":"原来那张地图的新称呼，如 城中（可选）","biome","areas":[{"id","biome","size":"small/medium/large","places":[{"id","kind","name","emoji","desc"}]}]} —— 某个方向的地图到了 96×64 的上限、镇子还要往那边长时，在那一侧新建一张相邻的地图（大改）；接壤的边上自动开通道，走到边缘就过去了 |
 | `addPersona` | major | — | 仅管理员 / 剧情弧使用 |
 | `setPersonaStatus` | major | — | 仅管理员 / 剧情弧使用 |
+| `prunePersona` | major | — | 仅管理员 / 剧情弧使用 |
 | `settlePersona` | major | — | 仅管理员 / 剧情弧使用 |
 | `setAvatarKit` | minor | ✅ | {"ids":["带 combat 块的能力id"]（最多4个）} —— 旅人（玩家）在游戏模式里能用的技能栏，整体替换 |
 | `addRule` | major | ✅ | {"id","name":"≤16字","when":{"every":10~1440} 或 {"at":"HH:MM"} 或 {"weather":"天气id"} 或 {"enter":"地点id"},"forEach":"agent"(可选),"if":"表达式(可选)","then":[效果]} |
