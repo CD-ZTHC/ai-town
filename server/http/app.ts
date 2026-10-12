@@ -171,6 +171,23 @@ export function createApp({ worlds = null, hostFor = null, publicDir, engineStat
     try { rel = decodeURIComponent(c.req.path).replace(/^\/w\/[^/]+/, ''); } catch { return c.json({ error: 'bad path' }, 400); }
     return serveStatic(c, PUBLIC, rel, assets);
   });
+  // ---------- 管理面板：只有管理员能拿到页面与脚本；其他人在 /admin/ 看到的是登录页 ----------
+  app.get('/admin', (c) => c.redirect(`${c.req.path}/`, 301));
+  app.use('/admin/*', identity({ accounts }));
+  app.use('/js/admin/*', identity({ accounts }));
+  app.all('/admin/*', (c) => {
+    if (c.get('admin')) return serveStatic(c, PUBLIC, null, assets);
+    if (!['/admin/', '/admin/index.html'].includes(c.req.path)) return new Response('not found', { status: 404, headers: { 'Cache-Control': 'no-store', ...SECURITY_HEADERS } });
+    // 401 + no-store：登录页不能被缓存（登录后同一个地址要换成面板），也不响应条件请求
+    const res = serveStatic(c, PUBLIC, '/admin/login.html', assets, { conditional: false });
+    if (res.status !== 200) return res;
+    const headers = new Headers(res.headers);
+    headers.set('Cache-Control', 'no-store');
+    headers.delete('ETag');
+    return new Response(res.body, { status: 401, headers });
+  });
+  app.all('/js/admin/*', (c) => (c.get('admin') ? serveStatic(c, PUBLIC, null, assets) : new Response('not found', { status: 404, headers: { 'Cache-Control': 'no-store', ...SECURITY_HEADERS } })));
+
   app.get('/', (c) => serveStatic(c, PUBLIC, worlds!.lobby ? '/lobby.html' : '/index.html', assets));
   app.all('*', (c) => serveStatic(c, PUBLIC, null, assets));
   return app;
@@ -284,7 +301,7 @@ function servePluginUi(c: Ctx, host: WorldHost, p: string, bridgeHash: string | 
  * 有 assets（资源清单）时按 §7.3 给缓存头：HTML 改写后 no-cache + 强 ETag；带正确 ?v= 的资源 immutable；其余 no-cache + 内容哈希 ETag。
  * 没有 assets 或 ASSET_VERSIONING 关闭时：全部 no-cache。
  */
-export function serveStatic(c: Ctx, root: string, rel: string | null = null, assets: Assets | null = null): Response {
+export function serveStatic(c: Ctx, root: string, rel: string | null = null, assets: Assets | null = null, { conditional = true }: { conditional?: boolean } = {}): Response {
   const notFound = () => new Response('not found', { status: 404, headers: { ...SECURITY_HEADERS } });
   if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return withHeaders(c.json({ error: '不支持的方法' }, 405), { ...SECURITY_HEADERS });
   if (rel == null) {
@@ -299,7 +316,7 @@ export function serveStatic(c: Ctx, root: string, rel: string | null = null, ass
   const type = MIME[path.extname(file)] || 'application/octet-stream';
   const on = Boolean(assets && assets.enabled());
   const relPosix = path.relative(root, file).split(path.sep).join('/');
-  const inm = c.req.header('if-none-match');
+  const inm = conditional ? c.req.header('if-none-match') : undefined;
 
   // HTML：改写入口 URL、注入构建号与 import map；CSP 放行注入的 import map（按内容哈希）
   if (on && path.extname(file) === '.html') {
