@@ -1,6 +1,5 @@
 // 管理面板（多世界设计 §14.9）：按页组织，地址栏 #设置 这样的锚点记住当前页
-import { api, esc, $, storage, dialog, toast } from '../site/api.js';
-import { loginDialog } from '../site/auth.js';
+import { api, esc, $ } from '../site/api.js';
 import { page as settingsPage } from './settings.js';
 import { page as usersPage } from './users.js';
 import { page as auditPage } from './audit.js';
@@ -19,38 +18,17 @@ async function boot() {
   try {
     ctx.me = await api('api/me');
   } catch { ctx.me = null; }
-  if (!ctx.me?.admin) return askToken();
+  if (!ctx.me) { $('#page').innerHTML = '<p class="bad">读取登录状态失败，请稍后刷新页面。</p>'; return; }
+  if (!ctx.me.admin) return askToken();
   $('#who').innerHTML = ctx.me.user ? `${esc(ctx.me.user.nickname)}（${esc(ctx.me.user.role === 'super' ? '超级管理员' : '管理员')}）` : '管理员';
   renderTabs();
   refreshAlerts();
   go(decodeURIComponent(location.hash.slice(1)) || PAGES[0].id);
 }
 
+// 页面只发给管理员；接口却说不是（登录过期、令牌换了）：刷新，服务端会换成登录页
 function askToken() {
-  const d = dialog(`<h2>🔐 管理员登录</h2>
-    ${ctx.me?.accounts && ctx.me?.publicMode ? `<p>${ctx.me.user ? `你以「${esc(ctx.me.user.nickname)}」登录，但不是管理员。` : '<button class="primary" id="acct">用管理员账号登录</button>'}</p>
-    ${ctx.me.user ? '<p class="muted small">还没有超级管理员时，可以在下面输入 ADMIN_TOKEN 把这个账号认领为超级管理员。</p><button id="claim">认领为超级管理员</button>' : ''}` : ''}
-    <p class="muted small">或者输入服务器上设置的管理员令牌（ADMIN_TOKEN，应急入口，每次使用都会写审计）。</p>
-    <label>管理员令牌</label><input id="tok" type="password" autocomplete="off" />
-    <div class="actions"><a href="../">返回首页</a><span style="flex:1"></span><button class="primary" id="ok">进入</button></div>`);
-  const acct = $('#acct', d.el);
-  if (acct) acct.onclick = async () => { d.close(); if (await loginDialog({ reason: '用管理员账号登录' })) boot(); else askToken(); };
-  const claim = $('#claim', d.el);
-  if (claim) {
-    claim.onclick = async () => {
-      try { await api('api/auth/claim-admin', { token: $('#tok', d.el).value.trim() }); d.close(); toast('✅ 已认领为超级管理员'); boot(); } catch (e) { toast(esc(e.message)); }
-    };
-  }
-  const submit = async () => {
-    storage.set('town-admin', $('#tok', d.el).value.trim());
-    const me = await api('api/me').catch(() => null);
-    if (!me?.admin) { toast('令牌不对'); return; }
-    d.close();
-    boot();
-  };
-  $('#ok', d.el).onclick = submit;
-  $('#tok', d.el).onkeydown = (e) => { if (e.key === 'Enter') submit(); };
-  $('#tok', d.el).focus();
+  location.reload();
 }
 
 function renderTabs() {

@@ -1,5 +1,6 @@
 // 身份（多世界设计 §5.1）：identify(req) → { user | null, admin, ip }。业务代码不再直接读请求头或 IP。
 //   公网模式：会话 Cookie（HttpOnly; SameSite=Lax; 公网下 Secure）→ 账号；管理员 = 账号角色为 admin / super，或持有 ADMIN_TOKEN（应急入口，写审计）
+//   ADMIN_TOKEN 可以放在 X-Admin-Token 请求头里，也可以换成管理员 Cookie（打开管理面板这样的页面跳转带不了请求头）
 //   本地模式：所有请求都视为内置的本地管理员账号（昵称取 LOCAL_NICKNAME）；设置了 ADMIN_TOKEN 时管理操作仍需令牌
 import crypto from 'node:crypto';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
@@ -38,6 +39,20 @@ export function setSessionCookie(c: Ctx, token: string): void {
 export function clearSessionCookie(c: Ctx): void { deleteCookie(c, COOKIE, { path: '/', secure: secure(c) }); }
 export const sessionToken = (c: Ctx): string | null => getCookie(c, COOKIE) || null;
 
+// 管理员 Cookie：存 ADMIN_TOKEN 派生出的值而不是令牌本身；换了令牌，旧 Cookie 自动失效
+export const ADMIN_COOKIE = 'town_admin';
+const ADMIN_COOKIE_TTL = 12 * 3600;
+const adminCookieValue = (): string => crypto.createHmac('sha256', String(config.adminToken)).update('town-admin-cookie').digest('hex');
+export const isAdminToken = (t: unknown): boolean => Boolean(config.adminToken) && safeEqual(t, config.adminToken);
+export function setAdminCookie(c: Ctx): void {
+  setCookie(c, ADMIN_COOKIE, adminCookieValue(), { path: '/', httpOnly: true, sameSite: 'Strict', secure: secure(c), maxAge: ADMIN_COOKIE_TTL });
+}
+export function clearAdminCookie(c: Ctx): void { deleteCookie(c, ADMIN_COOKIE, { path: '/', secure: secure(c) }); }
+function adminCookieValid(c: Ctx): boolean {
+  const v = getCookie(c, ADMIN_COOKIE);
+  return Boolean(config.adminToken && v && safeEqual(v, adminCookieValue()));
+}
+
 /**
  * 身份中间件：设置 c.get('ip' | 'user' | 'admin' | 'who' | 'vid')。
  * 写请求还要校验 Origin（跨站请求伪造：写接口只接受 JSON + Origin 必须是本站）。
@@ -59,7 +74,7 @@ export function identity({ accounts }: { accounts: Accounts | null }): Middlewar
       if (s) { user = s.user; if (s.touched) setSessionCookie(c, tok!); }
     }
     const header = c.req.header('x-admin-token');
-    const viaToken = Boolean(config.adminToken && header && safeEqual(header, config.adminToken));
+    const viaToken = Boolean(header && isAdminToken(header)) || adminCookieValid(c);
     // 本地模式：配置了令牌时管理操作仍需令牌（与之前一致），否则所有人都是管理员
     const admin = config.publicMode ? isAdminUser(user) || viaToken : config.adminToken ? viaToken : true;
     if (viaToken && config.publicMode && accounts) {

@@ -268,6 +268,45 @@ test('公网模式：昵称走昵称审核（不是事件审核），普通人�
   assert.match((await bad.json()).error, /换个友善的名字/);
 });
 
+test('管理面板：页面与脚本只给管理员；其他人看到登录页；令牌换成管理员 Cookie', async (t) => {
+  const { req, acc } = setupPublic(t);
+  const guest = await req('/admin/');
+  assert.equal(guest.status, 401);
+  assert.equal(guest.headers.get('cache-control'), 'no-store');
+  const html = await guest.text();
+  assert.match(html, /管理员登录/);
+  assert.doesNotMatch(html, /src="[^"]*js\/admin\/main\.js/, '登录页不加载面板脚本');
+  assert.equal((await req('/admin/index.html')).status, 401);
+  assert.equal((await req('/admin/login.html')).status, 404);
+  assert.equal((await req('/js/admin/main.js')).status, 404);
+  assert.equal((await req('/js/admin/users.js')).status, 404);
+  assert.equal((await req('/admin')).status, 301);
+
+  const r = await req('/api/auth/register', { body: { username: 'plain_user', nickname: '路人', password: PW } });
+  assert.equal((await req('/admin/', { cookie: cookieOf(r) })).status, 401, '普通账号也进不去');
+
+  assert.equal((await req('/api/auth/admin-token', { body: { token: 'wrong' } })).status, 403);
+  const ok = await req('/api/auth/admin-token', { body: { token: 'root-token-123' } });
+  assert.equal(ok.status, 200);
+  const set = ok.headers.get('set-cookie') || '';
+  assert.match(set, /HttpOnly/i);
+  assert.match(set, /SameSite=Strict/i);
+  assert.ok(!set.includes('root-token-123'), 'Cookie 里不存令牌本身');
+  const cookie = cookieOf(ok);
+  const page = await req('/admin/', { cookie });
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /src="[^"]*js\/admin\/main\.js/);
+  assert.equal((await req('/js/admin/main.js', { cookie })).status, 200);
+  assert.equal((await (await req('/api/me', { cookie })).json()).admin, true);
+  assert.equal((await req('/admin/', { headers: { 'X-Admin-Token': 'root-token-123' } })).status, 200, '请求头仍然可用');
+  const audit = acc.auditLog({ limit: 20 }).map((a) => String(a.action));
+  assert.ok(audit.includes('admin.token') && audit.includes('admin.token-failed'));
+
+  // 换了令牌：旧 Cookie 失效
+  Object.assign(config, { adminToken: 'another-token-456' });
+  assert.equal((await req('/admin/', { cookie })).status, 401);
+});
+
 test('管理员认领与用户管理接口', async (t) => {
   const { req } = setupPublic(t);
   const r = await req('/api/auth/register', { body: { username: 'boss_user', nickname: '镇长', password: PW } });

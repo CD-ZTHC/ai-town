@@ -1,11 +1,10 @@
 // 账号接口（多世界设计 §5.4、§11）：注册、登录、登出、改昵称、改密码、重置密码、管理员认领
-import crypto from 'node:crypto';
 import { Hono } from 'hono';
 import { config, moderateNickname } from '../guard.ts';
 import { get as setting } from '../settings/index.ts';
 import { quota } from '../accounts/quota.ts';
 import { HttpError } from './util.ts';
-import { setSessionCookie, clearSessionCookie, sessionToken } from './identity.ts';
+import { setSessionCookie, clearSessionCookie, sessionToken, setAdminCookie, clearAdminCookie, isAdminToken } from './identity.ts';
 import type { AppEnv, Ctx } from '../types/http.ts';
 import type { Accounts } from '../accounts/index.ts';
 
@@ -69,6 +68,7 @@ export function authApi({ accounts }: { accounts: Accounts | null }): Hono<AppEn
     const tok = sessionToken(c);
     const n = tok && accounts ? accounts.logout(tok, { all: Boolean(c.get('body').all) }) : 0;
     clearSessionCookie(c);
+    clearAdminCookie(c);
     return c.json({ ok: true, sessions: n });
   });
 
@@ -100,11 +100,21 @@ export function authApi({ accounts }: { accounts: Accounts | null }): Hono<AppEn
   // 管理员认领：还没有超级管理员时，ADMIN_TOKEN 的持有者可以把自己的账号升为超级管理员
   api.post('/claim-admin', (c) => {
     const u = me(c);
-    const t = str(c.get('body').token, 300);
-    const a = Buffer.from(t), b = Buffer.from(config.adminToken || '');
-    if (!config.adminToken || a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw new HttpError(403, '管理员令牌不对');
+    if (!isAdminToken(str(c.get('body').token, 300))) throw new HttpError(403, '管理员令牌不对');
     return c.json({ ok: true, user: need(c).claimSuper(u.id) });
   });
+
+  // 用 ADMIN_TOKEN 进入管理面板（应急入口）：换成 HttpOnly 的管理员 Cookie，之后打开管理面板不用再带请求头
+  api.post('/admin-token', (c) => {
+    if (!isAdminToken(str(c.get('body').token, 300))) {
+      accounts?.audit({ actor: `token@${c.get('ip')}`, action: 'admin.token-failed', target: '/admin/' });
+      throw new HttpError(403, '管理员令牌不对');
+    }
+    setAdminCookie(c);
+    accounts?.audit({ actor: c.get('user')?.id || `token@${c.get('ip')}`, action: 'admin.token', target: '/admin/', detail: { method: 'cookie' } });
+    return c.json({ ok: true });
+  });
+  api.delete('/admin-token', (c) => { clearAdminCookie(c); return c.json({ ok: true }); });
 
   api.get('/sessions', (c) => c.json(need(c).sessionsOf(me(c).id)));
 
