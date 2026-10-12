@@ -41,7 +41,9 @@ echo "$REV" > "$BUILD/REVISION"
 (cd "$BUILD" && node tools/check.ts >/dev/null)
 echo "▶ 上传（$(du -sh "$BUILD" | cut -f1)）"
 ssh "$HOST" "rm -rf '$DIR.new' && mkdir -p '$DIR.new'"
-tar -czf - -C "$BUILD" . | ssh "$HOST" "tar -xzf - -C '$DIR.new'"
+# macOS 的 tar 会把扩展属性打包成 ._<文件名>（AppleDouble）：._*.json 会被当成世界包读取，启动直接失败。
+# COPYFILE_DISABLE 让 bsdtar 不生成它们（GNU tar 忽略这个变量）；线上解包后再删一遍兜底
+COPYFILE_DISABLE=1 tar -czf - -C "$BUILD" . | ssh "$HOST" "tar -xzf - -C '$DIR.new' && find '$DIR.new' -name '._*' -delete"
 
 # ---------- 线上切换 ----------
 ssh "$HOST" DIR="$DIR" REV="$REV" TS="$TS" MODE="$MODE" PORT_OVERRIDE="${DEPLOY_PORT:-}" 'bash -s' <<'REMOTE'
