@@ -6,13 +6,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { get as setting } from '../settings/index.ts';
 import type { World } from '../types/world.ts';
+import { SNAP_RE, sortSnapshots } from '../storage/snapshot-name.ts';
 
 /** 按类别细分的磁盘占用（字节） */
 export interface DiskUsage { total: number; snapshots: number; timelines: number; source: number; plugins: number; embeddings: number; other: number }
 type DiskCat = Exclude<keyof DiskUsage, 'total'>;
 
 const MB = 1024 * 1024;
-const SNAP = /^d(\d{3})-(\d{2})\.(?:db\.gz|json(?:\.gz)?)$/;
 
 /** 目录大小，按类别细分：snapshots / timelines / source / plugins / embeddings / other */
 export function diskUsage(root: string): DiskUsage {
@@ -64,7 +64,7 @@ export function reclaim(root: string, target: number): number {
   // 全部时间线的快照混在一起按「游戏时间」从旧到新排，每条时间线保留最新的 1 个
   const cands: Array<{ file: string; mtime: number }> = [];
   for (const dir of snapshotDirs(root)) {
-    const files = fs.readdirSync(dir).filter((f) => SNAP.test(f)).sort();
+    const files = sortSnapshots(fs.readdirSync(dir).filter((f) => SNAP_RE.test(f)));
     for (const f of files.slice(0, -1)) {
       let mtime = 0;
       try { mtime = fs.statSync(path.join(dir, f)).mtimeMs; } catch { continue; }
