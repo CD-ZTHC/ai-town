@@ -19,6 +19,7 @@ import type { RetrieveOptions } from '../memory.ts';
 import { DB_FILE, WorldStore } from '../storage/world-store.ts';
 import { loadState, saveState } from './state.ts';
 import { LEGACY_FILE, backupSave, readSnapshotFile, restoreSnapshotFile } from '../storage/save-io.ts';
+import { SNAP_RE, sortSnapshots } from '../storage/snapshot-name.ts';
 
 const SAVE_VERSION = 2;
 const SNAPSHOT_KEEP = 24; // 保留最近 24 个游戏小时的快照
@@ -106,7 +107,7 @@ export class Persistence {
     this.snapWriting = this.worldStore().snapshotTo(file).then(() => {
       // 同一个整点的旧格式快照（升级前写的）被新的取代
       for (const ext of ['.json', '.json.gz']) fs.rmSync(path.join(dir, base + ext), { force: true });
-      const files = fs.readdirSync(dir).filter((f) => SNAP_RE.test(f)).sort();
+      const files = sortSnapshots(fs.readdirSync(dir).filter((f) => SNAP_RE.test(f)));
       for (const f of files.slice(0, Math.max(0, files.length - SNAPSHOT_KEEP))) fs.rmSync(path.join(dir, f), { force: true });
     }).catch((e) => console.warn('[save] 快照失败：', (e as Error).message)).finally(() => { this.snapWriting = null; });
   }
@@ -157,8 +158,8 @@ export class Persistence {
 }
 
 // ---------- 时光回溯（设计文档 4.3）----------
-// 快照文件名：dNNN-HH.db.gz（数据库快照）；升级前的 dNNN-HH.json.gz、dNNN-HH.json 仍然可以回溯和分叉
-export const SNAP_RE = /^d(\d{3})-(\d{2})\.(?:db\.gz|json(?:\.gz)?)$/;
+// 快照文件名规则见 storage/snapshot-name.ts
+export { SNAP_RE };
 
 /** 读取一份快照（自动解压）；损坏时抛错 */
 export function readSnapshot(file: string): SaveData {
@@ -169,7 +170,7 @@ export function readSnapshot(file: string): SaveData {
 export function listSnapshots(dataDir: string): Array<{ name: string; day: number; hour: number; size: number }> {
   const dir = path.join(path.resolve(dataDir), 'snapshots');
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter((f) => SNAP_RE.test(f)).sort().reverse().map((f) => {
+  return sortSnapshots(fs.readdirSync(dir).filter((f) => SNAP_RE.test(f))).reverse().map((f) => {
     const [, d, h] = SNAP_RE.exec(f)!;
     return { name: f, day: Number(d), hour: Number(h), size: fs.statSync(path.join(dir, f)).size };
   });

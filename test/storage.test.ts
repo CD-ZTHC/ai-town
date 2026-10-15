@@ -223,6 +223,22 @@ test('快照最多保留 24 份，新旧格式一起算', async () => {
   town.stop();
 });
 
+test('第 1000 天以后：快照按游戏时间（不是字符串）排序与清理，旧的 3 位天数快照先删', async () => {
+  const dir = tmp();
+  const town = new Town({ dataDir: dir });
+  const snapDir = path.join(dir, 'snapshots');
+  fs.mkdirSync(snapDir, { recursive: true });
+  for (let h = 0; h < 24; h++) fs.writeFileSync(path.join(snapDir, `d998-${String(h).padStart(2, '0')}.db.gz`), '');
+  for (let h = 0; h < 24; h++) fs.writeFileSync(path.join(snapDir, `d1000-${String(h).padStart(2, '0')}.db.gz`), '');
+  town.t = 1001 * 1440 + 3 * 60; await saveAndSnap(town);
+  const names = listSnapshots(dir).map((s) => s.name);
+  assert.equal(names.length, 24);
+  assert.equal(names[0], 'd1002-03.db.gz', '最新的在前，刚写的没有被删');
+  assert.ok(!names.some((n) => n.startsWith('d998-')), '第 998 天的旧快照被清理');
+  assert.equal(listSnapshots(dir)[1].day, 1000);
+  town.stop();
+});
+
 test('导出工具：world.db → save.json，旧版本可直接读取', () => {
   const dir = tmp();
   const town = new Town({ dataDir: dir });
